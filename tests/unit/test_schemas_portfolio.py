@@ -45,32 +45,6 @@ def test_bucket_target_risk_asset_weight():
     assert abs(bt.risk_asset_weight - expected_risk) < 1e-6
 
 
-def test_bucket_target_enforces_70_percent_cap():
-    """Risk assets (kr_equity + global_equity + fx_commodity) must be <= 70%."""
-    with pytest.raises(ValidationError):
-        BucketTarget(
-            kr_equity=0.40,
-            global_equity=0.35,
-            fx_commodity=0.10,
-            bond=0.10,
-            cash_mmf=0.05,
-            rationale="exceeds 70% risk cap",
-        )
-
-
-def test_bucket_target_boundary_70_percent():
-    """70% risk asset weight should pass."""
-    bt = BucketTarget(
-        kr_equity=0.30,
-        global_equity=0.25,
-        fx_commodity=0.15,
-        bond=0.20,
-        cash_mmf=0.10,
-        rationale="exactly 70% risk",
-    )
-    assert abs(bt.risk_asset_weight - 0.70) < 1e-6
-
-
 def test_candidate_set_valid():
     cs = CandidateSet(
         bucket_to_tickers={

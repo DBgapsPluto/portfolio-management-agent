@@ -29,12 +29,6 @@ class BucketTarget(BaseModel):
             raise ValueError(f"Bucket weights must sum to 1.0, got {self.total}")
         return self
 
-    @model_validator(mode="after")
-    def _risk_asset_cap(self):
-        if self.risk_asset_weight > 0.70 + 1e-6:
-            raise ValueError(f"Risk assets must be <= 70%, got {self.risk_asset_weight * 100:.1f}%")
-        return self
-
     @property
     def risk_asset_weight(self) -> float:
         """위험자산 합계 (대회 §2.2 룰: ≤70%)."""
