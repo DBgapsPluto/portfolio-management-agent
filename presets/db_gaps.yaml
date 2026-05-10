@@ -1,0 +1,105 @@
+name: db_gaps
+universe: ./data/universe.json
+capital_krw: 1000000000
+
+stages:
+  - id: analysts
+    parallel: true
+    agents:
+      - id: macro_quant
+        skills:
+          - fetch_fred_series
+          - fetch_ecos_series
+          - compute_yield_curve
+          - compute_inflation_trend
+          - compute_unemployment_trend
+          - classify_regime
+          - compute_kr_divergence
+          - fetch_central_bank_calendar
+        output_schema: MacroReport
+        model: deep
+        timeout_seconds: 180
+        skill_prompt_base: prompts/macro-analysis.md
+
+      - id: market_risk
+        skills:
+          - fetch_volatility_index
+          - fetch_credit_spread
+          - fetch_fear_greed_index
+          - compute_market_breadth
+          - compute_correlation_concentration
+          - score_systemic_risk
+        output_schema: RiskReport
+        model: deep
+
+      - id: technical
+        skills:
+          - fetch_etf_price_batch
+          - compute_ta_indicators
+          - rank_momentum
+          - detect_trend_state
+          - find_correlation_clusters
+        output_schema: TechnicalReport
+        model: quick
+
+      - id: macro_news
+        skills:
+          - fetch_event_calendar
+          - fetch_macro_news
+          - classify_event_impact
+          - dedupe_rank_news
+        output_schema: NewsReport
+        model: quick
+
+  - id: research_debate
+    cluster_mode: shared_state
+    rounds: 1
+    agents:
+      - id: bull_researcher
+        cited_evidence_required: true
+      - id: bear_researcher
+        cited_evidence_required: true
+    judge:
+      id: research_manager
+      output_schema: BucketTarget
+
+  - id: allocation
+    agents:
+      - id: portfolio_allocator
+        skills:
+          - select_etf_candidates
+          - fetch_returns_matrix
+          - optimize_hrp
+          - optimize_risk_parity
+          - optimize_min_variance
+          - optimize_black_litterman
+          - pick_optimization_method
+        input_from:
+          bucket_target: research_manager
+          regime: macro_quant
+          risk_score: market_risk
+          clusters: technical
+
+  - id: risk_debate
+    cluster_mode: shared_state
+    rounds: 1
+    agents:
+      - id: aggressive_debator
+      - id: conservative_debator
+      - id: neutral_debator
+    judge:
+      id: risk_judge
+
+  - id: validation
+    agents:
+      - id: mandate_validator
+        skills:
+          - validate_universe
+          - validate_concentration
+          - validate_turnover_feasibility
+          - validate_correlation_concentration
+    on_fail: rerun_from(allocation, max_attempts=2)
+
+  - id: finalize
+    agents:
+      - id: portfolio_manager
