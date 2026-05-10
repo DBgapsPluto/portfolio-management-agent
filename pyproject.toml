@@ -52,7 +52,7 @@ test = [
 ]
 
 [project.scripts]
-tradingagents = "cli.main:app"
+gaps = "cli.main:cli"
 
 [tool.setuptools.packages.find]
 include = ["tradingagents*", "cli*"]
