@@ -7,6 +7,7 @@ only structured judge output + summary str.
 from langgraph.graph import StateGraph, START, END
 
 from tradingagents.agents.researchers.debate_state import InvestDebateState
+from tradingagents.agents.risk_mgmt.debate_state import RiskDebateState
 
 
 def build_invest_debate_subgraph(
@@ -32,6 +33,39 @@ def build_invest_debate_subgraph(
         return "bull"
 
     sg.add_conditional_edges("bear", should_continue, {"bull": "bull", "judge": "judge"})
+    sg.add_edge("judge", END)
+
+    return sg.compile()
+
+
+def build_risk_debate_subgraph(
+    aggressive_node, conservative_node, neutral_node, judge_node,
+    max_rounds: int = 1,
+):
+    """Build the 3-way risk debate sub-graph (D2 isolated).
+
+    Sequence per round: aggressive → conservative → neutral.
+    Neutral node increments round_count, then we either loop back or run judge.
+    """
+    sg = StateGraph(RiskDebateState)
+    sg.add_node("aggressive", aggressive_node)
+    sg.add_node("conservative", conservative_node)
+    sg.add_node("neutral", neutral_node)
+    sg.add_node("judge", judge_node)
+
+    sg.add_edge(START, "aggressive")
+    sg.add_edge("aggressive", "conservative")
+    sg.add_edge("conservative", "neutral")
+
+    def should_continue(state) -> str:
+        if state["round_count"] >= state["max_rounds"]:
+            return "judge"
+        return "aggressive"
+
+    sg.add_conditional_edges(
+        "neutral", should_continue,
+        {"aggressive": "aggressive", "judge": "judge"},
+    )
     sg.add_edge("judge", END)
 
     return sg.compile()
