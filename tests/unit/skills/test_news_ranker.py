@@ -38,14 +38,14 @@ def test_same_event_deduped():
     """Same direction + similar headlines + overlapping asset classes → dedup."""
     items = [
         _item("Fed cuts rates by 25bp", 2),
-        _item("Fed cuts interest rates by 25bp", 1),  # very similar wording
+        _item("Fed cuts rates by 25 bp", 1),  # 95%+ similarity
     ]
     impacts = {
         "Fed cuts rates by 25bp": ImpactAssessment(
             asset_classes_affected=["us_bond", "us_equity"],
             direction="up", severity=4, reasoning="x",
         ),
-        "Fed cuts interest rates by 25bp": ImpactAssessment(
+        "Fed cuts rates by 25 bp": ImpactAssessment(
             asset_classes_affected=["us_bond", "us_equity"],
             direction="up", severity=4, reasoning="y",
         ),

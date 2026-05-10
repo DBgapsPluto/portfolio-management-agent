@@ -5,7 +5,7 @@ from tradingagents.schemas.news import NewsItem, ImpactAssessment, RankedNews
 from tradingagents.skills.registry import register_skill
 
 
-_STRING_SIMILARITY_THRESHOLD = 0.80
+_STRING_SIMILARITY_THRESHOLD = 0.85
 
 
 def _are_same_event(
