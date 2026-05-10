@@ -1,64 +1,55 @@
-"""Research Manager: turns the bull/bear debate into a structured investment plan for the trader."""
-
-from __future__ import annotations
-
-from tradingagents.agents.schemas import ResearchPlan, render_research_plan
-from tradingagents.agents.utils.agent_utils import build_instrument_context
-from tradingagents.agents.utils.structured import (
-    bind_structured,
-    invoke_structured_or_freetext,
-)
+"""Research Manager — synthesizes Bull/Bear into a BucketTarget (5-bucket)."""
+from tradingagents.schemas.portfolio import BucketTarget
+from tradingagents.skills._helpers import invoke_with_structured_retry
 
 
-def create_research_manager(llm):
-    structured_llm = bind_structured(llm, ResearchPlan, "Research Manager")
+JUDGE_PROMPT = """\
+You synthesize a Bull/Bear debate into a final 5-bucket weight target.
 
-    def research_manager_node(state) -> dict:
-        instrument_context = build_instrument_context(state["company_of_interest"])
-        history = state["investment_debate_state"].get("history", "")
+Inputs:
+{summaries}
 
-        investment_debate_state = state["investment_debate_state"]
+Bull arguments (across {rounds} rounds):
+{bull}
 
-        prompt = f"""As the Research Manager and debate facilitator, your role is to critically evaluate this round of debate and deliver a clear, actionable investment plan for the trader.
+Bear arguments:
+{bear}
 
-{instrument_context}
+Constraints:
+- 위험자산(kr_equity + global_equity + fx_commodity) ≤ 0.70 (대회 §2.2)
+- All weights sum to 1.0
+- Be decisive — pick ONE target, not a range
 
----
+Output a BucketTarget JSON. Rationale ≤500 chars."""
 
-**Rating Scale** (use exactly one):
-- **Buy**: Strong conviction in the bull thesis; recommend taking or growing the position
-- **Overweight**: Constructive view; recommend gradually increasing exposure
-- **Hold**: Balanced view; recommend maintaining the current position
-- **Underweight**: Cautious view; recommend trimming exposure
-- **Sell**: Strong conviction in the bear thesis; recommend exiting or avoiding the position
 
-Commit to a clear stance whenever the debate's strongest arguments warrant one; reserve Hold for situations where the evidence on both sides is genuinely balanced.
-
----
-
-**Debate History:**
-{history}"""
-
-        investment_plan = invoke_structured_or_freetext(
-            structured_llm,
-            llm,
-            prompt,
-            render_research_plan,
-            "Research Manager",
+def create_research_manager(deep_llm):
+    def node(state):
+        summaries = (
+            f"Macro: {state['macro_summary']}\n\n"
+            f"Risk: {state['risk_summary']}\n\n"
+            f"Technical: {state['technical_summary']}\n\n"
+            f"News: {state['news_summary']}"
         )
+        prompt = JUDGE_PROMPT.format(
+            summaries=summaries,
+            rounds=state["round_count"],
+            bull="\n---\n".join(state["bull_arguments"]),
+            bear="\n---\n".join(state["bear_arguments"]),
+        )
+        target: BucketTarget = invoke_with_structured_retry(
+            deep_llm, BucketTarget,
+            [{"role": "user", "content": prompt}],
+            max_retries=1,
+        )
+        summary = (
+            f"## Bucket Target\n"
+            f"국내주식: {target.kr_equity:.1%}, 해외주식: {target.global_equity:.1%}, "
+            f"FX/원자재: {target.fx_commodity:.1%}, 채권: {target.bond:.1%}, "
+            f"MMF: {target.cash_mmf:.1%}\n"
+            f"위험자산 합: {target.risk_asset_weight:.1%}\n"
+            f"근거: {target.rationale[:300]}"
+        )
+        return {"bucket_target": target, "research_debate_summary": summary}
 
-        new_investment_debate_state = {
-            "judge_decision": investment_plan,
-            "history": investment_debate_state.get("history", ""),
-            "bear_history": investment_debate_state.get("bear_history", ""),
-            "bull_history": investment_debate_state.get("bull_history", ""),
-            "current_response": investment_plan,
-            "count": investment_debate_state["count"],
-        }
-
-        return {
-            "investment_debate_state": new_investment_debate_state,
-            "investment_plan": investment_plan,
-        }
-
-    return research_manager_node
+    return node
