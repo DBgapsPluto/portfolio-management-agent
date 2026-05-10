@@ -41,7 +41,7 @@ Breaking changes within the 0.x line are called out explicitly.
 - 위험자산 ≤ 70%
 - 단일 ETF ≤ 20% (allocator 제약 주입)
 - 회전율 floor (cap 없음)
-- 88종 ETF 풀 외 매수 금지
+- 188 ETF 풀 외 매수 금지
 
 ## [0.2.4] — 2026-04-25
 
