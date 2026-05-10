@@ -67,6 +67,8 @@ markers = [
     "unit: fast isolated unit tests",
     "integration: tests requiring external services",
     "smoke: quick sanity-check tests",
+    "slow: long-running E2E integration test",
+    "eval: LLM quality eval, requires API access; skip in CI",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
