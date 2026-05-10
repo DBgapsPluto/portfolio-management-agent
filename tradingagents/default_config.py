@@ -48,3 +48,50 @@ DEFAULT_CONFIG = {
         # Example: "get_stock_data": "alpha_vantage",  # Override category default
     },
 }
+
+DEFAULT_CONFIG.update({
+    # DB GAPS 설정
+    "preset_dir": "./presets",
+    "prompt_dir": "./prompts",
+    "universe_path": "./data/universe.json",
+    "artifacts_dir": "./artifacts",
+    "default_preset": "db_gaps",
+    "subagent_model_policy": {
+        "classify_regime": "deep",
+        "score_systemic_risk": "deep",
+        "pick_optimization_method": "deep",
+        "classify_event_impact": "quick",
+    },
+    # API 키
+    "fred_api_key": os.getenv("FRED_API_KEY"),
+    "ecos_api_key": os.getenv("ECOS_API_KEY"),
+    "tradingeconomics_key": os.getenv("TRADINGECONOMICS_KEY"),
+    # Cache
+    "etf_price_cache_path": os.path.join(_TRADINGAGENTS_HOME, "cache", "etf_prices.parquet"),
+    "macro_cache_dir": os.path.join(_TRADINGAGENTS_HOME, "cache", "macro"),
+    "cache_staleness_d1": 1,
+    "cache_staleness_d7": 7,
+    "cache_staleness_d30": 30,
+    # Macro data publication lag (look-ahead bias prevention)
+    "publication_lag_days": {
+        "us_cpi": 15,
+        "us_core_cpi": 15,
+        "us_unrate": 7,
+        "us_payems": 7,
+        "us_10y": 1, "us_2y": 1, "us_3m": 1,
+        "us_policy_rate": 1,
+        "us_ig_oas": 1, "us_hy_oas": 1,
+        "vix_close": 1,
+        "fed_balance_sheet": 8,
+        "kr_base_rate": 0,
+        "kr_cpi": 5,
+        "kr_m2": 60,
+        "kr_export": 1,
+        "kr_import": 1,
+        "kr_industrial_production": 30,
+        "kr_unrate": 15,
+    },
+    # Tracing / observability
+    "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",
+    "langsmith_project": os.getenv("LANGSMITH_PROJECT", "db-gaps-agent"),
+})
