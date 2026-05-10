@@ -1,0 +1,66 @@
+from enum import Enum
+
+from pydantic import BaseModel, Field, model_validator
+
+
+class OptimizationMethod(str, Enum):
+    HRP = "hrp"
+    RISK_PARITY = "risk_parity"
+    MIN_VARIANCE = "min_variance"
+    BLACK_LITTERMAN = "black_litterman"
+
+
+class BucketTarget(BaseModel):
+    """Asset class weight target from Research Manager."""
+    kr_equity: float = Field(ge=0, le=1)
+    global_equity: float = Field(ge=0, le=1)
+    fx_commodity: float = Field(ge=0, le=1)
+    bond: float = Field(ge=0, le=1)
+    cash_mmf: float = Field(ge=0, le=1)
+    rationale: str = Field(max_length=500)
+
+    @property
+    def total(self) -> float:
+        return self.kr_equity + self.global_equity + self.fx_commodity + self.bond + self.cash_mmf
+
+    @model_validator(mode="after")
+    def _sum_to_one(self):
+        if abs(self.total - 1.0) > 1e-6:
+            raise ValueError(f"Bucket weights must sum to 1.0, got {self.total}")
+        return self
+
+    @model_validator(mode="after")
+    def _risk_asset_cap(self):
+        if self.risk_asset_weight > 0.70 + 1e-6:
+            raise ValueError(f"Risk assets must be <= 70%, got {self.risk_asset_weight * 100:.1f}%")
+        return self
+
+    @property
+    def risk_asset_weight(self) -> float:
+        """위험자산 합계 (대회 §2.2 룰: ≤70%)."""
+        return self.kr_equity + self.global_equity + self.fx_commodity
+
+
+class CandidateSet(BaseModel):
+    """Allocator의 후보 ETF 풀."""
+    bucket_to_tickers: dict[str, list[str]]
+    selection_criteria: str = Field(max_length=300)
+    total_candidates: int = Field(ge=1)
+
+
+class WeightVector(BaseModel):
+    """Allocator의 최종 weight."""
+    method: OptimizationMethod
+    weights: dict[str, float] = Field(min_length=1, description="ticker → weight")
+    rationale: str = Field(max_length=500)
+    expected_volatility: float | None = Field(default=None, ge=0)
+    expected_sharpe: float | None = None
+
+    @model_validator(mode="after")
+    def _normalize(self):
+        total = sum(self.weights.values())
+        if abs(total - 1.0) > 1e-3:
+            raise ValueError(f"Weights must sum to ~1.0, got {total}")
+        if any(w < 0 for w in self.weights.values()):
+            raise ValueError("Negative weights not allowed")
+        return self
