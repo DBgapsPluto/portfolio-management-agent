@@ -1,0 +1,19 @@
+{
+  "classify_regime": {
+    "quadrant": "recession_disinflation",
+    "confidence": 0.82,
+    "drivers": ["yield curve inverted 120 days", "Sahm rule triggered", "HY OAS widening"],
+    "reasoning": "Curve and labor market signal recession; CPI decelerating from prior peak."
+  },
+  "score_systemic_risk": {
+    "score": 6.5,
+    "regime": "risk_off",
+    "drivers": ["VIX above 22", "HY OAS widening to 5.5%"],
+    "reasoning": "Multiple stress signals point to risk-off positioning."
+  },
+  "pick_optimization_method": {
+    "method": "min_variance",
+    "params": {},
+    "reasoning": "Recession plus risk-off: defensive minimum-variance allocation."
+  }
+}
