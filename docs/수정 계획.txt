@@ -1,0 +1,156 @@
+Let's formulate a plan to modify the trading agent based on the following.
+
+To be frank, a completely different approach is required.
+
+If this were an "Asset Allocation" competition—which manages macroeconomic assets such as ETFs, bonds, and commodities rather than individual stocks, like the DB GAP (Global Asset Allocation Portfolio) investment competition—then the previously mentioned bottom-up architecture modification plan must be completely scrapped and redesigned entirely from scratch.
+
+The existing `TradingAgents` framework is a stock-picking model that asks, "Does this company make good money? (Fundamental)" and "Are people enthusiastic about this stock? (Sentiment)." On the other hand, asset allocation dealing with ETFs and bonds must be a top-down macro model that addresses, "What is the current economic phase (inflation/recession)?" and "How is the correlation between stocks and bonds changing?"
+
+I will provide a candid analysis of how to overhaul your code to align with the competition objectives.
+
+---
+
+### 1. Replace Fundamental Analyst with Macro/Quant Analyst
+
+The concept of financial statements (DART) does not apply to individual ETFs (e.g., KODEX 200, TIGER 10-Year US Treasury Futures). The role of this agent must be completely shifted from analyzing corporate performance to analyzing **national and global economic indicators**.
+
+* **Items to discard:** DART API, corporate financial data from Yahoo Finance (PER, PBR, etc.).
+
+* **Tools to integrate:**
+
+* **Bank of Korea ECOS (Economic Statistics System) API:** Collection of data on Korea's base interest rate, CPI (Consumer Price Index), import/export trends, and M2 money supply. * **US FRED API (Federal Reserve Economic Data):** Collects global macroeconomic indicators such as US Treasury yields (10-year, 2-year, etc.), yield spreads, unemployment rates, and the US Federal Reserve (FED) balance sheet.
+
+* **Prompt Modification:** "Evaluate the intrinsic value of the company" ➔ "Determine which regime (regime) the current economy belongs to: growth/slowdown or inflation/deflation."
+
+### 2. Sentiment Analyst ➔ Replaced with Market Risk Analyst
+
+In investing in ETFs or government bonds, the sentiment of individual investors on Naver stock discussion boards or Twitter is merely noise and holds no value.
+
+* **Things to Discard:** Social media crawling (Reddit, Naver stock discussion boards, etc.), and text-based sentiment analysis.
+
+** * **Tools to be newly integrated:**
+
+* **Market Volatility Indicators:** Crawling data for VKOSPI (Korea Volatility Index), VIX (US Volatility Index), and Fear & Greed Index.
+
+* **Credit Spread:** Quantifying systemic credit risk by calculating the difference between government bond yields and corporate bond yields.
+
+* **Prompt Modification:** "Rate investor buying sentiment on a scale of 1 to 10" ➔ "Detect the current market's systemic risk-off situation and quantify the preference for safe assets (bonds/dollars)."
+
+### 3. Trader ➔ Replace with Portfolio Allocator
+
+This is the most critical change. While the existing agent makes decisions to "Buy" or "Sell" specific stocks, in asset allocation competitions, you must determine "Portfolio Weights." The DB GAP competition evaluates MDD (Maximum Drawdown) and Sharpe Ratio (Risk-Adjusted Return) as importantly as absolute returns.
+
+* **Original Logic:** Purchase 100 shares of Stock A based on Conviction.
+
+* **Modified Logic:** Set the total assets to 100% and calculate weights (Weighting) as follows: 40% Stock ETF, 40% Bond ETF, 10% Commodities/Gold, 10% Cash, etc.
+
+* **Prompt and Tool Modification:**
+
+* If the LLM is left to make simple weight decisions, mathematical optimization fails.
+
+* Therefore, you must implement this by integrating a library like Python's `PyPortfolioOpt` as a tool. The LLM determines only parameters such as "risk aversion level" or **"target return"**, while the actual weight calculations (Risk Parity, Black-Litterman models, etc.) are performed by external mathematical algorithms that then return the results to the LLM.
+
+** ### 4. Technical Analyst and Target Ticker
+
+* While technical analysis of individual stocks is often noisy, moving averages (e.g., the 200-day line) or momentum of macro assets such as the KOSPI 200 or government bond ETFs are effective for trend-following asset allocation strategies.
+
+* Therefore, while maintaining the technical analysis tool using `TA-Lib`, the analysis targets should be limited to the universe permitted by the competition (domestically listed ETFs, ETNs, etc.) rather than individual stock tickers.
+
+---
+
+### 💡 Conclusion and Strategic Advice
+
+The existing "Multi-Agent Debate and Approval" structure (LangGraph-based workflow) of `TradingAgents` is an architecture that is excellent to use as is.
+
+However, the "brain" (System Prompt) and "hands and feet" (API Tools) of each agent must be completely replaced from "Stock Trader" to "Macro Fund Manager." To win a prize in the DB GAP competition, please redesign your agent so that the LLM does not simply trade based on charts or news articles, but clearly outputs in the report the **logic of risk diversification by analyzing correlations between asset classes** based on macroeconomic data such as the Federal Reserve's interest rate direction and the yield curve.
+
+The skills implemented in Anthropic's `financial-services` (Enterprise Finance AI Reference Architecture) are **deterministic tools and workflows** designed to prevent LLMs from engaging in unnecessary 'creation' and to thoroughly mimic the Excel/terminal workflows of financial practitioners.
+
+We will structurally dissect every single core skill supported by this framework, according to their purpose and function.
+
+---
+
+### 1. Data Extraction & Parsing Skills
+
+These skills automate the 'document reading' process, where the most errors occur. Instead of the LLM manually reading and summarizing the data, the data is structured through code.
+
+* **`extract_financial_tables` (Precise extraction of financial statement tables):**
+* **Function:** Ignores body text from SEC EDGAR 10-K (annual report), 10-Q (quarterly report), or PDF files, and accurately targets only **table data** such as 'Income Statement' and 'Balance Sheet' to extract them into CSV or Pandas DataFrame format.**
+* **Significance:** Fundamentally prevents hallucinations caused by misrecognizing shifted numbers or merged cells.
+
+* **`parse_earnings_transcript` (Structured parsing of earnings calls):**
+* **Function:** Separates audio transcripts of earnings announcements spanning dozens of pages into 'Prepared Remarks' and 'Analyst Q&A'.
+
+** * **Significance:** Filters only the CEO's defensive responses to sharp questions from specific analysts, or extracts only the guidance figures for the next quarter using regular expressions.
+
+* **`compare_document_deltas` (Tracking changes between documents):**
+
+* **Function:** Compares the 'Risk Factors' section of last year's business report with this year's to identify and highlight only phrases that the company has quietly added or deleted (e.g., the addition of "concerns about supply chain instability").
+
+### 2. Quantitative Math & Modeling Skills
+
+This skill involves completely delegating 'mathematical calculations,' the biggest weakness of LLM, to external systems.
+
+* **`execute_python_sandbox` (Isolated Code Execution and Mathematical Operations):**
+
+* **Function:** When LLM calculates WACC (Weighted Average Cost of Capital), DCF (Discounted Cash Flow), bond duration, etc., it does not output numbers directly; instead, it writes Python code, executes it in a sandbox environment, and retrieves only the resulting values.
+
+* **`build_3_statement_model` (Building a 3-Statement Excel Model):**
+
+* **Function:** Based on extracted historical financial data, it generates an Excel file (.xlsx) where the Income Statement, Balance Sheet, and Cash Flow Statement are linked by formulas.
+
+* **Significance:** It performs the core task of an IB (Investment Banking) analyst: if commanded to "assume a sales growth rate of 5%," it enters values ​​into Excel input cells and generates a result sheet.
+
+* **`run_comparable_analysis` (Companies Benchmarking / Comps):**
+
+* **Function:** Identifies groups of competitors similar to the target company, calculates multiples such as market capitalization, EV/EBITDA, and P/E (Price-to-Earnings Ratio) for each company, and derives the average/median.
+
+### 3. External Data and Terminal Integration Skills (Connectors & RAG)
+
+This skill communicates with paid enterprise databases through MCP (Model Context Protocol), a core philosophy of Anthropic.
+
+* **`query_market_data_api` (Retrieving Real-time/Historical Market Data):**
+
+* **Function:** Calls APIs from data terminals subscribed to by actual financial firms, such as FactSet, S&P Capital IQ, Bloomberg, and Reuters, to retrieve stock prices, macroeconomic indicators (interest rates, unemployment rates, etc.), and consensus estimates.
+
+** * **`semantic_internal_search` (Internal Document RAG Search):**
+
+* **Function:** Rather than simple keyword search, it searches for historical cases most similar to the current market situation within the company's internally built historical research reports or Investment Committee (IC) memo databases using a vector-based approach and injects them into the context.
+
+### 4. Output & Formatting Skill
+
+This skill is designed for the automation of report writing and enforces 'standard compliance' over 'writing skills'.
+
+* **`generate_pitchdeck_structure` (Generate Pitch Deck/PPT Structure):**
+
+* **Function:** Converts text analysis results to fit PowerPoint slide formats. (e.g., Page 1 for summary, Page 2 for market analysis, Page 3 for financial charts, etc.). It exports slide titles, bullet points, and chart data separately.
+
+** * **`enforce_json_schema` (Strict JSON Structuring):**
+
+* **Function:** Controls that the agent's final output must be output exclusively in a predefined JSON format. This is an essential skill to prevent parsing errors when displaying data on frontend dashboards or transmitting data to the next agent (e.g., Portfolio Manager).
+
+### 5. Risk & Compliance Skills
+
+This skill resolves bottlenecks in back-office operations.
+
+* **`check_kyc_aml_rules` (Anti-Money Laundering/Customer Due Diligence):**
+
+* **Function:** Calculates a risk rating by comparing information on new clients or entities against the OFAC (Office of Foreign Assets Control) sanctions list or internal watchlist.
+
+* **`validate_investment_mandate` (Verification of investment compliance):**
+
+* **Function:** Pre-screens whether the portfolio weighting proposed by the fund manager (or agent) violates fund mandates, such as "prohibition on exceeding 10% of a single asset" or "prohibition on investing in bonds with a credit rating of BBB or lower."
+
+---
+
+### 💡 Strategic Insights for Participating in the DB GAPS Competition
+
+When designing the agent for the competition, Jinwoo must discard the meaningless text arguments in `TradingAgents` and **personally implement the following three skill architectures from the list above using Python tools** to provide to the agent.
+
+1. **`query_market_data_api`:** A skill to retrieve interest rates and inflation indicators via FRED or ECOS APIs (for macro analysis).
+
+** 2. **`execute_python_sandbox`:** A skill that calculates the optimal weights to maximize the Sharpe Ratio by running the PyPortfolioOpt library based on the imported indicators (for portfolio allocation).
+
+3. **`validate_investment_mandate`:** A skill that performs a final verification to ensure the calculated weights do not violate DB GAPS competition rules (e.g., cash weight limits, minimum asset class inclusion ratios, etc.).
+
+This **Skill-centric agent design** is precisely 'Explainable AI (XAI)' and the essence of system trading. If you have a specific skill you wish to implement, we will objectively design how to convert it into LangChain or LangGraph tools at the code level.
