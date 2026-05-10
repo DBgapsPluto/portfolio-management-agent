@@ -1,50 +1,49 @@
+"""Bear researcher: argues for higher safe-asset weight (자산군 단위, 종목 X)."""
+from langchain_core.messages import AIMessage, HumanMessage
 
 
-def create_bear_researcher(llm):
-    def bear_node(state) -> dict:
-        investment_debate_state = state["investment_debate_state"]
-        history = investment_debate_state.get("history", "")
-        bear_history = investment_debate_state.get("bear_history", "")
+BEAR_PROMPT = """\
+You are the Bear researcher in an asset-allocation team. Your job is to argue
+for higher safe-asset weight (bonds, MMF, gold).
 
-        current_response = investment_debate_state.get("current_response", "")
-        market_research_report = state["market_report"]
-        sentiment_report = state["sentiment_report"]
-        news_report = state["news_report"]
-        fundamentals_report = state["fundamentals_report"]
+Cite SPECIFIC evidence from the analyst summaries below — never invent numbers.
 
-        prompt = f"""You are a Bear Analyst making the case against investing in the stock. Your goal is to present a well-reasoned argument emphasizing risks, challenges, and negative indicators. Leverage the provided research and data to highlight potential downsides and counter bullish arguments effectively.
+Macro:
+{macro_summary}
 
-Key points to focus on:
+Risk:
+{risk_summary}
 
-- Risks and Challenges: Highlight factors like market saturation, financial instability, or macroeconomic threats that could hinder the stock's performance.
-- Competitive Weaknesses: Emphasize vulnerabilities such as weaker market positioning, declining innovation, or threats from competitors.
-- Negative Indicators: Use evidence from financial data, market trends, or recent adverse news to support your position.
-- Bull Counterpoints: Critically analyze the bull argument with specific data and sound reasoning, exposing weaknesses or over-optimistic assumptions.
-- Engagement: Present your argument in a conversational style, directly engaging with the bull analyst's points and debating effectively rather than simply listing facts.
+Technical:
+{technical_summary}
 
-Resources available:
+News:
+{news_summary}
 
-Market research report: {market_research_report}
-Social media sentiment report: {sentiment_report}
-Latest world affairs news: {news_report}
-Company fundamentals report: {fundamentals_report}
-Conversation history of the debate: {history}
-Last bull argument: {current_response}
-Use this information to deliver a compelling bear argument, refute the bull's claims, and engage in a dynamic debate that demonstrates the risks and weaknesses of investing in the stock.
-"""
+Previous Bull argument: {previous_bull}
 
-        response = llm.invoke(prompt)
+In ≤400 chars (Korean):
+1. State your proposed safe-asset bucket weight (% of 100, in 5% increments).
+2. Cite 2-3 evidence points by quoting the specific data above.
+3. Acknowledge ONE upside risk to your defensive view."""
 
-        argument = f"Bear Analyst: {response.content}"
 
-        new_investment_debate_state = {
-            "history": history + "\n" + argument,
-            "bear_history": bear_history + "\n" + argument,
-            "bull_history": investment_debate_state.get("bull_history", ""),
-            "current_response": argument,
-            "count": investment_debate_state["count"] + 1,
+def create_bear_researcher(quick_llm):
+    def node(state):
+        previous_bull = state["bull_arguments"][-1] if state["bull_arguments"] else "(none)"
+        prompt = BEAR_PROMPT.format(
+            macro_summary=state["macro_summary"],
+            risk_summary=state["risk_summary"],
+            technical_summary=state["technical_summary"],
+            news_summary=state["news_summary"],
+            previous_bull=previous_bull,
+        )
+        response = quick_llm.invoke([HumanMessage(content=prompt)])
+        argument = response.content[:400]
+        return {
+            "bear_arguments": state["bear_arguments"] + [argument],
+            "messages": state["messages"] + [AIMessage(content=f"[Bear r{state['round_count']}] {argument}")],
+            "round_count": state["round_count"] + 1,
         }
 
-        return {"investment_debate_state": new_investment_debate_state}
-
-    return bear_node
+    return node
