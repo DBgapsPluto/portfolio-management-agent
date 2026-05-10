@@ -4,7 +4,7 @@ import pytest
 
 from tradingagents.presets.loader import PresetLoader, PresetLoadError
 from tradingagents.skills.registry import (
-    register_skill, clear_registry,
+    register_skill, clear_registry, _reregister_all_skills,
 )
 
 
@@ -18,6 +18,11 @@ def setup_skills():
     @register_skill(name="classify_regime", category="macro")
     def g(): pass
 
+    yield
+
+    # Re-register all skills after the test
+    _reregister_all_skills()
+
 
 def test_load_validates_skills_exist(setup_skills):
     p = PresetLoader.from_yaml(Path("tests/fixtures/preset_minimal.yaml"))
@@ -27,8 +32,9 @@ def test_load_validates_skills_exist(setup_skills):
 
 def test_load_rejects_unknown_skill(tmp_path):
     clear_registry()
-    bad = tmp_path / "bad.yaml"
-    bad.write_text("""
+    try:
+        bad = tmp_path / "bad.yaml"
+        bad.write_text("""
 name: bad
 universe: x
 capital_krw: 1
@@ -39,5 +45,8 @@ stages:
         skills: [nonexistent_skill]
         output_schema: MacroReport
 """)
-    with pytest.raises(PresetLoadError, match="unknown skill"):
-        PresetLoader.from_yaml(bad)
+        with pytest.raises(PresetLoadError, match="unknown skill"):
+            PresetLoader.from_yaml(bad)
+    finally:
+        # Re-register all skills after the test
+        _reregister_all_skills()

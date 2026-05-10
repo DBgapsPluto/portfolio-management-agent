@@ -1,22 +1,17 @@
+"""Verifies that all 34 skills are registered.
+
+Note: registry state is process-global. Other tests may register additional
+skills or clear the registry, so we re-register all skills before checking.
+"""
+
+
 def test_all_skills_registered():
-    from tradingagents.skills.registry import list_skills, clear_registry
-    import sys
+    from tradingagents.skills.registry import list_skills, _reregister_all_skills
 
-    # Clear the registry
-    clear_registry()
+    # Re-register all skills in case other tests cleared the registry
+    _reregister_all_skills()
 
-    # Remove all skill modules from sys.modules to force reimport (except registry itself)
-    modules_to_remove = [
-        name for name in sys.modules
-        if name.startswith("tradingagents.skills") and not name.endswith("registry")
-    ]
-    for name in modules_to_remove:
-        del sys.modules[name]
-
-    # Now import the registry init which will re-register all skills
-    import tradingagents.skills._registry_init  # noqa: F401
-
-    skills = list_skills()
+    skills = set(list_skills())
     expected = {
         # Macro (8)
         "compute_yield_curve", "compute_inflation_trend", "compute_unemployment_trend",
@@ -38,5 +33,5 @@ def test_all_skills_registered():
         "validate_universe", "validate_concentration",
         "validate_turnover_feasibility", "validate_correlation_concentration",
     }
-    missing = expected - set(skills)
+    missing = expected - skills
     assert not missing, f"Missing skills: {missing}"

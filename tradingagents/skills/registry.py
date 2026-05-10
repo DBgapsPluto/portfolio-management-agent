@@ -2,6 +2,39 @@ from collections.abc import Callable
 from typing import Any
 
 _REGISTRY: dict[str, dict[str, Any]] = {}
+_SKILL_MODULES: list[str] = [
+    "tradingagents.skills.macro.yield_curve",
+    "tradingagents.skills.macro.inflation",
+    "tradingagents.skills.macro.employment",
+    "tradingagents.skills.macro.fred_fetcher",
+    "tradingagents.skills.macro.ecos_fetcher",
+    "tradingagents.skills.macro.divergence",
+    "tradingagents.skills.macro.calendar",
+    "tradingagents.skills.macro.regime_classifier",
+    "tradingagents.skills.risk.volatility",
+    "tradingagents.skills.risk.credit_spread",
+    "tradingagents.skills.risk.fear_greed",
+    "tradingagents.skills.risk.breadth",
+    "tradingagents.skills.risk.correlation_pca",
+    "tradingagents.skills.risk.systemic_score",
+    "tradingagents.skills.technical.price_batch",
+    "tradingagents.skills.technical.ta_indicators",
+    "tradingagents.skills.technical.momentum_ranker",
+    "tradingagents.skills.technical.trend_state",
+    "tradingagents.skills.technical.correlation_cluster",
+    "tradingagents.skills.news.event_calendar",
+    "tradingagents.skills.news.news_fetcher",
+    "tradingagents.skills.news.impact_classifier",
+    "tradingagents.skills.news.ranker",
+    "tradingagents.skills.portfolio.candidate_selector",
+    "tradingagents.skills.portfolio.returns_matrix",
+    "tradingagents.skills.portfolio.optimizers",
+    "tradingagents.skills.portfolio.method_picker",
+    "tradingagents.skills.mandate.universe_check",
+    "tradingagents.skills.mandate.concentration_check",
+    "tradingagents.skills.mandate.turnover_check",
+    "tradingagents.skills.mandate.correlation_check",
+]
 
 
 def register_skill(name: str, category: str) -> Callable:
@@ -45,3 +78,21 @@ def list_skills(category: str | None = None) -> list[str]:
 def clear_registry() -> None:
     """Test-only: clear the global registry."""
     _REGISTRY.clear()
+
+
+def _reregister_all_skills() -> None:
+    """Test-only: re-register all built-in skills after clear_registry.
+
+    This is needed because skill modules are cached in sys.modules, so importing
+    them again won't trigger the @register_skill decorator. We clear the registry
+    first, then reload all modules to re-trigger their @register_skill decorators.
+    """
+    import sys
+    import importlib
+
+    # Clear before reloading so that reload can re-register without conflicts
+    _REGISTRY.clear()
+
+    for module_name in _SKILL_MODULES:
+        if module_name in sys.modules:
+            importlib.reload(sys.modules[module_name])

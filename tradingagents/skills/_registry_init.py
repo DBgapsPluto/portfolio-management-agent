@@ -3,36 +3,44 @@
 Import this module before calling get_skill() in app code.
 """
 # Macro
-from tradingagents.skills.macro import (  # noqa: F401
-    yield_curve, inflation, employment,
-    fred_fetcher, ecos_fetcher,
-    divergence, calendar, regime_classifier,
-)
+from tradingagents.skills.macro import yield_curve  # noqa: F401
+from tradingagents.skills.macro import inflation  # noqa: F401
+from tradingagents.skills.macro import employment  # noqa: F401
+from tradingagents.skills.macro import fred_fetcher  # noqa: F401
+from tradingagents.skills.macro import ecos_fetcher  # noqa: F401
+from tradingagents.skills.macro import divergence  # noqa: F401
+from tradingagents.skills.macro import calendar  # noqa: F401
+from tradingagents.skills.macro import regime_classifier  # noqa: F401
 
 # Risk
-from tradingagents.skills.risk import (  # noqa: F401
-    volatility, credit_spread, fear_greed,
-    breadth, correlation_pca, systemic_score,
-)
+from tradingagents.skills.risk import volatility  # noqa: F401
+from tradingagents.skills.risk import credit_spread  # noqa: F401
+from tradingagents.skills.risk import fear_greed  # noqa: F401
+from tradingagents.skills.risk import breadth  # noqa: F401
+from tradingagents.skills.risk import correlation_pca  # noqa: F401
+from tradingagents.skills.risk import systemic_score  # noqa: F401
 
 # Technical
-from tradingagents.skills.technical import (  # noqa: F401
-    price_batch, ta_indicators, momentum_ranker,
-    trend_state, correlation_cluster,
-)
+from tradingagents.skills.technical import price_batch  # noqa: F401
+from tradingagents.skills.technical import ta_indicators  # noqa: F401
+from tradingagents.skills.technical import momentum_ranker  # noqa: F401
+from tradingagents.skills.technical import trend_state  # noqa: F401
+from tradingagents.skills.technical import correlation_cluster  # noqa: F401
 
 # News
-from tradingagents.skills.news import (  # noqa: F401
-    event_calendar, news_fetcher, impact_classifier, ranker,
-)
+from tradingagents.skills.news import event_calendar  # noqa: F401
+from tradingagents.skills.news import news_fetcher  # noqa: F401
+from tradingagents.skills.news import impact_classifier  # noqa: F401
+from tradingagents.skills.news import ranker  # noqa: F401
 
 # Portfolio
-from tradingagents.skills.portfolio import (  # noqa: F401
-    candidate_selector, returns_matrix, optimizers, method_picker,
-)
+from tradingagents.skills.portfolio import candidate_selector  # noqa: F401
+from tradingagents.skills.portfolio import returns_matrix  # noqa: F401
+from tradingagents.skills.portfolio import optimizers  # noqa: F401
+from tradingagents.skills.portfolio import method_picker  # noqa: F401
 
 # Mandate
-from tradingagents.skills.mandate import (  # noqa: F401
-    universe_check, concentration_check,
-    turnover_check, correlation_check,
-)
+from tradingagents.skills.mandate import universe_check  # noqa: F401
+from tradingagents.skills.mandate import concentration_check  # noqa: F401
+from tradingagents.skills.mandate import turnover_check  # noqa: F401
+from tradingagents.skills.mandate import correlation_check  # noqa: F401

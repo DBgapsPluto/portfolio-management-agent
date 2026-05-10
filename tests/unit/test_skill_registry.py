@@ -1,7 +1,15 @@
 import pytest
 from tradingagents.skills.registry import (
-    register_skill, get_skill, list_skills, clear_registry,
+    register_skill, get_skill, list_skills, clear_registry, _reregister_all_skills,
 )
+
+
+@pytest.fixture(autouse=True)
+def _re_register_skills_after_test():
+    """Re-register all skills after each test that uses clear_registry."""
+    yield
+    # After the test, re-register all skills so later tests aren't broken
+    _reregister_all_skills()
 
 
 def test_register_and_lookup():
