@@ -129,40 +129,38 @@ class ConditionalLogic:
 
 
 def _emergency_cash_portfolio(state, error: str = "no weight_vector") -> dict:
-    """Last-resort fallback: equal-weight across MMF/CD ETFs, padded to ≥5.
+    """Last-resort fallback: equal-weight across SAFE-bucket ETFs.
 
-    Used when even constrained optimization fails. Cannot violate mandate
-    rules: equal-weight across ≥5 assets ensures each weight ≤20%.
-    If fewer than 5 cash ETFs exist, pads with other universe ETFs to reach 5.
+    Used when even constrained optimization fails. Equal-weight across all
+    안전자산 (bonds + MMF/CD) ensures: (a) no 위험 bucket ETFs (defensive),
+    (b) each weight ≤ 20% as long as ≥5 safe ETFs exist.
     """
     universe = load_universe(state["universe_path"])
-    cash_etfs = [
-        e.ticker for e in universe.etfs
-        if e.category == "금리연계형/초단기채권"
-    ][:5]
-    if not cash_etfs:
+    safe_etfs = [e.ticker for e in universe.etfs if e.bucket == "안전"]
+
+    if len(safe_etfs) == 0:
         raise RuntimeError(
-            f"Emergency fallback failed ({error}); no cash ETFs in universe"
+            f"Emergency fallback failed ({error}); no 안전자산 ETFs in universe"
         )
 
-    # Pad to ≥5 ETFs so equal-weight ≤ 0.20 by construction.
-    if len(cash_etfs) < 5:
-        other_tickers = [
-            e.ticker for e in universe.etfs
-            if e.ticker not in cash_etfs
-        ]
-        needed = 5 - len(cash_etfs)
-        cash_etfs = cash_etfs + other_tickers[:needed]
+    # Take up to 5 safe ETFs, equal-weighted. If <5, accept >0.20 single-asset
+    # exposure but log loudly — this is an emergency path, manual review required.
+    selected = safe_etfs[:5]
+    weight = 1.0 / len(selected)
+    weights = {t: weight for t in selected}
 
-    weight = 1.0 / len(cash_etfs)
-    weights = {t: weight for t in cash_etfs}
+    cap_violation_note = (
+        ""
+        if len(selected) >= 5
+        else f" WARNING: only {len(selected)} 안전자산 ETF(s) in universe — single weight {weight:.2%} > 20% cap. Manual review CRITICAL."
+    )
 
     new_wv = WeightVector(
         method=OptimizationMethod.MIN_VARIANCE,
         weights=weights,
         rationale=(
-            f"EMERGENCY DEFENSIVE FALLBACK: equal-weight across {len(cash_etfs)} "
-            f"MMF/CD ETFs. Triggered by: {error}. Manual review required before submission."
+            f"EMERGENCY DEFENSIVE FALLBACK: equal-weight across {len(selected)} "
+            f"안전자산 ETFs. Triggered by: {error}.{cap_violation_note}"
         ),
     )
     return {

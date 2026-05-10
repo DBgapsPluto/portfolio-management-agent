@@ -28,7 +28,7 @@ def test_fail_attempt_max_falls_back():
     assert validation_router(state) == "fallback"
 
 
-def test_emergency_cash_portfolio_uses_cash_etfs(tmp_path):
+def test_emergency_cash_portfolio_uses_safe_etfs(tmp_path):
     universe_json = tmp_path / "universe.json"
     sync_from_xlsx(Path("tests/fixtures/universe_test.xlsx"), universe_json)
 
@@ -39,9 +39,12 @@ def test_emergency_cash_portfolio_uses_cash_etfs(tmp_path):
     result = _emergency_cash_portfolio(state)
     assert result["validation_passed"] is True
     new_wv = result["weight_vector"]
-    # Cash ETFs in our test universe: A459580 (금리연계형/초단기채권 — only 1)
-    assert all(w <= 0.20 + 1e-6 for w in new_wv.weights.values())
+    # Test fixture has only 2 safe ETFs (1 bond + 1 MMF) → 50% each.
+    # In real universe with ≥5 safe ETFs, each ≤ 20%.
     assert abs(sum(new_wv.weights.values()) - 1.0) < 1e-6
+    # Verify only 안전 ETFs are present (no 위험 bucket leakage).
+    safe_tickers = {"A114260", "A459580"}  # from test fixture
+    assert set(new_wv.weights.keys()).issubset(safe_tickers)
 
 
 def test_fallback_re_optimizes_with_constraints(tmp_path):
