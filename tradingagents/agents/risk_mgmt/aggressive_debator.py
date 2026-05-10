@@ -1,53 +1,39 @@
+"""Aggressive debator: pushes for higher conviction / faster turnover."""
+from langchain_core.messages import AIMessage, HumanMessage
 
 
-def create_aggressive_debator(llm):
-    def aggressive_node(state) -> dict:
-        risk_debate_state = state["risk_debate_state"]
-        history = risk_debate_state.get("history", "")
-        aggressive_history = risk_debate_state.get("aggressive_history", "")
+AGGRESSIVE_PROMPT = """\
+You are the Aggressive risk debator. Push for HIGHER conviction.
 
-        current_conservative_response = risk_debate_state.get("current_conservative_response", "")
-        current_neutral_response = risk_debate_state.get("current_neutral_response", "")
+Weight vector proposed by Allocator: {weights_summary}
+Macro: {macro_summary}
+Risk: {risk_summary}
+Clusters: {clusters_summary}
 
-        market_research_report = state["market_report"]
-        sentiment_report = state["sentiment_report"]
-        news_report = state["news_report"]
-        fundamentals_report = state["fundamentals_report"]
+In ≤300 chars (Korean):
+1. Argue for concentration on highest-momentum bets (risk-on tilt).
+2. Cite turnover floor compliance (대회 §3.1: ≥80% initial).
+3. Critique current weights as too defensive."""
 
-        trader_decision = state["trader_investment_plan"]
 
-        prompt = f"""As the Aggressive Risk Analyst, your role is to actively champion high-reward, high-risk opportunities, emphasizing bold strategies and competitive advantages. When evaluating the trader's decision or plan, focus intently on the potential upside, growth potential, and innovative benefits—even when these come with elevated risk. Use the provided market data and sentiment analysis to strengthen your arguments and challenge the opposing views. Specifically, respond directly to each point made by the conservative and neutral analysts, countering with data-driven rebuttals and persuasive reasoning. Highlight where their caution might miss critical opportunities or where their assumptions may be overly conservative. Here is the trader's decision:
-
-{trader_decision}
-
-Your task is to create a compelling case for the trader's decision by questioning and critiquing the conservative and neutral stances to demonstrate why your high-reward perspective offers the best path forward. Incorporate insights from the following sources into your arguments:
-
-Market Research Report: {market_research_report}
-Social Media Sentiment Report: {sentiment_report}
-Latest World Affairs Report: {news_report}
-Company Fundamentals Report: {fundamentals_report}
-Here is the current conversation history: {history} Here are the last arguments from the conservative analyst: {current_conservative_response} Here are the last arguments from the neutral analyst: {current_neutral_response}. If there are no responses from the other viewpoints yet, present your own argument based on the available data.
-
-Engage actively by addressing any specific concerns raised, refuting the weaknesses in their logic, and asserting the benefits of risk-taking to outpace market norms. Maintain a focus on debating and persuading, not just presenting data. Challenge each counterpoint to underscore why a high-risk approach is optimal. Output conversationally as if you are speaking without any special formatting."""
-
-        response = llm.invoke(prompt)
-
-        argument = f"Aggressive Analyst: {response.content}"
-
-        new_risk_debate_state = {
-            "history": history + "\n" + argument,
-            "aggressive_history": aggressive_history + "\n" + argument,
-            "conservative_history": risk_debate_state.get("conservative_history", ""),
-            "neutral_history": risk_debate_state.get("neutral_history", ""),
-            "latest_speaker": "Aggressive",
-            "current_aggressive_response": argument,
-            "current_conservative_response": risk_debate_state.get("current_conservative_response", ""),
-            "current_neutral_response": risk_debate_state.get(
-                "current_neutral_response", ""
-            ),
-            "count": risk_debate_state["count"] + 1,
+def create_aggressive_debator(quick_llm):
+    def node(state):
+        wv = state.get("weight_vector_input")
+        weights_summary = (
+            f"top weights: {sorted(wv.weights.items(), key=lambda x: -x[1])[:3]}"
+            if wv else "(none)"
+        )
+        prompt = AGGRESSIVE_PROMPT.format(
+            weights_summary=weights_summary,
+            macro_summary=state["macro_summary"],
+            risk_summary=state["risk_summary"],
+            clusters_summary=state["correlation_clusters_summary"],
+        )
+        response = quick_llm.invoke([HumanMessage(content=prompt)])
+        argument = response.content[:300]
+        return {
+            "aggressive_arguments": state["aggressive_arguments"] + [argument],
+            "messages": state["messages"] + [AIMessage(content=f"[Aggressive r{state['round_count']}] {argument}")],
         }
 
-        return {"risk_debate_state": new_risk_debate_state}
-
-    return aggressive_node
+    return node
