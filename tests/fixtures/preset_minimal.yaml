@@ -1,0 +1,14 @@
+name: test_preset
+universe: tests/fixtures/universe_test.json
+capital_krw: 1_000_000_000
+
+stages:
+  - id: analysts
+    parallel: true
+    agents:
+      - id: macro_quant
+        skills: [fetch_fred_series, classify_regime]
+        output_schema: MacroReport
+        model: deep
+        timeout_seconds: 180
+        skill_prompt_base: prompts/macro-analysis.md
