@@ -1,0 +1,16 @@
+triggers:
+  - name: vix_spike
+    condition: "vix > 30 OR vix_change_1d > 0.20"
+    action: emergency_defensive_proposal
+  - name: vkospi_spike
+    condition: "vkospi > 25"
+    action: emergency_defensive_proposal
+  - name: yield_curve_deep_inversion
+    condition: "spread_10y_2y_bps < -50"
+    action: alert
+  - name: kospi_drop
+    condition: "kospi_return_1d < -0.02"
+    action: alert
+  - name: drift_breach_imminent
+    condition: "any_etf_weight > 0.18"
+    action: rebalance_proposal
