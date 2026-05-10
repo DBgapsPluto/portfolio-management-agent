@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
 
+## [0.3.0] — 2026-05-10 (DB GAPS fork)
+
+**제12회 DB GAPS 투자대회용 fork.** 주식 stock-picking framework → 한국 ETF 188종목 top-down 자산배분 시스템으로 전면 재설계.
+
+### Added
+- 22 CLI 명령 (`gaps universe/macro/portfolio/analysis/report/monitor/preset`)
+- 4 분석가 노드: macro_quant, market_risk, technical, macro_news
+- Hybrid LangGraph topology γ: stage 간 summary handoff + debate cluster 내 shared state
+- Pydantic v2 schema-locked outputs (모든 LLM structured output)
+- PyPortfolioOpt 기반 4 optimizer (HRP, Risk Parity, Min Variance, Black-Litterman) — constraint injection으로 단일 ETF ≤20% 제약 해결
+- Validator → Allocator cycle (D4): 위반 시 재시도 후 fallback normalizer로 clip+renormalize
+- Tiered cache (D5): D1 hit on live failure, max staleness 7일
+- 3-tier rebalancing: daily 트리거 (룰 기반, 안전 condition parser), weekly tilt (macro+risk만), monthly full pipeline
+- 3 산출물 생성기: philosophy.md (≥4000자), monthly report (3섹션), trade_plan.csv (MTS 입력용)
+- 4 monitor 명령: turnover floor (초기 80%, 월 10%), exposure, drift, cost
+- 6 mock fixture + 5/28 E2E gold-standard 통합 테스트
+- 8-case regime classifier eval (`pytest -m eval`)
+- Preset YAML 시스템 + skill registry (Vibe-Trading 스타일)
+- LangSmith tracing (선택 활성화)
+- pandas-ta (TA-Lib 대신 pure-Python 의존성)
+- Tenacity 기반 외부 API retry decorator
+- Publication lag aware FRED/ECOS fetcher (look-ahead bias 방지)
+
+### Changed
+- `cli/main.py`: legacy typer 제거, Click 기반 dispatcher로 재작성
+- `tradingagents/graph/trading_graph.py`: 395줄 → 132줄, preset-driven entry point
+
+### Removed
+- 주식 분석가 (fundamentals/sentiment/news at the stock level) — top-down 매크로 분석으로 대체
+- LangChain memory wrapper — D8에 따라 deprecate (v1 단일 사이클 전제)
+
+### Mandate compliance (자동 검증)
+- 위험자산 ≤ 70%
+- 단일 ETF ≤ 20% (allocator 제약 주입)
+- 회전율 floor (cap 없음)
+- 88종 ETF 풀 외 매수 금지
+
 ## [0.2.4] — 2026-04-25
 
 ### Added

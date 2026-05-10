@@ -25,7 +25,70 @@
 
 ---
 
+# DB GAPS Asset Allocation Agent (v0.3 — fork)
+
+**제12회 DB GAPS 투자대회용 fork.** 원본 TradingAgents v0.2.4(주식 stock-picking) → 한국 ETF 188종목 top-down 자산배분 시스템으로 전환.
+
+## Setup
+
+1. Install: `pip install -e ".[test]"` (pure Python — TA-Lib 시스템 패키지 불필요)
+2. API keys: `.env`에 `FRED_API_KEY`, `ECOS_API_KEY`, `OPENAI_API_KEY` 등
+3. (선택) Tracing: `.env`에 `LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY=...`, `LANGSMITH_PROJECT=db-gaps-agent`. 활성화 시 모든 multi-agent run이 https://smith.langchain.com/ 에 trace됨.
+4. Universe sync: `gaps universe sync`
+
+## 5/28 제출용 파이프라인
+
+```bash
+gaps universe sync                                # 188 ETF JSON
+gaps macro regime --date 2026-05-25               # 매크로 진단 빠른 확인
+gaps plan --date 2026-05-25 --capital 1000000000  # 풀 파이프라인 (3 산출물)
+gaps validate --portfolio artifacts/2026-05-25/portfolio.json
+gaps correlate --portfolio artifacts/2026-05-25/portfolio.json --cluster
+gaps report philosophy --portfolio artifacts/2026-05-25/portfolio.json
+gaps report trade-plan --portfolio artifacts/2026-05-25/portfolio.json
+```
+
+## 운용 중 (6/1~8/31)
+
+```bash
+gaps rebalance daily                              # 매일 (트리거 평가, LLM 없음)
+gaps rebalance weekly --week 24                   # 매주 금요일 (macro+risk)
+gaps rebalance monthly --month 6                  # 월말 (풀 파이프라인)
+gaps monitor turnover --transactions june.csv     # 컷오프 floor 추적
+gaps report monthly --month 6 --actual june_pnl.csv
+```
+
+## CLI 전체 (22개 명령)
+
+| 그룹 | 명령 |
+|---|---|
+| `universe` | `sync`, `list`, `info` |
+| `macro` | `regime`, `risk`, `news`, `technical` (단독 분석가 디버그) |
+| `portfolio` | `plan`, `rebalance {daily,weekly,monthly}`, `optimize` |
+| `analysis` | `correlate`, `validate`, `simulate` |
+| `report` | `philosophy`, `monthly`, `trade-plan` |
+| `monitor` | `turnover`, `exposure`, `drift`, `cost` |
+| `preset` | `list`, `run` |
+
+## 설계 문서
+
+- 디자인 스펙: `docs/superpowers/specs/2026-05-09-db-gaps-agent-redesign-design.md`
+- 4개 plan: `docs/superpowers/plans/2026-05-10-db-gaps-plan-{1-foundation,2-skills,3-agents,4-cli}.md`
+- 사전 요구: `docs/db-gaps-prerequisites.md`
+- 미해결 follow-up: `TODOS.md`
+
+## DB GAPS mandate (자동 검증)
+
+- 위험자산 ≤ 70% (단순 합산 + 상관관계 cluster cap)
+- 단일 ETF ≤ 20% (Allocator 제약 주입)
+- 회전율 floor: 초기 5영업일 ≥80%, 월간 ≥10% (cap 없음, monitor만)
+- 88종 ETF 풀 외 종목 매수 금지
+
+---
+
 # TradingAgents: Multi-Agents LLM Financial Trading Framework
+
+> 아래는 upstream TradingAgents v0.2.4의 원본 README입니다 (참고용).
 
 ## News
 - [2026-04] **TradingAgents v0.2.4** released with structured-output agents (Research Manager, Trader, Portfolio Manager), LangGraph checkpoint resume, persistent decision log, DeepSeek/Qwen/GLM/Azure provider support, Docker, and a Windows UTF-8 encoding fix. See [CHANGELOG.md](CHANGELOG.md) for the full list.
