@@ -7,7 +7,7 @@ from typing import Literal, Optional
 import openpyxl
 from pydantic import BaseModel, Field
 
-TICKER_RE = re.compile(r"^A\d{6}[A-Z0-9]?$")
+TICKER_RE = re.compile(r"^A[A-Z0-9]{6}$")
 
 
 class ETFEntry(BaseModel):

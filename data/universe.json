@@ -1,0 +1,1885 @@
+{
+  "version": "2026-05-11",
+  "etfs": [
+    {
+      "ticker": "A411060",
+      "name": "ACE KRX금현물",
+      "aum_krw": 5230295139554.0,
+      "underlying_index": "KRX 금현물지수",
+      "bucket": "위험",
+      "category": "FX 및 원자재",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A144600",
+      "name": "KODEX 은선물(H)",
+      "aum_krw": 1459015502544.0,
+      "underlying_index": "S&P GSCI Silver Index(TR)",
+      "bucket": "위험",
+      "category": "FX 및 원자재",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A132030",
+      "name": "KODEX 골드선물(H)",
+      "aum_krw": 482127413590.0,
+      "underlying_index": "S&P GSCI Gold Index(TR)",
+      "bucket": "위험",
+      "category": "FX 및 원자재",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A261220",
+      "name": "KODEX WTI원유선물(H)",
+      "aum_krw": 142822392670.0,
+      "underlying_index": "S&P GSCI Crude Oil Index ER",
+      "bucket": "위험",
+      "category": "FX 및 원자재",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A261240",
+      "name": "KODEX 미국달러선물",
+      "aum_krw": 72362572938.0,
+      "underlying_index": "미국달러 선물지수",
+      "bucket": "위험",
+      "category": "FX 및 원자재",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A292560",
+      "name": "TIGER 일본엔선물",
+      "aum_krw": 54154961750.99999,
+      "underlying_index": "엔선물지수",
+      "bucket": "위험",
+      "category": "FX 및 원자재",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A271060",
+      "name": "KODEX 3대농산물선물(H)",
+      "aum_krw": 25219357923.0,
+      "underlying_index": "S&P GSCI Grains Select Index Excess Return",
+      "bucket": "위험",
+      "category": "FX 및 원자재",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A360750",
+      "name": "TIGER 미국S&P500",
+      "aum_krw": 14782104013220.0,
+      "underlying_index": "S&P 500",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A379800",
+      "name": "KODEX 미국S&P500",
+      "aum_krw": 8108923113207.0,
+      "underlying_index": "S&P 500",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A133690",
+      "name": "TIGER 미국나스닥100",
+      "aum_krw": 7973024624512.999,
+      "underlying_index": "NASDAQ 100",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A379810",
+      "name": "KODEX 미국나스닥100",
+      "aum_krw": 5531852446159.0,
+      "underlying_index": "NASDAQ 100",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A381180",
+      "name": "TIGER 미국필라델피아반도체나스닥",
+      "aum_krw": 3410008970379.9995,
+      "underlying_index": "PHLX Semiconductor Sector Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A360200",
+      "name": "ACE 미국S&P500",
+      "aum_krw": 3347488036791.0,
+      "underlying_index": "S&P 500",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A367380",
+      "name": "ACE 미국나스닥100",
+      "aum_krw": 2732295636301.0,
+      "underlying_index": "NASDAQ 100",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A379780",
+      "name": "RISE 미국S&P500",
+      "aum_krw": 1414662543401.0,
+      "underlying_index": "S&P 500",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A371160",
+      "name": "TIGER 차이나항셍테크",
+      "aum_krw": 913367859973.0,
+      "underlying_index": "Hang Seng TECH Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A449180",
+      "name": "KODEX 미국S&P500(H)",
+      "aum_krw": 694636009240.0,
+      "underlying_index": "S&P 500",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A251350",
+      "name": "KODEX 선진국MSCI World",
+      "aum_krw": 491347326219.0,
+      "underlying_index": "MSCI World",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A448290",
+      "name": "TIGER 미국S&P500TR(H)",
+      "aum_krw": 437067962406.99994,
+      "underlying_index": "S&P 500 Total Return Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A241180",
+      "name": "TIGER 일본니케이225",
+      "aum_krw": 427864264062.0,
+      "underlying_index": "Nikkei 225",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A453810",
+      "name": "KODEX 인도Nifty50",
+      "aum_krw": 410283897848.0,
+      "underlying_index": "Nifty 50 Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A453870",
+      "name": "TIGER 인도니프티50",
+      "aum_krw": 395146661363.0,
+      "underlying_index": "Nifty 50 Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A245710",
+      "name": "ACE 베트남VN30(합성)",
+      "aum_krw": 315462433865.0,
+      "underlying_index": "VN30 Index(PR)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A448300",
+      "name": "TIGER 미국나스닥100TR(H)",
+      "aum_krw": 296306423559.0,
+      "underlying_index": "NASDAQ-100 Total Return Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A283580",
+      "name": "KODEX 차이나CSI300",
+      "aum_krw": 282481245406.0,
+      "underlying_index": "CSI 300",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A200250",
+      "name": "KIWOOM 인도Nifty50(합성)",
+      "aum_krw": 221459967708.00003,
+      "underlying_index": "Nifty 50 Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A414780",
+      "name": "TIGER 차이나과창판STAR50(합성)",
+      "aum_krw": 206758432723.0,
+      "underlying_index": "STAR 50 Index(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A372330",
+      "name": "KODEX 차이나항셍테크",
+      "aum_krw": 162712416371.0,
+      "underlying_index": "Hang Seng TECH Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A192090",
+      "name": "TIGER 차이나CSI300",
+      "aum_krw": 157478748503.0,
+      "underlying_index": "CSI 300",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A219480",
+      "name": "KODEX 미국S&P500선물(H)",
+      "aum_krw": 143665081400.0,
+      "underlying_index": "S&P 500 Futures Total Return Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A245340",
+      "name": "TIGER 미국다우존스30",
+      "aum_krw": 141207205194.0,
+      "underlying_index": "Dow Jones Industrial Average",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A168580",
+      "name": "ACE 중국본토CSI300",
+      "aum_krw": 130129454887.0,
+      "underlying_index": "CSI 300",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A488500",
+      "name": "TIGER 미국S&P500동일가중",
+      "aum_krw": 129316050475.0,
+      "underlying_index": "S&P 500 Equal Weight Index(PR)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A304940",
+      "name": "KODEX 미국나스닥100선물(H)",
+      "aum_krw": 105612884844.0,
+      "underlying_index": "NASDAQ 100",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A143850",
+      "name": "TIGER 미국S&P500선물(H)",
+      "aum_krw": 98153194262.0,
+      "underlying_index": "S&P 500 Futures Index(ER)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A195980",
+      "name": "PLUS 신흥국MSCI(합성 H)",
+      "aum_krw": 91982983884.0,
+      "underlying_index": "MSCI EM Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A101280",
+      "name": "KODEX 일본TOPIX100",
+      "aum_krw": 62378675844.0,
+      "underlying_index": "TOPIX100",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A099140",
+      "name": "KODEX 차이나H",
+      "aum_krw": 43695107875.0,
+      "underlying_index": "HSCEI (Hang Seng China Enterprise Index)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A245360",
+      "name": "TIGER 차이나HSCEI",
+      "aum_krw": 40007730071.0,
+      "underlying_index": "HSCEI (Hang Seng China Enterprise Index)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A238720",
+      "name": "ACE 일본Nikkei225(H)",
+      "aum_krw": 35937966694.0,
+      "underlying_index": "Nikkei 225",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A195930",
+      "name": "TIGER 유로스탁스50(합성 H)",
+      "aum_krw": 35390971562.0,
+      "underlying_index": "EURO STOXX50",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A256440",
+      "name": "ACE 인도네시아MSCI(합성)",
+      "aum_krw": 34525580522.0,
+      "underlying_index": "MSCI Indonesia Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A280930",
+      "name": "KODEX 미국러셀2000(H)",
+      "aum_krw": 32619513723.0,
+      "underlying_index": "FTSE Russell 2000 Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A195970",
+      "name": "PLUS 선진국MSCI(합성 H)",
+      "aum_krw": 24351877125.0,
+      "underlying_index": "MSCI EAFE Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A250730",
+      "name": "RISE 차이나HSCEI(H)",
+      "aum_krw": 17173961487.0,
+      "underlying_index": "HSCEI (Hang Seng China Enterprise Index)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A291130",
+      "name": "ACE 멕시코MSCI(합성)",
+      "aum_krw": 17092915274.999998,
+      "underlying_index": "MSCI MEXICO IMI 25/50 Price return Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A195920",
+      "name": "TIGER 일본TOPIX(합성 H)",
+      "aum_krw": 15948014692.999998,
+      "underlying_index": "TOPIX",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A310080",
+      "name": "RISE 중국MSCI China(H)",
+      "aum_krw": 11946727456.0,
+      "underlying_index": "MSCI China NTR Index(USD) (Net Total Return)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A105010",
+      "name": "TIGER 라틴35",
+      "aum_krw": 11311875027.0,
+      "underlying_index": "BNY Latin America 35 ADR Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A379790",
+      "name": "RISE 유로스탁스50(H)",
+      "aum_krw": 10897333040.0,
+      "underlying_index": "EURO STOXX50",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A411860",
+      "name": "KIWOOM 독일DAX",
+      "aum_krw": 10379447883.0,
+      "underlying_index": "DAX Index(PR)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A499150",
+      "name": "SOL 미국S&P500엔화노출(H)",
+      "aum_krw": 8453536625.0,
+      "underlying_index": "S&P500 Yen Hedged Index(PR)",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A189400",
+      "name": "PLUS 글로벌MSCI(합성 H)",
+      "aum_krw": 6973852927.0,
+      "underlying_index": "MSCI ACWI Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A261920",
+      "name": "ACE 필리핀MSCI(합성)",
+      "aum_krw": 5674640747.0,
+      "underlying_index": "MSCI Philippines IMI Index",
+      "bucket": "위험",
+      "category": "해외주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A381170",
+      "name": "TIGER 미국테크TOP10 INDXX",
+      "aum_krw": 3800908677385.0,
+      "underlying_index": "Indxx US Tech Top 10 Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A458730",
+      "name": "TIGER 미국배당다우존스",
+      "aum_krw": 3037854142589.0,
+      "underlying_index": "Dow Jones U.S. Dividend 100 Price Return Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A487230",
+      "name": "KODEX 미국AI전력핵심인프라",
+      "aum_krw": 1363066851865.0,
+      "underlying_index": "iSelect 미국AI전력핵심인프라 지수(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A371460",
+      "name": "TIGER 차이나전기차SOLACTIVE",
+      "aum_krw": 1302721891710.0,
+      "underlying_index": "Solactive China Electric Vehicle and Battery Index(PR)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A457480",
+      "name": "ACE 테슬라밸류체인액티브",
+      "aum_krw": 1148655027159.0,
+      "underlying_index": "Bloomberg EV Supporters Plus Tesla Price Return Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A456600",
+      "name": "TIME 글로벌AI인공지능액티브",
+      "aum_krw": 1074373077435.0,
+      "underlying_index": "Solactive Global Artificial Intelligence 지수",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A465580",
+      "name": "ACE 미국빅테크TOP7 Plus",
+      "aum_krw": 971632714827.9999,
+      "underlying_index": "Solactive US Big Tech Top 7 Plus Price Return Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A446770",
+      "name": "ACE 글로벌반도체TOP4 Plus",
+      "aum_krw": 967113412051.0,
+      "underlying_index": "Solactive Global Semiconductor TOP4 Plus Price Return Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A446720",
+      "name": "SOL 미국배당다우존스",
+      "aum_krw": 914028591506.0,
+      "underlying_index": "Dow Jones U.S. Dividend 100 Price Return Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A497570",
+      "name": "TIGER 미국필라델피아AI반도체나스닥",
+      "aum_krw": 818810308430.0,
+      "underlying_index": "PHLX US AI Semiconductor 지수 (PR)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A402970",
+      "name": "ACE 미국배당다우존스",
+      "aum_krw": 781695914942.0,
+      "underlying_index": "Dow Jones U.S. Dividend 100 Price Return Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A390390",
+      "name": "KODEX 미국반도체",
+      "aum_krw": 780937329928.0,
+      "underlying_index": "MVIS US Listed Semiconductor 25 Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A452360",
+      "name": "SOL 미국배당다우존스(H)",
+      "aum_krw": 202647198821.0,
+      "underlying_index": "Dow Jones U.S. Dividend 100 Price Return Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A182480",
+      "name": "TIGER 미국MSCI리츠(합성 H)",
+      "aum_krw": 166571720481.0,
+      "underlying_index": "MSCI US REIT INDEX",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A429000",
+      "name": "TIGER 미국S&P500배당귀족",
+      "aum_krw": 155568388744.0,
+      "underlying_index": "S&P 500 Dividend Aristocrats 지수 (Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A463680",
+      "name": "KODEX 미국S&P500테크놀로지",
+      "aum_krw": 64829648951.0,
+      "underlying_index": "S&P Technology Select Sector Index(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A453640",
+      "name": "KODEX 미국S&P500헬스케어",
+      "aum_krw": 64290036558.0,
+      "underlying_index": "S&P Health Care Select Sector Index(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A200030",
+      "name": "KODEX 미국S&P500산업재(합성)",
+      "aum_krw": 50019536821.0,
+      "underlying_index": "S&P Select Sector Industrial Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A453650",
+      "name": "KODEX 미국S&P500금융",
+      "aum_krw": 43512509979.0,
+      "underlying_index": "S&P Financial Select Sector Index(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A218420",
+      "name": "KODEX 미국S&P500에너지(합성)",
+      "aum_krw": 40968487661.0,
+      "underlying_index": "S&P Select Sector Energy Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A352560",
+      "name": "KODEX 미국부동산리츠(H)",
+      "aum_krw": 33226324968.0,
+      "underlying_index": "Dow Jones U.S. Real Estate PR Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A493420",
+      "name": "SOL 미국배당다우존스TR",
+      "aum_krw": 32528881679.0,
+      "underlying_index": "Dow Jones U.S. Dividend 100 Index(TR)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A287180",
+      "name": "PLUS 미국나스닥테크",
+      "aum_krw": 31558439349.000004,
+      "underlying_index": "NASDAQ 100 Technology Sector Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A245350",
+      "name": "TIGER 유로스탁스배당30",
+      "aum_krw": 29579144886.0,
+      "underlying_index": "Euro STOXX Select Dividend 30",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A494410",
+      "name": "PLUS 미국S&P500성장주",
+      "aum_krw": 28736218069.0,
+      "underlying_index": "S&P 500 Growth Index(PR)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A460660",
+      "name": "RISE 미국S&P배당킹",
+      "aum_krw": 24493118140.0,
+      "underlying_index": "S&P Dividend Monarchs Index(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A185680",
+      "name": "KODEX 미국S&P바이오(합성)",
+      "aum_krw": 19978889657.0,
+      "underlying_index": "S&P Biotechnology Select Industry Index",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A453630",
+      "name": "KODEX 미국S&P500필수소비재",
+      "aum_krw": 17608321531.0,
+      "underlying_index": "S&P Consumer Staples Select Sector Index(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A463640",
+      "name": "KODEX 미국S&P500유틸리티",
+      "aum_krw": 16180314041.0,
+      "underlying_index": "S&P Utilities Select Sector Index(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A453660",
+      "name": "KODEX 미국S&P500경기소비재",
+      "aum_krw": 13852085664.0,
+      "underlying_index": "S&P Consumer Discretionary Select Sector Index(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A463690",
+      "name": "KODEX 미국S&P500커뮤니케이션",
+      "aum_krw": 13098192603.000002,
+      "underlying_index": "S&P Communication Services Select Sector Index(Price Return)",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A069500",
+      "name": "KODEX 200",
+      "aum_krw": 16480259556095.0,
+      "underlying_index": "코스피 200",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A229200",
+      "name": "KODEX 코스닥150",
+      "aum_krw": 7183879304107.001,
+      "underlying_index": "코스닥 150",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A102110",
+      "name": "TIGER 200",
+      "aum_krw": 6789705677716.0,
+      "underlying_index": "코스피 200",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A278530",
+      "name": "KODEX 200TR",
+      "aum_krw": 5255935871376.0,
+      "underlying_index": "코스피 200 TR지수",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A310970",
+      "name": "TIGER MSCI Korea TR",
+      "aum_krw": 3937961457690.9995,
+      "underlying_index": "MSCI Korea TR Index",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A148020",
+      "name": "RISE 200",
+      "aum_krw": 2900676641124.0,
+      "underlying_index": "코스피 200",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A232080",
+      "name": "TIGER 코스닥150",
+      "aum_krw": 2209770976952.0,
+      "underlying_index": "코스닥 150",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A278540",
+      "name": "KODEX MSCI Korea TR",
+      "aum_krw": 2121588895186.0,
+      "underlying_index": "MSCI Korea TR Index",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A294400",
+      "name": "KIWOOM 200TR",
+      "aum_krw": 1537480251041.0,
+      "underlying_index": "코스피 200 TR지수",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A152100",
+      "name": "PLUS 200",
+      "aum_krw": 1305144116276.0,
+      "underlying_index": "코스피 200",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A226490",
+      "name": "KODEX 코스피",
+      "aum_krw": 793861869352.0,
+      "underlying_index": "코스피지수",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A361580",
+      "name": "RISE 200TR",
+      "aum_krw": 384207589227.0,
+      "underlying_index": "코스피 200 TR지수",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A277630",
+      "name": "TIGER 코스피",
+      "aum_krw": 380966320904.0,
+      "underlying_index": "코스피지수",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A295040",
+      "name": "SOL 200TR",
+      "aum_krw": 354029384011.0,
+      "underlying_index": "코스피 200 TR지수",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A302450",
+      "name": "RISE 코스피",
+      "aum_krw": 331039254776.0,
+      "underlying_index": "코스피지수",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A328370",
+      "name": "PLUS 코스피TR",
+      "aum_krw": 107043056390.0,
+      "underlying_index": "코스피 TR",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A156080",
+      "name": "KODEX MSCI Korea",
+      "aum_krw": 29368222609.999996,
+      "underlying_index": "MSCI Korea Index",
+      "bucket": "위험",
+      "category": "국내주식_지수",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A091160",
+      "name": "KODEX 반도체",
+      "aum_krw": 3601893984766.0005,
+      "underlying_index": "KRX 반도체",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A161510",
+      "name": "PLUS 고배당주",
+      "aum_krw": 2362402480438.0,
+      "underlying_index": "FnGuide 배당주 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A102780",
+      "name": "KODEX 삼성그룹",
+      "aum_krw": 2350825273202.0,
+      "underlying_index": "MKF 삼성그룹지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A395160",
+      "name": "KODEX AI반도체",
+      "aum_krw": 2094740437176.0,
+      "underlying_index": "FnGuide AI반도체지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A466920",
+      "name": "SOL 조선TOP3플러스",
+      "aum_krw": 1873322514037.0,
+      "underlying_index": "FnGuide 조선TOP3플러스지수(PR)",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A305720",
+      "name": "KODEX 2차전지산업",
+      "aum_krw": 1818723424519.0,
+      "underlying_index": "FnGuide 2차전지 산업 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A449450",
+      "name": "PLUS K방산",
+      "aum_krw": 1780252742971.0,
+      "underlying_index": "FnGuide K-방위산업 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A487240",
+      "name": "KODEX AI전력핵심설비",
+      "aum_krw": 1591374503525.0,
+      "underlying_index": "iSelect AI 전력핵심설비 지수(Price Return)",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A395270",
+      "name": "HANARO Fn K-반도체",
+      "aum_krw": 1466399750144.0,
+      "underlying_index": "FnGuide K-반도체 지수 (시장가격)",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A315930",
+      "name": "KODEX Top5PlusTR",
+      "aum_krw": 1367473402328.0,
+      "underlying_index": "FnGuide TOP 5 Plus Total Return 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A305540",
+      "name": "TIGER 2차전지테마",
+      "aum_krw": 1137640737456.0,
+      "underlying_index": "WISE 2차전지 테마 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A494670",
+      "name": "TIGER 조선TOP10",
+      "aum_krw": 993837361579.9999,
+      "underlying_index": "iSelect 조선TOP10 Index(PR)",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A445290",
+      "name": "KODEX 로봇액티브",
+      "aum_krw": 979287505888.0,
+      "underlying_index": "iSelect K-로봇테마 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A455850",
+      "name": "SOL AI반도체소부장",
+      "aum_krw": 968672377793.0,
+      "underlying_index": "FnGuide AI 반도체 소부장 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A466940",
+      "name": "TIGER 은행고배당플러스TOP10",
+      "aum_krw": 936429343773.0001,
+      "underlying_index": "FnGuide 은행고배당플러스TOP10 지수(시장가격 지수)",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A463250",
+      "name": "TIGER K방산&우주",
+      "aum_krw": 883014076037.0001,
+      "underlying_index": "iSelect K방산&우주",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A139260",
+      "name": "TIGER 200 IT",
+      "aum_krw": 819871588545.0,
+      "underlying_index": "코스피 200 정보기술",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A462010",
+      "name": "TIGER 2차전지소재Fn",
+      "aum_krw": 784026428708.0,
+      "underlying_index": "FnGuide 2차전지소재 (Price Return) 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A434730",
+      "name": "HANARO 원자력iSelect",
+      "aum_krw": 736412531036.0,
+      "underlying_index": "iSelect 원자력지수 (시장가격)",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A091180",
+      "name": "KODEX 자동차",
+      "aum_krw": 522428391859.0,
+      "underlying_index": "KRX 자동차",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A091170",
+      "name": "KODEX 은행",
+      "aum_krw": 456892863147.0,
+      "underlying_index": "KRX 은행",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A139230",
+      "name": "TIGER 200 중공업",
+      "aum_krw": 392791921249.0,
+      "underlying_index": "코스피 200 중공업",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A325010",
+      "name": "KODEX 성장주",
+      "aum_krw": 149512828363.0,
+      "underlying_index": "FnGuide 성장 지수(PR)",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A363580",
+      "name": "KODEX 200IT TR",
+      "aum_krw": 102094098663.0,
+      "underlying_index": "코스피 200 정보기술 TR",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A139220",
+      "name": "TIGER 200 건설",
+      "aum_krw": 49146616595.0,
+      "underlying_index": "코스피 200 건설",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A139270",
+      "name": "TIGER 200 금융",
+      "aum_krw": 42970847057.0,
+      "underlying_index": "코스피 200 금융",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A227540",
+      "name": "TIGER 200 헬스케어",
+      "aum_krw": 31563668128.0,
+      "underlying_index": "코스피 200 헬스케어",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A147970",
+      "name": "TIGER 모멘텀",
+      "aum_krw": 29415219844.0,
+      "underlying_index": "FnGuide 모멘텀 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A139250",
+      "name": "TIGER 200 에너지화학",
+      "aum_krw": 28829418292.999996,
+      "underlying_index": "코스피 200 에너지/화학",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A174350",
+      "name": "TIGER 로우볼",
+      "aum_krw": 9418999758.0,
+      "underlying_index": "FnGuide 로우볼 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A227550",
+      "name": "TIGER 200 산업재",
+      "aum_krw": 9099158046.0,
+      "underlying_index": "코스피 200 산업재",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A227570",
+      "name": "TIGER 우량가치",
+      "aum_krw": 8781657194.0,
+      "underlying_index": "FnGuide 퀄리티 밸류 지수",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A139290",
+      "name": "TIGER 200 경기소비재",
+      "aum_krw": 8322098393.0,
+      "underlying_index": "코스피 200 경기소비재",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A139240",
+      "name": "TIGER 200 철강소재",
+      "aum_krw": 7216454663.0,
+      "underlying_index": "코스피 200 철강/소재",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A315270",
+      "name": "TIGER 200커뮤니케이션서비스",
+      "aum_krw": 6570773715.999999,
+      "underlying_index": "코스피 200 커뮤니케이션서비스",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A227560",
+      "name": "TIGER 200 생활소비재",
+      "aum_krw": 4202337876.0,
+      "underlying_index": "코스피 200 생활소비재",
+      "bucket": "위험",
+      "category": "국내주식_섹터",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A459580",
+      "name": "KODEX CD금리액티브(합성)",
+      "aum_krw": 7973137553963.999,
+      "underlying_index": "KAP 양도성예금증서(CD)금리지수(총수익지수)",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A488770",
+      "name": "KODEX 머니마켓액티브",
+      "aum_krw": 7289110641535.0,
+      "underlying_index": "KAP MMF 지수(TR)",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A423160",
+      "name": "KODEX KOFR금리액티브(합성)",
+      "aum_krw": 4304532486773.9995,
+      "underlying_index": "KOFR 지수",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A455890",
+      "name": "RISE 머니마켓액티브",
+      "aum_krw": 2240560647748.0,
+      "underlying_index": "KIS 시가평가 MMF 지수 (총수익지수)",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A469830",
+      "name": "SOL 초단기채권액티브",
+      "aum_krw": 909197106435.9999,
+      "underlying_index": "KAP 단기자금시장지수",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A153130",
+      "name": "KODEX 단기채권",
+      "aum_krw": 732147900431.0,
+      "underlying_index": "KRW Cash Index(총수익)",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A456610",
+      "name": "TIGER 미국달러SOFR금리액티브(합성)",
+      "aum_krw": 655023731659.0,
+      "underlying_index": "Solactive SOFR Daily Total Return Index",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A196230",
+      "name": "RISE 단기통안채",
+      "aum_krw": 208071810414.0,
+      "underlying_index": "KIS MSB 5M Index(총수익)",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A455960",
+      "name": "RISE 미국달러SOFR금리액티브(합성)",
+      "aum_krw": 60150426212.0,
+      "underlying_index": "KAP SOFR 지수",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A468370",
+      "name": "KODEX iShares미국인플레이션국채액티브",
+      "aum_krw": 18726915085.0,
+      "underlying_index": "ICE U.S. Treasury Inflation Linked Bond Index(Total Return)",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A430500",
+      "name": "KIWOOM 물가채KIS",
+      "aum_krw": 11290431506.0,
+      "underlying_index": "KIS TIPS 지수 (Total Return)",
+      "bucket": "안전",
+      "category": "금리연계형/초단기채권",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A458260",
+      "name": "TIGER 미국투자등급회사채액티브(H)",
+      "aum_krw": 288262280556.0,
+      "underlying_index": "iBoxx USD Liquid Investment Grade Index(Price Return)",
+      "bucket": "안전",
+      "category": "해외채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A468380",
+      "name": "KODEX iShares미국하이일드액티브",
+      "aum_krw": 116024404347.0,
+      "underlying_index": "ICE BofAML US HY Constrained Index(Total Return)",
+      "bucket": "안전",
+      "category": "해외채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A455660",
+      "name": "ACE 미국하이일드액티브(H)",
+      "aum_krw": 52813479198.00001,
+      "underlying_index": "Markit iBoxx USD Liquid High Yield Total Return Index",
+      "bucket": "안전",
+      "category": "해외채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A468630",
+      "name": "KODEX iShares미국투자등급회사채액티브",
+      "aum_krw": 36676562888.0,
+      "underlying_index": "Markit iBoxx USD Liquid Investment Grade Index(Total Return)",
+      "bucket": "안전",
+      "category": "해외채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A332620",
+      "name": "PLUS 미국장기우량회사채",
+      "aum_krw": 20804740072.0,
+      "underlying_index": "ICE BofaAML 15+ Year AAA-A US Corporate Index(총수익지수)",
+      "bucket": "안전",
+      "category": "해외채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A332610",
+      "name": "PLUS 미국단기회사채(AAA~A)",
+      "aum_krw": 13119421742.0,
+      "underlying_index": "ICE BofaAML 1-3 Year AAA-A US Corporate Index(총수익지수)",
+      "bucket": "안전",
+      "category": "해외채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A182490",
+      "name": "TIGER 단기선진하이일드(합성 H)",
+      "aum_krw": 8228340523.0,
+      "underlying_index": "Markit iBoxx USD Liquid High Yield 0-5 year Index",
+      "bucket": "안전",
+      "category": "해외채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A453850",
+      "name": "ACE 미국30년국채액티브(H)",
+      "aum_krw": 1819957746795.0,
+      "underlying_index": "Bloomberg U.S Treasury 20+ Year Total Return Index",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A458250",
+      "name": "TIGER 미국30년국채스트립액티브(합성 H)",
+      "aum_krw": 623106938043.0,
+      "underlying_index": "ICE BofA Long US Treasury Principal STRIPS Index",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A484790",
+      "name": "KODEX 미국30년국채액티브(H)",
+      "aum_krw": 593383907378.0,
+      "underlying_index": "KEDI-KAP 미국 국채 20+ 지수(TR)",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A329750",
+      "name": "TIGER 미국달러단기채권액티브",
+      "aum_krw": 470844481929.0,
+      "underlying_index": "KIS U.S. TREASURY BOND 0-1Y 지수",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A472870",
+      "name": "RISE 미국30년국채엔화노출(합성 H)",
+      "aum_krw": 357025812557.0,
+      "underlying_index": "KIS 미국채30년 엔화노출 지수(USD/JPY 헤지)(총수익지수)",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A476760",
+      "name": "ACE 미국30년국채액티브",
+      "aum_krw": 317101357445.0,
+      "underlying_index": "Bloomberg U.S Treasury 20+ Year Total Return Index",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A305080",
+      "name": "TIGER 미국채10년선물",
+      "aum_krw": 244630667878.0,
+      "underlying_index": "S&P 10-Year U.S. Treasury Note Futures(ER)",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A308620",
+      "name": "KODEX 미국10년국채선물",
+      "aum_krw": 113782528228.0,
+      "underlying_index": "S&P 10-Year U.S. Treasury Note Futures KRW(ER)",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A476750",
+      "name": "ACE 미국30년국채엔화노출액티브(H)",
+      "aum_krw": 85982195182.0,
+      "underlying_index": "Bloomberg U.S. Treasury 20+ Year Total Return Index T1530 JPY Currency Hedged",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A489000",
+      "name": "PLUS 일본엔화초단기국채(합성)",
+      "aum_krw": 21946019949.0,
+      "underlying_index": "KAP 일본 단기 국채 지수(총수익)",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A267440",
+      "name": "RISE 미국장기국채선물(H)",
+      "aum_krw": 5107226581.0,
+      "underlying_index": "S&P U.S. Treasury Bond Futures Excess Return Index",
+      "bucket": "안전",
+      "category": "해외채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A273130",
+      "name": "KODEX 종합채권(AA-이상)액티브",
+      "aum_krw": 3848433664811.0,
+      "underlying_index": "KAP 한국종합채권지수",
+      "bucket": "안전",
+      "category": "국내채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A385540",
+      "name": "RISE 종합채권(A-이상)액티브",
+      "aum_krw": 1773685026174.0,
+      "underlying_index": "KIS 종합채권 지수(A-이상)(총수익지수)",
+      "bucket": "안전",
+      "category": "국내채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A0061Z0",
+      "name": "RISE 단기특수은행채액티브",
+      "aum_krw": 1284276049592.0,
+      "underlying_index": "KAP 단기 특수은행채 지수(시장가격)",
+      "bucket": "안전",
+      "category": "국내채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A451540",
+      "name": "TIGER 종합채권(AA-이상)액티브",
+      "aum_krw": 1013353245855.0,
+      "underlying_index": "KIS 종합채권 AA-이상 총수익 지수(Total return Index)",
+      "bucket": "안전",
+      "category": "국내채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A438330",
+      "name": "TIGER 투자등급회사채액티브",
+      "aum_krw": 698399711172.0,
+      "underlying_index": "KIS 투자등급회사채 지수(총수익)",
+      "bucket": "안전",
+      "category": "국내채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A0016X0",
+      "name": "SOL 중단기회사채(A-이상)액티브",
+      "aum_krw": 366896247669.0,
+      "underlying_index": "KIS 중단기크레딧플러스채권(AA+~A-)지수(총수익)",
+      "bucket": "안전",
+      "category": "국내채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A363570",
+      "name": "KODEX 장기종합채권(AA-이상)액티브",
+      "aum_krw": 319970435663.0,
+      "underlying_index": "KAP 한국장기종합채권지수(AA-이상, 총수익)",
+      "bucket": "안전",
+      "category": "국내채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A278620",
+      "name": "PLUS 단기채권액티브",
+      "aum_krw": 53167814340.99999,
+      "underlying_index": "KAP 투자적격 크레딧 채권 1년지수(A-이상,총수익)",
+      "bucket": "안전",
+      "category": "국내채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A336160",
+      "name": "RISE 금융채액티브",
+      "aum_krw": 41747406154.0,
+      "underlying_index": "KIS 종합채권금융채 2.5-3Y 지수(총수익)",
+      "bucket": "안전",
+      "category": "국내채권_회사채",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A157450",
+      "name": "TIGER 단기통안채",
+      "aum_krw": 975016035376.0,
+      "underlying_index": "KIS MSB 6M(총수익)",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A114260",
+      "name": "KODEX 국고채3년",
+      "aum_krw": 535266507671.0,
+      "underlying_index": "MKF 국고채지수(총수익)",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A148070",
+      "name": "KIWOOM 국고채10년",
+      "aum_krw": 492547335621.0,
+      "underlying_index": "KIS 국고채 10년(총수익)",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A439870",
+      "name": "KODEX 국고채30년액티브",
+      "aum_krw": 354937203357.0,
+      "underlying_index": "KAP 국고채 30년 총수익 지수",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A302190",
+      "name": "TIGER 중장기국채",
+      "aum_krw": 295045663583.0,
+      "underlying_index": "KIS 국채 3-10년 지수(시장가격지수)",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A272560",
+      "name": "RISE 단기국공채액티브",
+      "aum_krw": 191540088973.0,
+      "underlying_index": "KIS 종합채권국공채3M~1.5Y지수",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A114100",
+      "name": "RISE 국고채3년",
+      "aum_krw": 179769265214.0,
+      "underlying_index": "KTB index(시장가격)",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A451530",
+      "name": "TIGER 국고채30년스트립액티브",
+      "aum_krw": 144449871945.0,
+      "underlying_index": "KIS STRIP 30Y Index(총수익지수)",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A298340",
+      "name": "PLUS 국채선물3년",
+      "aum_krw": 59966833863.0,
+      "underlying_index": "F-KTB 지수",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A426150",
+      "name": "WON 대한민국국고채액티브",
+      "aum_krw": 53040510346.0,
+      "underlying_index": "KAP 한국 국고채 총수익 지수",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A152380",
+      "name": "KODEX 국채선물10년",
+      "aum_krw": 40154518526.0,
+      "underlying_index": "10년국채선물지수",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    },
+    {
+      "ticker": "A397420",
+      "name": "RISE 국채선물5년추종",
+      "aum_krw": 5159099682.0,
+      "underlying_index": "5년 국채선물 추종 지수",
+      "bucket": "안전",
+      "category": "국내채권_종합",
+      "listed_since": null,
+      "delisted_at": null
+    }
+  ]
+}
