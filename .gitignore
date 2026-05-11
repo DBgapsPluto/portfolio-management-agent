@@ -217,6 +217,7 @@ __marimo__/
 
 # Cache
 **/data_cache/
+data/.cache/
 
 # macOS
 .DS_Store
