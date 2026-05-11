@@ -14,3 +14,6 @@ triggers:
   - name: drift_breach_imminent
     condition: "any_etf_weight > 0.18"
     action: rebalance_proposal
+  - name: vol_normalization
+    condition: "vix < 18 AND vix_change_5d < -0.30"
+    action: risk_on_proposal

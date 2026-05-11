@@ -30,6 +30,32 @@ def test_fetch_single_etf(fake_pykrx_response):
     assert df["close"].iloc[0] == 40200
 
 
+def test_raw_pykrx_call_strips_A_prefix():
+    """universe.json uses 'A069500'; pykrx requires '069500'. Verify normalization."""
+    from tradingagents.dataflows import pykrx_data
+
+    captured = {}
+
+    class _FakeStock:
+        @staticmethod
+        def get_market_ohlcv(start, end, ticker):
+            captured["ticker"] = ticker
+            return pd.DataFrame()  # empty fine; just capturing args
+
+    import sys
+    fake_module = type(sys)("pykrx_fake")
+    fake_module.stock = _FakeStock
+    with patch.dict("sys.modules", {"pykrx": fake_module}):
+        pykrx_data._raw_pykrx_call("A069500", date(2026, 5, 1), date(2026, 5, 2))
+    assert captured["ticker"] == "069500"
+
+    # No-prefix ticker should pass through unchanged
+    captured.clear()
+    with patch.dict("sys.modules", {"pykrx": fake_module}):
+        pykrx_data._raw_pykrx_call("069500", date(2026, 5, 1), date(2026, 5, 2))
+    assert captured["ticker"] == "069500"
+
+
 def test_batch_fetch_uses_cache(tmp_path, fake_pykrx_response):
     cache = ParquetCache(tmp_path / "etf.parquet")
     tickers = ["A069500", "A360750"]

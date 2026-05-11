@@ -79,13 +79,17 @@ def _build_context(as_of: date) -> dict[str, Any]:
     vix_snap = fetch_volatility_index("VIX", as_of)
     vix = vix_snap.current_value
 
-    # VIX 1-day change: need 5-day window to get two trading days
-    start_vix = as_of - timedelta(days=7)
+    # VIX 1d / 5d change — widen window to 14 calendar days to ensure ≥6 trading days
+    start_vix = as_of - timedelta(days=14)
     vix_series = fetch_fred_series("VIXCLS", start_vix, as_of)
     if len(vix_series) >= 2:
         vix_change_1d = float((vix_series.iloc[-1] - vix_series.iloc[-2]) / vix_series.iloc[-2])
     else:
         vix_change_1d = 0.0
+    if len(vix_series) >= 6:
+        vix_change_5d = float((vix_series.iloc[-1] - vix_series.iloc[-6]) / vix_series.iloc[-6])
+    else:
+        vix_change_5d = 0.0
 
     # VKOSPI
     vkospi_snap = fetch_volatility_index("VKOSPI", as_of)
@@ -114,6 +118,7 @@ def _build_context(as_of: date) -> dict[str, Any]:
     return {
         "vix": vix,
         "vix_change_1d": vix_change_1d,
+        "vix_change_5d": vix_change_5d,
         "vkospi": vkospi,
         "spread_10y_2y_bps": spread_10y_2y_bps,
         "kospi_return_1d": kospi_return_1d,
@@ -140,8 +145,13 @@ def run(as_of: str | date, portfolio_path: Path | None = None) -> TriggerResult:
     fired: list[str] = []
     suggested_action: str | None = None
 
-    # Priority: emergency_defensive_proposal > rebalance_proposal > alert
-    _priority = {"emergency_defensive_proposal": 2, "rebalance_proposal": 1, "alert": 0}
+    # Priority: emergency_defensive_proposal > rebalance_proposal == risk_on_proposal > alert
+    _priority = {
+        "emergency_defensive_proposal": 2,
+        "rebalance_proposal": 1,
+        "risk_on_proposal": 1,
+        "alert": 0,
+    }
 
     for trigger in triggers:
         name = trigger["name"]

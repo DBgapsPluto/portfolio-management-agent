@@ -18,10 +18,15 @@ logger = logging.getLogger(__name__)
     retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
 )
 def _raw_pykrx_call(ticker: str, start: date, end: date) -> pd.DataFrame:
-    """Direct pykrx call. Wrapped for mocking + retry on transient failures."""
+    """Direct pykrx call. Wrapped for mocking + retry on transient failures.
+
+    Strips the leading "A" used in our universe.json (e.g. "A069500" → "069500")
+    because pykrx expects pure 6-digit ticker codes. Empty fetch otherwise.
+    """
     from pykrx import stock
+    normalized = ticker.lstrip("A") if ticker.startswith("A") else ticker
     return stock.get_market_ohlcv(
-        start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), ticker
+        start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), normalized,
     )
 
 

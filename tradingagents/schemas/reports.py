@@ -12,6 +12,7 @@ from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
 )
 from tradingagents.schemas.news import CalendarEvent, RankedNews
+from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
 
 # 공통: 모든 분석가 출력은 narrative ≤500 + summary_for_downstream ≤2000
@@ -54,6 +55,11 @@ class TechnicalReport(_AnalystReport):
     )
     individual_etf_states: dict[str, TrendState]
     correlation_clusters: list[Cluster]
+    factor_panel: dict[str, FactorPanel] = Field(
+        default_factory=dict,
+        description="Ticker → raw factor values (skip-1m mom, vol, Sharpe, log AUM). "
+                    "Consumed by Stage 3 candidate selector for z-score + regime blend.",
+    )
 
 
 class NewsReport(_AnalystReport):

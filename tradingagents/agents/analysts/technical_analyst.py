@@ -4,6 +4,7 @@ from pathlib import Path
 
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.reports import TechnicalReport
+from tradingagents.skills.portfolio.factor_scorer import compute_factor_panel
 from tradingagents.skills.technical.correlation_cluster import find_correlation_clusters
 from tradingagents.skills.technical.momentum_ranker import rank_momentum
 from tradingagents.skills.technical.price_batch import fetch_etf_price_batch
@@ -22,12 +23,27 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
         if prices.empty:
             raise RuntimeError("No price data fetched")
 
-        rankings = rank_momentum(prices, universe, lookback_months=6)
+        rankings = rank_momentum(prices, universe)
+
+        # Universe-wide raw factor panel (skip-1m momentum + vol + Sharpe + log AUM).
+        # Z-scoring / regime blend happens in Stage 3 candidate selector — this is
+        # just the ticker-intrinsic measurement step done once here so allocator
+        # doesn't recompute.
+        pivot_full = prices.pivot(index="date", columns="ticker", values="close")
+        returns_full = pivot_full.pct_change().dropna(how="all")
+        aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+        factor_panel = {}
+        for t in returns_full.columns:
+            factor_panel[t] = compute_factor_panel(
+                returns_full[t], aum_lookup.get(t, 0.0),
+            )
 
         # Top-tier ETFs only get TA indicators (cost reduction)
+        # Top-5 per category, with ties at the boundary included
+        # (rank_in_category uses competition ranking, so ties share rank)
         top_tickers: list[str] = []
         for cat_rankings in rankings.values():
-            top_tickers.extend([r.ticker for r in cat_rankings[:5]])
+            top_tickers.extend([r.ticker for r in cat_rankings if r.rank_in_category <= 5])
         top_tickers = list(set(top_tickers))
 
         trend_states = {}
@@ -70,6 +86,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             asset_class_momentum=rankings,
             individual_etf_states=trend_states,
             correlation_clusters=clusters,
+            factor_panel=factor_panel,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {

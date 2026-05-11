@@ -19,7 +19,7 @@ from pypfopt import EfficientFrontier, HRPOpt, risk_models, expected_returns
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
 from tradingagents.skills.portfolio.candidate_selector import (
-    BUCKET_TO_CATEGORIES, select_etf_candidates,
+    BUCKET_TO_CATEGORIES, list_eligible_tickers, select_etf_candidates,
 )
 from tradingagents.skills.portfolio.method_picker import pick_optimization_method
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
@@ -35,17 +35,46 @@ def create_portfolio_allocator(quick_llm, deep_llm, cache_path: str | None = Non
 
         feedback_violations = state.get("allocation_feedback", []) or []
         attempts = state.get("allocation_attempts", 0)
+        per_bucket_n = 4 if attempts == 0 else 6
 
-        # 1. Select candidates (D13: tradable_at applied inside)
-        rankings = (
-            state["technical_report"].asset_class_momentum
-            if state.get("technical_report") else {}
+        tech_report = state.get("technical_report")
+        rankings = tech_report.asset_class_momentum if tech_report else {}
+        factor_panel = tech_report.factor_panel if tech_report else {}
+        regime = state["macro_report"].regime if state.get("macro_report") else None
+        risk_score = state["risk_report"].systemic_score if state.get("risk_report") else None
+
+        # 1. Fetch returns for the WIDER eligible pool so multi-factor + de-dup
+        #    can score the longlist (not just the final candidates).
+        start = as_of - timedelta(days=365 * 3)
+        eligible_by_bucket = list_eligible_tickers(
+            universe, bucket_target, as_of=as_of,
+            min_aum_krw=1_000_000_000_000,
         )
+        eligible_tickers: list[str] = []
+        for tickers in eligible_by_bucket.values():
+            eligible_tickers.extend(tickers)
+        eligible_tickers = list(set(eligible_tickers))
+        if eligible_tickers:
+            returns = fetch_returns_matrix(
+                eligible_tickers, start, as_of, cache_path=cache_path,
+            )
+        else:
+            returns = None
+
+        # 2. Multi-factor + correlation-aware candidate selection
+        #    (조합 1: A + B + C; falls back to legacy momentum if returns empty).
+        #    factor_panel from Stage 1 — selector reuses raw panel + applies
+        #    eligible-pool z-score + regime weighting + de-dup here.
         candidates = select_etf_candidates(
             universe, bucket_target, rankings,
             as_of=as_of,
             min_aum_krw=1_000_000_000_000,
-            per_bucket_n=4 if attempts == 0 else 6,  # widen pool on retry
+            per_bucket_n=per_bucket_n,
+            returns=returns,
+            factor_panel=factor_panel,
+            regime_quadrant=regime.quadrant if regime else None,
+            regime_confidence=regime.confidence if regime else 0.5,
+            correlation_threshold=0.85,
         )
 
         all_candidates: list[str] = []
@@ -54,13 +83,15 @@ def create_portfolio_allocator(quick_llm, deep_llm, cache_path: str | None = Non
         if len(all_candidates) < 3:
             raise RuntimeError("Too few candidates")
 
-        # 2. Returns matrix
-        start = as_of - timedelta(days=365 * 3)
-        returns = fetch_returns_matrix(all_candidates, start, as_of, cache_path=cache_path)
+        # Restrict returns matrix to selected candidates for optimizer step.
+        if returns is not None and not returns.empty:
+            returns = returns[[c for c in all_candidates if c in returns.columns]]
+        else:
+            returns = fetch_returns_matrix(
+                all_candidates, start, as_of, cache_path=cache_path,
+            )
 
         # 3. Method picker subagent (D4: includes feedback)
-        regime = state["macro_report"].regime if state.get("macro_report") else None
-        risk_score = state["risk_report"].systemic_score if state.get("risk_report") else None
 
         feedback_str = ""
         if feedback_violations:
