@@ -10,7 +10,7 @@ from tradingagents.dataflows.universe import sync_from_xlsx
 from tradingagents.schemas.reports import TechnicalReport
 
 
-def _synthetic_prices(tickers: list, n: int = 250) -> pd.DataFrame:
+def _synthetic_prices(tickers: list, n: int = 260) -> pd.DataFrame:
     dates = pd.date_range("2024-01-01", periods=n, freq="B")
     rng = np.random.default_rng(42)
     rows = []

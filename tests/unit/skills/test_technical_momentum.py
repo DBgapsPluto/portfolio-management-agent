@@ -29,7 +29,7 @@ def _synthetic_prices() -> pd.DataFrame:
 def test_rank_momentum_groups_by_category():
     prices = _synthetic_prices()
     universe = _synthetic_universe()
-    rankings = rank_momentum(prices, universe, lookback_months=6)
+    rankings = rank_momentum(prices, universe)
     assert "국내주식_지수" in rankings
     assert "해외주식_지수" in rankings
     assert all(r.rank_in_category == 1 for cat in rankings.values() for r in cat[:1])
