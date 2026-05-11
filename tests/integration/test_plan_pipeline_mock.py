@@ -65,7 +65,8 @@ def fake_returns_df():
 def _mock_llm_factory(structured_outputs: dict):
     """Build a mock LLM whose with_structured_output dispatches by schema name."""
     llm = MagicMock()
-    llm.invoke.return_value.content = "narrative ≤ 500 chars"
+    # ≥4000 chars so write_philosophy doesn't trigger the expansion retry
+    llm.invoke.return_value.content = "narrative filler text " * 200
 
     def structured(schema_class):
         sub = MagicMock()

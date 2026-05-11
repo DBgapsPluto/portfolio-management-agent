@@ -16,6 +16,8 @@ def test_portfolio_manager_writes_3_artifacts(tmp_path):
 
     artifacts_dir = tmp_path / "artifacts"
     deep_llm = MagicMock()
+    # write_philosophy expects len(content) >= 4000 to skip the expansion retry
+    deep_llm.invoke.return_value.content = "투자철학 문서 본문입니다. " * 200
 
     state = {
         "weight_vector": WeightVector(
@@ -60,6 +62,6 @@ def test_portfolio_manager_writes_3_artifacts(tmp_path):
     with open(result["trade_plan_csv_path"], encoding="utf-8-sig") as f:
         reader = csv.reader(f)
         header = next(reader)
-        assert header == ["티커", "ETF명", "자산군", "가중치", "매수금액(KRW)"]
+        assert header == ["티커", "ETF명", "자산군", "가중치", "매수금액(KRW)", "수량(주)"]
         rows = list(reader)
         assert len(rows) == 4

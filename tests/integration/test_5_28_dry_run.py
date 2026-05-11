@@ -373,9 +373,8 @@ def test_5_28_dry_run_produces_artifacts(
         header = next(reader)
         rows = list(reader)
 
-    # Header must start with these 5 mandatory columns
-    # (수량(주) added by Plan 4 reports.trade_plan; portfolio_manager v1 has 5)
-    assert header[:5] == ["티커", "ETF명", "자산군", "가중치", "매수금액(KRW)"], (
+    # Plan 4 reports.trade_plan: 6 columns including 수량(주)
+    assert header == ["티커", "ETF명", "자산군", "가중치", "매수금액(KRW)", "수량(주)"], (
         f"trade_plan.csv header mismatch: {header}"
     )
     assert len(rows) >= 1, "trade_plan.csv has no data rows"
