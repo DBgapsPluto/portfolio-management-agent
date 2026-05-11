@@ -1,5 +1,8 @@
 """Bull researcher: argues for higher risk asset weight (자산군 단위, 종목 X)."""
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
+
+from tradingagents.schemas.research import ResearcherTurn
+from tradingagents.skills._helpers import invoke_with_structured_retry
 
 
 BULL_PROMPT = """\
@@ -22,15 +25,18 @@ News:
 
 Previous Bear argument: {previous_bear}
 
-In ≤400 chars (Korean):
-1. State your proposed risk-asset bucket weight (% of 100, in 5% increments).
-2. Cite 2-3 evidence points by quoting the specific data above.
-3. Acknowledge ONE counter-risk."""
+Output a ResearcherTurn JSON:
+- argument: Korean, ≤400 chars. Cite 2-3 evidence points. Acknowledge ONE counter-risk.
+- confidence: how sure you are that your bullish stance is correct (0.0 = no idea, 1.0 = certain).
+  Calibrate honestly — if evidence is mixed, drop below 0.6.
+- proposed_risk_tilt: total risk-asset weight you'd recommend [0.0, 1.0]. Bull typically ≥0.55."""
 
 
 def create_bull_researcher(quick_llm):
     def node(state):
-        previous_bear = state["bear_arguments"][-1] if state["bear_arguments"] else "(none)"
+        previous_bear = (
+            state["bear_arguments"][-1].argument if state["bear_arguments"] else "(none)"
+        )
         prompt = BULL_PROMPT.format(
             macro_summary=state["macro_summary"],
             risk_summary=state["risk_summary"],
@@ -38,11 +44,16 @@ def create_bull_researcher(quick_llm):
             news_summary=state["news_summary"],
             previous_bear=previous_bear,
         )
-        response = quick_llm.invoke([HumanMessage(content=prompt)])
-        argument = response.content[:400]
+        turn: ResearcherTurn = invoke_with_structured_retry(
+            quick_llm, ResearcherTurn,
+            [{"role": "user", "content": prompt}],
+            max_retries=1,
+        )
         return {
-            "bull_arguments": state["bull_arguments"] + [argument],
-            "messages": state["messages"] + [AIMessage(content=f"[Bull r{state['round_count']}] {argument}")],
+            "bull_arguments": state["bull_arguments"] + [turn],
+            "messages": state["messages"] + [
+                AIMessage(content=f"[Bull r{state['round_count']}] {turn.argument}")
+            ],
         }
 
     return node

@@ -31,6 +31,7 @@ import pytest
 from tradingagents.dataflows.universe import sync_from_xlsx
 from tradingagents.schemas.macro import RegimeClassification
 from tradingagents.schemas.news import ImpactAssessment
+from tradingagents.schemas.research import ResearcherTurn
 from tradingagents.schemas.portfolio import BucketTarget, CandidateSet
 from tradingagents.schemas.risk import (
     BreadthSnapshot, SpreadSnapshot, SystemicRiskScore, VolatilitySnapshot,
@@ -136,8 +137,11 @@ def test_5_28_dry_run_produces_artifacts(
         "MethodChoice": method_out,
         "BucketTarget": bucket_out,
     })
+    # High confidence + low divergence → debate stops after round 1
+    researcher_turn = ResearcherTurn(argument="t", confidence=0.85, proposed_risk_tilt=0.55)
     quick_llm = _mock_llm_factory({
         "ImpactAssessment": impact_out,
+        "ResearcherTurn": researcher_turn,
     })
 
     # 1. Mock LLM client factory

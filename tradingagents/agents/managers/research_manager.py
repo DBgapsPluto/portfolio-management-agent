@@ -34,8 +34,8 @@ def create_research_manager(deep_llm):
         prompt = JUDGE_PROMPT.format(
             summaries=summaries,
             rounds=state["round_count"],
-            bull="\n---\n".join(state["bull_arguments"]),
-            bear="\n---\n".join(state["bear_arguments"]),
+            bull="\n---\n".join(t.argument for t in state["bull_arguments"]),
+            bear="\n---\n".join(t.argument for t in state["bear_arguments"]),
         )
         target: BucketTarget = invoke_with_structured_retry(
             deep_llm, BucketTarget,

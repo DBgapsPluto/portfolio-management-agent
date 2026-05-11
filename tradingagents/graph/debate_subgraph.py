@@ -10,13 +10,24 @@ from tradingagents.agents.researchers.debate_state import InvestDebateState
 from tradingagents.agents.risk_mgmt.debate_state import RiskDebateState
 
 
-def build_invest_debate_subgraph(
-    bull_node, bear_node, judge_node, max_rounds: int = 1,
-):
-    """Sub-graph that loops Bull→Bear `max_rounds` times then runs judge.
+_CONF_STOP_THRESHOLD = 0.75  # both sides confident enough → judge
+_DIVERGENCE_STOP_THRESHOLD = 0.15  # proposed_risk_tilt gap small → convergence reached
 
-    Returns a compiled sub-graph. Parent invokes via .invoke() with
-    relevant summaries; the sub-graph returns BucketTarget + summary str.
+
+def build_invest_debate_subgraph(
+    bull_node, bear_node, judge_node, max_rounds_cap: int = 3,
+):
+    """Sub-graph that loops Bull→Bear adaptively, then runs judge.
+
+    Adaptive stop conditions (each evaluated after every Bull→Bear round):
+      1. round_count >= max_rounds_cap (hard safety net, default 3)
+      2. avg(confidence_bull, confidence_bear) >= 0.75
+         (both sides confident — judging now is robust)
+      3. |bull.proposed_risk_tilt − bear.proposed_risk_tilt| <= 0.15
+         (sides converged — debate plateaued)
+
+    Otherwise, run another Bull→Bear round.
+    Returns a compiled sub-graph.
     """
     sg = StateGraph(InvestDebateState)
     sg.add_node("bull", bull_node)
@@ -27,8 +38,16 @@ def build_invest_debate_subgraph(
     sg.add_edge("bull", "bear")
 
     def should_continue(state) -> str:
-        # bear node increments round_count, so check after bear runs
-        if state["round_count"] >= state["max_rounds"]:
+        # bear node increments round_count, so this runs after a complete round
+        if state["round_count"] >= state["max_rounds_cap"]:
+            return "judge"
+        bull_last = state["bull_arguments"][-1]
+        bear_last = state["bear_arguments"][-1]
+        avg_conf = (bull_last.confidence + bear_last.confidence) / 2
+        if avg_conf >= _CONF_STOP_THRESHOLD:
+            return "judge"
+        divergence = abs(bull_last.proposed_risk_tilt - bear_last.proposed_risk_tilt)
+        if divergence <= _DIVERGENCE_STOP_THRESHOLD:
             return "judge"
         return "bull"
 

@@ -32,7 +32,10 @@ DEFAULT_CONFIG = {
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
     # Debate and discussion settings
-    "max_debate_rounds": 1,
+    # research_debate adaptive rounds — hard cap; actual count varies based on
+    # confidence + divergence signals (see debate_subgraph.should_continue)
+    "max_debate_rounds_cap": 3,
+    "max_debate_rounds": 1,  # legacy: used only by tradingagents/graph/setup.py (upstream v0.2 path)
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,
     # Data vendor configuration

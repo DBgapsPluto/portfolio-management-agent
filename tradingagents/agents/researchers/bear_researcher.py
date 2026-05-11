@@ -1,5 +1,8 @@
 """Bear researcher: argues for higher safe-asset weight (자산군 단위, 종목 X)."""
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage
+
+from tradingagents.schemas.research import ResearcherTurn
+from tradingagents.skills._helpers import invoke_with_structured_retry
 
 
 BEAR_PROMPT = """\
@@ -22,15 +25,18 @@ News:
 
 Previous Bull argument: {previous_bull}
 
-In ≤400 chars (Korean):
-1. State your proposed safe-asset bucket weight (% of 100, in 5% increments).
-2. Cite 2-3 evidence points by quoting the specific data above.
-3. Acknowledge ONE upside risk to your defensive view."""
+Output a ResearcherTurn JSON:
+- argument: Korean, ≤400 chars. Cite 2-3 evidence points. Acknowledge ONE upside risk.
+- confidence: how sure you are that your defensive stance is correct (0.0 = no idea, 1.0 = certain).
+  Calibrate honestly — if evidence is mixed, drop below 0.6.
+- proposed_risk_tilt: total risk-asset weight you'd recommend [0.0, 1.0]. Bear typically ≤0.45."""
 
 
 def create_bear_researcher(quick_llm):
     def node(state):
-        previous_bull = state["bull_arguments"][-1] if state["bull_arguments"] else "(none)"
+        previous_bull = (
+            state["bull_arguments"][-1].argument if state["bull_arguments"] else "(none)"
+        )
         prompt = BEAR_PROMPT.format(
             macro_summary=state["macro_summary"],
             risk_summary=state["risk_summary"],
@@ -38,11 +44,16 @@ def create_bear_researcher(quick_llm):
             news_summary=state["news_summary"],
             previous_bull=previous_bull,
         )
-        response = quick_llm.invoke([HumanMessage(content=prompt)])
-        argument = response.content[:400]
+        turn: ResearcherTurn = invoke_with_structured_retry(
+            quick_llm, ResearcherTurn,
+            [{"role": "user", "content": prompt}],
+            max_retries=1,
+        )
         return {
-            "bear_arguments": state["bear_arguments"] + [argument],
-            "messages": state["messages"] + [AIMessage(content=f"[Bear r{state['round_count']}] {argument}")],
+            "bear_arguments": state["bear_arguments"] + [turn],
+            "messages": state["messages"] + [
+                AIMessage(content=f"[Bear r{state['round_count']}] {turn.argument}")
+            ],
             "round_count": state["round_count"] + 1,
         }
 

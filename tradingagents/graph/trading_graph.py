@@ -68,7 +68,7 @@ class TradingAgentsGraph:
         research_judge = create_research_manager(deep)
         invest_subgraph = build_invest_debate_subgraph(
             bull, bear, research_judge,
-            max_rounds=self.config.get("max_debate_rounds", 1),
+            max_rounds_cap=self.config.get("max_debate_rounds_cap", 3),
         )
 
         allocator = create_portfolio_allocator(quick, deep, cache_path=cache_path)
@@ -77,7 +77,7 @@ class TradingAgentsGraph:
         pm = create_portfolio_manager(deep, artifacts_dir=artifacts_dir)
 
         # Wrap research_debate as a parent node that invokes the sub-graph
-        max_rounds = self.config.get("max_debate_rounds", 1)
+        max_rounds_cap = self.config.get("max_debate_rounds_cap", 3)
         def research_debate_node(state):
             sub_input = InvestDebateState(
                 messages=[],
@@ -86,7 +86,7 @@ class TradingAgentsGraph:
                 technical_summary=state.get("technical_summary", ""),
                 news_summary=state.get("news_summary", ""),
                 bull_arguments=[], bear_arguments=[],
-                round_count=0, max_rounds=max_rounds,
+                round_count=0, max_rounds_cap=max_rounds_cap,
                 bucket_target=None,
                 research_debate_summary="",
             )

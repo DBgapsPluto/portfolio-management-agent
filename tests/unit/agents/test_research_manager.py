@@ -2,6 +2,7 @@ from unittest.mock import MagicMock
 
 from tradingagents.agents.managers.research_manager import create_research_manager
 from tradingagents.schemas.portfolio import BucketTarget
+from tradingagents.schemas.research import ResearcherTurn
 
 
 def test_research_manager_returns_bucket_target():
@@ -19,8 +20,8 @@ def test_research_manager_returns_bucket_target():
         "risk_summary": "VIX 28",
         "technical_summary": "downtrend",
         "news_summary": "events",
-        "bull_arguments": ["bull says 60% risk"],
-        "bear_arguments": ["bear says 40% risk"],
+        "bull_arguments": [ResearcherTurn(argument="bull says 60% risk", confidence=0.6, proposed_risk_tilt=0.6)],
+        "bear_arguments": [ResearcherTurn(argument="bear says 40% risk", confidence=0.7, proposed_risk_tilt=0.4)],
         "round_count": 1,
     }
     result = node(state)

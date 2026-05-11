@@ -22,6 +22,7 @@ from tradingagents.schemas.macro import (
     RegimeClassification, YieldCurveSnapshot,
 )
 from tradingagents.schemas.news import ImpactAssessment
+from tradingagents.schemas.research import ResearcherTurn
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.schemas.risk import (
     BreadthSnapshot, PCASnapshot, SentimentSnapshot, SpreadSnapshot,
@@ -112,8 +113,14 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
         "BucketTarget": bucket_out,
         # research_manager also calls with_structured_output(BucketTarget) via invoke_with_structured_retry
     })
+    # High confidence + low divergence → debate stops after round 1
+    bull_turn = ResearcherTurn(argument="bull", confidence=0.85, proposed_risk_tilt=0.60)
+    bear_turn = ResearcherTurn(argument="bear", confidence=0.85, proposed_risk_tilt=0.55)
     quick_llm = _mock_llm_factory({
         "ImpactAssessment": impact_out,
+        # ResearcherTurn is invoked twice (bull then bear) — single mock returns
+        # the same instance both times; that's fine since we only need shape.
+        "ResearcherTurn": bull_turn,
     })
 
     # Patch LLM client factory so TradingAgentsGraph builds without API keys

@@ -4,6 +4,7 @@ from typing import Annotated, Optional
 from langgraph.graph import MessagesState
 
 from tradingagents.schemas.portfolio import BucketTarget
+from tradingagents.schemas.research import ResearcherTurn
 
 
 class InvestDebateState(MessagesState):
@@ -18,11 +19,11 @@ class InvestDebateState(MessagesState):
     technical_summary: Annotated[str, "Handed off from TechnicalAnalyst"]
     news_summary: Annotated[str, "Handed off from MacroNewsAnalyst"]
 
-    # Local cluster state
-    bull_arguments: Annotated[list[str], "Bull researcher's points across rounds"]
-    bear_arguments: Annotated[list[str], "Bear researcher's points"]
-    round_count: Annotated[int, "Current debate round"]
-    max_rounds: Annotated[int, "From preset"]
+    # Local cluster state — structured turns carry confidence + proposed_risk_tilt
+    bull_arguments: Annotated[list[ResearcherTurn], "Bull researcher's turns across rounds"]
+    bear_arguments: Annotated[list[ResearcherTurn], "Bear researcher's turns"]
+    round_count: Annotated[int, "Completed debate rounds"]
+    max_rounds_cap: Annotated[int, "Hard upper bound on rounds (adaptive may stop earlier)"]
 
     # Final
     bucket_target: Annotated[Optional[BucketTarget], "Research Manager's decision"]
