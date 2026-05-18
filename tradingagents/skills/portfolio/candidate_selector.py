@@ -8,6 +8,7 @@ from tradingagents.schemas.technical import ETFRanking
 from tradingagents.skills.portfolio.factor_scorer import (
     FactorPanel, compute_factor_panel, score_candidates, select_diverse,
 )
+from tradingagents.skills.portfolio.sub_category import log_boost
 from tradingagents.skills.registry import register_skill
 
 
@@ -69,6 +70,7 @@ def select_etf_candidates(
     regime_confidence: float = 0.5,
     correlation_threshold: float = 0.85,
     longlist_multiplier: int = 2,
+    dominant_scenario: str | None = None,
 ) -> CandidateSet:
     """Filter universe by bucket target + AUM, then multi-factor rank + corr de-dup.
 
@@ -115,6 +117,7 @@ def select_etf_candidates(
             eligible, returns, aum_lookup,
             regime_quadrant, regime_confidence,
             precomputed_panel=factor_panel,
+            dominant_scenario=dominant_scenario,
         )
         longlist_n = max(per_bucket_n * longlist_multiplier, per_bucket_n)
         longlist = ranked[:longlist_n]
@@ -146,12 +149,16 @@ def _rank_by_factors(
     regime_quadrant: str | None,
     regime_confidence: float,
     precomputed_panel: dict[str, FactorPanel] | None = None,
+    dominant_scenario: str | None = None,
 ) -> list[str]:
     """Compute composite factor scores for eligible tickers; return tickers sorted desc.
 
     If `precomputed_panel` is provided (from Stage 1 Technical Analyst), reuse
     those values and skip recomputation. Missing tickers fall back to local
     computation from `returns`.
+
+    Phase C: dominant_scenario가 있고 ETF의 sub_category가 채워져 있으면
+    log_boost를 score에 가산해서 시나리오 친화 sub_category에 가중치 부여.
     """
     panels = {}
     for e in eligible:
@@ -167,6 +174,15 @@ def _rank_by_factors(
             returns[e.ticker], aum_lookup.get(e.ticker, e.aum_krw),
         )
     scores = score_candidates(panels, regime_quadrant, regime_confidence)
+
+    # Scenario boost — ETF에 sub_category 있고 dominant_scenario가 boost 정의돼
+    # 있는 경우만 가산. universe.json에 sub_category 없으면 영향 0 (backward compat).
+    if dominant_scenario:
+        sub_cat_lookup = {e.ticker: e.sub_category for e in eligible}
+        for ticker in scores:
+            sub_cat = sub_cat_lookup.get(ticker)
+            scores[ticker] = scores[ticker] + log_boost(dominant_scenario, sub_cat)
+
     return sorted(scores.keys(), key=lambda t: scores[t], reverse=True)
 
 

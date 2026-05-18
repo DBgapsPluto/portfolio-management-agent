@@ -73,7 +73,11 @@ def create_portfolio_allocator(
         if returns is None or returns.empty:
             raise RuntimeError("returns matrix empty — Stage 3 cannot proceed")
 
-        # 2. Multi-factor + corr de-dup
+        # 2. Multi-factor + corr de-dup + (Phase C) scenario sub_category boost
+        dominant_scenario = (
+            getattr(research_decision, "dominant_scenario", None)
+            if research_decision else None
+        )
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,
@@ -84,6 +88,7 @@ def create_portfolio_allocator(
             regime_quadrant=regime.quadrant if regime else None,
             regime_confidence=regime.confidence if regime else 0.5,
             correlation_threshold=0.85,
+            dominant_scenario=dominant_scenario,
         )
 
         all_candidates = [
