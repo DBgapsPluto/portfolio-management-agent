@@ -1,11 +1,42 @@
-"""Technical Analyst — orchestrates 5 technical skills, composes TechnicalReport."""
+"""Technical Analyst — orchestrates technical skills, composes TechnicalReport."""
 from datetime import date, timedelta
 from pathlib import Path
+
+
+def _summarize_extended(panels: dict) -> str:
+    """Compress Tier-1 ExtendedIndicatorPanel dict into ≤~400-char markdown.
+
+    LLM-facing aggregate over the universe + outlier ETFs only (top-N).
+    """
+    if not panels:
+        return ""
+    n = len(panels)
+    strong_trend = sum(1 for p in panels.values() if p.adx > 25)
+    squeeze = sum(1 for p in panels.values() if p.bb_bandwidth < 0.05)
+    overbought_b = sum(1 for p in panels.values() if p.bb_percent_b > 1.0)
+    oversold_b = sum(1 for p in panels.values() if p.bb_percent_b < 0.0)
+    mfi_hot = sum(1 for p in panels.values() if p.mfi > 80)
+    mfi_cold = sum(1 for p in panels.values() if p.mfi < 20)
+    bearish_div = [t for t, p in panels.items() if p.rsi_divergence == "bearish" or p.macd_divergence == "bearish"]
+    bullish_div = [t for t, p in panels.items() if p.rsi_divergence == "bullish" or p.macd_divergence == "bullish"]
+    weekly_up = sum(1 for p in panels.values() if p.weekly_trend == "up")
+    weekly_down = sum(1 for p in panels.values() if p.weekly_trend == "down")
+    return (
+        f"Tier-1 (188 ETF aggregate):\n"
+        f"  ADX>25 (강한 추세): {strong_trend}/{n}\n"
+        f"  Bollinger 압축 (bw<5%): {squeeze}/{n}\n"
+        f"  %B>1 과매수: {overbought_b}, %B<0 과매도: {oversold_b}\n"
+        f"  MFI>80: {mfi_hot}, MFI<20: {mfi_cold}\n"
+        f"  Bearish divergence: {len(bearish_div)} (예: {bearish_div[:3]})\n"
+        f"  Bullish divergence: {len(bullish_div)} (예: {bullish_div[:3]})\n"
+        f"  Weekly trend up/down: {weekly_up}/{weekly_down}\n"
+    )
 
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.reports import TechnicalReport
 from tradingagents.skills.portfolio.factor_scorer import compute_factor_panel
 from tradingagents.skills.technical.correlation_cluster import find_correlation_clusters
+from tradingagents.skills.technical.extended_indicators import compute_extended_indicators
 from tradingagents.skills.technical.momentum_ranker import rank_momentum
 from tradingagents.skills.technical.price_batch import fetch_etf_price_batch
 from tradingagents.skills.technical.ta_indicators import compute_ta_indicators
@@ -66,6 +97,19 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
         name_lookup = {e.ticker: e.name for e in universe.etfs}
         clusters = find_correlation_clusters(returns_top, threshold=0.7, universe_lookup=name_lookup)
 
+        # Tier-1: extended indicators for every ETF with sufficient history.
+        extended_indicators = {}
+        for t in returns_full.columns:
+            sub = prices[prices["ticker"] == t]
+            if len(sub) < 200:
+                continue
+            try:
+                extended_indicators[t] = compute_extended_indicators(prices, t)
+            except Exception:
+                continue
+
+        ext_summary = _summarize_extended(extended_indicators)
+
         narrative = quick_llm.invoke(
             f"Summarize 188-ETF technical scan in ≤500 Korean chars. "
             f"Top momentum categories: {list(rankings.keys())[:5]}. "
@@ -80,6 +124,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             f"Categories scanned: {len(rankings)}\n"
             f"Trend states: {sum(1 for v in trend_states.values() if 'uptrend' in v.value)} uptrending of {len(trend_states)}\n"
             f"Clusters: {len(clusters)} (largest: {largest_cluster_label})\n"
+            f"{ext_summary}"
         )[:2000]
 
         report = TechnicalReport(
@@ -87,6 +132,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             individual_etf_states=trend_states,
             correlation_clusters=clusters,
             factor_panel=factor_panel,
+            extended_indicators=extended_indicators,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {

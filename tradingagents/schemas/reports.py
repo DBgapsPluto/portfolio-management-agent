@@ -19,6 +19,7 @@ from tradingagents.schemas.risk import (
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
+    ExtendedIndicatorPanel,
 )
 from tradingagents.schemas.news import CalendarEvent, RankedNews
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
@@ -102,6 +103,12 @@ class TechnicalReport(_AnalystReport):
         default_factory=dict,
         description="Ticker → raw factor values (skip-1m mom, vol, Sharpe, log AUM). "
                     "Consumed by Stage 3 candidate selector for z-score + regime blend.",
+    )
+    # Tier-1 확장 (Indicator 깊이) — 188 ETF 전체 ExtendedIndicatorPanel.
+    # LLM(summary)에는 집계만 노출, 객체 자체는 Stage 3 allocator용.
+    extended_indicators: dict[str, ExtendedIndicatorPanel] = Field(
+        default_factory=dict,
+        description="Ticker → Bollinger/ADX/Stochastic/Volume/Divergence/Weekly panel.",
     )
 
 
