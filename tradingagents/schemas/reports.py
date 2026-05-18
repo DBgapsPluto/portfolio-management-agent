@@ -13,6 +13,7 @@ from tradingagents.schemas.risk import (
     VolatilitySnapshot, SpreadSnapshot, SentimentSnapshot,
     BreadthSnapshot, PCASnapshot, SystemicRiskScore,
     VIXTermStructureSnapshot, SkewSnapshot, VxnSnapshot,
+    RealYieldsSnapshot, FundingStressSnapshot, CreditQualitySnapshot,
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
@@ -75,6 +76,10 @@ class RiskReport(_AnalystReport):
     vix_term: VIXTermStructureSnapshot
     skew: SkewSnapshot
     vxn: VxnSnapshot
+    # Tier-2 확장 (Bond/funding stress)
+    real_yields: RealYieldsSnapshot
+    funding_stress: FundingStressSnapshot
+    credit_quality: CreditQualitySnapshot
 
 
 class TechnicalReport(_AnalystReport):

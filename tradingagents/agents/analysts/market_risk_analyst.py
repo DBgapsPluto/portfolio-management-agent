@@ -14,13 +14,17 @@ import pandas as pd
 from tradingagents.dataflows.equity_indices import fetch_equity_index_close
 from tradingagents.schemas.reports import RiskReport
 from tradingagents.schemas.risk import (
+    CreditQualitySnapshot, FundingStressSnapshot, RealYieldsSnapshot,
     SentimentSnapshot, SkewSnapshot, VIXTermStructureSnapshot, VxnSnapshot,
 )
 from tradingagents.skills.macro.fred_fetcher import fetch_fred_series_skill
 from tradingagents.skills.risk.breadth import compute_market_breadth
 from tradingagents.skills.risk.correlation_pca import compute_correlation_concentration
+from tradingagents.skills.risk.credit_quality import compute_credit_quality
 from tradingagents.skills.risk.credit_spread import fetch_credit_spread
 from tradingagents.skills.risk.fear_greed import fetch_fear_greed_index
+from tradingagents.skills.risk.funding_stress import compute_funding_stress
+from tradingagents.skills.risk.real_yields import compute_real_yields
 from tradingagents.skills.risk.skew_index import compute_skew_index
 from tradingagents.skills.risk.systemic_score import score_systemic_risk
 from tradingagents.skills.risk.vix_term_structure import compute_vix_term_structure
@@ -45,6 +49,28 @@ def _sentinel_skew(as_of: date) -> SkewSnapshot:
 def _sentinel_vxn(as_of: date) -> VxnSnapshot:
     return VxnSnapshot(
         current_value=0.0, zscore_30d=0.0, percentile_5y=0.5, spread_vs_vix=0.0,
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_real_yields(as_of: date) -> RealYieldsSnapshot:
+    return RealYieldsSnapshot(
+        tips_10y=0.0, tips_5y=0.0, spread_10y_5y=0.0, regime="neutral",
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_funding(as_of: date) -> FundingStressSnapshot:
+    return FundingStressSnapshot(
+        sofr=0.0, tbill_3m=0.0, spread_bps=0.0, regime="calm",
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_credit_quality(as_of: date) -> CreditQualitySnapshot:
+    return CreditQualitySnapshot(
+        aaa_oas_bps=0.0, bbb_oas_bps=0.0, quality_spread_bps=0.0,
+        percentile_5y=0.5, regime="calm",
         source_date=as_of, staleness_days=99,
     )
 
@@ -111,13 +137,51 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         except Exception:
             vxn = _sentinel_vxn(as_of)
 
+        # Tier-2: TIPS 실질금리 (DFII10, DFII5)
+        try:
+            tips_10 = fetch_fred_series_skill(
+                "us_tips_10y", start_5y, as_of, as_of_date=as_of,
+            ).dropna()
+            tips_5 = fetch_fred_series_skill(
+                "us_tips_5y", start_5y, as_of, as_of_date=as_of,
+            ).dropna()
+            real_yields = compute_real_yields(tips_10, tips_5, as_of=as_of)
+        except Exception:
+            real_yields = _sentinel_real_yields(as_of)
+
+        # Tier-2: Funding stress (SOFR vs 3m T-bill)
+        try:
+            sofr = fetch_fred_series_skill(
+                "us_sofr", start_5y, as_of, as_of_date=as_of,
+            ).dropna()
+            tbill = fetch_fred_series_skill(
+                "us_3m_tbill", start_5y, as_of, as_of_date=as_of,
+            ).dropna()
+            funding_stress = compute_funding_stress(sofr, tbill, as_of=as_of)
+        except Exception:
+            funding_stress = _sentinel_funding(as_of)
+
+        # Tier-2: Credit quality (AAA vs BBB)
+        try:
+            aaa = fetch_fred_series_skill(
+                "us_aaa_oas", start_5y, as_of, as_of_date=as_of,
+            ).dropna()
+            bbb = fetch_fred_series_skill(
+                "us_bbb_oas", start_5y, as_of, as_of_date=as_of,
+            ).dropna()
+            credit_quality = compute_credit_quality(aaa, bbb, as_of=as_of)
+        except Exception:
+            credit_quality = _sentinel_credit_quality(as_of)
+
         systemic = score_systemic_risk(
             quick_llm, deep_llm,
             vix=vix.current_value, vix_z=vix.zscore_30d, vix_pct=vix.percentile_5y,
             vix_change_4w=vix.change_4w,
             vkospi=vkospi.current_value, vkospi_change_4w=vkospi.change_4w,
             ig_bps=ig.current_bps, ig_pct=ig.percentile_5y,
+            ig_momentum_z=ig.momentum_zscore,
             hy_bps=hy.current_bps, hy_widening=hy.widening,
+            hy_momentum_z=hy.momentum_zscore,
             fg_label=fg.label, fg_value=fg.current_value,
             breadth_kr_adv=breadth_kr.advancing_pct,
             breadth_us_adv=breadth_us.advancing_pct,
@@ -127,6 +191,12 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             vix_term_ratio=vix_term.ratio, vix_term_regime=vix_term.regime,
             skew_value=skew.skew_value, skew_signal=skew.tail_hedge_signal,
             vxn=vxn.current_value, vxn_spread_vs_vix=vxn.spread_vs_vix,
+            # Tier-2 신규 inputs
+            tips_10y=real_yields.tips_10y, real_yields_regime=real_yields.regime,
+            funding_spread_bps=funding_stress.spread_bps,
+            funding_regime=funding_stress.regime,
+            credit_quality_spread_bps=credit_quality.quality_spread_bps,
+            credit_quality_regime=credit_quality.regime,
         )
 
         narrative = quick_llm.invoke(
@@ -143,9 +213,12 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             f"VIX term: ratio {vix_term.ratio:.2f} ({vix_term.regime})\n"
             f"SKEW: {skew.skew_value:.0f} ({skew.tail_hedge_signal})\n"
             f"VXN: {vxn.current_value:.1f} (spread vs VIX {vxn.spread_vs_vix:+.1f})\n"
-            f"HY OAS: {hy.current_bps:.0f}bps {'(widening)' if hy.widening else ''}\n"
+            f"HY OAS: {hy.current_bps:.0f}bps {'(widening)' if hy.widening else ''} (mom z {hy.momentum_zscore:+.2f})\n"
             f"Breadth KR: {breadth_kr.advancing_pct:.0%}, US: {breadth_us.advancing_pct:.0%}\n"
             f"PCA 1st: {pca.first_eigenvalue_share:.2f} {'(concentrated)' if pca.is_concentrated else ''}\n"
+            f"TIPS 10y: {real_yields.tips_10y:.2f}% ({real_yields.regime})\n"
+            f"Funding: SOFR-Tbill {funding_stress.spread_bps:+.0f}bps ({funding_stress.regime})\n"
+            f"Credit quality: BBB-AAA {credit_quality.quality_spread_bps:.0f}bps ({credit_quality.regime})\n"
         )[:2000]
 
         report = RiskReport(
@@ -153,6 +226,8 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             fear_greed=fg, breadth_kr=breadth_kr, breadth_us=breadth_us,
             correlation_concentration=pca, systemic_score=systemic,
             vix_term=vix_term, skew=skew, vxn=vxn,
+            real_yields=real_yields, funding_stress=funding_stress,
+            credit_quality=credit_quality,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"risk_report": report, "risk_summary": summary}

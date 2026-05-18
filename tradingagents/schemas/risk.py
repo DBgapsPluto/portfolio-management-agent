@@ -21,6 +21,10 @@ class SpreadSnapshot(StalenessAware):
     current_bps: float
     percentile_5y: float = Field(ge=0, le=1)
     widening: bool
+    momentum_zscore: float = Field(
+        default=0.0,
+        description="60일 변화의 z-score. >+1.5 = 가속 widening, <-1.5 = 가속 tightening",
+    )
 
 
 class SentimentSnapshot(StalenessAware):
@@ -87,4 +91,46 @@ class VxnSnapshot(StalenessAware):
     percentile_5y: float = Field(ge=0, le=1)
     spread_vs_vix: float = Field(
         description="VXN - VIX. Positive = 기술주 stress > broad. >5 = 의미있는 편중"
+    )
+
+
+class RealYieldsSnapshot(StalenessAware):
+    """TIPS 기반 실질금리. 명목금리 - 기대인플레 ≈ 실질 성장 기대치.
+
+    10y 실질금리 > +2% = 매우 긴축 (자산 가격 압박)
+    10y 실질금리 < 0% = 완화 (위험자산 우호)
+    """
+    tips_10y: float = Field(description="10년 TIPS yield (%)")
+    tips_5y: float = Field(description="5년 TIPS yield (%)")
+    spread_10y_5y: float = Field(description="장기 실질금리 spread (10y - 5y)")
+    regime: Literal["accommodative", "neutral", "tight", "very_tight"] = Field(
+        description="<0 accommodative, 0~1 neutral, 1~2 tight, >2 very_tight"
+    )
+
+
+class FundingStressSnapshot(StalenessAware):
+    """Funding stress proxy: SOFR vs 3-month T-bill spread.
+
+    SOFR > T-bill spread > +20bps = 은행 funding stress (collateral 부족)
+    TED spread(LIBOR 기반)가 단종된 후의 표준 대체 지표.
+    """
+    sofr: float = Field(description="Secured Overnight Financing Rate (%)")
+    tbill_3m: float = Field(description="3-month Treasury bill yield (%)")
+    spread_bps: float = Field(description="(SOFR - T-bill) × 100, bps")
+    regime: Literal["calm", "elevated", "stress"] = Field(
+        description="<+10bps calm, 10~20 elevated, >+20 stress"
+    )
+
+
+class CreditQualitySnapshot(StalenessAware):
+    """AAA vs BBB OAS quality spread. 신용 등급간 differential 위험 인식.
+
+    Quality spread (BBB-AAA) 확대 = 시장이 BBB 추가 위험 가산 → flight to quality.
+    """
+    aaa_oas_bps: float = Field(description="AAA corporate OAS (bps)")
+    bbb_oas_bps: float = Field(description="BBB corporate OAS (bps)")
+    quality_spread_bps: float = Field(description="BBB - AAA spread (bps)")
+    percentile_5y: float = Field(ge=0, le=1, description="quality_spread 5y percentile")
+    regime: Literal["calm", "elevated", "stress"] = Field(
+        description="percentile<0.5 calm, 0.5~0.85 elevated, >0.85 stress"
     )

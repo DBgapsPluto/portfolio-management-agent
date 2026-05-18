@@ -47,6 +47,13 @@ FRED_SERIES = {
     # market_risk Tier-1 확장: equity stress 깊이
     "vix_3m": "VXVCLS",                # CBOE VIX 3-month (daily)
     "vxn": "VXNCLS",                   # CBOE NASDAQ-100 Volatility (daily)
+    # market_risk Tier-2 확장: bond/funding stress
+    "us_tips_10y": "DFII10",           # 10-Year TIPS yield (real, %)
+    "us_tips_5y": "DFII5",             # 5-Year TIPS yield (real, %)
+    "us_sofr": "SOFR",                 # Secured Overnight Financing Rate (%)
+    "us_3m_tbill": "DTB3",             # 3-month Treasury bill yield (%)
+    "us_aaa_oas": "BAMLC0A1CAAA",      # ICE BofA AAA Corporate OAS (%)
+    "us_bbb_oas": "BAMLC0A4CBBB",      # ICE BofA BBB Corporate OAS (%)
 }
 
 

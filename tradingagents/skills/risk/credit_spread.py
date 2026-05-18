@@ -21,7 +21,16 @@ def fetch_credit_spread(
     pct = float((last_5y < current).sum() / len(last_5y))
     widening = bool(s.tail(20).mean() > s.tail(60).mean())
 
+    # Momentum z-score: 60일 일별 변화의 표준화된 강도
+    # 양수 = 가속 widening (위기 진행 중), 음수 = 가속 tightening
+    diffs = s.diff().dropna().tail(60) * 100  # 일별 변화량 (bps)
+    if len(diffs) >= 5 and diffs.std() > 0:
+        momentum_z = float(diffs.mean() / diffs.std())
+    else:
+        momentum_z = 0.0
+
     return SpreadSnapshot(
         region=region, current_bps=current, percentile_5y=pct,
-        widening=widening, source_date=as_of,
+        widening=widening, momentum_zscore=momentum_z,
+        source_date=as_of,
     )

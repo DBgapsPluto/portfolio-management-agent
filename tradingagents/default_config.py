@@ -117,6 +117,13 @@ DEFAULT_CONFIG.update({
         # market_risk Tier-1 확장
         "vix_3m": 1,
         "vxn": 1,
+        # market_risk Tier-2 확장
+        "us_tips_10y": 1,
+        "us_tips_5y": 1,
+        "us_sofr": 1,
+        "us_3m_tbill": 1,
+        "us_aaa_oas": 1,
+        "us_bbb_oas": 1,
     },
     # Tracing / observability
     "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",
