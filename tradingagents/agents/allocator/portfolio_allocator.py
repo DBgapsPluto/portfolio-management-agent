@@ -1,16 +1,15 @@
-"""Portfolio Allocator — bucket constraints injected into optimizer (D12 fatal fix).
+"""Portfolio Allocator — Stage 3 (완전 함수화).
 
-The previous design ran a 20%-capped optimizer THEN scaled to BucketTarget,
-which can push single weights ABOVE the 20% cap. Per design D12: inject
-bucket sum constraints DURING optimization via add_sector_constraints, so
-the solver finds weights satisfying both single-cap and bucket sums
-simultaneously. HRP doesn't natively support sector constraints — that's
-handled via _hrp_per_bucket with iterative water-filling.
+D12: bucket sum + single-cap을 동시에 만족하는 joint optimization.
+D4 : validator 실패 시 자동 retry (attempts++, band 완화).
 
-Per D4: feedback from previous validation failure is injected into the
-method picker subagent prompt, allowing the LLM to choose a different
-candidate frame on retry.
+Phase A 변경 (이번 commit):
+  - method_picker LLM 제거 → 결정적 매핑 (regime + systemic + scenario)
+  - Stage 2 ResearchDecision (conviction, dominant_scenario) 활용
+  - legacy candidate_selector mode 의존 제거
+  - silent failure logging 추가
 """
+import logging
 from datetime import date, timedelta
 
 import pandas as pd
@@ -24,8 +23,13 @@ from tradingagents.skills.portfolio.candidate_selector import (
 from tradingagents.skills.portfolio.method_picker import pick_optimization_method
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
 
+logger = logging.getLogger(__name__)
 
-def create_portfolio_allocator(quick_llm, deep_llm, cache_path: str | None = None):
+
+def create_portfolio_allocator(
+    quick_llm=None, deep_llm=None, cache_path: str | None = None,
+):
+    """quick_llm/deep_llm은 backward-compat 시그니처 (사용 안 함)."""
     def node(state):
         as_of = date.fromisoformat(state["as_of_date"])
         universe = load_universe(state["universe_path"])
@@ -35,38 +39,43 @@ def create_portfolio_allocator(quick_llm, deep_llm, cache_path: str | None = Non
 
         feedback_violations = state.get("allocation_feedback", []) or []
         attempts = state.get("allocation_attempts", 0)
-        per_bucket_n = 4 if attempts == 0 else 6
 
         tech_report = state.get("technical_report")
-        rankings = tech_report.asset_class_momentum if tech_report else {}
-        factor_panel = tech_report.factor_panel if tech_report else {}
+        if tech_report is None or not tech_report.factor_panel:
+            raise RuntimeError(
+                "technical_report.factor_panel missing — Stage 1 technical analyst failed"
+            )
+        factor_panel = tech_report.factor_panel
         regime = state["macro_report"].regime if state.get("macro_report") else None
         risk_score = state["risk_report"].systemic_score if state.get("risk_report") else None
+        research_decision = state.get("research_decision")
 
-        # 1. Fetch returns for the WIDER eligible pool so multi-factor + de-dup
-        #    can score the longlist (not just the final candidates).
+        # per_bucket_n: low conviction이면 후보 다양화, retry 시 확장.
+        per_bucket_n = 4
+        if research_decision is not None and getattr(research_decision, "conviction", "medium") == "low":
+            per_bucket_n = 5
+        if attempts > 0:
+            per_bucket_n = max(per_bucket_n + 2, 6)
+
+        # 1. eligible 후보 universe로 returns matrix fetch
         start = as_of - timedelta(days=365 * 3)
         eligible_by_bucket = list_eligible_tickers(
             universe, bucket_target, as_of=as_of,
             min_aum_krw=1_000_000_000_000,
         )
-        eligible_tickers: list[str] = []
-        for tickers in eligible_by_bucket.values():
-            eligible_tickers.extend(tickers)
-        eligible_tickers = list(set(eligible_tickers))
-        if eligible_tickers:
-            returns = fetch_returns_matrix(
-                eligible_tickers, start, as_of, cache_path=cache_path,
-            )
-        else:
-            returns = None
+        eligible_tickers = list({t for ts in eligible_by_bucket.values() for t in ts})
+        if not eligible_tickers:
+            raise RuntimeError("No eligible tickers (universe × bucket × AUM filter empty)")
 
-        # 2. Multi-factor + correlation-aware candidate selection
-        #    (조합 1: A + B + C; falls back to legacy momentum if returns empty).
-        #    factor_panel from Stage 1 — selector reuses raw panel + applies
-        #    eligible-pool z-score + regime weighting + de-dup here.
+        returns = fetch_returns_matrix(
+            eligible_tickers, start, as_of, cache_path=cache_path,
+        )
+        if returns is None or returns.empty:
+            raise RuntimeError("returns matrix empty — Stage 3 cannot proceed")
+
+        # 2. Multi-factor + corr de-dup
         candidates = select_etf_candidates(
-            universe, bucket_target, rankings,
+            universe, bucket_target,
             as_of=as_of,
             min_aum_krw=1_000_000_000_000,
             per_bucket_n=per_bucket_n,
@@ -77,34 +86,28 @@ def create_portfolio_allocator(quick_llm, deep_llm, cache_path: str | None = Non
             correlation_threshold=0.85,
         )
 
-        all_candidates: list[str] = []
-        for tickers in candidates.bucket_to_tickers.values():
-            all_candidates.extend(tickers)
+        all_candidates = [
+            t for tickers in candidates.bucket_to_tickers.values() for t in tickers
+        ]
         if len(all_candidates) < 3:
-            raise RuntimeError("Too few candidates")
+            raise RuntimeError(f"Too few candidates ({len(all_candidates)})")
 
-        # Restrict returns matrix to selected candidates for optimizer step.
-        if returns is not None and not returns.empty:
-            returns = returns[[c for c in all_candidates if c in returns.columns]]
-        else:
-            returns = fetch_returns_matrix(
-                all_candidates, start, as_of, cache_path=cache_path,
-            )
+        returns = returns[[c for c in all_candidates if c in returns.columns]]
 
-        # 3. Method picker subagent (D4: includes feedback)
-
+        # 3. Method picker — deterministic (LLM 0회)
         feedback_str = ""
         if feedback_violations:
-            feedback_str = "\nPrevious violations:\n" + "\n".join(
-                f"- {v.description} (fix: {v.suggested_fix})" for v in feedback_violations
+            feedback_str = "; ".join(
+                f"{v.description} (fix: {v.suggested_fix})"
+                for v in feedback_violations[:3]
             )
 
         method_choice = pick_optimization_method(
-            quick_llm, deep_llm,
             regime_quadrant=regime.quadrant if regime else "unknown",
             regime_confidence=regime.confidence if regime else 0.5,
-            risk_score=risk_score.score if risk_score else 5.0,
-            risk_regime=risk_score.regime if risk_score else "neutral",
+            systemic_score=risk_score.score if risk_score else 5.0,
+            systemic_regime=risk_score.regime if risk_score else "neutral",
+            research_decision=research_decision,
             feedback=feedback_str,
         )
 
@@ -121,6 +124,7 @@ def create_portfolio_allocator(quick_llm, deep_llm, cache_path: str | None = Non
         return {
             "candidate_set": candidates,
             "weight_vector": wv,
+            "method_choice": method_choice,
             "allocation_attempts": attempts + 1,
         }
 
@@ -225,8 +229,8 @@ def _optimize_with_bucket_constraints(
             expected_sharpe = float(perf[2])
         if len(perf) >= 2:
             expected_vol = float(perf[1])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("portfolio_performance failed: %s", e)
 
     return WeightVector(
         method=method,

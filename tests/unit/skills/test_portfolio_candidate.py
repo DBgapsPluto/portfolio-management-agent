@@ -1,13 +1,17 @@
+"""candidate_selector tests — Phase A signature (multi-factor only)."""
+import math
 from datetime import date
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from tradingagents.dataflows.universe import Universe, ETFEntry
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.skills.portfolio.candidate_selector import (
     list_eligible_tickers, select_etf_candidates,
 )
+from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
 
 def _build_universe() -> Universe:
@@ -25,15 +29,41 @@ def _build_universe() -> Universe:
     ])
 
 
+def _synthetic_returns(tickers, days=300, seed=11):
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2024-01-01", periods=days, freq="B")
+    return pd.DataFrame(
+        {t: rng.normal(0.0005, 0.012, days) for t in tickers},
+        index=idx,
+    )
+
+
+def _trivial_panel(tickers, aum_lookup):
+    return {
+        t: FactorPanel(
+            skip1m_mom_3m=0.05, skip1m_mom_6m=0.05, skip1m_mom_12m=0.05,
+            realized_vol_60d=0.15, sharpe_60d=0.3,
+            log_aum=math.log(aum_lookup.get(t, 1e12)),
+        )
+        for t in tickers
+    }
+
+
 def test_select_candidates_for_target():
+    universe = _build_universe()
     target = BucketTarget(
         kr_equity=0.15, global_equity=0.30, fx_commodity=0.10,
         bond=0.35, cash_mmf=0.10,
         rationale="defensive recession tilt",
     )
+    all_tickers = [e.ticker for e in universe.etfs]
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    returns = _synthetic_returns(all_tickers)
+    panel = _trivial_panel(all_tickers, aum_lookup)
+
     candidates = select_etf_candidates(
-        _build_universe(), target, momentum_rankings={},
-        as_of=date(2026, 5, 10),
+        universe, target, as_of=date(2026, 5, 10),
+        returns=returns, factor_panel=panel,
     )
     assert "A069500" in candidates.bucket_to_tickers["kr_equity"]
     assert "A360750" in candidates.bucket_to_tickers["global_equity"]
@@ -50,32 +80,21 @@ def test_list_eligible_tickers_filters_by_aum_and_category():
     universe = Universe(version="t", etfs=[
         ETFEntry(ticker="A111111", name="big kr", aum_krw=10e12,
                  underlying_index="x", bucket="위험", category="국내주식_지수"),
-        ETFEntry(ticker="A222222", name="small kr", aum_krw=0.1e12,  # below AUM floor
+        ETFEntry(ticker="A222222", name="small kr", aum_krw=0.1e12,
                  underlying_index="x", bucket="위험", category="국내주식_지수"),
         ETFEntry(ticker="A333333", name="bond", aum_krw=5e12,
                  underlying_index="x", bucket="안전", category="국내채권_종합"),
-        ETFEntry(ticker="A444444", name="cash", aum_krw=10e12,  # cash bucket, not requested
+        ETFEntry(ticker="A444444", name="cash", aum_krw=10e12,
                  underlying_index="x", bucket="안전", category="금리연계형/초단기채권"),
     ])
     eligible = list_eligible_tickers(universe, target, as_of=date(2026, 5, 10))
-    assert eligible["kr_equity"] == ["A111111"]   # small one filtered out
+    assert eligible["kr_equity"] == ["A111111"]
     assert eligible["bond"] == ["A333333"]
-    assert eligible["cash_mmf"] == []              # zero weight bucket
+    assert eligible["cash_mmf"] == []
     assert eligible["global_equity"] == []
 
 
-def _synthetic_returns(tickers, days=300, seed=11):
-    """Build a returns DF where given tickers have realistic daily returns."""
-    rng = np.random.default_rng(seed)
-    idx = pd.date_range("2024-01-01", periods=days, freq="B")
-    return pd.DataFrame(
-        {t: rng.normal(0.0005, 0.012, days) for t in tickers},
-        index=idx,
-    )
-
-
 def test_select_multi_factor_mode_uses_returns_and_regime():
-    """When `returns` is provided, selector should use multi-factor + de-dup."""
     universe = Universe(version="t", etfs=[
         ETFEntry(ticker="A111111", name="A", aum_krw=10e12,
                  underlying_index="x", bucket="위험", category="국내주식_지수"),
@@ -91,31 +110,27 @@ def test_select_multi_factor_mode_uses_returns_and_regime():
         bond=0.0, cash_mmf=0.0,
         rationale="t",
     )
-    returns = _synthetic_returns(["A111111", "A222222", "A333333", "A444444"])
+    tickers = ["A111111", "A222222", "A333333", "A444444"]
+    returns = _synthetic_returns(tickers)
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    panel = _trivial_panel(tickers, aum_lookup)
 
     candidates = select_etf_candidates(
-        universe, target, momentum_rankings={},
-        as_of=date(2026, 5, 10),
+        universe, target, as_of=date(2026, 5, 10),
         per_bucket_n=2,
-        returns=returns,
+        returns=returns, factor_panel=panel,
         regime_quadrant="growth_disinflation",
         regime_confidence=0.8,
         correlation_threshold=0.85,
     )
     chosen = candidates.bucket_to_tickers["kr_equity"]
     assert len(chosen) == 2
-    # All chosen must come from the eligible pool
-    assert all(t in {"A111111", "A222222", "A333333", "A444444"} for t in chosen)
+    assert all(t in tickers for t in chosen)
     assert "multi-factor" in candidates.selection_criteria
     assert "growth_disinflation" in candidates.selection_criteria
 
 
 def test_select_uses_precomputed_factor_panel():
-    """When `factor_panel` is provided, selector should reuse it (skip recomputation)."""
-    import math
-
-    from tradingagents.skills.portfolio.factor_scorer import FactorPanel
-
     universe = Universe(version="t", etfs=[
         ETFEntry(ticker="A111111", name="A", aum_krw=10e12,
                  underlying_index="x", bucket="위험", category="국내주식_지수"),
@@ -127,10 +142,7 @@ def test_select_uses_precomputed_factor_panel():
         bond=0.0, cash_mmf=0.0,
         rationale="t",
     )
-    # Synthetic returns (used only for de-dup; values immaterial here)
     returns = _synthetic_returns(["A111111", "A222222"])
-
-    # Pre-built panel: A has much stronger momentum than B
     panel = {
         "A111111": FactorPanel(
             skip1m_mom_3m=0.30, skip1m_mom_6m=0.30, skip1m_mom_12m=0.30,
@@ -142,20 +154,15 @@ def test_select_uses_precomputed_factor_panel():
         ),
     }
     candidates = select_etf_candidates(
-        universe, target, momentum_rankings={},
-        as_of=date(2026, 5, 10),
+        universe, target, as_of=date(2026, 5, 10),
         per_bucket_n=1,
-        returns=returns,
-        factor_panel=panel,
-        regime_quadrant="growth_disinflation",
-        regime_confidence=1.0,
+        returns=returns, factor_panel=panel,
+        regime_quadrant="growth_disinflation", regime_confidence=1.0,
     )
-    # A should win — its precomputed momentum is dominant
     assert candidates.bucket_to_tickers["kr_equity"] == ["A111111"]
 
 
-def test_select_legacy_mode_when_returns_none():
-    """Without `returns`, selector should follow legacy momentum-only path."""
+def test_select_requires_returns_and_panel():
     universe = Universe(version="t", etfs=[
         ETFEntry(ticker="A111111", name="A", aum_krw=10e12,
                  underlying_index="x", bucket="위험", category="국내주식_지수"),
@@ -165,18 +172,20 @@ def test_select_legacy_mode_when_returns_none():
         bond=0.0, cash_mmf=0.0,
         rationale="t",
     )
-    candidates = select_etf_candidates(
-        universe, target, momentum_rankings={},
-        as_of=date(2026, 5, 10),
-        per_bucket_n=1,
-        returns=None,
-    )
-    assert candidates.bucket_to_tickers["kr_equity"] == ["A111111"]
-    assert "momentum-only" in candidates.selection_criteria
+    with pytest.raises(ValueError, match="returns"):
+        select_etf_candidates(
+            universe, target, as_of=date(2026, 5, 10),
+            returns=pd.DataFrame(), factor_panel={"A": {}},  # type: ignore[arg-type]
+        )
+    with pytest.raises(ValueError, match="factor_panel"):
+        select_etf_candidates(
+            universe, target, as_of=date(2026, 5, 10),
+            returns=_synthetic_returns(["A111111"]),
+            factor_panel={},
+        )
 
 
 def test_select_skips_unlisted_etf_for_past_as_of():
-    """D13 survivorship: ETF listed in 2027 must be skipped for as_of=2026."""
     universe = Universe(version="2026-05-10", etfs=[
         ETFEntry(ticker="A069500", name="KODEX 200", aum_krw=10e12,
                  underlying_index="x", bucket="위험", category="국내주식_지수",
@@ -190,9 +199,14 @@ def test_select_skips_unlisted_etf_for_past_as_of():
         bond=0.0, cash_mmf=0.0,
         rationale="test",
     )
+    tickers = ["A069500", "A999999"]
+    returns = _synthetic_returns(tickers)
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    panel = _trivial_panel(tickers, aum_lookup)
+
     candidates = select_etf_candidates(
-        universe, target, momentum_rankings={},
-        as_of=date(2026, 5, 10),
+        universe, target, as_of=date(2026, 5, 10),
+        returns=returns, factor_panel=panel,
     )
     assert "A069500" in candidates.bucket_to_tickers["kr_equity"]
     assert "A999999" not in candidates.bucket_to_tickers["kr_equity"]

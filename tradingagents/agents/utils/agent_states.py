@@ -51,9 +51,10 @@ class AgentState(MessagesState):
     # === Stage 3: Research Manager (legacy 키, BucketTarget만 노출) ===
     bucket_target: Annotated[Optional[BucketTarget], "5-bucket weight target"]
 
-    # === Stage 4: Allocator ===
+    # === Stage 3 (allocator) outputs ===
     candidate_set: Annotated[Optional[CandidateSet], "Filtered ETF candidates"]
     weight_vector: Annotated[Optional[WeightVector], "Allocator output weights"]
+    method_choice: Annotated[Optional[dict], "Deterministic MethodChoice (Phase A)"]
     correlation_clusters: Annotated[list[Cluster], "From technical analyst, used for validation"]
 
     # === Stage 5: Risk debate ===
@@ -96,7 +97,7 @@ def _create_empty_state(
         research_debate_summary="",
         research_decision=None,
         bucket_target=None,
-        candidate_set=None, weight_vector=None,
+        candidate_set=None, weight_vector=None, method_choice=None,
         correlation_clusters=[],
         risk_debate_summary="",
         validation_report=None, validation_passed=None,

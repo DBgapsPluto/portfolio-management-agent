@@ -80,7 +80,10 @@ class TradingAgentsGraph:
         research_estimator = create_research_manager(deep)
         invest_subgraph = build_invest_debate_subgraph(research_estimator)
 
-        allocator = create_portfolio_allocator(quick, deep, cache_path=cache_path)
+        allocator = archive_wrap_node(
+            create_portfolio_allocator(quick, deep, cache_path=cache_path),
+            ["candidate_set", "weight_vector", "method_choice"],
+        )
         validator = create_mandate_validator()
         fallback = create_fallback_normalizer(cache_path=cache_path)
         pm = create_portfolio_manager(deep, artifacts_dir=artifacts_dir)

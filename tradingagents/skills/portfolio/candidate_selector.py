@@ -59,40 +59,37 @@ def list_eligible_tickers(
 def select_etf_candidates(
     universe: Universe,
     bucket_target: BucketTarget,
-    momentum_rankings: dict[str, list[ETFRanking]],
     as_of: date,
+    *,
+    returns: pd.DataFrame,
+    factor_panel: dict[str, FactorPanel],
     min_aum_krw: float = 1_000_000_000_000,  # 1조원 floor
     per_bucket_n: int = 5,
-    *,
-    returns: pd.DataFrame | None = None,
-    factor_panel: dict[str, FactorPanel] | None = None,
     regime_quadrant: str | None = None,
     regime_confidence: float = 0.5,
     correlation_threshold: float = 0.85,
     longlist_multiplier: int = 2,
 ) -> CandidateSet:
-    """Filter universe by bucket target, AUM, then rank + de-dup.
+    """Filter universe by bucket target + AUM, then multi-factor rank + corr de-dup.
 
-    Three modes:
-    - Legacy (no `returns`): rank purely by Technical Analyst's momentum_rankings,
-      take top per_bucket_n. Original behavior, kept for backward compat.
-    - Multi-factor (`returns` provided, no `factor_panel`): compute panel here +
-      regime-conditional composite score, longlist + correlation de-dup.
-    - Multi-factor with pre-computed panel (`factor_panel` provided): consume
-      Stage 1 Technical Analyst's panel directly; still requires `returns` for
-      the correlation de-dup step. This is the preferred path.
+    Stage 1 technical_analyst가 항상 returns + factor_panel을 채우므로
+    multi-factor mode가 유일한 운영 경로. legacy momentum-only mode는 폐기.
 
     Per D13: tradable_at(as_of) is applied first to avoid look-ahead bias.
+
+    Required:
+        returns: 후보 universe의 일별 returns matrix (corr de-dup 입력)
+        factor_panel: Stage 1 technical_analyst가 산출한 ticker → FactorPanel dict
     """
+    if returns is None or returns.empty:
+        raise ValueError("returns matrix must be non-empty (Stage 1 dependency)")
+    if not factor_panel:
+        raise ValueError("factor_panel must be non-empty (Stage 1 dependency)")
+
     universe = universe.tradable_at(as_of)
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
 
     bucket_to_tickers: dict[str, list[str]] = {}
-    use_factor_mode = returns is not None and not returns.empty
-    mode_label = (
-        f"multi-factor (regime={regime_quadrant}, conf={regime_confidence:.2f})"
-        if use_factor_mode else "momentum-only (legacy)"
-    )
 
     for bucket_name, weight in [
         ("kr_equity", bucket_target.kr_equity),
@@ -114,26 +111,24 @@ def select_etf_candidates(
             bucket_to_tickers[bucket_name] = []
             continue
 
-        if use_factor_mode:
-            ranked = _rank_by_factors(
-                eligible, returns, aum_lookup,
-                regime_quadrant, regime_confidence,
-                precomputed_panel=factor_panel,
-            )
-            longlist_n = max(per_bucket_n * longlist_multiplier, per_bucket_n)
-            longlist = ranked[:longlist_n]
-            chosen = select_diverse(
-                longlist, returns, n=per_bucket_n,
-                correlation_threshold=correlation_threshold,
-            )
-        else:
-            chosen = _rank_by_legacy_momentum(
-                eligible, cats, momentum_rankings, aum_lookup, per_bucket_n,
-            )
+        ranked = _rank_by_factors(
+            eligible, returns, aum_lookup,
+            regime_quadrant, regime_confidence,
+            precomputed_panel=factor_panel,
+        )
+        longlist_n = max(per_bucket_n * longlist_multiplier, per_bucket_n)
+        longlist = ranked[:longlist_n]
+        chosen = select_diverse(
+            longlist, returns, n=per_bucket_n,
+            correlation_threshold=correlation_threshold,
+        )
 
         bucket_to_tickers[bucket_name] = chosen[:per_bucket_n]
 
     total = sum(len(v) for v in bucket_to_tickers.values())
+    mode_label = (
+        f"multi-factor (regime={regime_quadrant}, conf={regime_confidence:.2f})"
+    )
     return CandidateSet(
         bucket_to_tickers=bucket_to_tickers,
         selection_criteria=(
@@ -175,21 +170,3 @@ def _rank_by_factors(
     return sorted(scores.keys(), key=lambda t: scores[t], reverse=True)
 
 
-def _rank_by_legacy_momentum(
-    eligible, cats: list[str],
-    momentum_rankings: dict[str, list[ETFRanking]],
-    aum_lookup: dict[str, float],
-    per_bucket_n: int,
-) -> list[str]:
-    """Original momentum-rankings-first, AUM-fallback path."""
-    eligible_tickers = {e.ticker for e in eligible}
-    candidates_sorted: list[str] = []
-    for cat in cats:
-        for r in momentum_rankings.get(cat, []):
-            if r.ticker in eligible_tickers and r.ticker not in candidates_sorted:
-                candidates_sorted.append(r.ticker)
-    if not candidates_sorted:
-        candidates_sorted = [
-            e.ticker for e in sorted(eligible, key=lambda x: -aum_lookup.get(x.ticker, x.aum_krw))
-        ]
-    return candidates_sorted[:per_bucket_n]
