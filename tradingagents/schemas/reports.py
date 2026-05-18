@@ -20,6 +20,7 @@ from tradingagents.schemas.risk import (
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
     ExtendedIndicatorPanel, TrendQuantification,
+    UniverseBreadthSnapshot,
 )
 from tradingagents.schemas.news import CalendarEvent, RankedNews
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
@@ -114,6 +115,11 @@ class TechnicalReport(_AnalystReport):
     trend_quantification: dict[str, TrendQuantification] = Field(
         default_factory=dict,
         description="Ticker → trend_strength/time-in-state/dual momentum/acceleration.",
+    )
+    # Tier-3 확장 (Universe breadth) — 단일 snapshot.
+    universe_breadth: UniverseBreadthSnapshot | None = Field(
+        default=None,
+        description="188 ETF aggregate: %above MA, 52w hi/lo, A/D, vol regime.",
     )
 
 

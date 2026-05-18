@@ -115,3 +115,35 @@ class TrendQuantification(StalenessAware):
     benchmark: Literal["KOSPI200", "SPY", "none"] = Field(
         description="dual_momentum 계산에 쓴 벤치마크."
     )
+
+
+# ---------- Tier-3: Universe Breadth (188 ETF 집계) ----------
+
+
+BreadthRegime = Literal["broad_risk_on", "narrow", "broad_risk_off"]
+
+
+class UniverseBreadthSnapshot(StalenessAware):
+    """Tier-3 — universe 188 ETF의 시장 내부 상태 집계.
+
+    한 번 계산해서 단일 snapshot. LLM에 그대로 노출 가능 (이미 압축).
+    """
+    n_total: int = Field(ge=0)
+    n_eligible: int = Field(ge=0, description="MA200 계산 가능 (≥200d history)")
+    pct_above_ma50: float = Field(ge=0, le=1)
+    pct_above_ma200: float = Field(ge=0, le=1)
+    new_52w_highs: int = Field(ge=0)
+    new_52w_lows: int = Field(ge=0)
+    advance_decline_5d_ratio: float = Field(
+        ge=0, description="5일 advancing ETF / declining ETF (∞ 시 10으로 cap).",
+    )
+    ad_line_5d_slope: float = Field(
+        description="AD line 5d 변화 부호 (+1/0/-1)",
+    )
+    universe_vol_median: float = Field(
+        ge=0, description="188 ETF의 60d annualized vol median.",
+    )
+    universe_vol_z: float = Field(
+        description="universe vol median의 1년치 z-score (regime 식별).",
+    )
+    regime: BreadthRegime

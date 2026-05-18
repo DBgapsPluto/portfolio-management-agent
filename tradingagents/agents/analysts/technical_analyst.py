@@ -43,6 +43,7 @@ from tradingagents.skills.technical.price_batch import fetch_etf_price_batch
 from tradingagents.skills.technical.ta_indicators import compute_ta_indicators
 from tradingagents.skills.technical.trend_quantification import quantify_trend
 from tradingagents.skills.technical.trend_state import detect_trend_state
+from tradingagents.skills.technical.universe_breadth import compute_universe_breadth
 
 
 def _benchmark_for_category(category: str) -> str:
@@ -174,6 +175,24 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
 
         trend_quant_summary = _summarize_trend_quant(trend_quant)
 
+        # Tier-3: universe-wide breadth snapshot.
+        try:
+            universe_breadth = compute_universe_breadth(prices)
+            breadth_summary = (
+                f"Tier-3 (universe breadth, n={universe_breadth.n_eligible}):\n"
+                f"  %above MA50: {universe_breadth.pct_above_ma50:.1%}, "
+                f"MA200: {universe_breadth.pct_above_ma200:.1%}\n"
+                f"  52w highs/lows: {universe_breadth.new_52w_highs}/{universe_breadth.new_52w_lows}\n"
+                f"  A/D 5d ratio: {universe_breadth.advance_decline_5d_ratio:.2f} "
+                f"(AD line 5d slope {universe_breadth.ad_line_5d_slope:+.0f})\n"
+                f"  Universe vol: median {universe_breadth.universe_vol_median:.1%} "
+                f"(z {universe_breadth.universe_vol_z:+.2f})\n"
+                f"  Regime: {universe_breadth.regime}\n"
+            )
+        except Exception:
+            universe_breadth = None
+            breadth_summary = ""
+
         narrative = quick_llm.invoke(
             f"Summarize 188-ETF technical scan in ≤500 Korean chars. "
             f"Top momentum categories: {list(rankings.keys())[:5]}. "
@@ -190,6 +209,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             f"Clusters: {len(clusters)} (largest: {largest_cluster_label})\n"
             f"{ext_summary}"
             f"{trend_quant_summary}"
+            f"{breadth_summary}"
         )[:2000]
 
         report = TechnicalReport(
@@ -199,6 +219,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             factor_panel=factor_panel,
             extended_indicators=extended_indicators,
             trend_quantification=trend_quant,
+            universe_breadth=universe_breadth,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {
