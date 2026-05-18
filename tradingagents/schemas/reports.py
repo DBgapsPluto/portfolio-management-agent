@@ -26,6 +26,7 @@ from tradingagents.schemas.technical import (
 from tradingagents.schemas.news import (
     CalendarEvent, RankedNews, GlobalOvernightSnapshot,
     ReleaseSurpriseSnapshot, NewsSentimentSnapshot,
+    SpeakerToneAggregate,
 )
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
@@ -156,4 +157,9 @@ class NewsReport(_AnalystReport):
     news_sentiment: NewsSentimentSnapshot | None = Field(
         default=None,
         description="5분류 카테고리별 count·sentiment·top headline + 24h vs 7d momentum.",
+    )
+    # Tier-4 확장 (Central Bank speaker tone tracker)
+    cb_speakers: SpeakerToneAggregate | None = Field(
+        default=None,
+        description="Fed/BOK/ECB/BOJ 7d 매파-비둘기 balance. voting members 별도 가중.",
     )

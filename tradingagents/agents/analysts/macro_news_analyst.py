@@ -4,6 +4,9 @@ from datetime import date
 from tradingagents.schemas.reports import NewsReport
 from tradingagents.skills.news.event_calendar import fetch_event_calendar_skill
 from tradingagents.skills.news.categorizer import categorize_news
+from tradingagents.skills.news.cb_speaker_tracker import (
+    compute_speaker_aggregate, extract_speaker_events,
+)
 from tradingagents.skills.news.global_overnight import (
     compute_global_overnight_snapshot,
 )
@@ -26,6 +29,31 @@ def _summarize_overnight(snap) -> str:
         f"Tier-1 (global overnight, n={snap.fetched_count}/9):\n"
         f"  Regime: {snap.risk_regime_overnight}\n"
         f"  {snap.narrative_seed}\n"
+    )
+
+
+def _summarize_speakers(agg) -> str:
+    """Tier-4 압축: Fed/BOK balance + voting + 최근 1-2 발언."""
+    if agg is None:
+        return ""
+    n_fed = len(agg.fed_speakers_7d)
+    n_bok = len(agg.bok_speakers_7d)
+    n_other = len(agg.other_speakers_7d)
+    if n_fed + n_bok + n_other == 0:
+        return ""
+    fed_recent = "; ".join(
+        f"{e.speaker}({e.tone})" for e in agg.fed_speakers_7d[:3]
+    ) or "(none)"
+    bok_recent = "; ".join(
+        f"{e.speaker}({e.tone})" for e in agg.bok_speakers_7d[:3]
+    ) or "(none)"
+    return (
+        f"Tier-4 (CB speakers 7d, n={n_fed + n_bok + n_other}):\n"
+        f"  Fed balance: {agg.fed_tone_balance:+.2f} "
+        f"(voting only: {agg.fed_voting_balance:+.2f}, n={n_fed})\n"
+        f"  BOK balance: {agg.bok_tone_balance:+.2f} (n={n_bok})\n"
+        f"  Fed recent: {fed_recent}\n"
+        f"  BOK recent: {bok_recent}\n"
     )
 
 
@@ -123,6 +151,16 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             sentiment_snapshot = None
         sentiment_summary = _summarize_sentiment(sentiment_snapshot)
 
+        # Tier-4: CB speaker tone tracker
+        try:
+            speaker_events = extract_speaker_events(items, quick_llm=quick_llm)
+            speaker_aggregate = compute_speaker_aggregate(
+                speaker_events, as_of=as_of,
+            )
+        except Exception:
+            speaker_aggregate = None
+        speaker_summary = _summarize_speakers(speaker_aggregate)
+
         narrative = quick_llm.invoke(
             f"Summarize macro news in ≤500 Korean chars. "
             f"Top: {[r.item.headline[:50] for r in ranked[:3]]}"
@@ -135,6 +173,7 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             f"{overnight_summary}"
             f"{surprise_summary}"
             f"{sentiment_summary}"
+            f"{speaker_summary}"
         )[:2000]
 
         report = NewsReport(
@@ -142,6 +181,7 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             global_overnight=overnight,
             release_surprise=surprise_snapshot,
             news_sentiment=sentiment_snapshot,
+            cb_speakers=speaker_aggregate,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"news_report": report, "news_summary": summary}

@@ -174,3 +174,39 @@ class NewsSentimentSnapshot(StalenessAware):
         default=None,
         description="가장 급증한 카테고리. 카운트 2배+면 채워짐.",
     )
+
+
+# ---------- Tier-4: Central Bank Speaker Tracker ----------
+
+
+CentralBank = Literal["Fed", "BOK", "ECB", "BOJ", "BoE", "PBoC"]
+SpeakerTone = Literal["hawkish", "neutral", "dovish"]
+
+
+class CBSpeakerEvent(BaseModel):
+    """단일 중앙은행 인사의 발언 — 매파/비둘기 분류."""
+    event_date: date
+    cb: CentralBank
+    speaker: str = Field(description="'Powell', '이창용', 'Lagarde' 등")
+    voting: bool | None = Field(
+        default=None,
+        description="투표권 여부 (정적 dict). 모르면 None.",
+    )
+    tone: SpeakerTone
+    headline: str = Field(max_length=300)
+
+
+class SpeakerToneAggregate(StalenessAware):
+    """Tier-4 — 최근 7일 CB speaker tone aggregate."""
+    fed_speakers_7d: list[CBSpeakerEvent] = Field(default_factory=list)
+    bok_speakers_7d: list[CBSpeakerEvent] = Field(default_factory=list)
+    other_speakers_7d: list[CBSpeakerEvent] = Field(default_factory=list)
+    fed_tone_balance: float = Field(
+        default=0.0, ge=-1, le=1,
+        description="Fed 7d: +1 매파 일색, -1 비둘기 일색, 0 mixed",
+    )
+    bok_tone_balance: float = Field(default=0.0, ge=-1, le=1)
+    fed_voting_balance: float = Field(
+        default=0.0, ge=-1, le=1,
+        description="Fed voting members만 가중. 시장 영향 핵심.",
+    )
