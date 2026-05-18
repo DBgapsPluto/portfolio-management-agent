@@ -8,6 +8,7 @@ from tradingagents.schemas.portfolio import BucketTarget, CandidateSet, WeightVe
 from tradingagents.schemas.reports import (
     MacroReport, RiskReport, TechnicalReport, NewsReport,
 )
+from tradingagents.schemas.research import ResearchDecision
 from tradingagents.schemas.technical import Cluster
 
 
@@ -40,10 +41,14 @@ class AgentState(MessagesState):
     technical_summary: Annotated[str, ""]
     news_summary: Annotated[str, ""]
 
-    # === Stage 2: Researcher debate ===
-    research_debate_summary: Annotated[str, "Bull/Bear debate summary (raw msgs not in parent state)"]
+    # === Stage 2: Research (시나리오 estimator + 결정적 매핑) ===
+    research_debate_summary: Annotated[str, "Stage 2 estimator summary (D2 isolation 유지)"]
+    research_decision: Annotated[
+        Optional[ResearchDecision],
+        "Stage 2 풀 출력 — scenario probabilities + dominant + conviction + bucket_target",
+    ]
 
-    # === Stage 3: Research Manager ===
+    # === Stage 3: Research Manager (legacy 키, BucketTarget만 노출) ===
     bucket_target: Annotated[Optional[BucketTarget], "5-bucket weight target"]
 
     # === Stage 4: Allocator ===
@@ -89,6 +94,7 @@ def _create_empty_state(
         macro_summary="", risk_summary="",
         technical_summary="", news_summary="",
         research_debate_summary="",
+        research_decision=None,
         bucket_target=None,
         candidate_set=None, weight_vector=None,
         correlation_clusters=[],

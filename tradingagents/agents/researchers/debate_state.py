@@ -1,17 +1,21 @@
-"""Bull/Bear debate sub-graph state — independent of parent AgentState (D2)."""
+"""Stage 2 sub-graph state (D2 isolated topology, Phase 1).
+
+Bull/Bear 토론 폐기. 단일 estimator 노드만 운영하지만, D2 isolation
+(parent state에 raw 산출물이 안 새도록) 원칙은 유지한다.
+"""
 from typing import Annotated, Optional
 
 from langgraph.graph import MessagesState
 
 from tradingagents.schemas.portfolio import BucketTarget
-from tradingagents.schemas.research import ResearcherTurn
+from tradingagents.schemas.research import ResearchDecision
 
 
 class InvestDebateState(MessagesState):
-    """Local state for the Bull/Bear sub-graph.
+    """Local state for the Stage 2 sub-graph.
 
-    Per D2 decision: raw debate messages live HERE only. The sub-graph judge
-    returns just (BucketTarget, summary str) to the parent AgentState.
+    Phase 1: 단일 estimator 노드 → ResearchDecision 산출. parent로 넘어가는
+    것은 (BucketTarget, ResearchDecision, summary str)뿐.
     """
     # Inputs from parent
     macro_summary: Annotated[str, "Handed off from MacroQuantAnalyst"]
@@ -19,12 +23,10 @@ class InvestDebateState(MessagesState):
     technical_summary: Annotated[str, "Handed off from TechnicalAnalyst"]
     news_summary: Annotated[str, "Handed off from MacroNewsAnalyst"]
 
-    # Local cluster state — structured turns carry confidence + proposed_risk_tilt
-    bull_arguments: Annotated[list[ResearcherTurn], "Bull researcher's turns across rounds"]
-    bear_arguments: Annotated[list[ResearcherTurn], "Bear researcher's turns"]
-    round_count: Annotated[int, "Completed debate rounds"]
-    max_rounds_cap: Annotated[int, "Hard upper bound on rounds (adaptive may stop earlier)"]
-
-    # Final
-    bucket_target: Annotated[Optional[BucketTarget], "Research Manager's decision"]
+    # Final outputs
+    bucket_target: Annotated[Optional[BucketTarget], "결정적 매핑 산출"]
+    research_decision: Annotated[
+        Optional[ResearchDecision],
+        "scenario probabilities + dominant + conviction + bucket_target",
+    ]
     research_debate_summary: Annotated[str, "Summary handed back to parent"]

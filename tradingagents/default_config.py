@@ -31,11 +31,9 @@ DEFAULT_CONFIG = {
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
-    # Debate and discussion settings
-    # research_debate adaptive rounds — hard cap; actual count varies based on
-    # confidence + divergence signals (see debate_subgraph.should_continue)
-    "max_debate_rounds_cap": 3,
-    "max_debate_rounds": 1,  # legacy: used only by tradingagents/graph/setup.py (upstream v0.2 path)
+    # Stage 2 (research) — Phase 1 단일 estimator 사용 (round 개념 없음).
+    # 아래 키들은 legacy v0.2 upstream (graph/setup.py)에서만 참조.
+    "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,
     # Data vendor configuration

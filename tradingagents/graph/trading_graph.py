@@ -12,8 +12,6 @@ from tradingagents.agents.analysts.market_risk_analyst import create_market_risk
 from tradingagents.agents.analysts.technical_analyst import create_technical_analyst
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
 from tradingagents.agents.managers.research_manager import create_research_manager
-from tradingagents.agents.researchers.bear_researcher import create_bear_researcher
-from tradingagents.agents.researchers.bull_researcher import create_bull_researcher
 from tradingagents.agents.researchers.debate_state import InvestDebateState
 from tradingagents.agents.utils.agent_states import _create_empty_state
 from tradingagents.agents.validator.mandate_validator import create_mandate_validator
@@ -63,13 +61,8 @@ class TradingAgentsGraph:
             "macro_news": create_macro_news_analyst(quick, deep),
         }
 
-        bull = create_bull_researcher(quick)
-        bear = create_bear_researcher(quick)
-        research_judge = create_research_manager(deep)
-        invest_subgraph = build_invest_debate_subgraph(
-            bull, bear, research_judge,
-            max_rounds_cap=self.config.get("max_debate_rounds_cap", 3),
-        )
+        research_estimator = create_research_manager(deep)
+        invest_subgraph = build_invest_debate_subgraph(research_estimator)
 
         allocator = create_portfolio_allocator(quick, deep, cache_path=cache_path)
         validator = create_mandate_validator()
@@ -77,7 +70,6 @@ class TradingAgentsGraph:
         pm = create_portfolio_manager(deep, artifacts_dir=artifacts_dir)
 
         # Wrap research_debate as a parent node that invokes the sub-graph
-        max_rounds_cap = self.config.get("max_debate_rounds_cap", 3)
         def research_debate_node(state):
             sub_input = InvestDebateState(
                 messages=[],
@@ -85,15 +77,15 @@ class TradingAgentsGraph:
                 risk_summary=state.get("risk_summary", ""),
                 technical_summary=state.get("technical_summary", ""),
                 news_summary=state.get("news_summary", ""),
-                bull_arguments=[], bear_arguments=[],
-                round_count=0, max_rounds_cap=max_rounds_cap,
                 bucket_target=None,
+                research_decision=None,
                 research_debate_summary="",
             )
             sub_result = invest_subgraph.invoke(sub_input)
             return {
                 "research_debate_summary": sub_result.get("research_debate_summary", ""),
                 "bucket_target": sub_result.get("bucket_target"),
+                "research_decision": sub_result.get("research_decision"),
             }
 
         # risk_debate as pass-through stub for Plan 3 (Plan 4 wires sub-graph)

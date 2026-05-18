@@ -31,7 +31,9 @@ import pytest
 from tradingagents.dataflows.universe import sync_from_xlsx
 from tradingagents.schemas.macro import RegimeClassification
 from tradingagents.schemas.news import ImpactAssessment
-from tradingagents.schemas.research import ResearcherTurn
+from tradingagents.schemas.research import (
+    ResearchDecision, ScenarioProbabilities,
+)
 from tradingagents.schemas.portfolio import BucketTarget, CandidateSet
 from tradingagents.schemas.risk import (
     BreadthSnapshot, SpreadSnapshot, SystemicRiskScore, VolatilitySnapshot,
@@ -124,24 +126,22 @@ def test_5_28_dry_run_produces_artifacts(
         method=OptimizationMethod.HRP, params={},
         reasoning="Recession + risk_off → defensive HRP.",
     )
-    # Equal 20% per bucket — HRP with 1 ETF per bucket = 0.20 per ETF, sums to 1.0.
-    bucket_out = BucketTarget(
-        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
-        bond=0.20, cash_mmf=0.20,
-        rationale="Equal bucket split for fixture feasibility",
+    # Phase 1: ScenarioProbabilities를 LLM이 산출 → mapper가 BucketTarget 결정.
+    scenario_out = ScenarioProbabilities(
+        goldilocks=0.20, ai_concentration=0.10, stagflation=0.10,
+        broad_recession=0.20, global_credit=0.20,
+        kr_boom=0.10, kr_stress=0.10,
+        reasoning="mock — broad uncertainty, balanced across scenarios",
     )
 
     deep_llm = _mock_llm_factory({
         "RegimeClassification": regime_out,
         "SystemicRiskScore": systemic_out,
         "MethodChoice": method_out,
-        "BucketTarget": bucket_out,
+        "ScenarioProbabilities": scenario_out,
     })
-    # High confidence + low divergence → debate stops after round 1
-    researcher_turn = ResearcherTurn(argument="t", confidence=0.85, proposed_risk_tilt=0.55)
     quick_llm = _mock_llm_factory({
         "ImpactAssessment": impact_out,
-        "ResearcherTurn": researcher_turn,
     })
 
     # 1. Mock LLM client factory
@@ -155,6 +155,36 @@ def test_5_28_dry_run_produces_artifacts(
     monkeypatch.setattr(
         "tradingagents.graph.trading_graph.create_llm_client",
         fake_create_llm_client,
+    )
+
+    # Stage 2: research_manager mock — 5 ETF fixture (1 per bucket) 호환 위해
+    # 균등 0.20 BucketTarget 강제. ScenarioProbabilities 자체는 deep_llm mock에
+    # 등록되지만 mapper 결과를 우회.
+    _fixture_bucket = BucketTarget(
+        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
+        bond=0.20, cash_mmf=0.20,
+        rationale="Equal bucket split for fixture feasibility",
+    )
+    _fixture_decision = ResearchDecision(
+        bucket_target=_fixture_bucket,
+        scenario_probabilities=scenario_out,
+        dominant_scenario="goldilocks",
+        dominant_probability=scenario_out.goldilocks,
+        conviction="low",
+    )
+
+    def _fixture_research_manager(_deep_llm):
+        def node(_state):
+            return {
+                "bucket_target": _fixture_bucket,
+                "research_decision": _fixture_decision,
+                "research_debate_summary": "fixture: equal 0.20 per bucket",
+            }
+        return node
+
+    monkeypatch.setattr(
+        "tradingagents.graph.trading_graph.create_research_manager",
+        _fixture_research_manager,
     )
 
     # 2. Mock FRED — macro_quant_analyst imports fetch_fred_series_skill directly

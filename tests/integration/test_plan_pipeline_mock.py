@@ -22,8 +22,10 @@ from tradingagents.schemas.macro import (
     RegimeClassification, YieldCurveSnapshot,
 )
 from tradingagents.schemas.news import ImpactAssessment
-from tradingagents.schemas.research import ResearcherTurn
 from tradingagents.schemas.portfolio import BucketTarget
+from tradingagents.schemas.research import (
+    ResearchDecision, ScenarioProbabilities,
+)
 from tradingagents.schemas.risk import (
     BreadthSnapshot, PCASnapshot, SentimentSnapshot, SpreadSnapshot,
     SystemicRiskScore, VolatilitySnapshot,
@@ -98,30 +100,24 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
         method=OptimizationMethod.HRP, params={},
         reasoning="recession + risk_off → defensive HRP.",
     )
-    # 5 fixture ETFs, 1 per bucket — set each bucket to 0.20 so HRP produces
-    # exactly 0.20 per ETF (single ETF bucket ⟹ inner weight = 1.0, scaled by
-    # bucket target). Sum = 5 × 0.20 = 1.0, respecting the 20% per-asset cap.
-    bucket_out = BucketTarget(
-        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
-        bond=0.20, cash_mmf=0.20,
-        rationale="equal bucket split — fixture feasibility",
+    # Phase 1: research_manager는 deep_llm으로 ScenarioProbabilities 산출 →
+    # 결정적 mapper가 BucketTarget으로 변환. 따라서 deep_llm mock에 시나리오
+    # 확률만 등록 (BucketTarget mock은 더 이상 필요 없음).
+    scenario_out = ScenarioProbabilities(
+        goldilocks=0.50, ai_concentration=0.20, stagflation=0.10,
+        broad_recession=0.05, global_credit=0.03,
+        kr_boom=0.10, kr_stress=0.02,
+        reasoning="mock scenario probs — goldilocks dominant",
     )
 
     deep_llm = _mock_llm_factory({
         "RegimeClassification": regime_out,
         "SystemicRiskScore": systemic_out,
         "MethodChoice": method_out,
-        "BucketTarget": bucket_out,
-        # research_manager also calls with_structured_output(BucketTarget) via invoke_with_structured_retry
+        "ScenarioProbabilities": scenario_out,
     })
-    # High confidence + low divergence → debate stops after round 1
-    bull_turn = ResearcherTurn(argument="bull", confidence=0.85, proposed_risk_tilt=0.60)
-    bear_turn = ResearcherTurn(argument="bear", confidence=0.85, proposed_risk_tilt=0.55)
     quick_llm = _mock_llm_factory({
         "ImpactAssessment": impact_out,
-        # ResearcherTurn is invoked twice (bull then bear) — single mock returns
-        # the same instance both times; that's fine since we only need shape.
-        "ResearcherTurn": bull_turn,
     })
 
     # Patch LLM client factory so TradingAgentsGraph builds without API keys
@@ -136,6 +132,37 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
     monkeypatch.setattr(
         "tradingagents.graph.trading_graph.create_llm_client",
         fake_create_llm_client,
+    )
+
+    # Phase 1 Stage 2: research_manager 자체를 mock으로 우회.
+    # 5 ETF fixture (1 per bucket) 가정 + allocator의 단일 자산 cap 20% 호환을
+    # 위해 균등 0.20씩 강제. ScenarioProbabilities mock은 그대로 두지만 mapper
+    # 결과 대신 균등 BucketTarget을 직접 반환한다.
+    _fixture_bucket = BucketTarget(
+        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
+        bond=0.20, cash_mmf=0.20,
+        rationale="equal bucket split — fixture feasibility",
+    )
+    _fixture_decision = ResearchDecision(
+        bucket_target=_fixture_bucket,
+        scenario_probabilities=scenario_out,
+        dominant_scenario="goldilocks",
+        dominant_probability=scenario_out.goldilocks,
+        conviction="high",
+    )
+
+    def _fixture_research_manager(_deep_llm):
+        def node(_state):
+            return {
+                "bucket_target": _fixture_bucket,
+                "research_decision": _fixture_decision,
+                "research_debate_summary": "fixture: equal 0.20 per bucket",
+            }
+        return node
+
+    monkeypatch.setattr(
+        "tradingagents.graph.trading_graph.create_research_manager",
+        _fixture_research_manager,
     )
 
     # Patch external data sources — use the module name where each function

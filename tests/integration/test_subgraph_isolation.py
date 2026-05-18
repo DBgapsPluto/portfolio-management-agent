@@ -1,43 +1,27 @@
-"""D2 — raw debate messages must NOT leak to parent state."""
+"""D2 — Stage 2 sub-graph의 raw 산출물이 parent state로 새지 않는지 검증.
+
+Phase 1: Bull/Bear 토론 폐기 → 단일 estimator. 그래도 sub-graph isolation은 유지.
+"""
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START, END
 
 from tradingagents.agents.researchers.debate_state import InvestDebateState
 from tradingagents.agents.utils.agent_states import AgentState, _create_empty_state
 from tradingagents.graph.debate_subgraph import build_invest_debate_subgraph
-from tradingagents.schemas.research import ResearcherTurn
-
-
-def _bull_turn(conf=0.9, tilt=0.65):
-    return ResearcherTurn(argument="bull says X", confidence=conf, proposed_risk_tilt=tilt)
-
-
-def _bear_turn(conf=0.9, tilt=0.55):
-    return ResearcherTurn(argument="bear says Y", confidence=conf, proposed_risk_tilt=tilt)
 
 
 def test_subgraph_messages_isolated():
-    def fake_bull(state):
-        return {
-            "bull_arguments": state.get("bull_arguments", []) + [_bull_turn()],
-            "messages": state["messages"] + [HumanMessage(content="BULL_RAW")],
-        }
+    """Estimator 노드가 messages를 만들어도 parent state로 안 새어나가야 함."""
 
-    def fake_bear(state):
-        return {
-            "bear_arguments": state.get("bear_arguments", []) + [_bear_turn()],
-            "messages": state["messages"] + [HumanMessage(content="BEAR_RAW")],
-            "round_count": state["round_count"] + 1,
-        }
-
-    def fake_judge(state):
+    def fake_estimator(state):
         return {
             "bucket_target": None,
-            "research_debate_summary": "summary handoff: 60/40",
+            "research_decision": None,
+            "research_debate_summary": "summary handoff: dominant=goldilocks",
+            "messages": state["messages"] + [HumanMessage(content="ESTIMATOR_RAW")],
         }
 
-    # conf=0.9 each → avg 0.9 ≥ 0.75 → stops after round 1 (regardless of cap)
-    sg = build_invest_debate_subgraph(fake_bull, fake_bear, fake_judge, max_rounds_cap=3)
+    sg = build_invest_debate_subgraph(fake_estimator)
 
     parent = _create_empty_state(
         as_of_date="2026-05-10", universe_path="x",
@@ -50,18 +34,16 @@ def test_subgraph_messages_isolated():
 
     def parent_invoke(state):
         sub_input = InvestDebateState(
-            messages=[],  # FRESH — not state["messages"]
+            messages=[],
             macro_summary=state["macro_summary"],
             risk_summary=state["risk_summary"],
             technical_summary=state["technical_summary"],
             news_summary=state["news_summary"],
-            bull_arguments=[], bear_arguments=[],
-            round_count=0, max_rounds_cap=3,
             bucket_target=None,
+            research_decision=None,
             research_debate_summary="",
         )
         sub_result = sg.invoke(sub_input)
-        # Return ONLY the summary to parent — drop raw msgs
         return {"research_debate_summary": sub_result["research_debate_summary"]}
 
     main_sg = StateGraph(AgentState)
@@ -71,7 +53,5 @@ def test_subgraph_messages_isolated():
     graph = main_sg.compile()
 
     final = graph.invoke(parent)
-    # Parent state messages should be EMPTY (sub-graph msgs isolated)
-    assert "BULL_RAW" not in str(final["messages"])
-    assert "BEAR_RAW" not in str(final["messages"])
-    assert "60/40" in final["research_debate_summary"]
+    assert "ESTIMATOR_RAW" not in str(final["messages"])
+    assert "goldilocks" in final["research_debate_summary"]
