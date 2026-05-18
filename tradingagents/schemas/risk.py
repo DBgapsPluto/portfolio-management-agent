@@ -182,3 +182,16 @@ class KRMarketTierSnapshot(StalenessAware):
     signal: Literal["large_cap_risk_off", "neutral", "small_cap_risk_on"] = Field(
         description="diff>+3% small_cap_risk_on, diff<-3% large_cap_risk_off"
     )
+
+
+class EquityBondCorrelationSnapshot(StalenessAware):
+    """Equity-bond 60일 rolling correlation. 통상 음수(분산효과).
+
+    positive flip = stagflation/inflation regime의 정체 신호.
+    1970s, 2022 같은 시기에 발생; 60/40 portfolio의 hedge가 사라짐.
+    """
+    correlation_60d: float = Field(ge=-1, le=1, description="SPY-TLT 60-day rolling corr")
+    change_3m: float = Field(description="3개월 전 대비 상관계수 변화")
+    regime: Literal["normal_hedge", "weakening_hedge", "positive_flip", "extreme_positive"] = Field(
+        description="<-0.3 normal_hedge, -0.3~0 weakening, 0~+0.3 positive_flip, >+0.3 extreme"
+    )

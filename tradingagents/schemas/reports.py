@@ -15,7 +15,7 @@ from tradingagents.schemas.risk import (
     VIXTermStructureSnapshot, SkewSnapshot, VxnSnapshot,
     RealYieldsSnapshot, FundingStressSnapshot, CreditQualitySnapshot,
     KRYieldCurveSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
-    KRMarketTierSnapshot,
+    KRMarketTierSnapshot, EquityBondCorrelationSnapshot,
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
@@ -87,6 +87,9 @@ class RiskReport(_AnalystReport):
     kr_corp_spread: KRCorpSpreadSnapshot
     kr_margin_debt: KRMarginDebtSnapshot
     kr_market_tier: KRMarketTierSnapshot
+    # Tier-4 확장 (Cross-asset positioning + 개선)
+    equity_bond_corr: EquityBondCorrelationSnapshot
+    # 주: PCA는 기존 correlation_concentration 필드 사용 (real returns로 wire만 변경)
 
 
 class TechnicalReport(_AnalystReport):

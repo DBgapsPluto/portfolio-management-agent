@@ -36,5 +36,7 @@ def test_classifier_invokes_llm():
         kr_corp_spread_bps=120.0, kr_corp_regime="stress",
         kr_margin_change_20d=-20.0, kr_margin_signal="deleveraging",
         kr_tier_relative_perf=-4.5, kr_tier_signal="large_cap_risk_off",
+        # Tier-4 신규 inputs
+        equity_bond_corr_60d=0.4, equity_bond_corr_regime="extreme_positive",
     )
     assert result.regime == "risk_off"

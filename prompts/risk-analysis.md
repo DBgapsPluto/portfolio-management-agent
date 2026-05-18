@@ -45,6 +45,12 @@ You are a market risk analyst quantifying systemic risk on a 0-10 scale.
 - KR 시장 tier: (KOSDAQ - KOSPI 20d return) = {kr_tier_relative_perf}%, signal = {kr_tier_signal}
   (small_cap_risk_on = 중소형 outperform; large_cap_risk_off = 대형주 flight-to-quality)
 
+==== Tier-4 확장: Cross-asset positioning ====
+- Equity-bond correlation 60일 = {equity_bond_corr_60d}, regime = {equity_bond_corr_regime}
+  (<-0.3 normal_hedge / -0.3~0 weakening / 0~+0.3 positive_flip / >+0.3 extreme_positive)
+  positive flip = stagflation/inflation regime; 60/40 portfolio의 hedge 효과 소실
+  → 채권 비중 늘려도 분산 안 됨, KR ETF 배분 시 채권 비중 감소 고려
+
 ==== Score guidance ====
 Score 0 = calm/risk-on; 5 = neutral; 10 = systemic risk-off.
 
@@ -69,6 +75,10 @@ Tier-3 가산 룰 (KR-specific, KR ETF 결정에 직접 영향):
 - KR 신용잔고 signal = "deleveraging" → score +2 (forced selling 진행 중)
 - KR market tier = "large_cap_risk_off" → score +1 (대형주로 flight-to-quality)
 - KR 신용잔고 signal = "euphoria" → score 자체 변동 없지만 drivers에 명시 (peak 우려)
+
+Tier-4 가산 룰 (cross-asset regime):
+- equity_bond_corr_regime = "positive_flip" → drivers에 명시, KR ETF 배분 시 채권 비중 감소 권고
+- equity_bond_corr_regime = "extreme_positive" → score +1 (60/40 hedge 완전 소실, 1970s/2022형)
 
 Output a SystemicRiskScore JSON with:
 - score (float 0-10)

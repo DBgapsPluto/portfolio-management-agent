@@ -11,11 +11,12 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from tradingagents.dataflows.cross_asset_returns import fetch_cross_asset_returns
 from tradingagents.dataflows.equity_indices import fetch_equity_index_close
 from tradingagents.dataflows.pykrx_data import fetch_credit_balance, fetch_market_index
 from tradingagents.schemas.reports import RiskReport
 from tradingagents.schemas.risk import (
-    CreditQualitySnapshot, FundingStressSnapshot,
+    CreditQualitySnapshot, EquityBondCorrelationSnapshot, FundingStressSnapshot,
     KRCorpSpreadSnapshot, KRMarginDebtSnapshot, KRMarketTierSnapshot,
     KRYieldCurveSnapshot, RealYieldsSnapshot,
     SentimentSnapshot, SkewSnapshot, VIXTermStructureSnapshot, VxnSnapshot,
@@ -26,6 +27,7 @@ from tradingagents.skills.risk.breadth import compute_market_breadth
 from tradingagents.skills.risk.correlation_pca import compute_correlation_concentration
 from tradingagents.skills.risk.credit_quality import compute_credit_quality
 from tradingagents.skills.risk.credit_spread import fetch_credit_spread
+from tradingagents.skills.risk.equity_bond_corr import compute_equity_bond_corr
 from tradingagents.skills.risk.fear_greed import fetch_fear_greed_index
 from tradingagents.skills.risk.funding_stress import compute_funding_stress
 from tradingagents.skills.risk.kr_corp_spread import compute_kr_corp_spread
@@ -114,6 +116,13 @@ def _sentinel_kr_tier(as_of: date) -> KRMarketTierSnapshot:
     )
 
 
+def _sentinel_equity_bond_corr(as_of: date) -> EquityBondCorrelationSnapshot:
+    return EquityBondCorrelationSnapshot(
+        correlation_60d=-0.3, change_3m=0.0, regime="normal_hedge",
+        source_date=as_of, staleness_days=99,
+    )
+
+
 def create_market_risk_analyst(quick_llm, deep_llm):
     def node(state):
         as_of = date.fromisoformat(state["as_of_date"])
@@ -128,14 +137,38 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         breadth_kr = compute_market_breadth("KOSPI200", as_of)
         breadth_us = compute_market_breadth("SP500", as_of)
 
-        # Correlation concentration via PCA (synthetic asset class returns for v1)
-        synthetic = pd.DataFrame({
-            "kospi": [0.001, -0.002, 0.003, -0.001, 0.002] * 50,
-            "spy": [0.002, -0.001, 0.002, 0.0, 0.001] * 50,
-            "tlt": [-0.001, 0.001, -0.002, 0.001, 0.0] * 50,
-            "gld": [0.0, 0.001, 0.0, -0.001, 0.001] * 50,
-        })
-        pca = compute_correlation_concentration(synthetic, as_of)
+        # Tier-4: Real cross-asset PCA (SPY/QQQ/TLT/GLD/EWY via yfinance)
+        try:
+            returns_matrix = fetch_cross_asset_returns(
+                start=as_of - timedelta(days=365), end=as_of,
+            )
+            if returns_matrix.empty:
+                raise ValueError("empty cross-asset returns")
+            pca = compute_correlation_concentration(returns_matrix, as_of)
+        except Exception:
+            # Fallback: 기존 synthetic (degraded mode)
+            synthetic = pd.DataFrame({
+                "spy": [0.002, -0.001, 0.002, 0.0, 0.001] * 50,
+                "qqq": [0.003, -0.002, 0.003, 0.0, 0.001] * 50,
+                "tlt": [-0.001, 0.001, -0.002, 0.001, 0.0] * 50,
+                "gld": [0.0, 0.001, 0.0, -0.001, 0.001] * 50,
+                "ewy": [0.001, -0.002, 0.003, -0.001, 0.002] * 50,
+            })
+            pca = compute_correlation_concentration(synthetic, as_of)
+            pca = pca.model_copy(update={"staleness_days": 99})
+            returns_matrix = pd.DataFrame()
+
+        # Tier-4: Equity-bond correlation (SPY-TLT 60d)
+        try:
+            if not returns_matrix.empty and "SPY" in returns_matrix.columns \
+                    and "TLT" in returns_matrix.columns:
+                eq_bd_corr = compute_equity_bond_corr(
+                    returns_matrix["SPY"], returns_matrix["TLT"], as_of=as_of,
+                )
+            else:
+                eq_bd_corr = _sentinel_equity_bond_corr(as_of)
+        except Exception:
+            eq_bd_corr = _sentinel_equity_bond_corr(as_of)
 
         # Skip-with-note for fear_greed (D5 tier3)
         if fg is None:
@@ -290,6 +323,9 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             kr_margin_signal=kr_margin.signal,
             kr_tier_relative_perf=kr_market_tier.relative_perf_pct,
             kr_tier_signal=kr_market_tier.signal,
+            # Tier-4 신규 inputs (cross-asset positioning)
+            equity_bond_corr_60d=eq_bd_corr.correlation_60d,
+            equity_bond_corr_regime=eq_bd_corr.regime,
         )
 
         narrative = quick_llm.invoke(
@@ -316,6 +352,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             f"KR corp spread: {kr_corp_spread.spread_bps:+.0f}bps ({kr_corp_spread.regime})\n"
             f"KR margin: 20d {kr_margin.change_20d_pct:+.1f}% ({kr_margin.signal})\n"
             f"KR tier: KOSDAQ-KOSPI {kr_market_tier.relative_perf_pct:+.1f}% ({kr_market_tier.signal})\n"
+            f"Equity-bond corr 60d: {eq_bd_corr.correlation_60d:+.2f} ({eq_bd_corr.regime})\n"
         )[:2000]
 
         report = RiskReport(
@@ -327,6 +364,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             credit_quality=credit_quality,
             kr_yield_curve=kr_yield_curve, kr_corp_spread=kr_corp_spread,
             kr_margin_debt=kr_margin, kr_market_tier=kr_market_tier,
+            equity_bond_corr=eq_bd_corr,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"risk_report": report, "risk_summary": summary}
