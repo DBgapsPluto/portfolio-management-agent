@@ -12,6 +12,9 @@ from tradingagents.schemas.research import ResearchDecision
 from tradingagents.schemas.risk_overlay import RiskOverlay
 from tradingagents.schemas.technical import Cluster
 
+# Stage 4 PortfolioNumerics는 skills/risk/portfolio_metrics에 있어 별도 import
+from tradingagents.skills.risk.portfolio_metrics import PortfolioNumerics
+
 
 class AgentState(MessagesState):
     """Top-level state for the DB GAPS pipeline.
@@ -58,16 +61,24 @@ class AgentState(MessagesState):
     method_choice: Annotated[Optional[dict], "Deterministic MethodChoice (Phase A)"]
     correlation_clusters: Annotated[list[Cluster], "From technical analyst, used for validation"]
 
-    # === Stage 4: Risk Judge (RiskOverlay) ===
+    # === Stage 4: Risk Judge (RiskOverlay + PortfolioNumerics) ===
     risk_debate_summary: Annotated[str, "Risk Overlay summary"]
     risk_overlay: Annotated[
         Optional[RiskOverlay],
         "Stage 4 출력 — LLM은 제약만 만들고 Stage 3 2차에서 optimizer가 풀이",
     ]
+    portfolio_numerics: Annotated[
+        Optional[PortfolioNumerics],
+        "Stage 3.5 numerics (HHI/CVaR/cluster_exposure) — risk_judge가 산출",
+    ]
 
-    # === Stage 6: Validation ===
+    # === Stage 5: Validation ===
     validation_report: Annotated[Optional[ValidationReport], "Mandate validator output"]
     validation_passed: Annotated[Optional[bool], "True/False/None pre-validation"]
+    rebalance_mode: Annotated[
+        Optional[str],
+        "Stage 5에서 결정 — 'initial' / 'monthly' (FLOOR_BY_MODE)",
+    ]
 
     # D4: Validator cycle
     allocation_attempts: Annotated[int, "Retry counter for Validator → Allocator cycle"]
@@ -107,6 +118,8 @@ def _create_empty_state(
         correlation_clusters=[],
         risk_debate_summary="",
         risk_overlay=None,
+        portfolio_numerics=None,
+        rebalance_mode=None,
         validation_report=None, validation_passed=None,
         allocation_attempts=0, allocation_feedback=[],
         final_portfolio_path="", philosophy_doc_path="", trade_plan_csv_path="",
