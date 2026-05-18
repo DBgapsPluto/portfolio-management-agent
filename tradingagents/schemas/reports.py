@@ -25,6 +25,7 @@ from tradingagents.schemas.technical import (
 )
 from tradingagents.schemas.news import (
     CalendarEvent, RankedNews, GlobalOvernightSnapshot,
+    ReleaseSurpriseSnapshot,
 )
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
@@ -144,4 +145,10 @@ class NewsReport(_AnalystReport):
         default=None,
         description="STOXX50/FTSE/N225/HSI/SSE/TWII/WTI/NG/USDKRW overnight. "
                     "US 데이터는 macro_quant/market_risk가 커버.",
+    )
+    # Tier-2 확장 (Release surprise — forecast vs actual)
+    release_surprise: ReleaseSurpriseSnapshot | None = Field(
+        default=None,
+        description="경제지표 surprise + 30d ESI bias. macro_quant FRED actual "
+                    "라인이 못 잡는 forecast 대비 차이.",
     )

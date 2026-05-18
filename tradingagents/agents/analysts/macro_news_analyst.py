@@ -9,6 +9,9 @@ from tradingagents.skills.news.global_overnight import (
 from tradingagents.skills.news.impact_classifier import classify_event_impact
 from tradingagents.skills.news.news_fetcher import fetch_macro_news_skill
 from tradingagents.skills.news.ranker import dedupe_rank_news
+from tradingagents.skills.news.release_surprise import (
+    compute_release_surprise_snapshot,
+)
 
 
 def _summarize_overnight(snap) -> str:
@@ -19,6 +22,24 @@ def _summarize_overnight(snap) -> str:
         f"Tier-1 (global overnight, n={snap.fetched_count}/9):\n"
         f"  Regime: {snap.risk_regime_overnight}\n"
         f"  {snap.narrative_seed}\n"
+    )
+
+
+def _summarize_surprise(snap) -> str:
+    """Tier-2 압축: 오늘 ★★★ + 30d bias + ESI."""
+    if snap is None:
+        return ""
+    if not snap.today_releases and not snap.last_5d_releases:
+        return f"Tier-2 (release surprise): no releases (waiting on SAVE/calendar data)\n"
+    today_str = "; ".join(
+        f"{r.indicator}({r.actual} vs {r.forecast}, {r.direction})"
+        for r in snap.today_releases[:3]
+    )
+    return (
+        f"Tier-2 (release surprise):\n"
+        f"  Today high-importance: {snap.high_importance_today}\n"
+        f"  Today releases: {today_str or '(none)'}\n"
+        f"  30d ESI: {snap.surprise_index_30d:+.2f}, bias: {snap.bias_30d}\n"
     )
 
 
@@ -52,6 +73,18 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             overnight = None
         overnight_summary = _summarize_overnight(overnight)
 
+        # Tier-2: Release surprise — releases는 Tier-5 SAVE 또는 state에서 주입
+        # 현재 단계에선 빈 list로 호출, 향후 SaveBriefSnapshot.economic_releases
+        # 가 채워지면 자동으로 의미있는 값이 나옴.
+        external_releases = state.get("release_surprises_30d", []) or []
+        try:
+            surprise_snapshot = compute_release_surprise_snapshot(
+                external_releases, as_of=as_of,
+            )
+        except Exception:
+            surprise_snapshot = None
+        surprise_summary = _summarize_surprise(surprise_snapshot)
+
         narrative = quick_llm.invoke(
             f"Summarize macro news in ≤500 Korean chars. "
             f"Top: {[r.item.headline[:50] for r in ranked[:3]]}"
@@ -62,11 +95,13 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             f"## News\nUpcoming events: {len(events)}\n"
             f"Top headlines (severity {top_severity}): {top_headline}\n"
             f"{overnight_summary}"
+            f"{surprise_summary}"
         )[:2000]
 
         report = NewsReport(
             upcoming_events=events, ranked_news=ranked,
             global_overnight=overnight,
+            release_surprise=surprise_snapshot,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"news_report": report, "news_summary": summary}
