@@ -3,6 +3,11 @@ from pydantic import BaseModel, Field
 from tradingagents.schemas.macro import (
     YieldCurveSnapshot, InflationSnapshot, EmploymentSnapshot,
     DivergenceScore, RegimeClassification, CentralBankEvent,
+    KRExportSnapshot, KRLeadingIndexSnapshot, KRBusinessSurveySnapshot,
+    USLeadingIndexSnapshot, GDPNowSnapshot,
+    FinancialConditionsSnapshot, InflationExpectationsSnapshot, FedPathSnapshot,
+    FXSnapshot, RiskAppetiteSnapshot, ChinaLeadingSnapshot, ForeignFlowSnapshot,
+    PolicyUncertaintySnapshot, TailRiskSnapshot,
 )
 from tradingagents.schemas.risk import (
     VolatilitySnapshot, SpreadSnapshot, SentimentSnapshot,
@@ -35,6 +40,24 @@ class MacroReport(_AnalystReport):
     kr_divergence: DivergenceScore
     regime: RegimeClassification
     upcoming_events: list[CentralBankEvent]
+    # Tier-1 확장 (KR cycle + US 선행/실시간 성장)
+    kr_export: KRExportSnapshot
+    kr_leading: KRLeadingIndexSnapshot
+    kr_business_survey: KRBusinessSurveySnapshot
+    us_leading: USLeadingIndexSnapshot
+    gdp_nowcast: GDPNowSnapshot
+    # Tier-2 확장 (Financial conditions + 기대인플레 + Fed path)
+    financial_conditions: FinancialConditionsSnapshot
+    inflation_expectations: InflationExpectationsSnapshot
+    fed_path: FedPathSnapshot
+    # Tier-3 확장 (Cross-asset + KR FX overlay)
+    fx: FXSnapshot
+    risk_appetite: RiskAppetiteSnapshot
+    china_leading: ChinaLeadingSnapshot
+    foreign_flow: ForeignFlowSnapshot
+    # Tier-4 확장 (Policy uncertainty + Tail risk)
+    policy_uncertainty: PolicyUncertaintySnapshot
+    tail_risk: TailRiskSnapshot
 
 
 class RiskReport(_AnalystReport):

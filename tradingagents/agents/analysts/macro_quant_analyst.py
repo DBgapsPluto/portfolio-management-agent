@@ -1,19 +1,48 @@
-"""Macro/Quant Analyst — orchestrates 8 macro skills, composes MacroReport.
+"""Macro/Quant Analyst — orchestrates 13 macro skills, composes MacroReport.
 
 Per design §7.1: fixed pipeline (no LLM-driven skill ordering).
 LLM only writes the ≤500-char narrative + 2KB summary.
+
+Tier-1 확장 (KR cycle + US 선행/실시간 성장):
+- kr_export: 한국 EPS의 가장 강력한 동행/선행 지표
+- kr_leading: 통계청 선행지수 순환변동치 (cycle phase 분류)
+- kr_business_survey: BOK 제조업 BSI (100 기준선)
+- us_leading: CFNAI 85개 지표 합성 (MA3 < -0.7 → recession)
+- gdp_nowcast: Atlanta Fed 실시간 분기 GDP nowcast
 """
 from datetime import date, timedelta
 
-from tradingagents.schemas.macro import RegimeClassification, DivergenceScore
+from tradingagents.dataflows.commodities import fetch_commodity_close
+from tradingagents.dataflows.pykrx_data import fetch_foreign_flow
+from tradingagents.schemas.macro import (
+    ChinaLeadingSnapshot, DivergenceScore, FXSnapshot, FedPathSnapshot,
+    FinancialConditionsSnapshot, ForeignFlowSnapshot, GDPNowSnapshot,
+    InflationExpectationsSnapshot, KRBusinessSurveySnapshot, KRExportSnapshot,
+    KRLeadingIndexSnapshot, PolicyUncertaintySnapshot, RegimeClassification,
+    RiskAppetiteSnapshot, TailRiskSnapshot, USLeadingIndexSnapshot,
+)
 from tradingagents.schemas.reports import MacroReport
 from tradingagents.skills.macro.calendar import fetch_central_bank_calendar_skill
+from tradingagents.skills.macro.china_leading import compute_china_leading
 from tradingagents.skills.macro.divergence import compute_kr_divergence
 from tradingagents.skills.macro.ecos_fetcher import fetch_ecos_series_skill
 from tradingagents.skills.macro.employment import compute_unemployment_trend
+from tradingagents.skills.macro.fed_path import compute_fed_path
+from tradingagents.skills.macro.financial_conditions import compute_financial_conditions
+from tradingagents.skills.macro.foreign_flow import compute_foreign_flow
 from tradingagents.skills.macro.fred_fetcher import fetch_fred_series_skill
+from tradingagents.skills.macro.fx import compute_fx_overlay
+from tradingagents.skills.macro.gdp_nowcast import compute_gdp_nowcast
 from tradingagents.skills.macro.inflation import compute_inflation_trend
+from tradingagents.skills.macro.inflation_expectations import compute_inflation_expectations
+from tradingagents.skills.macro.kr_business_survey import compute_kr_business_survey
+from tradingagents.skills.macro.kr_exports import compute_kr_export_trend
+from tradingagents.skills.macro.kr_leading import compute_kr_leading_index
+from tradingagents.skills.macro.policy_uncertainty import compute_policy_uncertainty
 from tradingagents.skills.macro.regime_classifier import classify_regime
+from tradingagents.skills.macro.risk_appetite import compute_risk_appetite
+from tradingagents.skills.macro.tail_risk import compute_tail_risk
+from tradingagents.skills.macro.us_leading import compute_us_leading_index
 from tradingagents.skills.macro.yield_curve import compute_yield_curve
 
 
@@ -25,9 +54,123 @@ Data:
 - 10y-2y spread: {spread_2y_bps:.1f} bps (inverted {inverted_days} days)
 - CPI YoY: {cpi:.1f}% (accelerating: {accelerating})
 - Unemployment: {ur:.1f}% (Sahm: {sahm})
+- KR export YoY: {kr_export_yoy:.1f}% (accelerating: {kr_export_acc})
+- KR leading index: {kr_cli:.1f} ({kr_phase})
+- KR mfg BSI: {kr_bsi:.1f} (contraction: {kr_contraction})
+- CFNAI MA3: {cfnai_ma3:.2f} (recession: {us_recession})
+- GDPNow: {gdp_now:.1f}%
+- NFCI: {nfci:.2f} ({nfci_regime}, tightening: {nfci_tight})
+- Inflation expectations: 5Y5Y={breakeven:.2f}%, Michigan 1y={mich:.2f}%, anchored={anchored}
+- Fed path (DGS2-DFF): {fed_bps:+.0f} bps → market expects {fed_view}
+- FX: USD/KRW={usd_krw:.0f} ({krw_chg:+.1f}% 1m, {fx_regime})
+- Copper/Gold: {cu_signal} (1y pct {cu_pct:.0%})
+- China CLI: {china_cli:.1f} ({china_phase})
+- Foreign KOSPI 20d: {foreign_20d:+.1f}억 ({foreign_signal})
+- Policy uncertainty: US EPU={us_epu:.0f} ({epu_regime})
+- Tail risk: VVIX={vvix:.0f}, MOVE={move:.0f} ({tail_signal})
 - Upcoming events: {events}
 
 Write ≤500 chars in Korean. Be concrete. Cite numbers above only — do not invent."""
+
+
+def _sentinel_kr_export(as_of: date) -> KRExportSnapshot:
+    return KRExportSnapshot(
+        yoy_pct=0.0, momentum_3mo_pct=0.0, momentum_6mo_pct=0.0,
+        accelerating=False, source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_kr_leading(as_of: date) -> KRLeadingIndexSnapshot:
+    return KRLeadingIndexSnapshot(
+        cli_value=100.0, change_3mo=0.0, change_6mo=0.0, phase="expansion",
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_kr_bsi(as_of: date) -> KRBusinessSurveySnapshot:
+    return KRBusinessSurveySnapshot(
+        mfg_bsi=100.0, change_3mo=0.0, contraction_signal=False,
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_us_leading(as_of: date) -> USLeadingIndexSnapshot:
+    return USLeadingIndexSnapshot(
+        cfnai_value=0.0, cfnai_ma3=0.0, recession_signal=False,
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_gdp_nowcast(as_of: date) -> GDPNowSnapshot:
+    return GDPNowSnapshot(
+        nowcast_pct=0.0, change_from_prior=0.0,
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_fci(as_of: date) -> FinancialConditionsSnapshot:
+    return FinancialConditionsSnapshot(
+        nfci=0.0, anfci=0.0, regime="neutral", tightening=False,
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_inflexp(as_of: date) -> InflationExpectationsSnapshot:
+    return InflationExpectationsSnapshot(
+        breakeven_5y5y=2.0, michigan_1y=3.0, anchored=True,
+        unanchored_direction="none", source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_fed_path(as_of: date) -> FedPathSnapshot:
+    return FedPathSnapshot(
+        current_rate_pct=0.0, implied_2y_rate_pct=0.0,
+        path_bps=0.0, market_view="hold",
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_fx(as_of: date) -> FXSnapshot:
+    return FXSnapshot(
+        usd_krw=1300.0, dxy=100.0, krw_change_1m_pct=0.0, dxy_change_1m_pct=0.0,
+        regime="neutral", source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_risk_appetite(as_of: date) -> RiskAppetiteSnapshot:
+    return RiskAppetiteSnapshot(
+        copper_price=0.0, gold_price=0.0, ratio=0.0,
+        ratio_percentile_1y=0.5, signal="neutral",
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_china_leading(as_of: date) -> ChinaLeadingSnapshot:
+    return ChinaLeadingSnapshot(
+        cli_value=100.0, change_3mo=0.0, phase="expansion",
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_foreign_flow(as_of: date) -> ForeignFlowSnapshot:
+    return ForeignFlowSnapshot(
+        net_5d_krw=0.0, net_20d_krw=0.0, signal="neutral",
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_policy_uncertainty(as_of: date) -> PolicyUncertaintySnapshot:
+    return PolicyUncertaintySnapshot(
+        us_epu=100.0, global_epu=100.0, us_epu_percentile_5y=0.5, regime="normal",
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_tail_risk(as_of: date) -> TailRiskSnapshot:
+    return TailRiskSnapshot(
+        vvix=90.0, move=100.0, vvix_percentile_1y=0.5, move_percentile_1y=0.5,
+        signal="calm", source_date=as_of, staleness_days=99,
+    )
 
 
 def create_macro_quant_analyst(quick_llm, deep_llm):
@@ -64,6 +207,126 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         except Exception:
             div = DivergenceScore(us_kr_rate_gap_bps=0, us_kr_inflation_gap=0, score=0, source_date=as_of)
 
+        # Tier-1: KR exports (ECOS 403Y001 already wired)
+        try:
+            kr_exp_series = fetch_ecos_series_skill("kr_export", start_macro, as_of, as_of_date=as_of)
+            kr_export = compute_kr_export_trend(kr_exp_series, as_of=as_of)
+        except Exception:
+            kr_export = _sentinel_kr_export(as_of)
+
+        # Tier-1: KR leading index (선행지수 순환변동치)
+        try:
+            kr_cli_series = fetch_ecos_series_skill("kr_cli", start_macro, as_of, as_of_date=as_of)
+            kr_leading = compute_kr_leading_index(kr_cli_series, as_of=as_of)
+        except Exception:
+            kr_leading = _sentinel_kr_leading(as_of)
+
+        # Tier-1: KR BSI (제조업 업황)
+        try:
+            kr_bsi_series = fetch_ecos_series_skill("kr_bsi_mfg", start_macro, as_of, as_of_date=as_of)
+            kr_bsi = compute_kr_business_survey(kr_bsi_series, as_of=as_of)
+        except Exception:
+            kr_bsi = _sentinel_kr_bsi(as_of)
+
+        # Tier-1: US CFNAI (Chicago Fed National Activity Index)
+        try:
+            cfnai = fetch_fred_series_skill("us_cfnai", start_macro, as_of, as_of_date=as_of)
+            cfnai_ma3 = fetch_fred_series_skill("us_cfnai_ma3", start_macro, as_of, as_of_date=as_of)
+            us_leading = compute_us_leading_index(cfnai, cfnai_ma3, as_of=as_of)
+        except Exception:
+            us_leading = _sentinel_us_leading(as_of)
+
+        # Tier-1: Atlanta Fed GDPNow
+        try:
+            gdpnow_series = fetch_fred_series_skill(
+                "us_gdp_nowcast", as_of - timedelta(days=90), as_of, as_of_date=as_of,
+            )
+            gdp_nowcast = compute_gdp_nowcast(gdpnow_series, as_of=as_of)
+        except Exception:
+            gdp_nowcast = _sentinel_gdp_nowcast(as_of)
+
+        # Tier-2: Chicago Fed NFCI (financial conditions, weekly)
+        try:
+            nfci = fetch_fred_series_skill("us_nfci", start_macro, as_of, as_of_date=as_of)
+            anfci = fetch_fred_series_skill("us_anfci", start_macro, as_of, as_of_date=as_of)
+            fci = compute_financial_conditions(nfci, anfci, as_of=as_of)
+        except Exception:
+            fci = _sentinel_fci(as_of)
+
+        # Tier-2: Inflation expectations (5Y5Y breakeven + Michigan 1y survey)
+        try:
+            breakeven = fetch_fred_series_skill(
+                "us_5y5y_breakeven", start_macro, as_of, as_of_date=as_of,
+            )
+            michigan = fetch_fred_series_skill(
+                "us_michigan_1y", start_macro, as_of, as_of_date=as_of,
+            )
+            inflation_exp = compute_inflation_expectations(breakeven, michigan, as_of=as_of)
+        except Exception:
+            inflation_exp = _sentinel_inflexp(as_of)
+
+        # Tier-2: Fed path implied (DGS2 - DFF proxy for futures-implied path)
+        try:
+            dgs2 = fetch_fred_series_skill("us_2y", start_macro, as_of, as_of_date=as_of)
+            dff = fetch_fred_series_skill("us_policy_rate", start_macro, as_of, as_of_date=as_of)
+            fed_path = compute_fed_path(dff, dgs2, as_of=as_of)
+        except Exception:
+            fed_path = _sentinel_fed_path(as_of)
+
+        # Tier-3: FX overlay (USD/KRW + DXY)
+        try:
+            krw = fetch_fred_series_skill("usd_krw", start_macro, as_of, as_of_date=as_of)
+            dxy = fetch_fred_series_skill("dxy", start_macro, as_of, as_of_date=as_of)
+            fx = compute_fx_overlay(krw, dxy, as_of=as_of)
+        except Exception:
+            fx = _sentinel_fx(as_of)
+
+        # Tier-3: Risk appetite (Copper/Gold via yfinance)
+        try:
+            copper = fetch_commodity_close("copper", as_of - timedelta(days=400), as_of)
+            gold = fetch_commodity_close("gold", as_of - timedelta(days=400), as_of)
+            risk_appetite = compute_risk_appetite(copper, gold, as_of=as_of)
+        except Exception:
+            risk_appetite = _sentinel_risk_appetite(as_of)
+
+        # Tier-3: China leading indicator (OECD CLI via FRED)
+        try:
+            china_cli_series = fetch_fred_series_skill(
+                "china_cli", start_macro, as_of, as_of_date=as_of,
+            )
+            china_leading = compute_china_leading(china_cli_series, as_of=as_of)
+        except Exception:
+            china_leading = _sentinel_china_leading(as_of)
+
+        # Tier-3: Foreign flow (KRX 외국인 KOSPI 순매수)
+        try:
+            foreign_series = fetch_foreign_flow(
+                as_of - timedelta(days=60), as_of, market="KOSPI",
+            )
+            foreign_flow = compute_foreign_flow(foreign_series, as_of=as_of)
+        except Exception:
+            foreign_flow = _sentinel_foreign_flow(as_of)
+
+        # Tier-4: Policy uncertainty (US + Global EPU)
+        try:
+            us_epu = fetch_fred_series_skill(
+                "us_epu", start_macro, as_of, as_of_date=as_of,
+            )
+            global_epu = fetch_fred_series_skill(
+                "global_epu", start_macro, as_of, as_of_date=as_of,
+            )
+            policy_uncertainty = compute_policy_uncertainty(us_epu, global_epu, as_of=as_of)
+        except Exception:
+            policy_uncertainty = _sentinel_policy_uncertainty(as_of)
+
+        # Tier-4: Tail risk (VVIX + MOVE — GPR substitute)
+        try:
+            vvix = fetch_fred_series_skill("vvix", start_macro, as_of, as_of_date=as_of)
+            move = fetch_fred_series_skill("move", start_macro, as_of, as_of_date=as_of)
+            tail_risk = compute_tail_risk(vvix, move, as_of=as_of)
+        except Exception:
+            tail_risk = _sentinel_tail_risk(as_of)
+
         events = fetch_central_bank_calendar_skill(as_of, days=90)
 
         regime: RegimeClassification = classify_regime(
@@ -75,6 +338,42 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             accelerating=infl.accelerating,
             unemployment_rate=emp.unemployment_rate,
             sahm_rule_triggered=emp.sahm_rule_triggered,
+            # Tier-1 신규 inputs
+            kr_export_yoy=kr_export.yoy_pct,
+            kr_export_accelerating=kr_export.accelerating,
+            kr_cli_value=kr_leading.cli_value,
+            kr_cli_phase=kr_leading.phase,
+            kr_bsi_mfg=kr_bsi.mfg_bsi,
+            kr_bsi_contraction=kr_bsi.contraction_signal,
+            us_cfnai_ma3=us_leading.cfnai_ma3,
+            us_recession_signal=us_leading.recession_signal,
+            us_gdp_nowcast=gdp_nowcast.nowcast_pct,
+            # Tier-2 신규 inputs
+            us_nfci=fci.nfci,
+            us_nfci_regime=fci.regime,
+            us_nfci_tightening=fci.tightening,
+            us_breakeven_5y5y=inflation_exp.breakeven_5y5y,
+            us_michigan_1y=inflation_exp.michigan_1y,
+            us_inflation_anchored=inflation_exp.anchored,
+            fed_path_bps=fed_path.path_bps,
+            fed_market_view=fed_path.market_view,
+            # Tier-3 신규 inputs
+            usd_krw=fx.usd_krw,
+            krw_change_1m=fx.krw_change_1m_pct,
+            fx_regime=fx.regime,
+            copper_gold_signal=risk_appetite.signal,
+            copper_gold_percentile=risk_appetite.ratio_percentile_1y,
+            china_cli_value=china_leading.cli_value,
+            china_cli_phase=china_leading.phase,
+            foreign_flow_20d_krw=foreign_flow.net_20d_krw,
+            foreign_flow_signal=foreign_flow.signal,
+            # Tier-4 신규 inputs
+            us_epu=policy_uncertainty.us_epu,
+            us_epu_regime=policy_uncertainty.regime,
+            us_epu_percentile=policy_uncertainty.us_epu_percentile_5y,
+            vvix=tail_risk.vvix,
+            move=tail_risk.move,
+            tail_risk_signal=tail_risk.signal,
         )
 
         narrative_prompt = NARRATIVE_PROMPT.format(
@@ -82,6 +381,23 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             spread_2y_bps=yc.spread_10y_2y_bps, inverted_days=yc.inverted_days_count,
             cpi=infl.cpi_yoy, accelerating=infl.accelerating,
             ur=emp.unemployment_rate, sahm=emp.sahm_rule_triggered,
+            kr_export_yoy=kr_export.yoy_pct, kr_export_acc=kr_export.accelerating,
+            kr_cli=kr_leading.cli_value, kr_phase=kr_leading.phase,
+            kr_bsi=kr_bsi.mfg_bsi, kr_contraction=kr_bsi.contraction_signal,
+            cfnai_ma3=us_leading.cfnai_ma3, us_recession=us_leading.recession_signal,
+            gdp_now=gdp_nowcast.nowcast_pct,
+            nfci=fci.nfci, nfci_regime=fci.regime, nfci_tight=fci.tightening,
+            breakeven=inflation_exp.breakeven_5y5y, mich=inflation_exp.michigan_1y,
+            anchored=inflation_exp.anchored,
+            fed_bps=fed_path.path_bps, fed_view=fed_path.market_view,
+            usd_krw=fx.usd_krw, krw_chg=fx.krw_change_1m_pct, fx_regime=fx.regime,
+            cu_signal=risk_appetite.signal, cu_pct=risk_appetite.ratio_percentile_1y,
+            china_cli=china_leading.cli_value, china_phase=china_leading.phase,
+            foreign_20d=foreign_flow.net_20d_krw / 1e8,
+            foreign_signal=foreign_flow.signal,
+            us_epu=policy_uncertainty.us_epu, epu_regime=policy_uncertainty.regime,
+            vvix=tail_risk.vvix, move=tail_risk.move,
+            tail_signal=tail_risk.signal,
             events=", ".join(f"{e.event_date} {e.bank}" for e in events[:3]) or "none",
         )
         narrative = quick_llm.invoke(narrative_prompt).content[:500]
@@ -91,6 +407,20 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             f"YC 10y-2y: {yc.spread_10y_2y_bps:.0f}bps, inverted {yc.inverted_days_count}d\n"
             f"CPI: {infl.cpi_yoy:.1f}% YoY ({'↑' if infl.accelerating else '↓'})\n"
             f"UR: {emp.unemployment_rate:.1f}% (Sahm: {emp.sahm_rule_triggered})\n"
+            f"KR exports: {kr_export.yoy_pct:+.1f}% YoY ({'↑' if kr_export.accelerating else '↓'})\n"
+            f"KR CLI: {kr_leading.cli_value:.1f} ({kr_leading.phase}), BSI mfg: {kr_bsi.mfg_bsi:.0f}\n"
+            f"CFNAI MA3: {us_leading.cfnai_ma3:+.2f} ({'recession' if us_leading.recession_signal else 'expansion'})\n"
+            f"GDPNow: {gdp_nowcast.nowcast_pct:+.1f}%\n"
+            f"NFCI: {fci.nfci:+.2f} ({fci.regime}{', tightening' if fci.tightening else ''})\n"
+            f"Inflexp: 5Y5Y={inflation_exp.breakeven_5y5y:.2f}%, "
+            f"Mich1y={inflation_exp.michigan_1y:.2f}% ({'anchored' if inflation_exp.anchored else inflation_exp.unanchored_direction})\n"
+            f"Fed path: {fed_path.path_bps:+.0f}bps → {fed_path.market_view}\n"
+            f"FX: USD/KRW {fx.usd_krw:.0f} ({fx.krw_change_1m_pct:+.1f}%/1m, {fx.regime})\n"
+            f"Cu/Au: {risk_appetite.signal} (pct {risk_appetite.ratio_percentile_1y:.0%})\n"
+            f"China CLI: {china_leading.cli_value:.1f} ({china_leading.phase})\n"
+            f"Foreign 20d: {foreign_flow.net_20d_krw/1e8:+.0f}억 ({foreign_flow.signal})\n"
+            f"US EPU: {policy_uncertainty.us_epu:.0f} ({policy_uncertainty.regime})\n"
+            f"Tail risk: VVIX={tail_risk.vvix:.0f}, MOVE={tail_risk.move:.0f} ({tail_risk.signal})\n"
             f"Drivers: {', '.join(regime.drivers[:3])}\n"
         )[:2000]
 
@@ -98,6 +428,14 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             yield_curve=yc, inflation=infl, employment=emp,
             kr_divergence=div, regime=regime,
             upcoming_events=events,
+            kr_export=kr_export, kr_leading=kr_leading,
+            kr_business_survey=kr_bsi,
+            us_leading=us_leading, gdp_nowcast=gdp_nowcast,
+            financial_conditions=fci, inflation_expectations=inflation_exp,
+            fed_path=fed_path,
+            fx=fx, risk_appetite=risk_appetite,
+            china_leading=china_leading, foreign_flow=foreign_flow,
+            policy_uncertainty=policy_uncertainty, tail_risk=tail_risk,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"macro_report": report, "macro_summary": summary}

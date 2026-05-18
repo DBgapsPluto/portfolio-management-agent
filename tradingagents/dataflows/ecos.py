@@ -22,6 +22,12 @@ ECOS_STAT_CODES = {
     "kr_import": ("403Y003", "*AA"),
     "kr_industrial_production": ("901Y033", "*"),
     "kr_unrate": ("901Y027", "I31A"),
+    # Tier-1 확장 — KR 경기 사이클 신호
+    # 901Y014 = 경기종합지수, item code는 선행지수 순환변동치
+    # NOTE: ECOS item code는 통계청 공표 형식 변경 시 재확인 필요
+    "kr_cli": ("901Y067", "I16D"),       # 선행지수 순환변동치
+    # 512Y014 = 기업경기실사지수(BSI), 제조업 업황 실적
+    "kr_bsi_mfg": ("512Y014", "AX1AA"),  # 제조업 업황 BSI (월간)
 }
 
 

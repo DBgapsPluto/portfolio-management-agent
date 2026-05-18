@@ -106,6 +106,51 @@ def fetch_etf_ohlcv_batch(
     wait=wait_exponential(multiplier=1, min=1, max=8),
     retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
 )
+def _raw_foreign_flow_call(start: date, end: date, market: str = "KOSPI") -> pd.DataFrame:
+    """KRX 투자자별 일일 순매수 거래대금 (KRW). 외국인/기관/개인."""
+    from pykrx import stock
+    return stock.get_market_trading_value_by_date(
+        start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), market,
+    )
+
+
+def fetch_foreign_flow(
+    start: date, end: date, market: str = "KOSPI",
+) -> pd.Series:
+    """외국인 일별 KOSPI 순매수 (KRW). 양수 = 순매수, 음수 = 순매도.
+
+    Returns pd.Series indexed by date, values in KRW. Empty on failure.
+    """
+    try:
+        raw = _raw_foreign_flow_call(start, end, market)
+    except Exception as e:
+        logger.warning("Foreign flow fetch failed: %s", e)
+        return pd.Series(dtype=float, name="foreign_net")
+
+    if raw is None or raw.empty:
+        return pd.Series(dtype=float, name="foreign_net")
+
+    # 컬럼명 — pykrx 버전에 따라 한글 "외국인합계" 또는 "외국인"
+    col = None
+    for candidate in ("외국인합계", "외국인"):
+        if candidate in raw.columns:
+            col = candidate
+            break
+    if col is None:
+        logger.warning("Foreign column not found in pykrx flow: %s", list(raw.columns))
+        return pd.Series(dtype=float, name="foreign_net")
+
+    s = raw[col].copy()
+    s.name = "foreign_net"
+    return s
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+)
 def _raw_pykrx_snapshot_call(target_date: date) -> pd.DataFrame:
     """Direct pykrx snapshot call — all ETFs on a single date in one shot."""
     from pykrx import stock

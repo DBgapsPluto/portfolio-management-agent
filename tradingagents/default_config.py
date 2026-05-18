@@ -93,6 +93,27 @@ DEFAULT_CONFIG.update({
         "kr_import": 1,
         "kr_industrial_production": 30,
         "kr_unrate": 15,
+        # Tier-1 확장
+        "us_cfnai": 25,         # CFNAI released ~ 4주차 (전월분)
+        "us_cfnai_ma3": 25,
+        "us_gdp_nowcast": 1,    # GDPNow는 거의 실시간 (주 2회 갱신)
+        "kr_cli": 30,           # 선행지수 익월말 공표
+        "kr_bsi_mfg": 5,        # BSI 익월초 공표
+        # Tier-2 확장
+        "us_nfci": 7,           # NFCI 주간 공표 (수요일, 직전 주 종가 기준)
+        "us_anfci": 7,
+        "us_5y5y_breakeven": 1,
+        "us_michigan_1y": 15,   # 매월 중순 preliminary, 말 final
+        "us_1y_yield": 1,
+        # Tier-3 확장
+        "usd_krw": 1,
+        "dxy": 1,
+        "china_cli": 35,        # OECD CLI 익월말 공표
+        # Tier-4 확장
+        "us_epu": 5,            # EPU 익월초 공표
+        "global_epu": 30,       # Global EPU 익월말 공표
+        "vvix": 1,
+        "move": 1,
     },
     # Tracing / observability
     "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",

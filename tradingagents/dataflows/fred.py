@@ -25,6 +25,25 @@ FRED_SERIES = {
     "us_ig_oas": "BAMLC0A0CM",
     "us_hy_oas": "BAMLH0A0HYM2",
     "vix_close": "VIXCLS",
+    # Tier-1 확장: 선행지표 + 실시간 GDP nowcast
+    "us_cfnai": "CFNAI",               # Chicago Fed National Activity Index (single month)
+    "us_cfnai_ma3": "CFNAIMA3",        # 3-month MA; <-0.7 = recession entry
+    "us_gdp_nowcast": "GDPNOW",        # Atlanta Fed real-time GDP nowcast (% annualized)
+    # Tier-2 확장: financial conditions + 기대 인플레 + Fed path proxy
+    "us_nfci": "NFCI",                 # Chicago Fed National Financial Conditions (weekly)
+    "us_anfci": "ANFCI",               # Adjusted NFCI (background macro removed)
+    "us_5y5y_breakeven": "T5YIFR",     # 5Y5Y forward breakeven inflation
+    "us_michigan_1y": "MICH",          # Univ of Michigan 1y inflation expectation
+    "us_1y_yield": "DGS1",             # 1y Treasury yield (Fed path 보조 proxy)
+    # Tier-3 확장: cross-asset risk-on/off
+    "usd_krw": "DEXKOUS",              # KRW per USD (daily)
+    "dxy": "DTWEXBGS",                 # Trade-weighted broad dollar index (daily)
+    "china_cli": "CHNLOLITONOSTSAM",   # OECD China amplitude-adjusted CLI (monthly)
+    # Tier-4 확장: Policy uncertainty + Tail risk
+    "us_epu": "USEPUINDXM",            # Baker-Bloom-Davis US Economic Policy Uncertainty (monthly)
+    "global_epu": "GEPUCURRENT",       # Global EPU current-price weighted (monthly)
+    "vvix": "VVIXCLS",                 # CBOE VIX of VIX (daily)
+    "move": "MOVE",                    # ICE BofA MOVE Index (Treasury vol, daily)
 }
 
 
