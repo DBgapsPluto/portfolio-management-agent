@@ -19,7 +19,7 @@ from tradingagents.schemas.risk import (
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
-    ExtendedIndicatorPanel,
+    ExtendedIndicatorPanel, TrendQuantification,
 )
 from tradingagents.schemas.news import CalendarEvent, RankedNews
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
@@ -109,6 +109,11 @@ class TechnicalReport(_AnalystReport):
     extended_indicators: dict[str, ExtendedIndicatorPanel] = Field(
         default_factory=dict,
         description="Ticker → Bollinger/ADX/Stochastic/Volume/Divergence/Weekly panel.",
+    )
+    # Tier-2 확장 (Trend 정량화)
+    trend_quantification: dict[str, TrendQuantification] = Field(
+        default_factory=dict,
+        description="Ticker → trend_strength/time-in-state/dual momentum/acceleration.",
     )
 
 

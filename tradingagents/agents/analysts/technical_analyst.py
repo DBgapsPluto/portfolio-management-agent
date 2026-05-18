@@ -32,6 +32,7 @@ def _summarize_extended(panels: dict) -> str:
         f"  Weekly trend up/down: {weekly_up}/{weekly_down}\n"
     )
 
+from tradingagents.dataflows.equity_indices import fetch_equity_index_close
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.reports import TechnicalReport
 from tradingagents.skills.portfolio.factor_scorer import compute_factor_panel
@@ -40,7 +41,41 @@ from tradingagents.skills.technical.extended_indicators import compute_extended_
 from tradingagents.skills.technical.momentum_ranker import rank_momentum
 from tradingagents.skills.technical.price_batch import fetch_etf_price_batch
 from tradingagents.skills.technical.ta_indicators import compute_ta_indicators
+from tradingagents.skills.technical.trend_quantification import quantify_trend
 from tradingagents.skills.technical.trend_state import detect_trend_state
+
+
+def _benchmark_for_category(category: str) -> str:
+    """국내_* → KOSPI200, 그 외 → SPY."""
+    return "KOSPI200" if category.startswith("국내") else "SPY"
+
+
+def _summarize_trend_quant(panels: dict) -> str:
+    """Tier-2 압축: 분포 통계 + top-3 leader/laggard by score."""
+    if not panels:
+        return ""
+    n = len(panels)
+    strong_up = sum(1 for p in panels.values() if p.trend_strength_score > 0.5)
+    strong_dn = sum(1 for p in panels.values() if p.trend_strength_score < -0.5)
+    accel_pos = sum(1 for p in panels.values() if p.momentum_acceleration > 0)
+    rel_winners = sum(1 for p in panels.values() if p.momentum_12m_rel > 0)
+    leaders = sorted(panels.items(), key=lambda kv: -kv[1].trend_strength_score)[:3]
+    laggards = sorted(panels.items(), key=lambda kv: kv[1].trend_strength_score)[:3]
+    leader_str = ", ".join(
+        f"{t}({p.trend_strength_score:+.2f}, rel_12m {p.momentum_12m_rel*100:+.1f}%)"
+        for t, p in leaders
+    )
+    laggard_str = ", ".join(
+        f"{t}({p.trend_strength_score:+.2f})" for t, p in laggards
+    )
+    return (
+        f"Tier-2 (trend quant, n={n}):\n"
+        f"  strength>+0.5: {strong_up}, <-0.5: {strong_dn}\n"
+        f"  Accelerating (mom_3m_ann > 12m): {accel_pos}/{n}\n"
+        f"  벤치마크 outperform 12m: {rel_winners}/{n}\n"
+        f"  Top: {leader_str}\n"
+        f"  Bot: {laggard_str}\n"
+    )
 
 
 def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None):
@@ -110,6 +145,35 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
 
         ext_summary = _summarize_extended(extended_indicators)
 
+        # Tier-2: trend quantification with dual-momentum benchmarks.
+        try:
+            bench_kospi = fetch_equity_index_close("kospi200", start, as_of)
+        except Exception:
+            bench_kospi = None
+        try:
+            bench_spy = fetch_equity_index_close("spy", start, as_of)
+        except Exception:
+            bench_spy = None
+
+        cat_lookup = {e.ticker: e.category for e in universe.etfs}
+        trend_quant = {}
+        for t in returns_full.columns:
+            sub = prices[prices["ticker"] == t]
+            if len(sub) < 252:
+                continue
+            label = _benchmark_for_category(cat_lookup.get(t, ""))
+            bench_close = bench_kospi if label == "KOSPI200" else bench_spy
+            if bench_close is None or bench_close.empty:
+                bench_close, label = None, "none"
+            try:
+                trend_quant[t] = quantify_trend(
+                    prices, t, benchmark_close=bench_close, benchmark_label=label,
+                )
+            except Exception:
+                continue
+
+        trend_quant_summary = _summarize_trend_quant(trend_quant)
+
         narrative = quick_llm.invoke(
             f"Summarize 188-ETF technical scan in ≤500 Korean chars. "
             f"Top momentum categories: {list(rankings.keys())[:5]}. "
@@ -125,6 +189,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             f"Trend states: {sum(1 for v in trend_states.values() if 'uptrend' in v.value)} uptrending of {len(trend_states)}\n"
             f"Clusters: {len(clusters)} (largest: {largest_cluster_label})\n"
             f"{ext_summary}"
+            f"{trend_quant_summary}"
         )[:2000]
 
         report = TechnicalReport(
@@ -133,6 +198,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             correlation_clusters=clusters,
             factor_panel=factor_panel,
             extended_indicators=extended_indicators,
+            trend_quantification=trend_quant,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {

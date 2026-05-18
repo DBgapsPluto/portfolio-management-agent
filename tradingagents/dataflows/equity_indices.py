@@ -20,6 +20,9 @@ EQUITY_INDEX_TICKERS = {
     "vxn_alt": "^VXN",      # VXN backup
     "rut": "^RUT",          # Russell 2000 (future breadth use)
     "ndx": "^NDX",          # NASDAQ-100 (future use)
+    # Tier-2 dual_momentum 벤치마크
+    "kospi200": "069500.KS",  # KODEX 200 ETF (KOSPI200 prox; ^KS200 도 가능)
+    "spy": "SPY",
 }
 
 

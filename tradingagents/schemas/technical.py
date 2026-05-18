@@ -83,3 +83,35 @@ class ExtendedIndicatorPanel(StalenessAware):
     weekly_ma50: float = Field(ge=0)
     weekly_rsi: float = Field(ge=0, le=100)
     weekly_trend: WeeklyTrend
+
+
+# ---------- Tier-2: Trend 정량화 ----------
+
+
+class TrendQuantification(StalenessAware):
+    """Tier-2 — 추세를 범주형(enum)에서 연속값으로 끌어올림.
+
+    distance, time-in-state, dual momentum, acceleration.
+    """
+    ticker: str = Field(pattern=r"^A[A-Z0-9]{6}$")
+
+    trend_strength_score: float = Field(
+        ge=-1, le=1,
+        description="ADX/MA-cross/거리/RSI 합성. -1=강한 하락, +1=강한 상승.",
+    )
+    time_in_state_days: int = Field(
+        ge=0, description="가격이 마지막으로 MA200 cross한 후 경과 일수."
+    )
+    distance_ma200_pct: float = Field(description="(price - MA200) / MA200 × 100.")
+    distance_ma50_pct: float = Field(description="(price - MA50) / MA50 × 100.")
+
+    momentum_3m_abs: float = Field(description="자체 3m 수익률 (raw).")
+    momentum_3m_rel: float = Field(description="벤치마크 대비 3m 초과 수익률.")
+    momentum_12m_abs: float
+    momentum_12m_rel: float
+    momentum_acceleration: float = Field(
+        description="annualized(3m) - 12m. 양수=가속, 음수=감속."
+    )
+    benchmark: Literal["KOSPI200", "SPY", "none"] = Field(
+        description="dual_momentum 계산에 쓴 벤치마크."
+    )
