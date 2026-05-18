@@ -210,3 +210,21 @@ class SpeakerToneAggregate(StalenessAware):
         default=0.0, ge=-1, le=1,
         description="Fed voting members만 가중. 시장 영향 핵심.",
     )
+
+
+# ---------- Tier-5: SAVE Brief Ingestor (축소형) ----------
+
+
+class SaveBriefSnapshot(StalenessAware):
+    """SAVE 브리핑 파일에서 추출한 NEW 정보만 (가격 수치 skip).
+
+    역할: Tier-2 (release surprise) + Tier-3 (news items) + event_calendar의
+    *입력 보강*. SAVE는 큐레이션된 정보 소스로 격하.
+    """
+    brief_date: date
+    economic_releases: list["ReleaseSurprise"] = Field(default_factory=list)
+    news_cards: list[NewsItem] = Field(default_factory=list)
+    weekly_schedule: list[CalendarEvent] = Field(default_factory=list)
+    pages_total: int = Field(ge=0)
+    pages_parsed: int = Field(ge=0, description="비어있지 않은 페이지 카운트")
+    source_file: str

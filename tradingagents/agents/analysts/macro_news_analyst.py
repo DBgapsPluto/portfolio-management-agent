@@ -19,6 +19,7 @@ from tradingagents.skills.news.ranker import dedupe_rank_news
 from tradingagents.skills.news.release_surprise import (
     compute_release_surprise_snapshot,
 )
+from tradingagents.skills.news.save_ingestor import ingest_save_brief
 
 
 def _summarize_overnight(snap) -> str:
@@ -29,6 +30,18 @@ def _summarize_overnight(snap) -> str:
         f"Tier-1 (global overnight, n={snap.fetched_count}/9):\n"
         f"  Regime: {snap.risk_regime_overnight}\n"
         f"  {snap.narrative_seed}\n"
+    )
+
+
+def _summarize_save(snap) -> str:
+    """Tier-5 압축: SAVE 추출 카운트 + cross-channel 기여 명시."""
+    if snap is None:
+        return ""
+    return (
+        f"Tier-5 (SAVE brief {snap.brief_date}, pages {snap.pages_parsed}):\n"
+        f"  Releases extracted: {len(snap.economic_releases)} (→ Tier-2)\n"
+        f"  News cards extracted: {len(snap.news_cards)} (→ Tier-3 input)\n"
+        f"  Weekly schedule: {len(snap.weekly_schedule)} (→ event_calendar 보강)\n"
     )
 
 
@@ -128,10 +141,18 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             overnight = None
         overnight_summary = _summarize_overnight(overnight)
 
-        # Tier-2: Release surprise — releases는 Tier-5 SAVE 또는 state에서 주입
-        # 현재 단계에선 빈 list로 호출, 향후 SaveBriefSnapshot.economic_releases
-        # 가 채워지면 자동으로 의미있는 값이 나옴.
-        external_releases = state.get("release_surprises_30d", []) or []
+        # Tier-5: SAVE 브리핑 ingest (가능 시) — Tier-2/3 input 보강에 우선 사용
+        try:
+            save_brief = ingest_save_brief(as_of=as_of, quick_llm=quick_llm)
+        except Exception:
+            save_brief = None
+        save_summary = _summarize_save(save_brief)
+
+        # Tier-2: Release surprise — SAVE에서 추출된 releases 우선, fallback은
+        # state에 명시적으로 주입된 release_surprises_30d.
+        external_releases = list(state.get("release_surprises_30d", []) or [])
+        if save_brief and save_brief.economic_releases:
+            external_releases = list(save_brief.economic_releases) + external_releases
         try:
             surprise_snapshot = compute_release_surprise_snapshot(
                 external_releases, as_of=as_of,
@@ -139,6 +160,11 @@ def create_macro_news_analyst(quick_llm, deep_llm):
         except Exception:
             surprise_snapshot = None
         surprise_summary = _summarize_surprise(surprise_snapshot)
+
+        # SAVE에서 추출된 news cards를 Tier-3 input items에 병합 (중복 제거는
+        # categorizer 이후 단계에서 dedupe_rank가 처리)
+        if save_brief and save_brief.news_cards:
+            items = list(items) + list(save_brief.news_cards)
 
         # Tier-3: News categorizer + sentiment + momentum
         try:
@@ -167,6 +193,13 @@ def create_macro_news_analyst(quick_llm, deep_llm):
         ).content[:500]
         top_headline = ranked[0].item.headline[:80] if ranked else "(none)"
         top_severity = ranked[0].impact.severity if ranked else "n/a"
+        # SAVE 주간 일정을 upcoming_events에 병합 (중복은 단순 dedupe)
+        if save_brief and save_brief.weekly_schedule:
+            existing = {(e.event_date, e.description) for e in events}
+            for ev in save_brief.weekly_schedule:
+                if (ev.event_date, ev.description) not in existing:
+                    events.append(ev)
+
         summary = (
             f"## News\nUpcoming events: {len(events)}\n"
             f"Top headlines (severity {top_severity}): {top_headline}\n"
@@ -174,6 +207,7 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             f"{surprise_summary}"
             f"{sentiment_summary}"
             f"{speaker_summary}"
+            f"{save_summary}"
         )[:2000]
 
         report = NewsReport(
@@ -182,6 +216,7 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             release_surprise=surprise_snapshot,
             news_sentiment=sentiment_snapshot,
             cb_speakers=speaker_aggregate,
+            save_brief=save_brief,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"news_report": report, "news_summary": summary}

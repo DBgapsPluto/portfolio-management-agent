@@ -26,7 +26,7 @@ from tradingagents.schemas.technical import (
 from tradingagents.schemas.news import (
     CalendarEvent, RankedNews, GlobalOvernightSnapshot,
     ReleaseSurpriseSnapshot, NewsSentimentSnapshot,
-    SpeakerToneAggregate,
+    SpeakerToneAggregate, SaveBriefSnapshot,
 )
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
@@ -162,4 +162,9 @@ class NewsReport(_AnalystReport):
     cb_speakers: SpeakerToneAggregate | None = Field(
         default=None,
         description="Fed/BOK/ECB/BOJ 7d 매파-비둘기 balance. voting members 별도 가중.",
+    )
+    # Tier-5 확장 (SAVE 브리핑 ingestor — Tier-2/3/event 보강용)
+    save_brief: SaveBriefSnapshot | None = Field(
+        default=None,
+        description="SAVE 평일 브리핑에서 큐레이션된 release/news cards/weekly schedule.",
     )
