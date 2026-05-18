@@ -1,58 +1,93 @@
-"""Risk Judge — synthesizes 3-way debate into a WeightAdjustment dict."""
-from pydantic import BaseModel, Field
+"""Stage 4 Risk Judge — Phase 1 placeholder.
 
-from tradingagents.skills._helpers import invoke_with_structured_retry
+Phase 1 (현재 commit): no-op judge — RiskOverlay.no_concerns() 항상 반환.
+  → graph 인프라 (stub 교체 + apply_risk_overlay wiring) 검증용.
 
+Phase 2 (다음 commit): 3 lens (tail_risk/concentration/macro_conditional) 호출 +
+  severity-gated aggregation으로 교체.
 
-class WeightAdjustment(BaseModel):
-    """Pydantic-locked output from RiskJudge."""
-    delta: dict[str, float] = Field(
-        default_factory=dict,
-        description="Per-ticker weight delta (sum should be ≈0; positive = increase)",
-    )
-    reasoning: str = Field(max_length=400)
+WeightAdjustment.delta (LLM이 weight 직접 산출) 폐기. LLM은 *제약*만 만들고
+Stage 3 optimizer가 풀이 (Stage 1·2·3 정신 일관).
+"""
+from datetime import date
 
-
-JUDGE_PROMPT = """\
-You synthesize a 3-way risk debate (Aggressive/Conservative/Neutral) into
-a final WeightAdjustment recommendation for the Allocator.
-
-Macro: {macro_summary}
-Risk: {risk_summary}
-Clusters: {clusters_summary}
-
-Aggressive: {agg}
-Conservative: {cons}
-Neutral: {neut}
-
-Output a WeightAdjustment JSON with:
-- delta: dict of ticker → small adjustment (-0.05 to +0.05). Empty if no change needed.
-- reasoning: ≤400 chars."""
+from tradingagents.agents.allocator.overlay_apply import apply_risk_overlay
+from tradingagents.schemas.risk_overlay import RiskOverlay
 
 
-def create_risk_judge(deep_llm):
+def create_risk_judge(quick_llm=None, deep_llm=None):
+    """Phase 1: LLM 미사용 (always-empty overlay).
+
+    Phase 2에서 quick_llm 인자가 lens debator 3개에 전달됨.
+    """
     def node(state):
-        prompt = JUDGE_PROMPT.format(
-            macro_summary=state["macro_summary"],
-            risk_summary=state["risk_summary"],
-            clusters_summary=state["correlation_clusters_summary"],
-            agg="\n".join(state["aggressive_arguments"]) or "(none)",
-            cons="\n".join(state["conservative_arguments"]) or "(none)",
-            neut="\n".join(state["neutral_arguments"]) or "(none)",
+        as_of_str = state.get("as_of_date")
+        as_of = (
+            date.fromisoformat(as_of_str)
+            if isinstance(as_of_str, str) else None
         )
-        adjustment: WeightAdjustment = invoke_with_structured_retry(
-            deep_llm, WeightAdjustment,
-            [{"role": "user", "content": prompt}],
-            max_retries=1,
+
+        # Phase 1 — empty overlay
+        overlay = RiskOverlay.no_concerns(as_of_date=as_of)
+
+        weight_vector_1 = state.get("weight_vector")
+        candidate_set = state.get("candidate_set")
+        bucket_target = state.get("bucket_target")
+
+        # overlay 비었으면 weight_vector 변경 없음 (인프라 검증만)
+        if (
+            overlay.is_empty()
+            or weight_vector_1 is None
+            or candidate_set is None
+            or bucket_target is None
+        ):
+            return {
+                "risk_overlay": overlay,
+                "risk_debate_summary": (
+                    f"## Risk Overlay\n{overlay.severity_decision}\n"
+                    f"No weight adjustments applied (Phase 1 placeholder).\n"
+                )[:2000],
+            }
+
+        # overlay 적용 path (Phase 2 lens가 채워질 때 동작)
+        # Phase 1에서는 이 분기 실행 안 됨 (overlay 항상 empty).
+        # 인프라 검증 위해 코드 유지.
+        try:
+            from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
+            from datetime import timedelta
+            tickers = [
+                t for ts in candidate_set.bucket_to_tickers.values() for t in ts
+            ]
+            start = as_of - timedelta(days=365 * 3) if as_of else None
+            returns = fetch_returns_matrix(
+                tickers, start, as_of, cache_path=None,
+            ) if as_of else None
+        except Exception:
+            returns = None
+
+        if returns is None or returns.empty:
+            return {
+                "risk_overlay": overlay,
+                "risk_debate_summary": (
+                    "## Risk Overlay\nreturns matrix unavailable, "
+                    "overlay skipped (Stage 3 result kept).\n"
+                ),
+            }
+
+        weight_vector_2 = apply_risk_overlay(
+            weight_vector_1, overlay, candidate_set, returns, bucket_target,
+            method=weight_vector_1.method,
         )
-        summary = (
-            f"## Risk Debate Outcome\n"
-            f"Adjustment: {len(adjustment.delta)} tickers modified\n"
-            f"Reasoning: {adjustment.reasoning[:200]}"
-        )
+
         return {
-            "weight_adjustment": adjustment.model_dump(),
-            "risk_debate_summary": summary,
+            "weight_vector": weight_vector_2,
+            "risk_overlay": overlay,
+            "risk_debate_summary": (
+                f"## Risk Overlay\n"
+                f"Strength applied: {overlay.strength_applied:.2f}\n"
+                f"Decision: {overlay.severity_decision}\n"
+                f"Weight vector updated by 2nd allocator call.\n"
+            )[:2000],
         }
 
     return node

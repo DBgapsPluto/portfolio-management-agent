@@ -9,6 +9,7 @@ from tradingagents.schemas.reports import (
     MacroReport, RiskReport, TechnicalReport, NewsReport,
 )
 from tradingagents.schemas.research import ResearchDecision
+from tradingagents.schemas.risk_overlay import RiskOverlay
 from tradingagents.schemas.technical import Cluster
 
 
@@ -57,8 +58,12 @@ class AgentState(MessagesState):
     method_choice: Annotated[Optional[dict], "Deterministic MethodChoice (Phase A)"]
     correlation_clusters: Annotated[list[Cluster], "From technical analyst, used for validation"]
 
-    # === Stage 5: Risk debate ===
-    risk_debate_summary: Annotated[str, "3-way debate summary"]
+    # === Stage 4: Risk Judge (RiskOverlay) ===
+    risk_debate_summary: Annotated[str, "Risk Overlay summary"]
+    risk_overlay: Annotated[
+        Optional[RiskOverlay],
+        "Stage 4 출력 — LLM은 제약만 만들고 Stage 3 2차에서 optimizer가 풀이",
+    ]
 
     # === Stage 6: Validation ===
     validation_report: Annotated[Optional[ValidationReport], "Mandate validator output"]
@@ -100,6 +105,7 @@ def _create_empty_state(
         candidate_set=None, weight_vector=None, method_choice=None,
         correlation_clusters=[],
         risk_debate_summary="",
+        risk_overlay=None,
         validation_report=None, validation_passed=None,
         allocation_attempts=0, allocation_feedback=[],
         final_portfolio_path="", philosophy_doc_path="", trade_plan_csv_path="",

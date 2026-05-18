@@ -12,6 +12,7 @@ from tradingagents.agents.analysts.market_risk_analyst import create_market_risk
 from tradingagents.agents.analysts.technical_analyst import create_technical_analyst
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
 from tradingagents.agents.managers.research_manager import create_research_manager
+from tradingagents.agents.managers.risk_judge import create_risk_judge
 from tradingagents.agents.researchers.debate_state import InvestDebateState
 from tradingagents.agents.utils.agent_states import _create_empty_state
 from tradingagents.agents.validator.mandate_validator import create_mandate_validator
@@ -107,9 +108,12 @@ class TradingAgentsGraph:
                 "research_decision": sub_result.get("research_decision"),
             }
 
-        # risk_debate as pass-through stub for Plan 3 (Plan 4 wires sub-graph)
-        def risk_debate_stub(state):
-            return {"risk_debate_summary": "(risk debate stub — Plan 4 wires)"}
+        # Stage 4 Risk Judge (Phase 1 — no-op placeholder, Phase 2 lenses 채울 예정).
+        # LLM이 weight 직접 산출 X. RiskOverlay constraint만 생성, Stage 3 2차 호출.
+        risk_judge = archive_wrap_node(
+            create_risk_judge(quick, deep),
+            ["risk_overlay", "weight_vector", "risk_debate_summary"],
+        )
 
         # Stage 2 research_decision도 archive (Stage 2 Phase 1 산출물).
         research_debate_node = archive_wrap_node(
@@ -121,7 +125,7 @@ class TradingAgentsGraph:
             **analysts,
             "research_debate": research_debate_node,
             "allocator": allocator,
-            "risk_debate": risk_debate_stub,
+            "risk_debate": risk_judge,
             "validator": validator,
             "fallback": fallback,
             "portfolio_manager": pm,
