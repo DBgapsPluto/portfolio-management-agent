@@ -20,6 +20,9 @@ from tradingagents.graph.builder import build_main_graph
 from tradingagents.graph.conditional_logic import create_fallback_normalizer
 from tradingagents.graph.debate_subgraph import build_invest_debate_subgraph
 from tradingagents.llm_clients import create_llm_client
+from tradingagents.observability.run_archive import (
+    archive_metadata, archive_wrap_node,
+)
 from tradingagents.presets.loader import PresetLoader
 import tradingagents.skills._registry_init  # noqa: F401 — register all skills
 
@@ -54,11 +57,24 @@ class TradingAgentsGraph:
         cache_path = self.config.get("etf_price_cache_path")
         artifacts_dir = self.config.get("artifacts_dir", "./artifacts")
 
+        # Stage 1 analysts — 출력을 runs/{as_of_date}/{*_report}.json + *_summary.txt에 archive.
         analysts = {
-            "macro_quant": create_macro_quant_analyst(quick, deep),
-            "market_risk": create_market_risk_analyst(quick, deep),
-            "technical": create_technical_analyst(quick, deep, cache_path=cache_path),
-            "macro_news": create_macro_news_analyst(quick, deep),
+            "macro_quant": archive_wrap_node(
+                create_macro_quant_analyst(quick, deep),
+                ["macro_report", "macro_summary"],
+            ),
+            "market_risk": archive_wrap_node(
+                create_market_risk_analyst(quick, deep),
+                ["risk_report", "risk_summary"],
+            ),
+            "technical": archive_wrap_node(
+                create_technical_analyst(quick, deep, cache_path=cache_path),
+                ["technical_report", "technical_summary"],
+            ),
+            "macro_news": archive_wrap_node(
+                create_macro_news_analyst(quick, deep),
+                ["news_report", "news_summary"],
+            ),
         }
 
         research_estimator = create_research_manager(deep)
@@ -92,6 +108,12 @@ class TradingAgentsGraph:
         def risk_debate_stub(state):
             return {"risk_debate_summary": "(risk debate stub — Plan 4 wires)"}
 
+        # Stage 2 research_decision도 archive (Stage 2 Phase 1 산출물).
+        research_debate_node = archive_wrap_node(
+            research_debate_node,
+            ["research_decision", "research_debate_summary"],
+        )
+
         nodes = {
             **analysts,
             "research_debate": research_debate_node,
@@ -120,4 +142,13 @@ class TradingAgentsGraph:
             preset_name=self.preset_name,
             previous_portfolio=previous_portfolio,
         )
+        try:
+            archive_metadata(as_of_date, {
+                "preset": self.preset_name,
+                "capital_krw": capital_krw,
+                "deep_llm": self.config.get("deep_think_llm"),
+                "quick_llm": self.config.get("quick_think_llm"),
+            })
+        except Exception as e:
+            logger.warning("metadata archive failed: %s", e)
         return self.graph.invoke(state, config={"recursion_limit": 50})
