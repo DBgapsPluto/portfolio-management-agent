@@ -1,14 +1,12 @@
-"""Stage 4 Phase 1 — RiskOverlay no-op placeholder 검증.
+"""Stage 4 Phase 2 — risk_judge 통합 검증.
 
-기존 3-way advocacy debate sub-graph 폐기 (Aggressive/Conservative/Neutral).
-Phase 1에서는 risk_judge가 항상 empty overlay 반환 (Phase 2에서 lens-based로 교체).
-
-테스트 인프라 wiring:
-  - state["risk_overlay"] 채워짐
-  - empty overlay이면 weight_vector 변경 없음
-  - risk_debate_summary에 placeholder 메시지
+3 lens (tail/concentration/macro_conditional) 모두 deterministic.
+인프라 wiring + lens 합의 + apply_risk_overlay 흐름 검증.
 """
-from datetime import date
+from types import SimpleNamespace
+
+import numpy as np
+import pandas as pd
 
 from tradingagents.agents.managers.risk_judge import create_risk_judge
 from tradingagents.schemas.portfolio import (
@@ -16,48 +14,110 @@ from tradingagents.schemas.portfolio import (
 )
 
 
-def _state_fixture():
-    bucket = BucketTarget(
-        kr_equity=0.20, global_equity=0.30, fx_commodity=0.10,
-        bond=0.30, cash_mmf=0.10,
-        rationale="test",
+_TICKERS = [f"A{i:03d}" for i in range(1, 11)]
+
+
+def _bucket():
+    return BucketTarget(
+        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
+        bond=0.20, cash_mmf=0.20, rationale="test",
     )
-    wv = WeightVector(
-        method=OptimizationMethod.HRP,
-        weights={"A001": 0.20, "A002": 0.30, "A003": 0.10, "A004": 0.30, "A005": 0.10},
-        rationale="Stage 3 1st result",
+
+
+def _wv():
+    return WeightVector(
+        method=OptimizationMethod.MIN_VARIANCE,
+        weights={t: 0.10 for t in _TICKERS},
+        rationale="1st result",
     )
-    cs = CandidateSet(
+
+
+def _candidates():
+    return CandidateSet(
         bucket_to_tickers={
-            "kr_equity": ["A001"], "global_equity": ["A002"],
-            "fx_commodity": ["A003"], "bond": ["A004"], "cash_mmf": ["A005"],
+            "kr_equity": _TICKERS[0:2], "global_equity": _TICKERS[2:4],
+            "fx_commodity": _TICKERS[4:6], "bond": _TICKERS[6:8],
+            "cash_mmf": _TICKERS[8:10],
         },
-        selection_criteria="test", total_candidates=5,
+        selection_criteria="t", total_candidates=10,
     )
+
+
+def _state_calm():
     return {
         "as_of_date": "2026-05-18",
-        "macro_summary": "macro test", "risk_summary": "risk test",
-        "technical_summary": "tech test", "news_summary": "news test",
-        "weight_vector": wv,
-        "candidate_set": cs,
-        "bucket_target": bucket,
+        "weight_vector": _wv(),
+        "candidate_set": _candidates(),
+        "bucket_target": _bucket(),
+        "risk_report": SimpleNamespace(
+            systemic_score=SimpleNamespace(score=4.0, regime="risk_on"),
+            vix_term=SimpleNamespace(regime="contango"),
+            funding_stress=SimpleNamespace(regime="calm"),
+        ),
+        "macro_report": SimpleNamespace(
+            regime=SimpleNamespace(quadrant="growth_disinflation", confidence=0.8),
+        ),
+        "research_decision": SimpleNamespace(
+            dominant_scenario="goldilocks", conviction="high",
+        ),
+        "technical_report": SimpleNamespace(correlation_clusters=[]),
     }
 
 
-def test_risk_judge_returns_empty_overlay_phase_1():
-    """Phase 1: 항상 empty overlay 반환, weight_vector 변경 없음."""
-    node = create_risk_judge(quick_llm=None, deep_llm=None)
-    out = node(_state_fixture())
+def _state_critical():
+    state = _state_calm()
+    state["risk_report"] = SimpleNamespace(
+        systemic_score=SimpleNamespace(score=9.5, regime="risk_off"),
+        vix_term=SimpleNamespace(regime="backwardation"),
+        funding_stress=SimpleNamespace(regime="stress"),
+    )
+    state["research_decision"] = SimpleNamespace(
+        dominant_scenario="global_credit", conviction="high",
+    )
+    return state
+
+
+def test_calm_market_yields_empty_overlay(monkeypatch):
+    rng = np.random.default_rng(0)
+    idx = pd.date_range("2024-01-01", periods=300, freq="B")
+    fake_returns = pd.DataFrame(
+        {t: rng.normal(0.0005, 0.005, 300) for t in _TICKERS}, index=idx,
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.managers.risk_judge.fetch_returns_matrix",
+        lambda *a, **kw: fake_returns,
+    )
+
+    node = create_risk_judge()
+    out = node(_state_calm())
 
     overlay = out["risk_overlay"]
-    assert overlay is not None
-    assert overlay.is_empty()
-    assert overlay.strength_applied == 0.0
-    assert "weight_vector" not in out
-    assert "Phase 1 placeholder" in out["risk_debate_summary"]
+    assert overlay.strength_applied == 0.0 or overlay.is_empty()
+    assert out["weight_vector"].weights == _wv().weights
 
 
-def test_risk_judge_handles_missing_state_gracefully():
+def test_critical_state_triggers_overlay(monkeypatch):
+    rng = np.random.default_rng(42)
+    idx = pd.date_range("2024-01-01", periods=300, freq="B")
+    fake_returns = pd.DataFrame(
+        {t: rng.normal(0.0, 0.025, 300) for t in _TICKERS}, index=idx,
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.managers.risk_judge.fetch_returns_matrix",
+        lambda *a, **kw: fake_returns,
+    )
+
+    node = create_risk_judge()
+    out = node(_state_critical())
+
+    overlay = out["risk_overlay"]
+    assert overlay.strength_applied > 0
+    assert len(overlay.lens_concerns) == 3
+    assert overlay.risk_asset_multiplier < 1.0
+
+
+def test_missing_stage3_input_returns_empty():
+    """Stage 3 입력 부재 시 empty overlay + weight_vector 변경 없음."""
     node = create_risk_judge()
     out = node({"as_of_date": "2026-05-18"})
     assert out["risk_overlay"].is_empty()
