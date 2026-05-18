@@ -43,6 +43,7 @@ from tradingagents.skills.technical.price_batch import fetch_etf_price_batch
 from tradingagents.skills.technical.ta_indicators import compute_ta_indicators
 from tradingagents.skills.technical.trend_quantification import quantify_trend
 from tradingagents.skills.technical.trend_state import detect_trend_state
+from tradingagents.skills.technical.sector_rotation import compute_sector_rotation
 from tradingagents.skills.technical.universe_breadth import compute_universe_breadth
 
 
@@ -193,6 +194,31 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             universe_breadth = None
             breadth_summary = ""
 
+        # Tier-4: sector rotation + correlation regime
+        try:
+            sector_rotation = compute_sector_rotation(prices, universe)
+            top_cats = sector_rotation.categories[:3]
+            bot_cats = sector_rotation.categories[-3:]
+            sr_summary = (
+                f"Tier-4 (sector rotation):\n"
+                f"  Leader: {sector_rotation.leader_category} "
+                f"(3m {top_cats[0].mean_mom_3m*100:+.1f}%)\n"
+                f"  Top-3: " + ", ".join(
+                    f"{c.category}({c.mean_mom_3m*100:+.1f}%)" for c in top_cats
+                ) + "\n"
+                f"  Bot-3: " + ", ".join(
+                    f"{c.category}({c.mean_mom_3m*100:+.1f}%)" for c in bot_cats
+                ) + "\n"
+                f"  Mom spread (top-bot decile): {sector_rotation.momentum_spread_3m*100:+.1f}%\n"
+                f"  Corr 60d/252d: {sector_rotation.correlation_median_60d:+.2f}"
+                f"/{sector_rotation.correlation_median_252d:+.2f} "
+                f"(Δ {sector_rotation.correlation_change:+.2f}, "
+                f"{sector_rotation.correlation_regime})\n"
+            )
+        except Exception:
+            sector_rotation = None
+            sr_summary = ""
+
         narrative = quick_llm.invoke(
             f"Summarize 188-ETF technical scan in ≤500 Korean chars. "
             f"Top momentum categories: {list(rankings.keys())[:5]}. "
@@ -210,6 +236,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             f"{ext_summary}"
             f"{trend_quant_summary}"
             f"{breadth_summary}"
+            f"{sr_summary}"
         )[:2000]
 
         report = TechnicalReport(
@@ -220,6 +247,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             extended_indicators=extended_indicators,
             trend_quantification=trend_quant,
             universe_breadth=universe_breadth,
+            sector_rotation=sector_rotation,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {

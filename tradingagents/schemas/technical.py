@@ -147,3 +147,38 @@ class UniverseBreadthSnapshot(StalenessAware):
         description="universe vol median의 1년치 z-score (regime 식별).",
     )
     regime: BreadthRegime
+
+
+# ---------- Tier-4: Sector Rotation + Correlation regime ----------
+
+
+CorrRegime = Literal["expansion", "stable", "compression"]
+
+
+class CategoryMomentum(BaseModel):
+    """카테고리 단위 집계 모멘텀 — universe.json의 category 필드 기준."""
+    category: str
+    n_etfs: int = Field(ge=0)
+    mean_mom_3m: float
+    mean_mom_12m: float
+    rank: int = Field(ge=1, description="leadership rank — 1 = best")
+
+
+class SectorRotationSnapshot(StalenessAware):
+    """Tier-4 — 카테고리 leadership matrix + universe momentum dispersion +
+    correlation regime change.
+    """
+    categories: list[CategoryMomentum] = Field(
+        description="카테고리 list, mean_mom_3m DESC로 정렬.",
+    )
+    leader_category: str
+    laggard_category: str
+    momentum_spread_3m: float = Field(
+        description="188 ETF의 mom_3m top decile mean - bot decile mean.",
+    )
+    correlation_median_60d: float = Field(ge=-1, le=1)
+    correlation_median_252d: float = Field(ge=-1, le=1)
+    correlation_change: float = Field(
+        description="60d median - 252d median. + = 최근 correlation 증가 (위기형).",
+    )
+    correlation_regime: CorrRegime

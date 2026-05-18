@@ -20,7 +20,7 @@ from tradingagents.schemas.risk import (
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
     ExtendedIndicatorPanel, TrendQuantification,
-    UniverseBreadthSnapshot,
+    UniverseBreadthSnapshot, SectorRotationSnapshot,
 )
 from tradingagents.schemas.news import CalendarEvent, RankedNews
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
@@ -120,6 +120,11 @@ class TechnicalReport(_AnalystReport):
     universe_breadth: UniverseBreadthSnapshot | None = Field(
         default=None,
         description="188 ETF aggregate: %above MA, 52w hi/lo, A/D, vol regime.",
+    )
+    # Tier-4 확장 (Sector rotation + correlation regime)
+    sector_rotation: SectorRotationSnapshot | None = Field(
+        default=None,
+        description="카테고리 leadership matrix + spread + 60d/252d corr regime.",
     )
 
 
