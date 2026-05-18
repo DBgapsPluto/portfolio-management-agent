@@ -1,0 +1,35 @@
+{
+  "as_of_date": "2026-05-28",
+  "capital_krw": 1000000000,
+  "method": "risk_parity",
+  "bucket_target": {
+    "kr_equity": 0.18,
+    "global_equity": 0.34,
+    "fx_commodity": 0.1,
+    "bond": 0.23,
+    "cash_mmf": 0.15,
+    "rationale": "Growth-inflation regime, positive 10y-2y slope, low VIX and risk_on score support moderate risk. But CPI 3.3%, concentrated positioning, only middling breadth, and geopolitical/event risk argue against max risk. Favor global over KR equities, keep some FX/commodity inflation hedge, underweight duration but retain bonds and cash buffer."
+  },
+  "weights": {
+    "A069500": 0.00212,
+    "A487240": 0.10122,
+    "A102110": 0.04074,
+    "A278530": 0.03592,
+    "A381180": 0.01226,
+    "A360750": 0.15775,
+    "A456600": 0.07638,
+    "A133690": 0.0936,
+    "A144600": 0.02953,
+    "A411060": 0.07047,
+    "A0061Z0": 0.2,
+    "A273130": 0.00039,
+    "A453850": 0.0091,
+    "A385540": 0.02051,
+    "A488770": 0.13211,
+    "A455890": 0.00957,
+    "A423160": 0.00833
+  },
+  "rationale": "risk_parity with single-asset cap 20% AND bucket constraints (strict bucket equality). 위험자산 target 62.0%.",
+  "expected_volatility": 31.601179875775355,
+  "expected_sharpe": 0.031035745135229373
+}
