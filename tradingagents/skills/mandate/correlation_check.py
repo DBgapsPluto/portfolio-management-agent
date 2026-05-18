@@ -11,20 +11,21 @@ def validate_correlation_concentration(
 ) -> ValidationReport:
     """Single correlation cluster (e.g., AI/semi) sum should ≤ cluster_cap.
 
-    Per design D6: 70-point evaluation core 'single risk control'. Soft severity
-    because it's evaluator-critical but not a hard mandate rule like §2.2 caps.
+    Severity = "hard" — Stage 5 정리에서 승격 (이전 "soft"는 D4 retry 발동 X
+    였음). 우리 시스템 내에서는 mandate-level로 강제. Stage 4 concentration_lens
+    가 더 strict한 cap만 추가 (책임 분리, 옵션 A-1).
     """
     violations = []
     for cluster in clusters:
         cluster_sum = sum(weights.weights.get(t, 0) for t in cluster.members)
-        if cluster_sum > cluster_cap:
+        if cluster_sum > cluster_cap + 1e-6:
             violations.append(Violation(
                 rule="correlation_concentration",
                 description=(
                     f"Cluster '{cluster.category_label}' sum {cluster_sum:.4f} > {cluster_cap} "
                     f"({len(cluster.members)} members, avg corr {cluster.avg_internal_correlation:.2f})"
                 ),
-                severity="soft",
+                severity="hard",
                 suggested_fix=f"Reduce concentration in {cluster.category_label}",
             ))
     return ValidationReport(passed=not violations, violations=violations)
