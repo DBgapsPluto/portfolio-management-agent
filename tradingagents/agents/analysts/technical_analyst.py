@@ -43,6 +43,7 @@ from tradingagents.skills.technical.price_batch import fetch_etf_price_batch
 from tradingagents.skills.technical.ta_indicators import compute_ta_indicators
 from tradingagents.skills.technical.trend_quantification import quantify_trend
 from tradingagents.skills.technical.trend_state import detect_trend_state
+from tradingagents.skills.technical.risk_adjusted import compute_risk_adjusted
 from tradingagents.skills.technical.sector_rotation import compute_sector_rotation
 from tradingagents.skills.technical.universe_breadth import compute_universe_breadth
 
@@ -50,6 +51,38 @@ from tradingagents.skills.technical.universe_breadth import compute_universe_bre
 def _benchmark_for_category(category: str) -> str:
     """국내_* → KOSPI200, 그 외 → SPY."""
     return "KOSPI200" if category.startswith("국내") else "SPY"
+
+
+def _summarize_risk_adjusted(metrics: dict) -> str:
+    """Tier-5 압축: tail-risk top + best Calmar top + reversion 후보 카운트."""
+    if not metrics:
+        return ""
+    n = len(metrics)
+    rev_candidates = [t for t, m in metrics.items() if m.is_mean_reversion_candidate]
+    # Tail-risk: 음의 skew + 높은 excess kurtosis
+    tail_risk_score = lambda m: (-m.skewness_60d) + max(m.excess_kurtosis_60d, 0)
+    tail_risk = sorted(metrics.items(), key=lambda kv: -tail_risk_score(kv[1]))[:3]
+    best_calmar = sorted(
+        metrics.items(), key=lambda kv: -kv[1].calmar_12m,
+    )[:3]
+    worst_dd = sorted(metrics.items(), key=lambda kv: kv[1].max_drawdown_12m)[:3]
+    tail_str = ", ".join(
+        f"{t}(skew {m.skewness_60d:+.2f}, ek {m.excess_kurtosis_60d:+.1f})"
+        for t, m in tail_risk
+    )
+    calmar_str = ", ".join(
+        f"{t}(Calmar {m.calmar_12m:+.2f})" for t, m in best_calmar
+    )
+    dd_str = ", ".join(
+        f"{t}({m.max_drawdown_12m*100:.0f}%)" for t, m in worst_dd
+    )
+    return (
+        f"Tier-5 (risk-adjusted, n={n}):\n"
+        f"  Mean-reversion 후보: {len(rev_candidates)} (예: {rev_candidates[:3]})\n"
+        f"  Tail-risk top-3: {tail_str}\n"
+        f"  Best Calmar 12m: {calmar_str}\n"
+        f"  Worst max_DD 12m: {dd_str}\n"
+    )
 
 
 def _summarize_trend_quant(panels: dict) -> str:
@@ -219,6 +252,21 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             sector_rotation = None
             sr_summary = ""
 
+        # Tier-5: risk-adjusted per ETF
+        risk_adjusted: dict = {}
+        for t in returns_full.columns:
+            sub = prices[prices["ticker"] == t]
+            if len(sub) < 252:
+                continue
+            try:
+                risk_adjusted[t] = compute_risk_adjusted(
+                    prices, t, ext_panel=extended_indicators.get(t),
+                )
+            except Exception:
+                continue
+
+        ra_summary = _summarize_risk_adjusted(risk_adjusted)
+
         narrative = quick_llm.invoke(
             f"Summarize 188-ETF technical scan in ≤500 Korean chars. "
             f"Top momentum categories: {list(rankings.keys())[:5]}. "
@@ -237,6 +285,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             f"{trend_quant_summary}"
             f"{breadth_summary}"
             f"{sr_summary}"
+            f"{ra_summary}"
         )[:2000]
 
         report = TechnicalReport(
@@ -248,6 +297,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             trend_quantification=trend_quant,
             universe_breadth=universe_breadth,
             sector_rotation=sector_rotation,
+            risk_adjusted=risk_adjusted,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {

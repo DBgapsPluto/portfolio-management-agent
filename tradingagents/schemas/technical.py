@@ -182,3 +182,33 @@ class SectorRotationSnapshot(StalenessAware):
         description="60d median - 252d median. + = 최근 correlation 증가 (위기형).",
     )
     correlation_regime: CorrRegime
+
+
+# ---------- Tier-5: Risk-Adjusted Factor ----------
+
+
+class RiskAdjustedMetrics(StalenessAware):
+    """Tier-5 — 하방 위험·DD·tail 분포·mean reversion 후보."""
+    ticker: str = Field(pattern=r"^A[A-Z0-9]{6}$")
+
+    sortino_60d: float = Field(
+        description="annualized mean / annualized downside std. 하방 위험만 페널티.",
+    )
+    max_drawdown_12m: float = Field(
+        le=0, description="12m 최대 낙폭 [-1, 0]. -0.3 = -30%.",
+    )
+    calmar_12m: float = Field(
+        description="12m annualized return / |max_drawdown|. 위험 대비 수익.",
+    )
+    skewness_60d: float = Field(
+        description="음수 = 좌측 꼬리 (드물고 큰 손실 가능)",
+    )
+    excess_kurtosis_60d: float = Field(
+        description="Fisher excess kurtosis. >3 = fat tail (정규분포 대비).",
+    )
+    return_z_30d: float = Field(
+        description="30d 누적 수익률의 252d 자체 historical z-score.",
+    )
+    is_mean_reversion_candidate: bool = Field(
+        description="B%<0 + RSI<35 + return_z_30d<-1.5 동시 만족시 True.",
+    )

@@ -21,6 +21,7 @@ from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
     ExtendedIndicatorPanel, TrendQuantification,
     UniverseBreadthSnapshot, SectorRotationSnapshot,
+    RiskAdjustedMetrics,
 )
 from tradingagents.schemas.news import CalendarEvent, RankedNews
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
@@ -125,6 +126,11 @@ class TechnicalReport(_AnalystReport):
     sector_rotation: SectorRotationSnapshot | None = Field(
         default=None,
         description="카테고리 leadership matrix + spread + 60d/252d corr regime.",
+    )
+    # Tier-5 확장 (Risk-adjusted, 188 ETF)
+    risk_adjusted: dict[str, RiskAdjustedMetrics] = Field(
+        default_factory=dict,
+        description="Ticker → Sortino/Calmar/skew/kurt/reversion candidate.",
     )
 
 
