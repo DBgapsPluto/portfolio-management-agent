@@ -219,6 +219,9 @@ __marimo__/
 **/data_cache/
 data/.cache/
 
+# SAVE 브리핑 (개인 데이터 — 매일 추가되는 텍스트 파일, project-local)
+/data/SAVE/
+
 # macOS
 .DS_Store
 
