@@ -16,12 +16,16 @@ def test_classifier_invokes_llm():
 
     clf = SystemicScoreClassifier(quick_llm, deep_llm)
     result = clf.invoke(
-        vix=28.5, vix_z=2.1, vix_pct=0.92,
-        vkospi=24.0,
+        vix=28.5, vix_z=2.1, vix_pct=0.92, vix_change_4w=5.0,
+        vkospi=24.0, vkospi_change_4w=3.0,
         ig_bps=120, ig_pct=0.75,
         hy_bps=450, hy_widening=True,
         fg_label="fear", fg_value=30,
         breadth_kr_adv=0.30, breadth_us_adv=0.35,
         pca_first_share=0.65, pca_concentrated=True,
+        # Tier-1 신규 inputs
+        vix_term_ratio=0.92, vix_term_regime="backwardation",
+        skew_value=142.0, skew_signal="elevated",
+        vxn=32.5, vxn_spread_vs_vix=4.0,
     )
     assert result.regime == "risk_off"

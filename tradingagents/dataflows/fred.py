@@ -44,6 +44,9 @@ FRED_SERIES = {
     "global_epu": "GEPUCURRENT",       # Global EPU current-price weighted (monthly)
     "vvix": "VVIXCLS",                 # CBOE VIX of VIX (daily)
     "move": "MOVE",                    # ICE BofA MOVE Index (Treasury vol, daily)
+    # market_risk Tier-1 확장: equity stress 깊이
+    "vix_3m": "VXVCLS",                # CBOE VIX 3-month (daily)
+    "vxn": "VXNCLS",                   # CBOE NASDAQ-100 Volatility (daily)
 }
 
 

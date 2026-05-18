@@ -12,6 +12,7 @@ from tradingagents.schemas.macro import (
 from tradingagents.schemas.risk import (
     VolatilitySnapshot, SpreadSnapshot, SentimentSnapshot,
     BreadthSnapshot, PCASnapshot, SystemicRiskScore,
+    VIXTermStructureSnapshot, SkewSnapshot, VxnSnapshot,
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
@@ -70,6 +71,10 @@ class RiskReport(_AnalystReport):
     breadth_us: BreadthSnapshot
     correlation_concentration: PCASnapshot
     systemic_score: SystemicRiskScore
+    # Tier-1 확장 (Equity stress 깊이)
+    vix_term: VIXTermStructureSnapshot
+    skew: SkewSnapshot
+    vxn: VxnSnapshot
 
 
 class TechnicalReport(_AnalystReport):

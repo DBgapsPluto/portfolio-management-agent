@@ -114,6 +114,9 @@ DEFAULT_CONFIG.update({
         "global_epu": 30,       # Global EPU 익월말 공표
         "vvix": 1,
         "move": 1,
+        # market_risk Tier-1 확장
+        "vix_3m": 1,
+        "vxn": 1,
     },
     # Tracing / observability
     "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",

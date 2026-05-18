@@ -17,18 +17,27 @@ def fetch_volatility_index(
         s = fetch_vkospi(start, as_of)
     s = s.dropna()
     if s.empty:
-        raise ValueError(f"No data for {index_name}")
+        # D5 tier-3 degradation — emit a stale-marked sentinel so downstream
+        # market_risk_analyst can keep working (esp. VKOSPI when KRX login fails).
+        return VolatilitySnapshot(
+            index_name=index_name,
+            current_value=0.0, zscore_30d=0.0, percentile_5y=0.5,
+            source_date=as_of, staleness_days=99,
+        )
 
     current = float(s.iloc[-1])
     last_30 = s.tail(30)
     z = (current - last_30.mean()) / last_30.std() if last_30.std() > 0 else 0.0
     last_5y = s.tail(252 * 5) if len(s) >= 252 else s
     pct = float((last_5y < current).sum() / len(last_5y))
+    # 4-week 절대 변화 (≈20 거래일). 추세 방향 capture.
+    change_4w = float(s.iloc[-1] - s.iloc[-21]) if len(s) >= 21 else 0.0
 
     return VolatilitySnapshot(
         index_name=index_name,
         current_value=current,
         zscore_30d=float(z),
         percentile_5y=pct,
+        change_4w=change_4w,
         source_date=as_of,
     )
