@@ -39,13 +39,9 @@ def _raw_yf_batch(symbols: list[str], start: date, end: date) -> pd.DataFrame:
     return raw
 
 
-def fetch_cross_asset_returns(
+def _live_cross_asset_returns(
     start: date, end: date, tickers: list[str] | None = None,
 ) -> pd.DataFrame:
-    """5-asset 일별 returns DataFrame (rows=date, cols=ticker).
-
-    실패 시 빈 DataFrame 반환 → 분석가에서 fallback 처리.
-    """
     symbols = tickers or CROSS_ASSET_TICKERS
     try:
         raw = _raw_yf_batch(symbols, start, end)
@@ -56,7 +52,6 @@ def fetch_cross_asset_returns(
     if raw is None or raw.empty:
         return pd.DataFrame()
 
-    # MultiIndex 처리 (yfinance가 ("Close", ticker) 형식으로 반환)
     if isinstance(raw.columns, pd.MultiIndex):
         if "Close" in raw.columns.get_level_values(0):
             closes = raw["Close"]
@@ -65,12 +60,44 @@ def fetch_cross_asset_returns(
         else:
             return pd.DataFrame()
     else:
-        # 단일 ticker 또는 simple columns
         closes = raw[["Close"]] if "Close" in raw.columns else raw
 
     closes = closes.dropna(how="all")
     if closes.empty or len(closes) < 2:
         return pd.DataFrame()
 
-    returns = closes.pct_change().dropna(how="all")
-    return returns
+    return closes.pct_change().dropna(how="all")
+
+
+def fetch_cross_asset_returns(
+    start: date, end: date, tickers: list[str] | None = None,
+    use_cache: bool = True,
+    max_staleness: int = 7,
+) -> pd.DataFrame:
+    """5-asset 일별 returns DataFrame (rows=date, cols=ticker).
+
+    Cache: ~/.tradingagents/cache/cross_asset/{symbols_hash}/{end}.json
+    실패 시 빈 DataFrame 반환 → 분석가에서 fallback 처리.
+    """
+    if not use_cache:
+        return _live_cross_asset_returns(start, end, tickers)
+
+    symbols = tickers or CROSS_ASSET_TICKERS
+    cache_key = "_".join(sorted(symbols))
+    if len(cache_key) > 80:
+        # 너무 긴 ticker set은 hash로 압축
+        import hashlib
+        cache_key = hashlib.sha1(cache_key.encode()).hexdigest()[:16]
+
+    from tradingagents.dataflows.series_cache import fetch_frame_with_cache
+    try:
+        return fetch_frame_with_cache(
+            lambda: _live_cross_asset_returns(start, end, tickers),
+            namespace="cross_asset",
+            cache_key=cache_key,
+            as_of=end,
+            max_staleness=max_staleness,
+        )
+    except Exception as e:
+        logger.warning("cross_asset cache+live both failed: %s", e)
+        return pd.DataFrame()

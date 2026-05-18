@@ -93,6 +93,46 @@ def test_cache_raises_when_live_fails_and_no_cache(tmp_path):
         )
 
 
+def test_frame_dict_roundtrip():
+    from tradingagents.dataflows.series_cache import dict_to_frame, frame_to_dict
+    idx = pd.to_datetime(["2026-05-15", "2026-05-16"])
+    df = pd.DataFrame({"A": [1.0, 2.0], "B": [3.0, 4.0]}, index=idx)
+    out = frame_to_dict(df)
+    assert set(out.keys()) == {"A", "B"}
+    rebuilt = dict_to_frame(out)
+    assert list(rebuilt.columns) == ["A", "B"]
+    assert (rebuilt["A"].values == df["A"].values).all()
+
+
+def test_frame_dict_empty():
+    from tradingagents.dataflows.series_cache import dict_to_frame
+    df = dict_to_frame({})
+    assert df.empty
+
+
+def test_fetch_frame_with_cache(tmp_path):
+    from tradingagents.dataflows.series_cache import fetch_frame_with_cache
+
+    call_count = {"n": 0}
+
+    def fetcher() -> pd.DataFrame:
+        call_count["n"] += 1
+        idx = pd.to_datetime(["2026-05-15", "2026-05-16"])
+        return pd.DataFrame({"X": [1.0, 2.0], "Y": [3.0, 4.0]}, index=idx)
+
+    f1 = fetch_frame_with_cache(
+        fetcher, namespace="frame_test", cache_key="t",
+        as_of=date(2026, 5, 16), cache_dir=tmp_path,
+    )
+    f2 = fetch_frame_with_cache(
+        fetcher, namespace="frame_test", cache_key="t",
+        as_of=date(2026, 5, 16), cache_dir=tmp_path,
+    )
+    assert call_count["n"] == 1
+    assert list(f1.columns) == ["X", "Y"]
+    assert (f1 == f2).all().all()
+
+
 def test_cache_directory_layout(tmp_path):
     def fetcher() -> pd.Series:
         return pd.Series(

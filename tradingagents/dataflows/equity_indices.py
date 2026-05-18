@@ -47,17 +47,38 @@ def _raw_yf_history(symbol: str, start: date, end: date) -> pd.DataFrame:
 
 def fetch_equity_index_close(
     name: str, start: date, end: date,
+    use_cache: bool = True,
+    max_staleness: int = 7,
 ) -> pd.Series:
     """Fetch daily close for an equity index by friendly name.
 
     Returns pd.Series indexed by datetime. Empty Series on failure.
+    Cache: ~/.tradingagents/cache/equity_indices/{name}/{end}.json
     """
     if name not in EQUITY_INDEX_TICKERS:
         raise KeyError(f"unknown equity index: {name!r}")
     symbol = EQUITY_INDEX_TICKERS[name]
-    df = _raw_yf_history(symbol, start, end)
-    if df is None or df.empty or "Close" not in df.columns:
+
+    def _live() -> pd.Series:
+        df = _raw_yf_history(symbol, start, end)
+        if df is None or df.empty or "Close" not in df.columns:
+            return pd.Series(dtype=float, name=name)
+        s = df["Close"].copy()
+        s.name = name
+        return s
+
+    if not use_cache:
+        return _live()
+
+    from tradingagents.dataflows.series_cache import fetch_series_with_cache
+    try:
+        return fetch_series_with_cache(
+            _live,
+            namespace="equity_indices",
+            cache_key=name,
+            as_of=end,
+            max_staleness=max_staleness,
+        )
+    except Exception as e:
+        logger.warning("equity index %s cache+live both failed: %s", name, e)
         return pd.Series(dtype=float, name=name)
-    s = df["Close"].copy()
-    s.name = name
-    return s

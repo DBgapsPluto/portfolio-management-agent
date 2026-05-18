@@ -61,13 +61,9 @@ def _raw_yf_batch(symbols: list[str], start: date, end: date) -> pd.DataFrame:
     return raw
 
 
-def fetch_global_overnight_closes(
+def _live_global_overnight(
     as_of: date, lookback_days: int = 10,
 ) -> pd.DataFrame:
-    """Return DataFrame indexed by date with columns = yfinance tickers.
-
-    빈 DataFrame 반환 시 호출자에서 fallback. 부분 실패는 NaN 컬럼으로 표시.
-    """
     symbols = _all_tickers()
     start = as_of - timedelta(days=lookback_days)
     try:
@@ -89,5 +85,31 @@ def fetch_global_overnight_closes(
     else:
         closes = raw[["Close"]] if "Close" in raw.columns else raw
 
-    closes = closes.dropna(how="all")
-    return closes
+    return closes.dropna(how="all")
+
+
+def fetch_global_overnight_closes(
+    as_of: date, lookback_days: int = 10,
+    use_cache: bool = True,
+    max_staleness: int = 3,
+) -> pd.DataFrame:
+    """Return DataFrame indexed by date with columns = yfinance tickers.
+
+    Cache: ~/.tradingagents/cache/global_overnight/closes/{as_of}.json
+    max_staleness=3 — overnight 데이터는 빠르게 stale.
+    """
+    if not use_cache:
+        return _live_global_overnight(as_of, lookback_days)
+
+    from tradingagents.dataflows.series_cache import fetch_frame_with_cache
+    try:
+        return fetch_frame_with_cache(
+            lambda: _live_global_overnight(as_of, lookback_days),
+            namespace="global_overnight",
+            cache_key="closes",
+            as_of=as_of,
+            max_staleness=max_staleness,
+        )
+    except Exception as e:
+        logger.warning("global_overnight cache+live both failed: %s", e)
+        return pd.DataFrame()

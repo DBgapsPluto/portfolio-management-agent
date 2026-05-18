@@ -47,6 +47,19 @@ def resolve_cache_dir(subdir: str | None = None) -> Path:
     return base / subdir if subdir else base
 
 
+def frame_to_dict(df: pd.DataFrame) -> dict[str, dict[str, float]]:
+    """DataFrame → {col: {iso_date: value}} JSON-safe nested dict."""
+    return {str(col): series_to_dict(df[col]) for col in df.columns}
+
+
+def dict_to_frame(payload: dict[str, dict[str, float]]) -> pd.DataFrame:
+    """Reverse of frame_to_dict."""
+    if not payload:
+        return pd.DataFrame()
+    cols = {col: dict_to_series(d, name=col) for col, d in payload.items()}
+    return pd.DataFrame(cols).sort_index()
+
+
 def fetch_series_with_cache(
     fetcher: Callable[[], pd.Series],
     *,
@@ -88,3 +101,36 @@ def fetch_series_with_cache(
         )
 
     return dict_to_series(payload, name=cache_key)
+
+
+def fetch_frame_with_cache(
+    fetcher: Callable[[], pd.DataFrame],
+    *,
+    namespace: str,
+    cache_key: str,
+    as_of: date,
+    max_staleness: int = 7,
+    cache_dir: Path | None = None,
+) -> pd.DataFrame:
+    """Cache-first DataFrame fetcher. Series 버전과 동일 패턴."""
+    base = cache_dir or resolve_cache_dir()
+    cache = TieredCache(base / namespace, name=cache_key)
+
+    cached = cache.read(as_of)
+    if cached is not None:
+        return dict_to_frame(cached)
+
+    def _live_to_dict() -> dict[str, dict[str, float]]:
+        return frame_to_dict(fetcher())
+
+    payload, staleness = cache.fetch_with_fallback(
+        _live_to_dict, as_of=as_of, max_staleness=max_staleness,
+    )
+
+    if staleness > 0:
+        logger.info(
+            "frame_cache %s/%s: stale fallback (staleness=%dd)",
+            namespace, cache_key, staleness,
+        )
+
+    return dict_to_frame(payload)
