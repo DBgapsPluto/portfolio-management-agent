@@ -407,10 +407,15 @@ def test_5_28_dry_run_produces_artifacts(
     assert header == ["티커", "ETF명", "자산군", "가중치", "매수금액(KRW)", "수량(주)"], (
         f"trade_plan.csv header mismatch: {header}"
     )
-    assert len(rows) >= 1, "trade_plan.csv has no data rows"
+    # Stage 6 정리 ③: # WARNING 주석 라인 제외, 데이터 행만 카운트
+    data_rows = [
+        r for r in rows
+        if r and not r[0].startswith("#") and r[0].strip()
+    ]
+    assert len(data_rows) >= 1, "trade_plan.csv has no data rows"
 
     # Weight column (index 3) must be parseable floats summing to ~1.0
-    csv_weight_total = sum(float(r[3]) for r in rows)
+    csv_weight_total = sum(float(r[3]) for r in data_rows)
     assert abs(csv_weight_total - 1.0) < 1e-3, (
         f"CSV weight sum {csv_weight_total:.6f} != 1.0"
     )

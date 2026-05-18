@@ -75,6 +75,7 @@ class AgentState(MessagesState):
 
     # === Stage 7: Final ===
     final_portfolio_path: Annotated[str, "Path to artifacts/portfolio.json"]
+    warnings: Annotated[list[str], "Non-blocking warnings (e.g., trade_plan qty=0)"]
     philosophy_doc_path: Annotated[str, ""]
     trade_plan_csv_path: Annotated[str, ""]
 
@@ -109,6 +110,7 @@ def _create_empty_state(
         validation_report=None, validation_passed=None,
         allocation_attempts=0, allocation_feedback=[],
         final_portfolio_path="", philosophy_doc_path="", trade_plan_csv_path="",
+        warnings=[],
         previous_portfolio=previous_portfolio,
     )
 

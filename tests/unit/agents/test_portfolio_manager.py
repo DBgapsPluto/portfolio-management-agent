@@ -58,10 +58,13 @@ def test_portfolio_manager_writes_3_artifacts(tmp_path):
     assert portfolio["method"] == "hrp"
     assert abs(sum(portfolio["weights"].values()) - 1.0) < 1e-6
 
-    # trade_plan.csv columns
+    # trade_plan.csv columns (# 주석 라인은 qty=0 경고용, 데이터 행만 카운트)
     with open(result["trade_plan_csv_path"], encoding="utf-8-sig") as f:
         reader = csv.reader(f)
         header = next(reader)
         assert header == ["티커", "ETF명", "자산군", "가중치", "매수금액(KRW)", "수량(주)"]
-        rows = list(reader)
-        assert len(rows) == 4
+        data_rows = [
+            r for r in reader
+            if r and not r[0].startswith("#") and r[0].strip()
+        ]
+        assert len(data_rows) == 4
