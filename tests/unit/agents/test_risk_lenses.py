@@ -95,6 +95,39 @@ def test_concentration_none_for_diversified():
     assert c.level == "none"
 
 
+def test_concentration_cluster_caps_strict_only_vs_validator_baseline():
+    """Stage 5 정리 ⑥ — validator baseline 0.25 hard 대비 strict한 cap만 제안.
+
+    Validator cluster_cap = 0.25 (hard).
+    Stage 4 concentration_lens는 critical=0.18, high=0.22로 strict only.
+    medium은 cluster_caps 빈 dict (validator baseline 0.25로 충분).
+    """
+    # critical
+    crit = run_concentration_lens(
+        _numerics(hhi=0.25), _wv_uniform(),
+    )
+    assert crit.level == "critical"
+    if crit.proposed_overlay.cluster_caps:
+        for cap_value in crit.proposed_overlay.cluster_caps.values():
+            assert cap_value < 0.25, f"critical cap {cap_value} not strict vs 0.25"
+
+    # high
+    high = run_concentration_lens(
+        _numerics(hhi=0.10, max_cluster=0.45), _wv_uniform(),
+    )
+    assert high.level == "high"
+    if high.proposed_overlay.cluster_caps:
+        for cap_value in high.proposed_overlay.cluster_caps.values():
+            assert cap_value < 0.25, f"high cap {cap_value} not strict vs 0.25"
+
+    # medium — validator baseline 0.25로 충분하므로 빈 cluster_caps
+    med = run_concentration_lens(
+        _numerics(hhi=0.13, max_cluster=0.20), _wv_uniform(),
+    )
+    assert med.level == "medium"
+    assert med.proposed_overlay.cluster_caps == {}
+
+
 # ===== macro_conditional_lens =====
 
 def _candidates():

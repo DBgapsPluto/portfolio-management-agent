@@ -1,7 +1,8 @@
 """Concentration lens — HHI + top-N + cluster exposure.
 
-LLM-free deterministic. Mandate 자체는 단일 cap 20%로 보호되지만, *집단 노출*
-(HHI, cluster 합)은 별도 검사.
+LLM-free deterministic. Mandate (단일 cap 20% + cluster cap 0.25 hard)는
+Stage 5 validator가 보유. Stage 4 lens는 *시장 위험 시 추가 strict한* cap만
+제안 (책임 분리, Stage 5 정리 ⑥ 옵션 A-1).
 
 Threshold:
   critical: HHI > 0.20 OR max_cluster > 0.50 OR top1 > 0.19
@@ -10,11 +11,16 @@ Threshold:
   low:      HHI > 0.10
   none:     else
 
-Overlay:
-  critical: weight_ceilings = top-2 ticker를 0.15로 (강제), cluster_caps 최대 → 0.30
-  high:     top-1 ticker를 0.17, cluster max → 0.35
-  medium:   cluster max → 0.40
+Overlay cluster_caps (validator baseline 0.25 대비 strict-only):
+  critical: cluster_caps = {top-1: 0.18}     # baseline보다 -7%p strict
+  high:     cluster_caps = {top-1: 0.22}     # -3%p
+  medium:   cluster_caps 비움 (validator baseline 0.25로 충분)
   low/none: empty
+
+Weight ceilings (단일 자산 cap 0.20 대비 strict-only):
+  critical: weight_ceilings = top-2 ticker를 0.15로
+  high:     top-1 ticker를 0.17
+  medium:   empty (단일 cap만으로 충분)
 """
 from tradingagents.skills.risk.portfolio_metrics import PortfolioNumerics
 from tradingagents.schemas.portfolio import WeightVector
@@ -49,6 +55,11 @@ def _overlay_for_level(
     level: str, weight_vector: WeightVector,
     cluster_exposure: dict[str, float],
 ) -> RiskOverlayDelta:
+    """level별 preset overlay.
+
+    validator baseline (cluster_cap=0.25 hard, single cap=0.20 hard) 대비
+    *strict-only* cap만 제안. validator보다 느슨한 cap은 no-op (제거).
+    """
     sorted_weights = sorted(
         weight_vector.weights.items(), key=lambda kv: -kv[1],
     )
@@ -58,15 +69,14 @@ def _overlay_for_level(
 
     if level == "critical":
         ceilings = {t: 0.15 for t, _w in sorted_weights[:2]}
-        caps = {c: 0.30 for c, _e in sorted_clusters[:1]}
+        caps = {c: 0.18 for c, _e in sorted_clusters[:1]}
         return RiskOverlayDelta(weight_ceilings=ceilings, cluster_caps=caps)
     if level == "high":
         ceilings = {sorted_weights[0][0]: 0.17} if sorted_weights else {}
-        caps = {c: 0.35 for c, _e in sorted_clusters[:1]}
+        caps = {c: 0.22 for c, _e in sorted_clusters[:1]}
         return RiskOverlayDelta(weight_ceilings=ceilings, cluster_caps=caps)
-    if level == "medium":
-        caps = {c: 0.40 for c, _e in sorted_clusters[:1]}
-        return RiskOverlayDelta(cluster_caps=caps)
+    # medium / low / none: validator baseline 0.25 cluster cap + 0.20 single cap
+    # 으로 충분. Stage 4는 no-op.
     return RiskOverlayDelta()
 
 
