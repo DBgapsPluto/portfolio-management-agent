@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from tradingagents.dataflows.save_brief import (
+    _extract_file_date, find_latest_save_brief,
     parse_brief_date, split_save_brief_pages,
 )
 from tradingagents.skills.news.save_ingestor import (
@@ -15,6 +16,97 @@ from tradingagents.skills.news.save_ingestor import (
 
 
 FIXTURE = Path(__file__).parents[2] / "fixtures" / "save" / "extracted_result_2026-05-15.txt"
+
+
+# ===== File path / pattern tests (data/SAVE/YYYY-MM-DD.* 형식) =====
+
+
+def test_extract_file_date_from_new_pattern(tmp_path):
+    assert _extract_file_date(tmp_path / "2026-05-15.txt") == date(2026, 5, 15)
+    assert _extract_file_date(tmp_path / "2026-05-15") == date(2026, 5, 15)
+    assert _extract_file_date(tmp_path / "2026-05-15.md") == date(2026, 5, 15)
+
+
+def test_extract_file_date_rejects_non_matching():
+    """파일명 stem이 YYYY-MM-DD로 시작 안 하면 None."""
+    assert _extract_file_date(Path("notes.txt")) is None
+    assert _extract_file_date(Path("extracted_result_2026-05-15.txt")) is None
+    assert _extract_file_date(Path("daily_brief.txt")) is None
+
+
+def test_extract_file_date_invalid_date():
+    assert _extract_file_date(Path("2026-13-99.txt")) is None
+
+
+def test_find_latest_picks_closest_past_date(tmp_path):
+    (tmp_path / "2026-05-13.txt").write_text("a", encoding="utf-8")
+    (tmp_path / "2026-05-15.txt").write_text("b", encoding="utf-8")
+    (tmp_path / "2026-05-20.txt").write_text("c", encoding="utf-8")  # 미래
+
+    # as_of = 2026-05-17: 5-15가 가장 가까운 과거
+    result = find_latest_save_brief(
+        as_of=date(2026, 5, 17), search_dir=tmp_path,
+    )
+    assert result is not None
+    assert result.name == "2026-05-15.txt"
+
+
+def test_find_latest_skips_future_dates(tmp_path):
+    (tmp_path / "2026-05-20.txt").write_text("future", encoding="utf-8")
+    (tmp_path / "2026-05-10.txt").write_text("past", encoding="utf-8")
+    result = find_latest_save_brief(
+        as_of=date(2026, 5, 15), search_dir=tmp_path,
+    )
+    assert result.name == "2026-05-10.txt"
+
+
+def test_find_latest_no_extension_files(tmp_path):
+    """확장자 없는 파일도 인식."""
+    (tmp_path / "2026-05-15").write_text("no ext", encoding="utf-8")
+    result = find_latest_save_brief(
+        as_of=date(2026, 5, 17), search_dir=tmp_path,
+    )
+    assert result.name == "2026-05-15"
+
+
+def test_find_latest_returns_none_for_empty_dir(tmp_path):
+    assert find_latest_save_brief(
+        as_of=date(2026, 5, 15), search_dir=tmp_path,
+    ) is None
+
+
+def test_find_latest_returns_none_for_nonexistent_dir():
+    assert find_latest_save_brief(
+        as_of=date(2026, 5, 15),
+        search_dir=Path("/nonexistent/path/SAVE"),
+    ) is None
+
+
+def test_find_latest_mtime_fallback_when_no_date_in_name(tmp_path):
+    """파일명 stem이 YYYY-MM-DD 아니면 mtime fallback."""
+    (tmp_path / "random_name.txt").write_text("x", encoding="utf-8")
+    result = find_latest_save_brief(
+        as_of=date(2026, 5, 15), search_dir=tmp_path,
+    )
+    assert result.name == "random_name.txt"
+
+
+def test_find_latest_uses_real_data_save_dir():
+    """실제 data/SAVE/ 폴더에서 매칭 검증 (project-relative default)."""
+    project_root = Path(__file__).parents[3]
+    real_save = project_root / "data" / "SAVE"
+    if not real_save.exists():
+        pytest.skip("data/SAVE not present in this environment")
+    files = [p for p in real_save.iterdir() if p.is_file()]
+    if not files:
+        pytest.skip("data/SAVE empty")
+    # 어떤 파일이라도 있으면 find_latest가 None 아닌 결과 반환해야
+    result = find_latest_save_brief(as_of=date(2099, 1, 1))
+    # 환경 변수 override 안 되어 있으면 기본 경로 사용
+    import os
+    if "SAVE_BRIEF_DIR" not in os.environ:
+        assert result is not None
+        assert result.parent == real_save
 
 
 def test_parse_brief_date_from_fixture():

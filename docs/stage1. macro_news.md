@@ -45,7 +45,7 @@
 | yfinance | 9개 글로벌 자산 daily close | Tier-1 overnight |
 | event_calendar (기존) | 향후 90일 매크로 이벤트 | upcoming_events |
 | news_fetcher (기존) | 최근 7일 매크로 뉴스 RSS | Tier-3 input |
-| SAVE 브리핑 (`extracted_result_*.txt`) | 큐레이션된 경제지표/뉴스카드/주간일정 | Tier-2/3/event_calendar 보강 |
+| SAVE 브리핑 (`data/SAVE/YYYY-MM-DD.txt`) | 큐레이션된 경제지표/뉴스카드/주간일정 | Tier-2/3/event_calendar 보강 |
 | state["release_surprises_30d"] | 외부 주입 발표 데이터 | Tier-2 input |
 | `quick_llm` (OpenAI/Anthropic) | batch sentiment/categorization/tone 분류 | Tier-3/4/5 |
 
@@ -279,7 +279,7 @@ event_type 자동 매핑:
 **파일 탐색**:
 ```python
 SAVE_BRIEF_DIR_ENV = "SAVE_BRIEF_DIR"
-default = "~/Downloads/SAVE/"
+default = "<project_root>/data/SAVE/"   # 파일명: YYYY-MM-DD.txt (또는 확장자 무관)
 
 find_latest_save_brief(as_of):
     1순위: 파일명 YYYY-MM-DD ≤ as_of 중 가장 가까운 것
@@ -408,7 +408,7 @@ class NewsReport(_AnalystReport):
 |---|---|---|
 | (yfinance) | 9 글로벌 overnight ticker | **키 불요** |
 | `OPENAI_API_KEY` | quick_llm batch — categorize/sentiment/CB tone/SAVE 카드 추출 | 기존 환경 그대로 |
-| `SAVE_BRIEF_DIR` (env) | SAVE `extracted_result_*.txt` 경로 (기본 `~/Downloads/SAVE/`) | optional |
+| `SAVE_BRIEF_DIR` (env) | SAVE 브리핑 디렉토리 경로 (기본 `<project_root>/data/SAVE/`, 파일명 `YYYY-MM-DD.*`) | optional |
 
 → 신규 가입/키 0개. FinBERT 등 무거운 의존성 추가 0.
 
@@ -462,4 +462,5 @@ class NewsReport(_AnalystReport):
 | 스키마 | `tradingagents/schemas/news.py`, `reports.py` |
 | 데이터 wrapper (신규 2) | `tradingagents/dataflows/{global_overnight, save_brief}.py` |
 | 단위 테스트 (신규 6) | `tests/unit/skills/test_news_{global_overnight, release_surprise, categorizer, sentiment, cb_speaker, save_ingestor}.py` |
-| Fixture | `tests/fixtures/save/extracted_result_2026-05-15.txt` |
+| 실제 데이터 | `data/SAVE/YYYY-MM-DD.txt` (사용자가 매일 추가) |
+| Fixture (테스트) | `tests/fixtures/save/extracted_result_2026-05-15.txt` (예전 형식 보존) |
