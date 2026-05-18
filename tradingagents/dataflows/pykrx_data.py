@@ -151,6 +151,76 @@ def fetch_foreign_flow(
     wait=wait_exponential(multiplier=1, min=1, max=8),
     retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
 )
+def _raw_credit_balance_call(start: date, end: date) -> pd.DataFrame:
+    """KRX 일별 신용공여(=신용잔고) — 전체 시장 합계."""
+    from pykrx import stock
+    return stock.get_market_trading_value_by_date(
+        start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), market="KOSPI",
+        etf=False, etn=False, elw=False, detail=True,
+    )
+
+
+def fetch_credit_balance(start: date, end: date) -> pd.Series:
+    """KRX 신용잔고 시계열 (KRW). pykrx detail=True의 '신용공여' 컬럼 사용.
+
+    NOTE: pykrx 버전에 따라 컬럼명 다를 수 있음 (신용공여 / 신용잔고 / 융자잔고 등).
+    실패 시 빈 Series 반환 → 분석가에서 sentinel.
+    """
+    try:
+        raw = _raw_credit_balance_call(start, end)
+    except Exception as e:
+        logger.warning("Credit balance fetch failed: %s", e)
+        return pd.Series(dtype=float, name="credit_balance")
+
+    if raw is None or raw.empty:
+        return pd.Series(dtype=float, name="credit_balance")
+
+    # 컬럼명은 pykrx 버전마다 다를 수 있음
+    candidates = ["신용공여", "신용잔고", "융자잔고", "신용거래융자"]
+    col = next((c for c in candidates if c in raw.columns), None)
+    if col is None:
+        logger.warning("Credit column not found in pykrx output: %s", list(raw.columns))
+        return pd.Series(dtype=float, name="credit_balance")
+    s = raw[col].copy()
+    s.name = "credit_balance"
+    return s
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+)
+def _raw_index_ohlcv_call(code: str, start: date, end: date) -> pd.DataFrame:
+    """KRX 시장 인덱스 OHLCV — KOSPI(1001), KOSDAQ(2001), KOSPI200(1028) 등."""
+    from pykrx import stock
+    return stock.get_index_ohlcv(
+        start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), code,
+    )
+
+
+def fetch_market_index(code: str, start: date, end: date) -> pd.Series:
+    """KRX 인덱스 종가 시계열.
+
+    1001=KOSPI, 2001=KOSDAQ, 1028=KOSPI200. 실패 시 빈 Series.
+    """
+    try:
+        raw = _raw_index_ohlcv_call(code, start, end)
+        if raw is None or raw.empty or "종가" not in raw.columns:
+            return pd.Series(dtype=float, name=f"idx_{code}")
+        return raw["종가"].rename(f"idx_{code}")
+    except Exception as e:
+        logger.warning("Market index %s fetch failed: %s", code, e)
+        return pd.Series(dtype=float, name=f"idx_{code}")
+
+
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+)
 def _raw_pykrx_snapshot_call(target_date: date) -> pd.DataFrame:
     """Direct pykrx snapshot call — all ETFs on a single date in one shot."""
     from pykrx import stock

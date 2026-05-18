@@ -35,6 +35,16 @@ You are a market risk analyst quantifying systemic risk on a 0-10 scale.
 - Credit quality spread (BBB - AAA) = {credit_quality_spread_bps} bps, regime = {credit_quality_regime}
   (percentile 기준 calm/elevated/stress. 확대 = flight to quality)
 
+==== Tier-3 확장: KR-specific risk ====
+- KR yield curve: (10y-3y) = {kr_yc_spread_bps} bps, inverted = {kr_yc_inverted}, regime = {kr_yc_regime}
+  (>+50bps normal, -10~+50 flat, <-10 inverted. 한국 BOK 사이클이 미국과 dis-correlate 가능)
+- KR 회사채 spread: AA- 3y vs 국고채 3y = {kr_corp_spread_bps} bps, regime = {kr_corp_regime}
+  (확대 = 한국 기업 신용 stress, 2022 레고랜드 같은 KR-specific 신용 위기 신호)
+- KR 신용잔고 20일 변화 = {kr_margin_change_20d}%, signal = {kr_margin_signal}
+  (euphoria = 과열 peak; deleveraging = forced selling 위기. KR retail leverage 추적)
+- KR 시장 tier: (KOSDAQ - KOSPI 20d return) = {kr_tier_relative_perf}%, signal = {kr_tier_signal}
+  (small_cap_risk_on = 중소형 outperform; large_cap_risk_off = 대형주 flight-to-quality)
+
 ==== Score guidance ====
 Score 0 = calm/risk-on; 5 = neutral; 10 = systemic risk-off.
 
@@ -52,6 +62,13 @@ Tier-2 가산 룰:
 - Credit quality regime = "stress" (BBB-AAA percentile >0.85) → score +1 (flight to quality)
 - HY momentum_z > +1.5 → score +1 (확대 가속)
 - 3개 이상 Tier-2 stress regime 동시 → 자동 9-10 (systemic crisis 전개 중)
+
+Tier-3 가산 룰 (KR-specific, KR ETF 결정에 직접 영향):
+- KR yield curve inverted → score +1 (KR 침체 우려)
+- KR 회사채 regime = "stress" → score +2 (KR 신용 위기, 레고랜드형 충격)
+- KR 신용잔고 signal = "deleveraging" → score +2 (forced selling 진행 중)
+- KR market tier = "large_cap_risk_off" → score +1 (대형주로 flight-to-quality)
+- KR 신용잔고 signal = "euphoria" → score 자체 변동 없지만 drivers에 명시 (peak 우려)
 
 Output a SystemicRiskScore JSON with:
 - score (float 0-10)

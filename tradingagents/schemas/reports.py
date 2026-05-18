@@ -14,6 +14,8 @@ from tradingagents.schemas.risk import (
     BreadthSnapshot, PCASnapshot, SystemicRiskScore,
     VIXTermStructureSnapshot, SkewSnapshot, VxnSnapshot,
     RealYieldsSnapshot, FundingStressSnapshot, CreditQualitySnapshot,
+    KRYieldCurveSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
+    KRMarketTierSnapshot,
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
@@ -80,6 +82,11 @@ class RiskReport(_AnalystReport):
     real_yields: RealYieldsSnapshot
     funding_stress: FundingStressSnapshot
     credit_quality: CreditQualitySnapshot
+    # Tier-3 확장 (KR-specific risk)
+    kr_yield_curve: KRYieldCurveSnapshot
+    kr_corp_spread: KRCorpSpreadSnapshot
+    kr_margin_debt: KRMarginDebtSnapshot
+    kr_market_tier: KRMarketTierSnapshot
 
 
 class TechnicalReport(_AnalystReport):

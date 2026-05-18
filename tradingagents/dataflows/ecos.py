@@ -28,6 +28,11 @@ ECOS_STAT_CODES = {
     "kr_cli": ("901Y067", "I16D"),       # 선행지수 순환변동치
     # 512Y014 = 기업경기실사지수(BSI), 제조업 업황 실적
     "kr_bsi_mfg": ("512Y014", "AX1AA"),  # 제조업 업황 BSI (월간)
+    # market_risk Tier-3 — KR-specific risk
+    # 817Y002 = 시장금리(일별), item code는 종목별
+    "kr_treasury_3y": ("817Y002", "010195000"),     # 국고채 3년
+    "kr_treasury_10y": ("817Y002", "010210000"),    # 국고채 10년
+    "kr_corp_aa_3y": ("817Y002", "010320000"),      # 회사채 AA- 3년
 }
 
 

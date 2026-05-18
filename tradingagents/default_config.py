@@ -124,6 +124,10 @@ DEFAULT_CONFIG.update({
         "us_3m_tbill": 1,
         "us_aaa_oas": 1,
         "us_bbb_oas": 1,
+        # market_risk Tier-3 확장 (KR-specific)
+        "kr_treasury_3y": 1,
+        "kr_treasury_10y": 1,
+        "kr_corp_aa_3y": 1,
     },
     # Tracing / observability
     "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",

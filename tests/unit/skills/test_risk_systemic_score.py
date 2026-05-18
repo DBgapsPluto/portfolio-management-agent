@@ -31,5 +31,10 @@ def test_classifier_invokes_llm():
         tips_10y=2.3, real_yields_regime="very_tight",
         funding_spread_bps=25.0, funding_regime="stress",
         credit_quality_spread_bps=130.0, credit_quality_regime="elevated",
+        # Tier-3 신규 inputs (KR-specific)
+        kr_yc_spread_bps=-15.0, kr_yc_inverted=True, kr_yc_regime="inverted",
+        kr_corp_spread_bps=120.0, kr_corp_regime="stress",
+        kr_margin_change_20d=-20.0, kr_margin_signal="deleveraging",
+        kr_tier_relative_perf=-4.5, kr_tier_signal="large_cap_risk_off",
     )
     assert result.regime == "risk_off"

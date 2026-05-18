@@ -134,3 +134,51 @@ class CreditQualitySnapshot(StalenessAware):
     regime: Literal["calm", "elevated", "stress"] = Field(
         description="percentile<0.5 calm, 0.5~0.85 elevated, >0.85 stress"
     )
+
+
+class KRYieldCurveSnapshot(StalenessAware):
+    """한국 국고채 yield curve. 10y-3y spread → 한국 경기 사이클 정보."""
+    treasury_3y: float = Field(description="국고채 3년 yield (%)")
+    treasury_10y: float = Field(description="국고채 10년 yield (%)")
+    spread_10y_3y_bps: float = Field(description="(10y - 3y) × 100, bps")
+    inverted: bool = Field(description="True if spread < 0 (역전)")
+    regime: Literal["normal", "flat", "inverted"] = Field(
+        description=">+50bps normal, -10~+50 flat, <-10 inverted"
+    )
+
+
+class KRCorpSpreadSnapshot(StalenessAware):
+    """한국 회사채(AA-) 3y vs 국고채 3y spread. KR 신용 risk 진단."""
+    corp_yield_3y: float = Field(description="회사채 AA- 3y yield (%)")
+    treasury_3y: float = Field(description="국고채 3y yield (%)")
+    spread_bps: float = Field(description="(corp - treasury) × 100, bps")
+    percentile_5y: float = Field(ge=0, le=1)
+    regime: Literal["calm", "elevated", "stress"] = Field(
+        description="percentile<0.5 calm, 0.5~0.85 elevated, >0.85 stress"
+    )
+
+
+class KRMarginDebtSnapshot(StalenessAware):
+    """KRX 신용잔고 (KOSPI). 한국 leverage 추적.
+
+    급증 = retail euphoria 위험 (peak signal), 급락 = forced selling 위기.
+    """
+    balance_krw: float = Field(description="신용잔고 (KRW)")
+    change_20d_pct: float = Field(description="20거래일 변화율 (%)")
+    percentile_1y: float = Field(ge=0, le=1, description="1y level percentile")
+    signal: Literal["normal", "euphoria", "deleveraging"] = Field(
+        description="percentile>0.85 + change>+10% euphoria, change<-15% deleveraging"
+    )
+
+
+class KRMarketTierSnapshot(StalenessAware):
+    """KOSPI vs KOSDAQ 상대 성과. KR 내부 risk on/off 분류.
+
+    KOSDAQ outperform = 중소형 risk-on, KOSPI outperform = 대형주 flight-to-quality.
+    """
+    kospi_return_20d_pct: float = Field(description="KOSPI 20거래일 수익률 (%)")
+    kosdaq_return_20d_pct: float = Field(description="KOSDAQ 20거래일 수익률 (%)")
+    relative_perf_pct: float = Field(description="KOSDAQ - KOSPI (% diff)")
+    signal: Literal["large_cap_risk_off", "neutral", "small_cap_risk_on"] = Field(
+        description="diff>+3% small_cap_risk_on, diff<-3% large_cap_risk_off"
+    )
