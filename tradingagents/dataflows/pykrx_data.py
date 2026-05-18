@@ -160,12 +160,7 @@ def _raw_credit_balance_call(start: date, end: date) -> pd.DataFrame:
     )
 
 
-def fetch_credit_balance(start: date, end: date) -> pd.Series:
-    """KRX 신용잔고 시계열 (KRW). pykrx detail=True의 '신용공여' 컬럼 사용.
-
-    NOTE: pykrx 버전에 따라 컬럼명 다를 수 있음 (신용공여 / 신용잔고 / 융자잔고 등).
-    실패 시 빈 Series 반환 → 분석가에서 sentinel.
-    """
+def _live_credit_balance(start: date, end: date) -> pd.Series:
     try:
         raw = _raw_credit_balance_call(start, end)
     except Exception as e:
@@ -175,7 +170,6 @@ def fetch_credit_balance(start: date, end: date) -> pd.Series:
     if raw is None or raw.empty:
         return pd.Series(dtype=float, name="credit_balance")
 
-    # 컬럼명은 pykrx 버전마다 다를 수 있음
     candidates = ["신용공여", "신용잔고", "융자잔고", "신용거래융자"]
     col = next((c for c in candidates if c in raw.columns), None)
     if col is None:
@@ -184,6 +178,31 @@ def fetch_credit_balance(start: date, end: date) -> pd.Series:
     s = raw[col].copy()
     s.name = "credit_balance"
     return s
+
+
+def fetch_credit_balance(
+    start: date, end: date,
+    use_cache: bool = True,
+    max_staleness: int = 7,
+) -> pd.Series:
+    """KRX 신용잔고 시계열 (KRW). pykrx detail=True의 '신용공여' 컬럼 사용.
+
+    Cache: ~/.tradingagents/cache/pykrx_index/credit_balance/{end}.json
+    """
+    if not use_cache:
+        return _live_credit_balance(start, end)
+
+    from tradingagents.dataflows.series_cache import fetch_series_with_cache
+    try:
+        return fetch_series_with_cache(
+            lambda: _live_credit_balance(start, end),
+            namespace="pykrx_index",
+            cache_key="credit_balance",
+            as_of=end,
+            max_staleness=max_staleness,
+        )
+    except Exception:
+        return pd.Series(dtype=float, name="credit_balance")
 
 
 @retry(
@@ -200,11 +219,7 @@ def _raw_index_ohlcv_call(code: str, start: date, end: date) -> pd.DataFrame:
     )
 
 
-def fetch_market_index(code: str, start: date, end: date) -> pd.Series:
-    """KRX 인덱스 종가 시계열.
-
-    1001=KOSPI, 2001=KOSDAQ, 1028=KOSPI200. 실패 시 빈 Series.
-    """
+def _live_market_index(code: str, start: date, end: date) -> pd.Series:
     try:
         raw = _raw_index_ohlcv_call(code, start, end)
         if raw is None or raw.empty or "종가" not in raw.columns:
@@ -212,6 +227,32 @@ def fetch_market_index(code: str, start: date, end: date) -> pd.Series:
         return raw["종가"].rename(f"idx_{code}")
     except Exception as e:
         logger.warning("Market index %s fetch failed: %s", code, e)
+        return pd.Series(dtype=float, name=f"idx_{code}")
+
+
+def fetch_market_index(
+    code: str, start: date, end: date,
+    use_cache: bool = True,
+    max_staleness: int = 7,
+) -> pd.Series:
+    """KRX 인덱스 종가 시계열.
+
+    1001=KOSPI, 2001=KOSDAQ, 1028=KOSPI200. 실패 시 빈 Series.
+    Cache: ~/.tradingagents/cache/pykrx_index/idx_{code}/{end}.json
+    """
+    if not use_cache:
+        return _live_market_index(code, start, end)
+
+    from tradingagents.dataflows.series_cache import fetch_series_with_cache
+    try:
+        return fetch_series_with_cache(
+            lambda: _live_market_index(code, start, end),
+            namespace="pykrx_index",
+            cache_key=f"idx_{code}",
+            as_of=end,
+            max_staleness=max_staleness,
+        )
+    except Exception:
         return pd.Series(dtype=float, name=f"idx_{code}")
 
 
