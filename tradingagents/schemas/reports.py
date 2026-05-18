@@ -23,7 +23,9 @@ from tradingagents.schemas.technical import (
     UniverseBreadthSnapshot, SectorRotationSnapshot,
     RiskAdjustedMetrics,
 )
-from tradingagents.schemas.news import CalendarEvent, RankedNews
+from tradingagents.schemas.news import (
+    CalendarEvent, RankedNews, GlobalOvernightSnapshot,
+)
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
 
@@ -137,3 +139,9 @@ class TechnicalReport(_AnalystReport):
 class NewsReport(_AnalystReport):
     upcoming_events: list[CalendarEvent]
     ranked_news: list[RankedNews]
+    # Tier-1 확장 (Global overnight — 이전 분석가가 안 보는 차원)
+    global_overnight: GlobalOvernightSnapshot | None = Field(
+        default=None,
+        description="STOXX50/FTSE/N225/HSI/SSE/TWII/WTI/NG/USDKRW overnight. "
+                    "US 데이터는 macro_quant/market_risk가 커버.",
+    )
