@@ -25,7 +25,7 @@ from tradingagents.schemas.technical import (
 )
 from tradingagents.schemas.news import (
     CalendarEvent, RankedNews, GlobalOvernightSnapshot,
-    ReleaseSurpriseSnapshot,
+    ReleaseSurpriseSnapshot, NewsSentimentSnapshot,
 )
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
@@ -151,4 +151,9 @@ class NewsReport(_AnalystReport):
         default=None,
         description="경제지표 surprise + 30d ESI bias. macro_quant FRED actual "
                     "라인이 못 잡는 forecast 대비 차이.",
+    )
+    # Tier-3 확장 (News categorizer + sentiment + momentum)
+    news_sentiment: NewsSentimentSnapshot | None = Field(
+        default=None,
+        description="5분류 카테고리별 count·sentiment·top headline + 24h vs 7d momentum.",
     )

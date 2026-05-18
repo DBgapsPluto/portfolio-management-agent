@@ -135,3 +135,42 @@ class ReleaseSurpriseSnapshot(StalenessAware):
         default="balanced",
         description="hawkish_surprise: 인플레/고용 강함 (CB 매파 명분), dovish: 약함.",
     )
+
+
+# ---------- Tier-3: News Categorizer + Sentiment + Momentum ----------
+
+
+NewsCategory = Literal[
+    "policy", "macro", "corporate", "geopolitical", "market_commentary",
+]
+ClassifierSource = Literal["keyword", "llm"]
+
+
+class CategorizedNewsItem(BaseModel):
+    """뉴스 1건 + 분류·sentiment·확신도."""
+    item: NewsItem
+    category: NewsCategory
+    sentiment_score: float = Field(ge=-1, le=1)
+    classifier_source: ClassifierSource = Field(
+        description="keyword=비용0 1차 매칭, llm=2차 fallback",
+    )
+
+
+class NewsSentimentSnapshot(StalenessAware):
+    """Tier-3 — 카테고리별 sentiment 집계 + momentum (어제 대비)."""
+    counts: dict[NewsCategory, int] = Field(default_factory=dict)
+    avg_sentiment: dict[NewsCategory, float] = Field(default_factory=dict)
+    dominant_category: NewsCategory | None = None
+    sentiment_dispersion: float = Field(
+        default=0.0, description="카테고리간 avg_sentiment 표준편차 (분열도).",
+    )
+    top_headline_per_category: dict[NewsCategory, str] = Field(default_factory=dict)
+    # Momentum (어제·최근 7일 평균 대비)
+    count_change_vs_7d: dict[NewsCategory, float] = Field(
+        default_factory=dict,
+        description="최근 24h count - 직전 7일 daily mean. +면 이슈 가속.",
+    )
+    rising_category: NewsCategory | None = Field(
+        default=None,
+        description="가장 급증한 카테고리. 카운트 2배+면 채워짐.",
+    )

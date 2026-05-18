@@ -3,11 +3,15 @@ from datetime import date
 
 from tradingagents.schemas.reports import NewsReport
 from tradingagents.skills.news.event_calendar import fetch_event_calendar_skill
+from tradingagents.skills.news.categorizer import categorize_news
 from tradingagents.skills.news.global_overnight import (
     compute_global_overnight_snapshot,
 )
 from tradingagents.skills.news.impact_classifier import classify_event_impact
 from tradingagents.skills.news.news_fetcher import fetch_macro_news_skill
+from tradingagents.skills.news.news_sentiment import (
+    compute_news_sentiment_snapshot, score_sentiment,
+)
 from tradingagents.skills.news.ranker import dedupe_rank_news
 from tradingagents.skills.news.release_surprise import (
     compute_release_surprise_snapshot,
@@ -22,6 +26,29 @@ def _summarize_overnight(snap) -> str:
         f"Tier-1 (global overnight, n={snap.fetched_count}/9):\n"
         f"  Regime: {snap.risk_regime_overnight}\n"
         f"  {snap.narrative_seed}\n"
+    )
+
+
+def _summarize_sentiment(snap) -> str:
+    """Tier-3 압축: 카테고리별 count·sentiment + rising + top headline."""
+    if snap is None or not snap.counts:
+        return ""
+    counts_str = ", ".join(f"{cat} {n}" for cat, n in snap.counts.items())
+    sent_str = ", ".join(
+        f"{cat} {s:+.2f}" for cat, s in snap.avg_sentiment.items()
+    )
+    rising = snap.rising_category or "(none)"
+    top_lines = [
+        f"    {cat}: {h[:80]}"
+        for cat, h in list(snap.top_headline_per_category.items())[:3]
+    ]
+    return (
+        f"Tier-3 (news sentiment, n={sum(snap.counts.values())}):\n"
+        f"  Counts: {counts_str}\n"
+        f"  Avg sentiment: {sent_str}\n"
+        f"  Dominant: {snap.dominant_category}, Rising: {rising}\n"
+        f"  Dispersion: {snap.sentiment_dispersion:.2f}\n"
+        f"  Top per category:\n" + "\n".join(top_lines) + "\n"
     )
 
 
@@ -85,6 +112,17 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             surprise_snapshot = None
         surprise_summary = _summarize_surprise(surprise_snapshot)
 
+        # Tier-3: News categorizer + sentiment + momentum
+        try:
+            categorized = categorize_news(items, quick_llm=quick_llm)
+            categorized = score_sentiment(categorized, quick_llm=quick_llm)
+            sentiment_snapshot = compute_news_sentiment_snapshot(
+                categorized, as_of=as_of,
+            )
+        except Exception:
+            sentiment_snapshot = None
+        sentiment_summary = _summarize_sentiment(sentiment_snapshot)
+
         narrative = quick_llm.invoke(
             f"Summarize macro news in ≤500 Korean chars. "
             f"Top: {[r.item.headline[:50] for r in ranked[:3]]}"
@@ -96,12 +134,14 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             f"Top headlines (severity {top_severity}): {top_headline}\n"
             f"{overnight_summary}"
             f"{surprise_summary}"
+            f"{sentiment_summary}"
         )[:2000]
 
         report = NewsReport(
             upcoming_events=events, ranked_news=ranked,
             global_overnight=overnight,
             release_surprise=surprise_snapshot,
+            news_sentiment=sentiment_snapshot,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"news_report": report, "news_summary": summary}
