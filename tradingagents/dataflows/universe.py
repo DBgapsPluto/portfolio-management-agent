@@ -17,6 +17,12 @@ class ETFEntry(BaseModel):
     underlying_index: str
     bucket: Literal["위험", "안전"]
     category: str
+    sub_category: Optional[str] = Field(
+        default=None,
+        description="의미적 sub_category (semiconductor/us_tech/gold 등). "
+                    "LLM 분류 (1회 enrichment, scripts/enrich_universe_subcategory.py). "
+                    "None이면 시나리오 필터링 skip.",
+    )
     listed_since: Optional[date] = Field(
         default=None,
         description="Listing date — used to filter for backtests with as_of < listed_since",
