@@ -4,11 +4,13 @@
 
 **Goal:** Stage 2 (Research) 의 7개 식별된 quant 병목을 mega-PR 1개 (5 commit) 로 5/28 이전 (가급적 5/20 당일) 해소. 분석(variance + ablation) → 처방 → regression test → 산출물 재생성 순서.
 
-**Architecture:** Branch `feat/stage2-bottleneck-fixes` 에 5 commit 차곡차곡 쌓는 mega-PR. 각 commit independently revertable. 분석 단계(C2)의 LLM 호출 두 가지(variance n=20, ablation 3-mode×n=3)는 백그라운드 실행하며 code work 와 병렬. C3의 β/EMA 옵션은 C2 결과로 결정 (사전 magic number 추가 금지).
+**Architecture:** Branch `feat/stage2-bottleneck-fixes` 에 6 commit (C0-C5) 차곡차곡 쌓는 mega-PR. 각 commit independently revertable. 분석 단계(C2)의 LLM 호출 두 가지(variance n=20, ablation 3-mode×n=3)는 백그라운드 실행하며 code work 와 병렬. C3의 β/EMA 옵션은 C2 결과로 결정 (사전 magic number 추가 금지).
 
 **Tech Stack:** Python 3.11, pytest, pydantic v2, pandas (OLS), Anthropic SDK (cache_control), 기존 langgraph 그래프.
 
 **Spec:** `docs/superpowers/specs/2026-05-20-stage2-bottleneck-fix-design.md`
+
+**Execution Protocol:** `docs/superpowers/plans/2026-05-20-stage2-execution-protocol.md` — 환각 방지 8 원칙. C0 에서 인프라 구축 → C1-C5 모든 task 에 의무 적용.
 
 ---
 
@@ -75,6 +77,138 @@ pytest tests/unit/ -q --timeout=30 2>&1 | tail -20
 ```
 
 Expected: 모든 test pass (또는 기존에 알려진 skip 만). 실패 있으면 본 PR 작업 전 separately 해결.
+
+---
+
+## Commit C0: Execution safeguards (환각 방지 인프라)
+
+> **Why:** 8시간+ 단일 세션 실행의 환각 위험 차단. 자세한 근거 / 8 원칙: `docs/superpowers/plans/2026-05-20-stage2-execution-protocol.md`. 본 commit 의 산출물 (`decisions.md`, `job_status.json`, `regression_log.md`) 은 C1-C5 의 모든 task 가 참조하는 *외부 state*.
+
+### Task 0.5: artifacts/2026-05-20/ 디렉토리 생성
+
+**Files:**
+- Create: `artifacts/2026-05-20/decisions.md`
+- Create: `artifacts/2026-05-20/job_status.json`
+- Create: `artifacts/2026-05-20/regression_log.md`
+
+- [ ] **Step 0.5.1: 디렉토리 + decisions.md 작성**
+
+```bash
+mkdir -p artifacts/2026-05-20
+```
+
+`artifacts/2026-05-20/decisions.md`:
+
+```markdown
+# Stage 2 Mega-PR Execution Decisions (2026-05-20)
+
+> 조건부 결정의 외부 state. 모든 C1-C5 코드 변경은 본 표에 결정이 등록된 후에만
+> 진행. 코딩 시점에 본 파일 Read 해서 인용. spec line 번호로 chain 추적.
+
+| # | 항목 | 결정 | 근거 | 시각 | commit |
+|---|---|---|---|---|---|
+| D1 | β 옵션 (Issue #5) | _pending_ | variance n=20 결과 필요 | — | — |
+| D2 | EMA λ (Issue #11) | _pending_ | flip rate + bond σ 필요 | — | — |
+| D3 | Hysteresis on/off | _pending_ | flip rate 측정 후 | — | — |
+| D4 | Method picker overheating | HRP | equity tilt + 분산. goldilocks 와 동등 처방. (spec §2 C1) | 2026-05-20T?? | — |
+| D5 | C3 input pruning | _pending_ | ablation anchoring ratio 결과 | — | — |
+| D6 | C5 philosophy.md narrative | _pending_ | stage2_diff.md 본 후 결정 | — | — |
+| D7 | C4 KR β/α 회귀 fallback | _pending_ | KR 분기 data 보유 여부 | — | — |
+
+## 사용 규칙
+
+1. C2 결과 회수 직후 D1-D3, D5 결정 → 본 표 갱신 → commit (`chore(stage2): decisions update from variance + ablation`)
+2. 코드 작성 시 본 파일 Read → 결정 row 인용 → 그 결정에 부합하는 코드만 작성
+3. 결정 변경 필요 시 *새 row 추가* (덮어쓰지 말 것 — chain 추적용)
+```
+
+- [ ] **Step 0.5.2: job_status.json 생성**
+
+`artifacts/2026-05-20/job_status.json`:
+
+```json
+{
+  "comment": "Background process tracker. 결과 인용 전 ls + tail 로 검증.",
+  "jobs": {}
+}
+```
+
+- [ ] **Step 0.5.3: regression_log.md baseline 기록**
+
+```bash
+pytest tests/unit/ -q --timeout=30 2>&1 | tail -3
+pytest tests/integration/ -q --timeout=120 2>&1 | tail -3
+```
+
+위 두 명령의 raw output 을 `artifacts/2026-05-20/regression_log.md` 에 저장:
+
+```markdown
+# Stage 2 Mega-PR Regression Log (2026-05-20)
+
+> 각 commit (C1-C5) 직후 회귀 결과 raw 기록. 본 baseline 대비 0 regression
+> (skip 변동 제외) 이 mega-PR merge 조건.
+
+## Post-C0 baseline (pre-changes)
+
+### Unit test
+$ pytest tests/unit/ -q --timeout=30 2>&1 | tail -3
+<출력 마지막 3줄 붙여넣기>
+
+### Integration test
+$ pytest tests/integration/ -q --timeout=120 2>&1 | tail -3
+<출력 마지막 3줄 붙여넣기>
+
+## Post-C1
+(C1 commit 직후 갱신)
+
+## Post-C2
+(C2 commit 직후 갱신)
+
+(... C5 까지)
+```
+
+### Task 0.6: C0 commit
+
+- [ ] **Step 0.6.1: stage 변경 파일**
+
+```bash
+git status --short
+```
+
+Expected:
+- ?? `artifacts/2026-05-20/decisions.md`
+- ?? `artifacts/2026-05-20/job_status.json`
+- ?? `artifacts/2026-05-20/regression_log.md`
+- ?? `docs/superpowers/plans/2026-05-20-stage2-execution-protocol.md` (이미 작성)
+
+- [ ] **Step 0.6.2: commit**
+
+```bash
+git add artifacts/2026-05-20/decisions.md artifacts/2026-05-20/job_status.json artifacts/2026-05-20/regression_log.md docs/superpowers/plans/2026-05-20-stage2-execution-protocol.md
+
+git commit -m "$(cat <<'EOF'
+chore(stage2): execution safeguards — decisions log + job tracker + protocol
+
+8시간+ 단일 세션 mega-PR 실행의 환각 위험 차단 인프라.
+
+산출물:
+- artifacts/2026-05-20/decisions.md: 조건부 결정 외부 state (D1-D7)
+  코드 변경은 결정 등록 후에만, 코딩 시 본 파일 Read 해서 인용.
+- artifacts/2026-05-20/job_status.json: 백그라운드 process tracker
+  결과 인용 전 ls + tail 검증 의무.
+- artifacts/2026-05-20/regression_log.md: post-baseline 회귀 결과
+  각 commit 직후 raw output 기록. 0 regression 이 merge 조건.
+- docs/superpowers/plans/2026-05-20-stage2-execution-protocol.md:
+  환각 실패 모드 6종 + 방지 8 원칙 + task enforcement checklist.
+
+C1-C5 모든 task 는 본 protocol 의 enforcement checklist 의무 적용.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+Expected: commit 생성. C0 완료.
 
 ---
 
@@ -2375,6 +2509,7 @@ Mega-PR open: {PR URL}
 
 | Spec section | 구현 task |
 |---|---|
+| (Process) execution safeguards | Task 0.5-0.6 (C0) — spec 에 없는 process 보강. 환각 차단 인프라. |
 | 2 C1 (mis-label) | Task 1.1-1.6 |
 | 2 C2 (analysis 인프라) | Task 2.1-2.7 |
 | 2 C3 (β + EMA) | Task 3.1-3.8 |
@@ -2395,7 +2530,8 @@ Mega-PR open: {PR URL}
 
 ## Self-review notes
 
-- ⚠️ **β 옵션 결정** — variance 결과 본 후 옵션 A/B/C 결정. 본 plan 은 옵션 A (β=1 고정) 기준 코드. 옵션 B (backtest 캘리) 또는 C (Bayesian shrinkage) 채택 시 Task 3.2 의 코드 + Task 3.1 의 test 수정 필요. 결정 시점은 Task 2.6 직후, Task 3.1 직전.
+- 🛡️ **환각 차단 protocol** — C0 (Task 0.5-0.6) 이 모든 후속 task 에 적용. `decisions.md`, `job_status.json`, `regression_log.md` 외부 state 의무. 자세한 enforcement: `docs/superpowers/plans/2026-05-20-stage2-execution-protocol.md`.
+- ⚠️ **β 옵션 결정** — variance 결과 본 후 옵션 A/B/C 결정. 본 plan 은 옵션 A (β=1 고정) 기준 코드. 옵션 B (backtest 캘리) 또는 C (Bayesian shrinkage) 채택 시 Task 3.2 의 코드 + Task 3.1 의 test 수정 필요. 결정 시점은 Task 2.6 직후, Task 3.1 직전. **결정은 `decisions.md` D1 row 갱신 + commit 후 코드 작성** (protocol §5).
 - ⚠️ **Hysteresis** — flip rate > 5% 일 때만 활성화 (Task 3.7). 그 외 skip.
 - ⚠️ **baseline 회귀 data** — `tradingagents.backtest.data` 의 `load_quarterly_macro_history`, `load_quarterly_kr_history` 함수 존재 가정. 부재 시 alternative loader 필요 (Task 4.3 의 import 부분 수정). 미존재 확인 시 hand-coded 값 유지 + TODO.
 - ⚠️ **Portfolio 재산출 명령** — Task 5.1.1 의 CLI entry 명령은 codebase 확인 후 실제 명령으로 대체. `scripts/run_monthly_rebalance.py` 는 예시.
