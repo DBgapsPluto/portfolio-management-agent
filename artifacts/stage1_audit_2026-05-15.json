@@ -1,0 +1,346 @@
+{
+  "timings_sec": {
+    "macro_quant": 14.468271970748901,
+    "market_risk": 10.59312653541565,
+    "technical": 142.1003932952881,
+    "macro_news": 126.57124829292297
+  },
+  "errors": [],
+  "findings": [
+    {
+      "analyst": "macro_quant",
+      "field": "yield_curve",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "inflation",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "employment",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "kr_divergence",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "regime",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=None"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "kr_export",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "kr_leading",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "kr_business_survey",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "us_leading",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "gdp_nowcast",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "financial_conditions",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "inflation_expectations",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "fed_path",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "fx",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "risk_appetite",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "china_leading",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "foreign_flow",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "policy_uncertainty",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "tail_risk",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "macro_quant",
+      "field": "upcoming_events",
+      "verdict": "[OK]   LIVE",
+      "detail": "central-bank calendar count=4"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "vix",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "vkospi",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "credit_spread_us_ig",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "credit_spread_us_hy",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "fear_greed",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "breadth_kr",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "breadth_us",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "correlation_concentration",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "systemic_score",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=None"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "vix_term",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "skew",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "vxn",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "real_yields",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "funding_stress",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "credit_quality",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "kr_yield_curve",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "kr_corp_spread",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "kr_margin_debt",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "kr_market_tier",
+      "verdict": "[BAD]  SENTINEL",
+      "detail": "staleness_days=99, source_date=2026-05-15"
+    },
+    {
+      "analyst": "market_risk",
+      "field": "equity_bond_corr",
+      "verdict": "[OK]   LIVE",
+      "detail": "staleness_days=0, source_date=2026-05-15"
+    },
+    {
+      "analyst": "technical",
+      "field": "factor_panel",
+      "verdict": "[OK]   LIVE",
+      "detail": "factor_panel count=188"
+    },
+    {
+      "analyst": "technical",
+      "field": "extended_indicators",
+      "verdict": "[OK]   LIVE",
+      "detail": "count=188"
+    },
+    {
+      "analyst": "technical",
+      "field": "trend_quantification",
+      "verdict": "[OK]   LIVE",
+      "detail": "count=187"
+    },
+    {
+      "analyst": "technical",
+      "field": "risk_adjusted",
+      "verdict": "[OK]   LIVE",
+      "detail": "count=187"
+    },
+    {
+      "analyst": "technical",
+      "field": "asset_class_momentum",
+      "verdict": "[OK]   LIVE",
+      "detail": "categories=10, total ranks=187"
+    },
+    {
+      "analyst": "technical",
+      "field": "correlation_clusters",
+      "verdict": "[OK]   LIVE",
+      "detail": "clusters count=4"
+    },
+    {
+      "analyst": "technical",
+      "field": "universe_breadth",
+      "verdict": "[OK]   LIVE",
+      "detail": "snapshot present"
+    },
+    {
+      "analyst": "technical",
+      "field": "sector_rotation",
+      "verdict": "[OK]   LIVE",
+      "detail": "snapshot present"
+    },
+    {
+      "analyst": "macro_news",
+      "field": "upcoming_events",
+      "verdict": "[OK]   LIVE",
+      "detail": "count=10"
+    },
+    {
+      "analyst": "macro_news",
+      "field": "ranked_news",
+      "verdict": "[OK]   LIVE",
+      "detail": "count=10"
+    },
+    {
+      "analyst": "macro_news",
+      "field": "global_overnight (Tier-1)",
+      "verdict": "[OK]   LIVE",
+      "detail": "fetched=9/9 regime=risk_off"
+    },
+    {
+      "analyst": "macro_news",
+      "field": "release_surprise (Tier-2)",
+      "verdict": "[BAD]  NO_DATA",
+      "detail": "today=0 + last_5d=0 — SAVE에서도 발표 추출 못함"
+    },
+    {
+      "analyst": "macro_news",
+      "field": "news_sentiment (Tier-3)",
+      "verdict": "[OK]   LIVE",
+      "detail": "items=173, dominant=corporate, rising=None"
+    },
+    {
+      "analyst": "macro_news",
+      "field": "cb_speakers (Tier-4)",
+      "verdict": "[OK]   LIVE",
+      "detail": "fed=2, bok=0, other=5"
+    },
+    {
+      "analyst": "macro_news",
+      "field": "save_brief (Tier-5)",
+      "verdict": "[OK]   LIVE",
+      "detail": "file=C:\\Users\\parkj\\OneDrive\\바탕 화면\\pluto\\pluto\\data\\SAVE\\2026-05-15.txt, pages=31/31, releases=0, news_cards=12, schedule=0"
+    }
+  ],
+  "summary": {
+    "[OK]   LIVE      ": 44,
+    "[BAD]  SENTINEL  ": 10,
+    "[BAD]  NO_DATA   ": 1
+  }
+}

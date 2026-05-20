@@ -1,0 +1,25 @@
+====================================================================================================
+ BACKTEST SUMMARY
+====================================================================================================
+
+## 2025-04-15  (Nones)  Tariff shock / Trump 25%
+  Cycle:    A    (53%) conviction=medium (β=1.69)
+  Cell:     {'cycle': 'A', 'tail': 'N', 'kr': 'F'} (33%)
+  Tail:     {'N': 0.841, 'T': 0.16}
+  KR:       {'F': 0.727, 'boom': 0.058, 'stress': 0.216}
+  Buckets:  {'kr_equity': 0.141, 'global_equity': 0.359, 'fx_commodity': 0.098, 'bond': 0.339, 'cash_mmf': 0.064, 'bond_tips_share': 0.253}
+  Method:   hrp  — scenario=goldilocks, conviction=medium: goldilocks → 분산 친화, HRP
+  Vol:      —%  Sharpe=—  n_assets=17  HHI=0.106  max_cluster=20.0%
+  Status:   passed=True  mode=initial
+
+## 2026-05-15  (243.0s)  Current — stagflation evidence
+  Cycle:    B    (76%) conviction=high (β=2.38)
+  Cell:     {'cycle': 'B', 'tail': 'N', 'kr': 'F'} (58%)
+  Tail:     {'N': 0.928, 'T': 0.071}
+  KR:       {'F': 0.756, 'boom': 0.113, 'stress': 0.13}
+  Buckets:  {'kr_equity': 0.097, 'global_equity': 0.197, 'fx_commodity': 0.298, 'bond': 0.209, 'cash_mmf': 0.2, 'bond_tips_share': 0.79}
+  Method:   risk_parity  — scenario=stagflation, conviction=high: stagflation → 균형 분산, risk parity
+  Vol:      25.6%  Sharpe=0.020  n_assets=18  HHI=0.092  max_cluster=24.8%
+  Status:   passed=True  mode=initial
+
+====================================================================================================

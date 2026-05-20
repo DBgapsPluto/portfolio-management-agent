@@ -34,9 +34,9 @@
 
 | 친근명 | ECOS 코드 | 빈도 | 의미 |
 |---|---|---|---|
-| `kr_treasury_3y` | 817Y002 / 010195000 | daily | 한국 국고채 3년 |
+| `kr_treasury_3y` | 817Y002 / 010200000 | daily | 한국 국고채 3년 (2026-05 fix: 010195000은 2년) |
 | `kr_treasury_10y` | 817Y002 / 010210000 | daily | 한국 국고채 10년 |
-| `kr_corp_aa_3y` | 817Y002 / 010320000 | daily | 회사채 AA- 3년 |
+| `kr_corp_aa_3y` | 817Y002 / 010300000 | daily | 회사채(3년, AA-) (2026-05 fix: 010320000은 BBB-) |
 
 ### 2.3 KRX pykrx (한국 거래소 — 5 함수)
 
@@ -106,10 +106,14 @@ spread_vs_vix = vxn - vix_close
 
 #### `skew_index` — 외가격 풋 hedge 수요
 ```
-SKEW < 120 = "low"      (정규분포 가정, 헷지 수요 낮음)
-SKEW 120-130 = "normal" (역사 평균 ~118)
-SKEW 130-145 = "elevated" (tail hedge demand 상승)
-SKEW > 145 = "extreme"  (black swan 가격 책정)
+# 2026-05 fix: 절대 임계 (120/130/145) → 1y percentile-based.
+# 2020+ SKEW 평균이 이미 ~145라 "extreme" 임계가 무의미해진 base shift 대응.
+percentile_1y = (SKEW.tail(252) < current).sum() / 252
+
+regime = "low"      if percentile < 0.25
+         "normal"   if percentile < 0.50
+         "elevated" if percentile < 0.85
+         "extreme"  if percentile >= 0.85
 ```
 **해석**: SKEW + VIX 동시 상승 = 위기 인지 + 가격 책정. **VIX backwardation + SKEW extreme + HY widening 동시** = 가장 강력한 위기 신호 (9-10 점).
 
@@ -180,14 +184,23 @@ advancing_pct = sum(close_diff > 0) / 11
 
 ### 3.6 Concentration / PCA (1 skill, Tier-4 강화)
 
-#### `correlation_pca` — 자산군 분산도 (Tier-4: synthetic→real)
+#### `correlation_pca` — 자산군 분산도 (Tier-4: synthetic→real, 2026-05 16자산 확장)
 ```python
-# Tier-4: 실제 5-asset (SPY/QQQ/TLT/GLD/EWY) returns via yfinance
+# 2026-05 보강: 5-asset → 16-asset 확장 (자산 수 normalize).
+# Core (5): SPY, QQQ, TLT, GLD, EWY
+# SP500 11 sectors: XLF, XLK, XLE, XLV, XLI, XLY, XLP, XLU, XLB, XLRE, XLC
 returns = fetch_cross_asset_returns(as_of - 365d, as_of)
 
-pca = PCA(n_components=k)
+pca = PCA(n_components=min(n, 5))
 first_eigenvalue_share = pca.explained_variance_ratio_[0]
-is_concentrated = first_eigenvalue_share > 0.6
+
+# 2026-05 fix: 자산 수 의존 임계 (5자산이면 거의 항상 >0.6).
+# concentrated if first_share >= max(0.4, 2.0 / √n_assets)
+#   n=5  → 0.894 (실질 거의 satisfy 불가)
+#   n=16 → 0.500
+#   n=25+ → 0.4 floor
+threshold = max(0.4, 2.0 / sqrt(n_assets))
+is_concentrated = first_eigenvalue_share >= threshold
 ```
 **해석**: PC1 점유율 > 0.6 = 모든 자산이 한 방향 (위기 시 correlation → 1).
 
@@ -239,9 +252,11 @@ signal = "small_cap_risk_on"  if relative > +3%
 
 ### 3.8 Cross-asset (1 skill, Tier-4)
 
-#### `equity_bond_corr` — SPY-TLT 60일 rolling correlation
+#### `equity_bond_corr` — SPY-TLT 120일 rolling correlation
 ```
-corr_60d = SPY_returns.tail(60).corr(TLT_returns.tail(60))
+# 2026-05 fix: 60d → 120d (60d는 단일 이벤트로 corr 흔들림. 학계 표준 90-120d).
+# Snapshot field name `correlation_60d`는 backward compat 위해 유지, 실제는 120d.
+corr_120d = SPY_returns.tail(120).corr(TLT_returns.tail(120))
 
 regime = "normal_hedge"     if corr < -0.3   (bonds hedge equity)
          "weakening_hedge"  if -0.3 ≤ corr < 0
@@ -424,6 +439,22 @@ except Exception:
 - ECOS KR treasury (best-effort item code)
 - yfinance batch (rate limit / network)
 - pykrx 신용잔고 (컬럼명 버전별 차이 → 4개 후보로 robust 처리)
+
+---
+
+## 6.5 Hardcoded 임계값 caveat (2026-05 audit)
+
+Market_risk skill의 임계값은 대부분 학술/공식 기반이라 risk 낮음. 다만:
+
+| 위치 | 임계 | 비고 |
+|---|---|---|
+| `kr_market_tier.py::RISK_ON_THRESHOLD/OFF` | ±3.0% (KOSDAQ-KOSPI 20일 차이) | 학술 근거 부족, 실증 calibration TODO |
+| `kr_yield_curve.py::NORMAL_BPS/INVERTED_BPS` | +50 / -10 bps | 학술 컨벤션. KR 침체 신호로서의 효과는 US만큼 검증 안 됨 |
+| `funding_stress.py::ELEVATED_BPS/STRESS_BPS` | +10 / +20 bps | TED spread 대체. SOFR 2018+ 단기 시계열로 calibration 한계 |
+| `equity_bond_corr.py::HEDGE/NEUTRAL/EXTREME_THRESHOLD` | -0.3 / 0 / +0.3 | 학계 컨벤션에 가까움 |
+| `real_yields.py::ACCOMMODATIVE/NEUTRAL/TIGHT` | 0 / 1 / 2 (%) | 2010-2019 평균 ~-0.5 → 2022+ +2 급등 사례 반영 |
+
+→ 모든 항목 소스 파일에 caveat 주석 또는 학술 reference 포함.
 
 ---
 

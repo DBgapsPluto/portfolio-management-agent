@@ -1,0 +1,45 @@
+[
+  {
+    "as_of": "2025-04-15",
+    "end": "2026-05-20",
+    "horizon_days": 400,
+    "regime_label": "",
+    "bucket_target": {
+      "kr_equity": 0.141,
+      "global_equity": 0.359,
+      "fx_commodity": 0.098,
+      "bond": 0.339,
+      "cash_mmf": 0.064,
+      "bond_tips_share": 0.253
+    },
+    "stock_share": 0.499,
+    "method": "hrp",
+    "portfolio": {
+      "cum_return": 0.3611,
+      "ann_return": 0.3392,
+      "ann_vol": 0.0805,
+      "sharpe": 4.215,
+      "max_dd": -0.0315,
+      "n_days": 266,
+      "failed_fetches": [],
+      "n_assets_used": 14
+    },
+    "kospi200": {
+      "cum_return": 2.4669,
+      "ann_return": 2.2473,
+      "ann_vol": 0.3744,
+      "sharpe": 6.003,
+      "max_dd": -0.2062,
+      "n_days": 266
+    },
+    "spy": null,
+    "60_40_kospi_tlt": {
+      "cum_return": 1.1386,
+      "ann_return": 1.0547,
+      "ann_vol": 0.2286,
+      "sharpe": 4.613,
+      "max_dd": -0.1277,
+      "n_days": 266
+    }
+  }
+]

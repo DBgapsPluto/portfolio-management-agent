@@ -1,0 +1,84 @@
+[
+  {
+    "as_of": "2025-04-15",
+    "elapsed_sec": null,
+    "dominant_cycle": "A",
+    "dominant_cycle_prob": 0.53,
+    "conviction": "medium",
+    "conviction_beta": 1.69,
+    "dominant_cell": {
+      "cycle": "A",
+      "tail": "N",
+      "kr": "F"
+    },
+    "dominant_cell_prob": 0.333,
+    "tail_marginals": {
+      "N": 0.841,
+      "T": 0.16
+    },
+    "kr_marginals": {
+      "F": 0.727,
+      "boom": 0.058,
+      "stress": 0.216
+    },
+    "bucket_target": {
+      "kr_equity": 0.141,
+      "global_equity": 0.359,
+      "fx_commodity": 0.098,
+      "bond": 0.339,
+      "cash_mmf": 0.064,
+      "bond_tips_share": 0.253
+    },
+    "method": "hrp",
+    "method_reasoning": "scenario=goldilocks, conviction=medium: goldilocks → 분산 친화, HRP",
+    "expected_volatility_pct": null,
+    "expected_sharpe": null,
+    "n_assets": 17,
+    "hhi": 0.106,
+    "max_cluster_exposure": 0.2,
+    "validation_passed": true,
+    "rebalance_mode": "initial",
+    "regime_label": "Tariff shock / Trump 25%"
+  },
+  {
+    "as_of": "2026-05-15",
+    "elapsed_sec": 243.0,
+    "dominant_cycle": "B",
+    "dominant_cycle_prob": 0.76,
+    "conviction": "high",
+    "conviction_beta": 2.38,
+    "dominant_cell": {
+      "cycle": "B",
+      "tail": "N",
+      "kr": "F"
+    },
+    "dominant_cell_prob": 0.58,
+    "tail_marginals": {
+      "N": 0.928,
+      "T": 0.071
+    },
+    "kr_marginals": {
+      "F": 0.756,
+      "boom": 0.113,
+      "stress": 0.13
+    },
+    "bucket_target": {
+      "kr_equity": 0.097,
+      "global_equity": 0.197,
+      "fx_commodity": 0.298,
+      "bond": 0.209,
+      "cash_mmf": 0.2,
+      "bond_tips_share": 0.79
+    },
+    "method": "risk_parity",
+    "method_reasoning": "scenario=stagflation, conviction=high: stagflation → 균형 분산, risk parity",
+    "expected_volatility_pct": 25.59,
+    "expected_sharpe": 0.02,
+    "n_assets": 18,
+    "hhi": 0.092,
+    "max_cluster_exposure": 0.248,
+    "validation_passed": true,
+    "rebalance_mode": "initial",
+    "regime_label": "Current — stagflation evidence"
+  }
+]

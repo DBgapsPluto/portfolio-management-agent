@@ -41,11 +41,11 @@
 
 | Skill | 계산 |
 |---|---|
-| `fetch_etf_price_batch` | yfinance OHLCV batch |
-| `rank_momentum` | 카테고리 내 3m/6m/12m 모멘텀 *raw* return rank의 합산 (composite rank) |
-| `compute_ta_indicators` | MA200, MA50, RSI(14), MACD(12,26,9), ATR(14) — top-5 per category에만 |
+| `fetch_etf_price_batch` | pykrx OHLCV batch (188 ETF) |
+| `rank_momentum` | 카테고리 내 **skip-1m** 3m/6m/12m 모멘텀 composite rank (2026-05 Bug-B fix — Stage 3 factor_scorer와 정렬) |
+| `compute_ta_indicators` | MA200, MA50, RSI(14), MACD(12,26,9), ATR(14) — top-5 per category에만. RSI는 tolerance-clamp (0-100 boundary IEEE ε 흡수) |
 | `detect_trend_state` | MA + RSI 5-state enum (STRONG_UPTREND ~ BREAKDOWN) |
-| `find_correlation_clusters` | hierarchical clustering, 60d corr, threshold 0.7 |
+| `find_correlation_clusters` | hierarchical clustering, 252d corr, threshold 0.7 |
 
 (추가 `factor_panel` portfolio skill로 skip-1m mom + 60d vol + Sharpe + log AUM)
 
@@ -62,16 +62,18 @@
 bb_percent_b  = (price - lower) / (upper - lower)   # <0 oversold, >1 overbought
 bb_bandwidth  = (upper - lower) / middle             # squeeze ≈ <5%
 
-# ADX (length=14) — 추세 강도 (방향 무관)
+# ADX (length=14) — 추세 강도 (방향 무관). 0-100 clamp (2026-05).
 # <20 무추세 / 20~40 추세 / >40 강한 추세
 
-# Stochastic (k=14, d=3) — 단기 oscillator (RSI 보완)
+# Stochastic (k=14, d=3) — 단기 oscillator (RSI 보완). 0-100 clamp (2026-05).
 stoch_k, stoch_d
 
 # Volume confirmation
 obv             = 누적 OBV
 obv_slope_20d   = OBV 최근 20일 linear-fit slope sign (+1/0/-1)
-mfi             = Money Flow Index (volume-weighted RSI)
+mfi             = Money Flow Index (volume-weighted RSI). 0-100 clamp (2026-05).
+                  # _clamp_bounded: ε 오버슈트 → strict bound, NaN → 50 default,
+                  # tolerance 밖 → raise (라이브러리 진짜 버그 노출).
 
 # Divergence (60d 윈도우)
 rsi_divergence  ∈ {"none", "bullish", "bearish"}
@@ -80,7 +82,7 @@ macd_divergence ∈ {"none", "bullish", "bearish"}
 # bullish: 가격 신저가 + 지표 신저가 못 만듦 (반등 가능성)
 
 # Multi-timeframe (주봉 — W-FRI resample)
-weekly_ma50, weekly_rsi
+weekly_ma50, weekly_rsi  # weekly_rsi도 0-100 clamp
 weekly_trend ∈ {"up", "down", "neutral"}
 ```
 
@@ -100,6 +102,7 @@ trend_strength_score  ∈ [-1, +1]
   + 0.30·clip(adx/50, 0, 1)·sign(ma50 > ma200)
   + 0.20·sign(ma50 > ma200)
   + 0.10·clip((rsi - 50)/50, -1, 1)
+# 가중치(0.4/0.3/0.2/0.1)는 임의 — 실증 backtest 캘리브레이션 TODO.
 
 time_in_state_days     = MA200를 마지막으로 cross한 후 경과 일수
 distance_ma200_pct     = (price - MA200) / MA200 × 100
@@ -137,6 +140,10 @@ n_total                    = 188
 n_eligible                 = MA200 계산 가능한 ETF 수
 
 pct_above_ma50, pct_above_ma200    # universe 내 비율
+
+# 2026-05 Bug-E fix: 카테고리 prefix별 sub-breadth 추가.
+# 188 ETF가 자산군별 섞여있어 전체 pct만으론 KR vs US 신호 분리 불가.
+sub_pct_above_ma200 = {"국내": 0.65, "해외": 0.70, "채권": 0.50, "원자재": 0.40, "기타": 0.55}
 
 new_52w_highs              = 오늘 close가 252d max인 ETF 수
 new_52w_lows               = 오늘 close가 252d min인 ETF 수
@@ -356,6 +363,20 @@ return {
 | Correlation matrix NaN | `fillna(0.0)` + `np.clip(-1, 1)` |
 
 → 188 ETF 중 일부 fetch 실패해도 나머지는 정상 분석. 카테고리 1개 누락도 leadership matrix가 9개로 계속 동작.
+
+---
+
+## 6.5 Hardcoded 임계값 caveat (2026-05 audit)
+
+| 위치 | 임계 | 비고 |
+|---|---|---|
+| `trend_quantification.py::_trend_strength` | 가중치 0.40 / 0.30 / 0.20 / 0.10 + 정규화 /10, /50 | **임의 선택** (합 1.0). Stage 3 candidate_selector backtest로 calibrate TODO |
+| `correlation_cluster.py` threshold | 0.7 (avg corr cutoff) | 표준 클러스터링 임계. 188 ETF가 카테고리별로 강하게 묶임 |
+| `universe_breadth.py::regime` | pct_above_ma200 > 0.6 risk_on / <0.3 risk_off | 학술 컨벤션 |
+| `risk_adjusted.py::is_mean_reversion_candidate` | BB%B < 0 AND RSI < 35 AND z_30 < -1.5 | 우리 자의적 합성 룰 |
+| `extended_indicators.py::_clamp_bounded` tolerance | ±0.01 epsilon | pandas_ta_classic IEEE 부동소수점 노이즈 흡수. NaN → 50 default |
+
+→ 모든 항목 소스 파일에 caveat 또는 fix 설명 주석 포함.
 
 ---
 

@@ -104,10 +104,18 @@ mixed:    else
 
 **개념**: macro_quant FRED는 actual 시리즈만 받는다. **예상 vs 실제 차이**는 어디에도 없다.
 
-**`normalize_release`** — 단일 발표를 정규화:
+**`normalize_release`** — 단일 발표를 정규화 (2026-05 critical bug fix):
 ```python
 surprise = actual - forecast
-zscore   = surprise / historical_std  (없으면 None)
+
+# 2026-05 fix: 이전엔 historical_std 없으면 zscore=None → bias_score 항상 0 →
+# bias_30d 항상 "balanced"로 떨어지는 critical bug. fallback 추가:
+if historical_std is not None and historical_std > 0:
+    zscore = surprise / historical_std            # 전통적 z-score
+elif abs(forecast) >= 0.1:
+    zscore = surprise / abs(forecast)             # % deviation (indicator-agnostic)
+else:
+    zscore = surprise                             # forecast≈0 (e.g. 소매판매 0.0%)
 
 direction = "inline"   if |surprise| < 0.05
             "positive" if surprise > 0
@@ -123,8 +131,9 @@ high_importance_today= count(importance == 3)
 
 # Bias 분류 (Hawkish vs Dovish)
 bias_score = Σ _bias_score_one(release)
-  - CPI/PPI/GDP/고용 surprise + → +zscore (hawkish)
-  - 실업률 surprise + → -zscore (dovish, inverted)
+  - CPI/PPI/GDP/고용/소매판매/수출 surprise + → +zscore (hawkish, 한/영 키워드)
+  - 실업률/실업수당/신규실업 surprise + → -zscore (dovish, inverted, 한/영 키워드)
+  # 2026-05 Bug-D fix: 한국어 키워드 (실업률/실업수당/취업자수/소매판매/수출) 추가
 
 bias_30d = "hawkish_surprise" if bias_score > +1.0
            "dovish_surprise"  if bias_score < -1.0
@@ -387,6 +396,21 @@ class NewsReport(_AnalystReport):
 | 모든 LLM 호출 실패 | snapshot은 빈 값이지만 NewsReport 자체는 생성 |
 
 → 외부 의존성 (yfinance, LLM API, SAVE 파일) 어느 것이 끊겨도 파이프라인은 안 죽음.
+
+---
+
+## 6.5 Hardcoded 임계값 caveat (2026-05 audit)
+
+| 위치 | 임계 | 비고 |
+|---|---|---|
+| `cb_speaker_tracker.py::FED_VOTING_BY_YEAR` | 연도별 Fed regional voting set | **2026-05 fix #1**: 매년 1월 회전 자동 lookup. 새 연도 manual update. |
+| `cb_speaker_tracker.py::SPEAKER_TO_CB` | 30+ CB 인사 매핑 | 새 인사 임명/사임 시 manual update |
+| `categorizer.py::KEYWORD_MAP` | 5 카테고리 × ~20 키워드 | 정치/뉴스 환경 변화 시 manual update (trump→harris 등) |
+| `release_surprise.py::_HAWKISH/_DOVISH_INVERTED` | 한/영 indicator 키워드 | 한국어 키워드 2026-05 보강 |
+| `global_overnight.py::GLOBAL_OVERNIGHT_TICKERS` | 9개 글로벌 자산 list | 시장 추가/제외 시 update |
+| `release_surprise.py::normalize_release` historical_std fallback | abs(forecast) ≥ 0.1 분기 | 2026-05 critical bug fix. zscore=None 방지. |
+
+→ 모든 항목 소스 파일 주석에 caveat 포함.
 
 ---
 
