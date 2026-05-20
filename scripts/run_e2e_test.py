@@ -96,10 +96,15 @@ def main() -> int:
 
     rd = result.get("research_decision")
     if rd:
-        logger.info("  research: dominant=%s (%.0f%%, %s)",
-                    rd.dominant_scenario,
-                    rd.dominant_probability * 100,
-                    rd.conviction)
+        logger.info(
+            "  research: cycle=%s (%.0f%% raw, β=%.2f, %s), top cell=%s (%.0f%%)",
+            rd.dominant_cycle,
+            rd.dominant_cycle_probability * 100,
+            rd.conviction_beta,
+            rd.conviction,
+            rd.dominant_cell.key,
+            rd.dominant_cell_probability * 100,
+        )
 
     overlay = result.get("risk_overlay")
     if overlay:
