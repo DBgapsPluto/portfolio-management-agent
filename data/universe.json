@@ -8,6 +8,7 @@
       "underlying_index": "KRX 금현물지수",
       "bucket": "위험",
       "category": "FX 및 원자재",
+      "sub_category": "broad_commodity",
       "listed_since": null,
       "delisted_at": null
     },
@@ -18,6 +19,7 @@
       "underlying_index": "S&P GSCI Silver Index(TR)",
       "bucket": "위험",
       "category": "FX 및 원자재",
+      "sub_category": "silver_precious",
       "listed_since": null,
       "delisted_at": null
     },
@@ -28,6 +30,7 @@
       "underlying_index": "S&P GSCI Gold Index(TR)",
       "bucket": "위험",
       "category": "FX 및 원자재",
+      "sub_category": "gold",
       "listed_since": null,
       "delisted_at": null
     },
@@ -38,6 +41,7 @@
       "underlying_index": "S&P GSCI Crude Oil Index ER",
       "bucket": "위험",
       "category": "FX 및 원자재",
+      "sub_category": "oil_energy",
       "listed_since": null,
       "delisted_at": null
     },
@@ -48,6 +52,7 @@
       "underlying_index": "미국달러 선물지수",
       "bucket": "위험",
       "category": "FX 및 원자재",
+      "sub_category": "usd_fx",
       "listed_since": null,
       "delisted_at": null
     },
@@ -58,6 +63,7 @@
       "underlying_index": "엔선물지수",
       "bucket": "위험",
       "category": "FX 및 원자재",
+      "sub_category": "gold",
       "listed_since": null,
       "delisted_at": null
     },
@@ -68,6 +74,7 @@
       "underlying_index": "S&P GSCI Grains Select Index Excess Return",
       "bucket": "위험",
       "category": "FX 및 원자재",
+      "sub_category": "agricultural",
       "listed_since": null,
       "delisted_at": null
     },
@@ -78,6 +85,7 @@
       "underlying_index": "S&P 500",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -88,6 +96,7 @@
       "underlying_index": "S&P 500",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -98,6 +107,7 @@
       "underlying_index": "NASDAQ 100",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -108,6 +118,7 @@
       "underlying_index": "NASDAQ 100",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -118,6 +129,7 @@
       "underlying_index": "PHLX Semiconductor Sector Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -128,6 +140,7 @@
       "underlying_index": "S&P 500",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -138,6 +151,7 @@
       "underlying_index": "NASDAQ 100",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -148,6 +162,7 @@
       "underlying_index": "S&P 500",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -158,6 +173,7 @@
       "underlying_index": "Hang Seng TECH Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -168,6 +184,7 @@
       "underlying_index": "S&P 500",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -178,6 +195,7 @@
       "underlying_index": "MSCI World",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -188,6 +206,7 @@
       "underlying_index": "S&P 500 Total Return Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -198,6 +217,7 @@
       "underlying_index": "Nikkei 225",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "japan",
       "listed_since": null,
       "delisted_at": null
     },
@@ -208,6 +228,7 @@
       "underlying_index": "Nifty 50 Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "india",
       "listed_since": null,
       "delisted_at": null
     },
@@ -218,6 +239,7 @@
       "underlying_index": "Nifty 50 Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "india",
       "listed_since": null,
       "delisted_at": null
     },
@@ -228,6 +250,7 @@
       "underlying_index": "VN30 Index(PR)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "emerging_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -238,6 +261,7 @@
       "underlying_index": "NASDAQ-100 Total Return Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -248,6 +272,7 @@
       "underlying_index": "CSI 300",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -258,6 +283,7 @@
       "underlying_index": "Nifty 50 Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "india",
       "listed_since": null,
       "delisted_at": null
     },
@@ -268,6 +294,7 @@
       "underlying_index": "STAR 50 Index(Price Return)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -278,6 +305,7 @@
       "underlying_index": "Hang Seng TECH Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -288,6 +316,7 @@
       "underlying_index": "CSI 300",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -298,6 +327,7 @@
       "underlying_index": "S&P 500 Futures Total Return Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_sector",
       "listed_since": null,
       "delisted_at": null
     },
@@ -308,6 +338,7 @@
       "underlying_index": "Dow Jones Industrial Average",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -318,6 +349,7 @@
       "underlying_index": "CSI 300",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -328,6 +360,7 @@
       "underlying_index": "S&P 500 Equal Weight Index(PR)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -338,6 +371,7 @@
       "underlying_index": "NASDAQ 100",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -348,6 +382,7 @@
       "underlying_index": "S&P 500 Futures Index(ER)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -358,6 +393,7 @@
       "underlying_index": "MSCI EM Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "emerging_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -368,6 +404,7 @@
       "underlying_index": "TOPIX100",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "japan",
       "listed_since": null,
       "delisted_at": null
     },
@@ -378,6 +415,7 @@
       "underlying_index": "HSCEI (Hang Seng China Enterprise Index)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -388,6 +426,7 @@
       "underlying_index": "HSCEI (Hang Seng China Enterprise Index)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -398,6 +437,7 @@
       "underlying_index": "Nikkei 225",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "japan",
       "listed_since": null,
       "delisted_at": null
     },
@@ -408,6 +448,7 @@
       "underlying_index": "EURO STOXX50",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "europe",
       "listed_since": null,
       "delisted_at": null
     },
@@ -418,6 +459,7 @@
       "underlying_index": "MSCI Indonesia Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "india",
       "listed_since": null,
       "delisted_at": null
     },
@@ -428,6 +470,7 @@
       "underlying_index": "FTSE Russell 2000 Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -438,6 +481,7 @@
       "underlying_index": "MSCI EAFE Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -448,6 +492,7 @@
       "underlying_index": "HSCEI (Hang Seng China Enterprise Index)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -458,6 +503,7 @@
       "underlying_index": "MSCI MEXICO IMI 25/50 Price return Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -468,6 +514,7 @@
       "underlying_index": "TOPIX",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "japan",
       "listed_since": null,
       "delisted_at": null
     },
@@ -478,6 +525,7 @@
       "underlying_index": "MSCI China NTR Index(USD) (Net Total Return)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "china",
       "listed_since": null,
       "delisted_at": null
     },
@@ -488,6 +536,7 @@
       "underlying_index": "BNY Latin America 35 ADR Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -498,6 +547,7 @@
       "underlying_index": "EURO STOXX50",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "europe",
       "listed_since": null,
       "delisted_at": null
     },
@@ -508,6 +558,7 @@
       "underlying_index": "DAX Index(PR)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -518,6 +569,7 @@
       "underlying_index": "S&P500 Yen Hedged Index(PR)",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "us_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -528,6 +580,7 @@
       "underlying_index": "MSCI ACWI Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -538,6 +591,7 @@
       "underlying_index": "MSCI Philippines IMI Index",
       "bucket": "위험",
       "category": "해외주식_지수",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -548,6 +602,7 @@
       "underlying_index": "Indxx US Tech Top 10 Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -558,6 +613,7 @@
       "underlying_index": "Dow Jones U.S. Dividend 100 Price Return Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "us_sector",
       "listed_since": null,
       "delisted_at": null
     },
@@ -568,6 +624,7 @@
       "underlying_index": "iSelect 미국AI전력핵심인프라 지수(Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "ai_theme_global",
       "listed_since": null,
       "delisted_at": null
     },
@@ -578,6 +635,7 @@
       "underlying_index": "Solactive China Electric Vehicle and Battery Index(PR)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -588,6 +646,7 @@
       "underlying_index": "Bloomberg EV Supporters Plus Tesla Price Return Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -598,6 +657,7 @@
       "underlying_index": "Solactive Global Artificial Intelligence 지수",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "ai_theme_global",
       "listed_since": null,
       "delisted_at": null
     },
@@ -608,6 +668,7 @@
       "underlying_index": "Solactive US Big Tech Top 7 Plus Price Return Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -618,6 +679,7 @@
       "underlying_index": "Solactive Global Semiconductor TOP4 Plus Price Return Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -628,6 +690,7 @@
       "underlying_index": "Dow Jones U.S. Dividend 100 Price Return Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "us_sector",
       "listed_since": null,
       "delisted_at": null
     },
@@ -638,6 +701,7 @@
       "underlying_index": "PHLX US AI Semiconductor 지수 (PR)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -648,6 +712,7 @@
       "underlying_index": "Dow Jones U.S. Dividend 100 Price Return Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "us_sector",
       "listed_since": null,
       "delisted_at": null
     },
@@ -658,6 +723,7 @@
       "underlying_index": "MVIS US Listed Semiconductor 25 Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -668,6 +734,7 @@
       "underlying_index": "Dow Jones U.S. Dividend 100 Price Return Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "us_sector",
       "listed_since": null,
       "delisted_at": null
     },
@@ -678,6 +745,7 @@
       "underlying_index": "MSCI US REIT INDEX",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -688,6 +756,7 @@
       "underlying_index": "S&P 500 Dividend Aristocrats 지수 (Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "us_sector",
       "listed_since": null,
       "delisted_at": null
     },
@@ -698,6 +767,7 @@
       "underlying_index": "S&P Technology Select Sector Index(Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -708,6 +778,7 @@
       "underlying_index": "S&P Health Care Select Sector Index(Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -718,6 +789,7 @@
       "underlying_index": "S&P Select Sector Industrial Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -728,6 +800,7 @@
       "underlying_index": "S&P Financial Select Sector Index(Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -738,6 +811,7 @@
       "underlying_index": "S&P Select Sector Energy Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -748,6 +822,7 @@
       "underlying_index": "Dow Jones U.S. Real Estate PR Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -758,6 +833,7 @@
       "underlying_index": "Dow Jones U.S. Dividend 100 Index(TR)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -768,6 +844,7 @@
       "underlying_index": "NASDAQ 100 Technology Sector Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "us_tech_nasdaq",
       "listed_since": null,
       "delisted_at": null
     },
@@ -778,6 +855,7 @@
       "underlying_index": "Euro STOXX Select Dividend 30",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -788,6 +866,7 @@
       "underlying_index": "S&P 500 Growth Index(PR)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -798,6 +877,7 @@
       "underlying_index": "S&P Dividend Monarchs Index(Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -808,6 +888,7 @@
       "underlying_index": "S&P Biotechnology Select Industry Index",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -818,6 +899,7 @@
       "underlying_index": "S&P Consumer Staples Select Sector Index(Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -828,6 +910,7 @@
       "underlying_index": "S&P Utilities Select Sector Index(Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -838,6 +921,7 @@
       "underlying_index": "S&P Consumer Discretionary Select Sector Index(Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -848,6 +932,7 @@
       "underlying_index": "S&P Communication Services Select Sector Index(Price Return)",
       "bucket": "위험",
       "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -858,6 +943,7 @@
       "underlying_index": "코스피 200",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -868,6 +954,7 @@
       "underlying_index": "코스닥 150",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -878,6 +965,7 @@
       "underlying_index": "코스피 200",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -888,6 +976,7 @@
       "underlying_index": "코스피 200 TR지수",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -898,6 +987,7 @@
       "underlying_index": "MSCI Korea TR Index",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -908,6 +998,7 @@
       "underlying_index": "코스피 200",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -918,6 +1009,7 @@
       "underlying_index": "코스닥 150",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -928,6 +1020,7 @@
       "underlying_index": "MSCI Korea TR Index",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -938,6 +1031,7 @@
       "underlying_index": "코스피 200 TR지수",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -948,6 +1042,7 @@
       "underlying_index": "코스피 200",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -958,6 +1053,7 @@
       "underlying_index": "코스피지수",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -968,6 +1064,7 @@
       "underlying_index": "코스피 200 TR지수",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -978,6 +1075,7 @@
       "underlying_index": "코스피지수",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -988,6 +1086,7 @@
       "underlying_index": "코스피 200 TR지수",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -998,6 +1097,7 @@
       "underlying_index": "코스피지수",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1008,6 +1108,7 @@
       "underlying_index": "코스피 TR",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "index_broad",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1018,6 +1119,7 @@
       "underlying_index": "MSCI Korea Index",
       "bucket": "위험",
       "category": "국내주식_지수",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1028,6 +1130,7 @@
       "underlying_index": "KRX 반도체",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "semiconductor",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1038,6 +1141,7 @@
       "underlying_index": "FnGuide 배당주 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "factor_value_dividend",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1048,6 +1152,7 @@
       "underlying_index": "MKF 삼성그룹지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1058,6 +1163,7 @@
       "underlying_index": "FnGuide AI반도체지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "ai_robotics",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1068,6 +1174,7 @@
       "underlying_index": "FnGuide 조선TOP3플러스지수(PR)",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1078,6 +1185,7 @@
       "underlying_index": "FnGuide 2차전지 산업 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "battery_ev",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1088,6 +1196,7 @@
       "underlying_index": "FnGuide K-방위산업 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "industrial_defense",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1098,6 +1207,7 @@
       "underlying_index": "iSelect AI 전력핵심설비 지수(Price Return)",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "ai_robotics",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1108,6 +1218,7 @@
       "underlying_index": "FnGuide K-반도체 지수 (시장가격)",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "semiconductor",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1118,6 +1229,7 @@
       "underlying_index": "FnGuide TOP 5 Plus Total Return 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1128,6 +1240,7 @@
       "underlying_index": "WISE 2차전지 테마 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "battery_ev",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1138,6 +1251,7 @@
       "underlying_index": "iSelect 조선TOP10 Index(PR)",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1148,6 +1262,7 @@
       "underlying_index": "iSelect K-로봇테마 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "ai_robotics",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1158,6 +1273,7 @@
       "underlying_index": "FnGuide AI 반도체 소부장 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "ai_robotics",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1168,6 +1284,7 @@
       "underlying_index": "FnGuide 은행고배당플러스TOP10 지수(시장가격 지수)",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "factor_value_dividend",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1178,6 +1295,7 @@
       "underlying_index": "iSelect K방산&우주",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "industrial_defense",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1188,6 +1306,7 @@
       "underlying_index": "코스피 200 정보기술",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "it_software",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1198,6 +1317,7 @@
       "underlying_index": "FnGuide 2차전지소재 (Price Return) 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "materials_energy",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1208,6 +1328,7 @@
       "underlying_index": "iSelect 원자력지수 (시장가격)",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1218,6 +1339,7 @@
       "underlying_index": "KRX 자동차",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "consumer",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1228,6 +1350,7 @@
       "underlying_index": "KRX 은행",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "finance",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1238,6 +1361,7 @@
       "underlying_index": "코스피 200 중공업",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "industrial_defense",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1248,6 +1372,7 @@
       "underlying_index": "FnGuide 성장 지수(PR)",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1258,6 +1383,7 @@
       "underlying_index": "코스피 200 정보기술 TR",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "it_software",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1268,6 +1394,7 @@
       "underlying_index": "코스피 200 건설",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "industrial_defense",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1278,6 +1405,7 @@
       "underlying_index": "코스피 200 금융",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "finance",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1288,6 +1416,7 @@
       "underlying_index": "코스피 200 헬스케어",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "biotech_pharma",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1298,6 +1427,7 @@
       "underlying_index": "FnGuide 모멘텀 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1308,6 +1438,7 @@
       "underlying_index": "코스피 200 에너지/화학",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "materials_energy",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1318,6 +1449,7 @@
       "underlying_index": "FnGuide 로우볼 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "factor_value_dividend",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1328,6 +1460,7 @@
       "underlying_index": "코스피 200 산업재",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "industrial_defense",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1338,6 +1471,7 @@
       "underlying_index": "FnGuide 퀄리티 밸류 지수",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "factor_value_dividend",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1348,6 +1482,7 @@
       "underlying_index": "코스피 200 경기소비재",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "consumer",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1358,6 +1493,7 @@
       "underlying_index": "코스피 200 철강/소재",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "materials_energy",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1368,6 +1504,7 @@
       "underlying_index": "코스피 200 커뮤니케이션서비스",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "thematic_other",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1378,6 +1515,7 @@
       "underlying_index": "코스피 200 생활소비재",
       "bucket": "위험",
       "category": "국내주식_섹터",
+      "sub_category": "consumer",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1388,6 +1526,7 @@
       "underlying_index": "KAP 양도성예금증서(CD)금리지수(총수익지수)",
       "bucket": "안전",
       "category": "금리연계형/초단기채권",
+      "sub_category": "mmf_kr",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1398,6 +1537,7 @@
       "underlying_index": "KAP MMF 지수(TR)",
       "bucket": "안전",
       "category": "금리연계형/초단기채권",
+      "sub_category": "mmf_kr",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1408,6 +1548,7 @@
       "underlying_index": "KOFR 지수",
       "bucket": "안전",
       "category": "금리연계형/초단기채권",
+      "sub_category": "mmf_kr",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1418,6 +1559,7 @@
       "underlying_index": "KIS 시가평가 MMF 지수 (총수익지수)",
       "bucket": "안전",
       "category": "금리연계형/초단기채권",
+      "sub_category": "mmf_kr",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1428,6 +1570,7 @@
       "underlying_index": "KAP 단기자금시장지수",
       "bucket": "안전",
       "category": "금리연계형/초단기채권",
+      "sub_category": "mmf_kr",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1438,6 +1581,7 @@
       "underlying_index": "KRW Cash Index(총수익)",
       "bucket": "안전",
       "category": "금리연계형/초단기채권",
+      "sub_category": "mmf_kr",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1448,6 +1592,7 @@
       "underlying_index": "Solactive SOFR Daily Total Return Index",
       "bucket": "안전",
       "category": "금리연계형/초단기채권",
+      "sub_category": "mmf_kr",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1458,6 +1603,7 @@
       "underlying_index": "KIS MSB 5M Index(총수익)",
       "bucket": "안전",
       "category": "금리연계형/초단기채권",
+      "sub_category": "mmf_kr",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1468,6 +1614,7 @@
       "underlying_index": "KAP SOFR 지수",
       "bucket": "안전",
       "category": "금리연계형/초단기채권",
+      "sub_category": "mmf_kr",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1477,7 +1624,8 @@
       "aum_krw": 18726915085.0,
       "underlying_index": "ICE U.S. Treasury Inflation Linked Bond Index(Total Return)",
       "bucket": "안전",
-      "category": "금리연계형/초단기채권",
+      "category": "해외채권_종합",
+      "sub_category": "inflation_linked",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1487,7 +1635,8 @@
       "aum_krw": 11290431506.0,
       "underlying_index": "KIS TIPS 지수 (Total Return)",
       "bucket": "안전",
-      "category": "금리연계형/초단기채권",
+      "category": "국내채권_종합",
+      "sub_category": "inflation_linked",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1498,6 +1647,7 @@
       "underlying_index": "iBoxx USD Liquid Investment Grade Index(Price Return)",
       "bucket": "안전",
       "category": "해외채권_회사채",
+      "sub_category": "us_high_yield",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1508,6 +1658,7 @@
       "underlying_index": "ICE BofAML US HY Constrained Index(Total Return)",
       "bucket": "안전",
       "category": "해외채권_회사채",
+      "sub_category": "us_high_yield",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1518,6 +1669,7 @@
       "underlying_index": "Markit iBoxx USD Liquid High Yield Total Return Index",
       "bucket": "안전",
       "category": "해외채권_회사채",
+      "sub_category": "us_high_yield",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1528,6 +1680,7 @@
       "underlying_index": "Markit iBoxx USD Liquid Investment Grade Index(Total Return)",
       "bucket": "안전",
       "category": "해외채권_회사채",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1538,6 +1691,7 @@
       "underlying_index": "ICE BofaAML 15+ Year AAA-A US Corporate Index(총수익지수)",
       "bucket": "안전",
       "category": "해외채권_회사채",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1548,6 +1702,7 @@
       "underlying_index": "ICE BofaAML 1-3 Year AAA-A US Corporate Index(총수익지수)",
       "bucket": "안전",
       "category": "해외채권_회사채",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1558,6 +1713,7 @@
       "underlying_index": "Markit iBoxx USD Liquid High Yield 0-5 year Index",
       "bucket": "안전",
       "category": "해외채권_회사채",
+      "sub_category": "us_high_yield",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1568,6 +1724,7 @@
       "underlying_index": "Bloomberg U.S Treasury 20+ Year Total Return Index",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1578,6 +1735,7 @@
       "underlying_index": "ICE BofA Long US Treasury Principal STRIPS Index",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1588,6 +1746,7 @@
       "underlying_index": "KEDI-KAP 미국 국채 20+ 지수(TR)",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1598,6 +1757,7 @@
       "underlying_index": "KIS U.S. TREASURY BOND 0-1Y 지수",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1608,6 +1768,7 @@
       "underlying_index": "KIS 미국채30년 엔화노출 지수(USD/JPY 헤지)(총수익지수)",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1618,6 +1779,7 @@
       "underlying_index": "Bloomberg U.S Treasury 20+ Year Total Return Index",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1628,6 +1790,7 @@
       "underlying_index": "S&P 10-Year U.S. Treasury Note Futures(ER)",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1638,6 +1801,7 @@
       "underlying_index": "S&P 10-Year U.S. Treasury Note Futures KRW(ER)",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1648,6 +1812,7 @@
       "underlying_index": "Bloomberg U.S. Treasury 20+ Year Total Return Index T1530 JPY Currency Hedged",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1658,6 +1823,7 @@
       "underlying_index": "KAP 일본 단기 국채 지수(총수익)",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1668,6 +1834,7 @@
       "underlying_index": "S&P U.S. Treasury Bond Futures Excess Return Index",
       "bucket": "안전",
       "category": "해외채권_종합",
+      "sub_category": "us_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1678,6 +1845,7 @@
       "underlying_index": "KAP 한국종합채권지수",
       "bucket": "안전",
       "category": "국내채권_회사채",
+      "sub_category": "kr_corporate",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1688,6 +1856,7 @@
       "underlying_index": "KIS 종합채권 지수(A-이상)(총수익지수)",
       "bucket": "안전",
       "category": "국내채권_회사채",
+      "sub_category": "kr_corporate",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1698,6 +1867,7 @@
       "underlying_index": "KAP 단기 특수은행채 지수(시장가격)",
       "bucket": "안전",
       "category": "국내채권_회사채",
+      "sub_category": "kr_corporate",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1708,6 +1878,7 @@
       "underlying_index": "KIS 종합채권 AA-이상 총수익 지수(Total return Index)",
       "bucket": "안전",
       "category": "국내채권_회사채",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1718,6 +1889,7 @@
       "underlying_index": "KIS 투자등급회사채 지수(총수익)",
       "bucket": "안전",
       "category": "국내채권_회사채",
+      "sub_category": "kr_corporate",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1728,6 +1900,7 @@
       "underlying_index": "KIS 중단기크레딧플러스채권(AA+~A-)지수(총수익)",
       "bucket": "안전",
       "category": "국내채권_회사채",
+      "sub_category": "kr_corporate",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1738,6 +1911,7 @@
       "underlying_index": "KAP 한국장기종합채권지수(AA-이상, 총수익)",
       "bucket": "안전",
       "category": "국내채권_회사채",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1748,6 +1922,7 @@
       "underlying_index": "KAP 투자적격 크레딧 채권 1년지수(A-이상,총수익)",
       "bucket": "안전",
       "category": "국내채권_회사채",
+      "sub_category": "kr_corporate",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1758,6 +1933,7 @@
       "underlying_index": "KIS 종합채권금융채 2.5-3Y 지수(총수익)",
       "bucket": "안전",
       "category": "국내채권_회사채",
+      "sub_category": "kr_corporate",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1768,6 +1944,7 @@
       "underlying_index": "KIS MSB 6M(총수익)",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1778,6 +1955,7 @@
       "underlying_index": "MKF 국고채지수(총수익)",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1788,6 +1966,7 @@
       "underlying_index": "KIS 국고채 10년(총수익)",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1798,6 +1977,7 @@
       "underlying_index": "KAP 국고채 30년 총수익 지수",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1808,6 +1988,7 @@
       "underlying_index": "KIS 국채 3-10년 지수(시장가격지수)",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1818,6 +1999,7 @@
       "underlying_index": "KIS 종합채권국공채3M~1.5Y지수",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1828,6 +2010,7 @@
       "underlying_index": "KTB index(시장가격)",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1838,6 +2021,7 @@
       "underlying_index": "KIS STRIP 30Y Index(총수익지수)",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1848,6 +2032,7 @@
       "underlying_index": "F-KTB 지수",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1858,6 +2043,7 @@
       "underlying_index": "KAP 한국 국고채 총수익 지수",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1868,6 +2054,7 @@
       "underlying_index": "10년국채선물지수",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     },
@@ -1878,6 +2065,7 @@
       "underlying_index": "5년 국채선물 추종 지수",
       "bucket": "안전",
       "category": "국내채권_종합",
+      "sub_category": "kr_treasury",
       "listed_since": null,
       "delisted_at": null
     }

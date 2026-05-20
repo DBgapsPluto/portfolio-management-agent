@@ -73,11 +73,16 @@ def create_portfolio_allocator(
         if returns is None or returns.empty:
             raise RuntimeError("returns matrix empty — Stage 3 cannot proceed")
 
-        # 2. Multi-factor + corr de-dup + (Phase C) scenario sub_category boost
-        dominant_scenario = (
-            getattr(research_decision, "dominant_scenario", None)
-            if research_decision else None
-        )
+        # 2. Multi-factor + corr de-dup + (Phase C) scenario sub_category boost.
+        # 24-cell framework: dominant_cell.key (e.g. "A_N_F") 우선 사용 — log_boost가
+        # cell-axis 좌표 직접 받아 3축 boost 합성. 없으면 legacy dominant_scenario.
+        dominant_scenario = None
+        if research_decision is not None:
+            cell = getattr(research_decision, "dominant_cell", None)
+            if cell is not None and hasattr(cell, "key"):
+                dominant_scenario = cell.key  # "A_N_F" 같은 cell key
+            else:
+                dominant_scenario = getattr(research_decision, "dominant_scenario", None)
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,
@@ -116,7 +121,9 @@ def create_portfolio_allocator(
             feedback=feedback_str,
         )
 
-        # 4. Optimize WITH bucket-constraints (D12)
+        # 4. Optimize WITH bucket-constraints (D12).
+        # bond bucket의 sub-bucket(TIPS/nominal) weight 강제 위해 sub_category lookup 전달.
+        sub_category_lookup = {e.ticker: e.sub_category for e in universe.etfs}
         wv = _optimize_with_bucket_constraints(
             method=method_choice.method,
             returns=returns,
@@ -124,6 +131,7 @@ def create_portfolio_allocator(
             bucket_target=bucket_target,
             method_params=method_choice.params,
             attempts=attempts,
+            sub_category_lookup=sub_category_lookup,
         )
 
         return {
@@ -138,24 +146,52 @@ def create_portfolio_allocator(
 
 def _build_sector_mapper_and_bounds(
     candidates, bucket_target, attempts: int,
+    sub_category_lookup: dict[str, str | None] | None = None,
 ) -> tuple[dict[str, str], dict[str, float], dict[str, float]]:
-    """Map ticker → bucket; build (lower, upper) bounds per bucket.
+    """Map ticker → bucket (or sub-bucket); build (lower, upper) bounds.
+
+    bond bucket의 inflation_linked sub_category ticker는 'bond_tips'로,
+    나머지는 'bond_nominal'로 매핑 (bond_tips_share > 0인 경우). 이렇게
+    하면 pypfopt가 두 sub-pool의 weight 합을 각각 강제 — Stage 2의
+    bond_tips_share intent가 실제 weight으로 enforce됨.
 
     First attempt: equality (lower == upper == target).
     Retry: relax to ±5%p band (handle infeasibility).
     """
+    sub_category_lookup = sub_category_lookup or {}
+    split_bond = bucket_target.bond_tips_share > 0.0
+
     sector_mapper: dict[str, str] = {}
     for bucket, tickers in candidates.bucket_to_tickers.items():
         for t in tickers:
-            sector_mapper[t] = bucket
+            if bucket == "bond" and split_bond:
+                sc = sub_category_lookup.get(t)
+                sector_mapper[t] = "bond_tips" if sc == "inflation_linked" else "bond_nominal"
+            else:
+                sector_mapper[t] = bucket
 
-    target_map = {
+    target_map: dict[str, float] = {
         "kr_equity": bucket_target.kr_equity,
         "global_equity": bucket_target.global_equity,
         "fx_commodity": bucket_target.fx_commodity,
-        "bond": bucket_target.bond,
         "cash_mmf": bucket_target.cash_mmf,
     }
+    if split_bond:
+        target_map["bond_tips"] = bucket_target.bond * bucket_target.bond_tips_share
+        target_map["bond_nominal"] = bucket_target.bond * (1.0 - bucket_target.bond_tips_share)
+    else:
+        target_map["bond"] = bucket_target.bond
+
+    # Infeasibility 방어 — 후보 풀에 한쪽 sub-bucket이 0이면 그 target도 0,
+    # 다른 sub-bucket에 합쳐서 처리. (candidate_selector가 fallback으로
+    # nominal로 채워도 sector_mapper에 따라 'bond_nominal'로 매핑됨)
+    if split_bond:
+        sectors_present = set(sector_mapper.values())
+        if "bond_tips" not in sectors_present:
+            # 후보 풀에 TIPS 없음 → tips target을 nominal로 흡수
+            target_map["bond_nominal"] = target_map.pop("bond_tips") + target_map["bond_nominal"]
+        if "bond_nominal" not in sectors_present:
+            target_map["bond_tips"] = target_map.pop("bond_nominal") + target_map.get("bond_tips", 0.0)
 
     if attempts == 0:
         sector_lower = dict(target_map)
@@ -175,17 +211,22 @@ def _optimize_with_bucket_constraints(
     bucket_target,
     method_params: dict,
     attempts: int,
+    sub_category_lookup: dict[str, str | None] | None = None,
 ) -> WeightVector:
-    """Optimize with simultaneous (single-cap, bucket sum) constraints."""
+    """Optimize with simultaneous (single-cap, bucket sum) constraints.
+
+    sub_category_lookup이 주어지면 bond bucket이 (bond_tips, bond_nominal)로
+    분리되어 Stage 2 bond_tips_share intent가 weight constraint로 강제됨.
+    """
     sector_mapper, sector_lower, sector_upper = _build_sector_mapper_and_bounds(
-        candidates, bucket_target, attempts,
+        candidates, bucket_target, attempts, sub_category_lookup,
     )
 
     valid = [t for t in returns.columns if t in sector_mapper]
     returns = returns[valid].dropna(axis=0, how="any")
 
     if method == OptimizationMethod.HRP:
-        return _hrp_per_bucket(returns, candidates, bucket_target)
+        return _hrp_per_bucket(returns, candidates, bucket_target, sub_category_lookup)
 
     S = risk_models.sample_cov(returns)
 
@@ -270,13 +311,20 @@ def _optimize_with_bucket_constraints(
     )
 
 
-def _hrp_per_bucket(returns: pd.DataFrame, candidates, bucket_target) -> WeightVector:
+def _hrp_per_bucket(
+    returns: pd.DataFrame, candidates, bucket_target,
+    sub_category_lookup: dict[str, str | None] | None = None,
+) -> WeightVector:
     """HRP within each bucket × bucket target, with ITERATIVE water-filling cap.
 
     Per D12 fix: single-pass clip+redistribute can fail (redistribute pushes
     other weights over cap). Loop until residual ≤ tolerance OR all assets
     capped (raise RuntimeError for joint infeasibility — Validator cycle handles).
+
+    bond bucket: bond_tips_share > 0이면 (TIPS, nominal) sub-pool로 분리해서 각각
+    HRP × sub-target. Stage 2 bond_tips_share intent enforce.
     """
+    sub_category_lookup = sub_category_lookup or {}
     target_map = {
         "kr_equity": bucket_target.kr_equity,
         "global_equity": bucket_target.global_equity,
@@ -284,44 +332,72 @@ def _hrp_per_bucket(returns: pd.DataFrame, candidates, bucket_target) -> WeightV
         "bond": bucket_target.bond,
         "cash_mmf": bucket_target.cash_mmf,
     }
+    split_bond = bucket_target.bond_tips_share > 0.0
 
     final: dict[str, float] = {}
     for bucket, tickers in candidates.bucket_to_tickers.items():
         target = target_map.get(bucket, 0)
         if target <= 0 or not tickers:
             continue
-        sub = returns[[t for t in tickers if t in returns.columns]].dropna(axis=0, how="any")
-        if sub.shape[1] == 0:
-            continue
-        if sub.shape[1] == 1:
-            inner = {sub.columns[0]: 1.0}
+
+        if bucket == "bond" and split_bond:
+            # Sub-pool split per inflation_linked sub_category
+            tips_tickers = [
+                t for t in tickers
+                if sub_category_lookup.get(t) == "inflation_linked"
+            ]
+            nominal_tickers = [t for t in tickers if t not in tips_tickers]
+            tips_target = target * bucket_target.bond_tips_share
+            nominal_target = target * (1.0 - bucket_target.bond_tips_share)
+            # 한쪽이 비면 target을 다른 쪽으로 흡수
+            if not tips_tickers and nominal_tickers:
+                nominal_target += tips_target
+                tips_target = 0.0
+            if not nominal_tickers and tips_tickers:
+                tips_target += nominal_target
+                nominal_target = 0.0
+
+            sub_buckets = []
+            if tips_tickers and tips_target > 0:
+                sub_buckets.append((tips_tickers, tips_target))
+            if nominal_tickers and nominal_target > 0:
+                sub_buckets.append((nominal_tickers, nominal_target))
         else:
-            hrp = HRPOpt(sub)
-            inner = {k: float(v) for k, v in hrp.optimize().items()}
-            s = sum(inner.values())
-            inner = {k: v / s for k, v in inner.items()}
+            sub_buckets = [(tickers, target)]
 
-        scaled = {t: w * target for t, w in inner.items()}
+        for pool_tickers, pool_target in sub_buckets:
+            sub = returns[[t for t in pool_tickers if t in returns.columns]].dropna(axis=0, how="any")
+            if sub.shape[1] == 0:
+                continue
+            if sub.shape[1] == 1:
+                inner = {sub.columns[0]: 1.0}
+            else:
+                hrp = HRPOpt(sub)
+                inner = {k: float(v) for k, v in hrp.optimize().items()}
+                s = sum(inner.values())
+                inner = {k: v / s for k, v in inner.items()}
 
-        capped = {t: min(w, 0.20) for t, w in scaled.items()}
-        residual = sum(scaled.values()) - sum(capped.values())
-        max_iters = 10
-        for _ in range(max_iters):
-            if residual <= 1e-9:
-                break
-            non_capped = [t for t, w in capped.items() if w < 0.20 - 1e-9]
-            if not non_capped:
-                # All assets at cap — bucket target unreachable; accept partial fill.
-                # Final normalization absorbs the shortfall across all buckets.
-                break
-            share = residual / len(non_capped)
-            for t in non_capped:
-                room = 0.20 - capped[t]
-                add = min(share, room)
-                capped[t] += add
+            scaled = {t: w * pool_target for t, w in inner.items()}
+
+            capped = {t: min(w, 0.20) for t, w in scaled.items()}
             residual = sum(scaled.values()) - sum(capped.values())
+            max_iters = 10
+            for _ in range(max_iters):
+                if residual <= 1e-9:
+                    break
+                non_capped = [t for t, w in capped.items() if w < 0.20 - 1e-9]
+                if not non_capped:
+                    # All assets at cap — bucket target unreachable; accept partial fill.
+                    # Final normalization absorbs the shortfall across all buckets.
+                    break
+                share = residual / len(non_capped)
+                for t in non_capped:
+                    room = 0.20 - capped[t]
+                    add = min(share, room)
+                    capped[t] += add
+                residual = sum(scaled.values()) - sum(capped.values())
 
-        final.update(capped)
+            final.update(capped)
 
     total = sum(final.values())
     if total > 0 and abs(total - 1.0) > 1e-9:

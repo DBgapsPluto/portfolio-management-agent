@@ -115,3 +115,113 @@ def test_sector_mapper_strict_then_relaxed():
     _, lower, upper = _build_sector_mapper_and_bounds(candidates, target, attempts=1)
     assert lower["kr_equity"] == 0.15  # 0.20 - 0.05
     assert upper["kr_equity"] == 0.25  # 0.20 + 0.05
+
+
+def test_sector_mapper_splits_bond_when_tips_share_positive():
+    """bond_tips_share > 0이면 bond bucket이 bond_tips + bond_nominal로 split."""
+    candidates = CandidateSet(
+        bucket_to_tickers={
+            "kr_equity": [], "global_equity": [], "fx_commodity": [],
+            "bond": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
+            "cash_mmf": [],
+        },
+        selection_criteria="test", total_candidates=4,
+    )
+    target = BucketTarget(
+        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
+        bond=0.40, cash_mmf=0.60, rationale="t",
+        bond_tips_share=0.75,  # 40% bond × 75% = 30% TIPS, 10% nominal
+    )
+    sub_lookup = {
+        "A_TIPS_1": "inflation_linked",
+        "A_TIPS_2": "inflation_linked",
+        "A_NOM_1": "kr_treasury",
+        "A_NOM_2": "kr_corporate",
+    }
+    sm, lower, upper = _build_sector_mapper_and_bounds(
+        candidates, target, attempts=0, sub_category_lookup=sub_lookup,
+    )
+    assert sm["A_TIPS_1"] == "bond_tips"
+    assert sm["A_TIPS_2"] == "bond_tips"
+    assert sm["A_NOM_1"] == "bond_nominal"
+    assert sm["A_NOM_2"] == "bond_nominal"
+    assert "bond" not in lower
+    assert lower["bond_tips"] == pytest.approx(0.30)
+    assert lower["bond_nominal"] == pytest.approx(0.10)
+
+
+def test_sector_mapper_keeps_single_bond_when_tips_share_zero():
+    """bond_tips_share = 0 (default)이면 기존 동작 그대로."""
+    candidates = _candidates()
+    target = _bucket_target()  # bond_tips_share=0 default
+    sm, lower, upper = _build_sector_mapper_and_bounds(
+        candidates, target, attempts=0, sub_category_lookup={},
+    )
+    assert sm["A114260"] == "bond"  # single bond
+    assert lower["bond"] == 0.30
+
+
+def test_sector_mapper_absorbs_missing_tips_pool():
+    """후보에 inflation_linked 없으면 bond_tips target을 bond_nominal로 흡수."""
+    candidates = CandidateSet(
+        bucket_to_tickers={
+            "kr_equity": [], "global_equity": [], "fx_commodity": [],
+            "bond": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
+            "cash_mmf": [],
+        },
+        selection_criteria="test", total_candidates=2,
+    )
+    target = BucketTarget(
+        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
+        bond=0.50, cash_mmf=0.50, rationale="t",
+        bond_tips_share=0.80,  # 의도는 TIPS 40%, 그러나 후보 없음
+    )
+    sub_lookup = {"A_NOM_1": "kr_treasury", "A_NOM_2": "kr_corporate"}
+    sm, lower, upper = _build_sector_mapper_and_bounds(
+        candidates, target, attempts=0, sub_category_lookup=sub_lookup,
+    )
+    # bond_tips는 후보 없어서 target에서 제거, 모두 bond_nominal
+    assert "bond_tips" not in lower
+    assert lower["bond_nominal"] == pytest.approx(0.50)
+
+
+def test_hrp_per_bucket_enforces_bond_tips_split():
+    """HRP path가 bond_tips_share를 sub-pool weight으로 강제.
+
+    Realistic setup: bond=0.40, tips_share=0.50 → TIPS 20%, nominal 20%.
+    Cash 3 tickers로 분산 (cap 0.20씩 → 3개 = 0.60 채움).
+    """
+    rng = np.random.default_rng(7)
+    n = 252
+    returns = pd.DataFrame({
+        "A_TIPS_1": rng.normal(0.0005, 0.012, n),
+        "A_TIPS_2": rng.normal(0.0005, 0.010, n),
+        "A_NOM_1":  rng.normal(0.0003, 0.003, n),
+        "A_NOM_2":  rng.normal(0.0003, 0.004, n),
+        "A_CASH_1": rng.normal(0.0001, 0.001, n),
+        "A_CASH_2": rng.normal(0.0001, 0.001, n),
+        "A_CASH_3": rng.normal(0.0001, 0.001, n),
+    })
+    candidates = CandidateSet(
+        bucket_to_tickers={
+            "kr_equity": [], "global_equity": [], "fx_commodity": [],
+            "bond": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
+            "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
+        },
+        selection_criteria="t", total_candidates=7,
+    )
+    target = BucketTarget(
+        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
+        bond=0.40, cash_mmf=0.60, rationale="t",
+        bond_tips_share=0.50,  # bond 40% × 50% = 20% TIPS, 20% nominal
+    )
+    sub_lookup = {
+        "A_TIPS_1": "inflation_linked", "A_TIPS_2": "inflation_linked",
+        "A_NOM_1": "kr_treasury", "A_NOM_2": "kr_treasury",
+    }
+    wv = _hrp_per_bucket(returns, candidates, target, sub_category_lookup=sub_lookup)
+    tips_sum = wv.weights.get("A_TIPS_1", 0) + wv.weights.get("A_TIPS_2", 0)
+    nom_sum = wv.weights.get("A_NOM_1", 0) + wv.weights.get("A_NOM_2", 0)
+    # bond_tips_share=0.50 of bond 40% = 20% TIPS
+    assert tips_sum == pytest.approx(0.20, abs=0.03), f"TIPS sum {tips_sum} != 0.20"
+    assert nom_sum == pytest.approx(0.20, abs=0.03), f"nominal sum {nom_sum} != 0.20"

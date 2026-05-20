@@ -94,6 +94,143 @@ def test_list_eligible_tickers_filters_by_aum_and_category():
     assert eligible["global_equity"] == []
 
 
+def test_bond_tips_quota_splits_inflation_linked_and_nominal():
+    """bond bucket에 inflation_linked + nominal 풀이 있을 때 tips_share 비율로 quota 분배."""
+    universe = Universe(version="t", etfs=[
+        ETFEntry(ticker="A_TIPS1", name="TIPS-1", aum_krw=5e12,
+                 underlying_index="x", bucket="안전", category="해외채권_종합",
+                 sub_category="inflation_linked"),
+        ETFEntry(ticker="A_TIPS2", name="TIPS-2", aum_krw=4e12,
+                 underlying_index="x", bucket="안전", category="해외채권_종합",
+                 sub_category="inflation_linked"),
+        ETFEntry(ticker="A_TIPS3", name="TIPS-3", aum_krw=3e12,
+                 underlying_index="x", bucket="안전", category="해외채권_종합",
+                 sub_category="inflation_linked"),
+        ETFEntry(ticker="A_NOM1", name="KTB", aum_krw=8e12,
+                 underlying_index="x", bucket="안전", category="국내채권_종합",
+                 sub_category="kr_treasury"),
+        ETFEntry(ticker="A_NOM2", name="UST", aum_krw=7e12,
+                 underlying_index="x", bucket="안전", category="해외채권_종합",
+                 sub_category="us_treasury"),
+        ETFEntry(ticker="A_NOM3", name="AGG", aum_krw=6e12,
+                 underlying_index="x", bucket="안전", category="해외채권_종합",
+                 sub_category="us_aggregate"),
+    ])
+    target = BucketTarget(
+        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
+        bond=1.0, cash_mmf=0.0,
+        rationale="t",
+        bond_tips_share=0.6,  # per_bucket_n=5 → tips_quota=3, nominal_quota=2
+    )
+    all_tickers = [e.ticker for e in universe.etfs]
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    returns = _synthetic_returns(all_tickers)
+    panel = _trivial_panel(all_tickers, aum_lookup)
+    candidates = select_etf_candidates(
+        universe, target, as_of=date(2026, 5, 10),
+        returns=returns, factor_panel=panel,
+    )
+    bond_picks = candidates.bucket_to_tickers["bond"]
+    tips_count = sum(1 for t in bond_picks if t.startswith("A_TIPS"))
+    nominal_count = sum(1 for t in bond_picks if t.startswith("A_NOM"))
+    assert tips_count == 3
+    assert nominal_count == 2
+
+
+def test_bond_tips_quota_zero_falls_back_to_legacy_path():
+    """bond_tips_share=0 → 분기 없이 기존 single-pool path."""
+    universe = Universe(version="t", etfs=[
+        ETFEntry(ticker="A_TIPS1", name="TIPS-1", aum_krw=5e12,
+                 underlying_index="x", bucket="안전", category="해외채권_종합",
+                 sub_category="inflation_linked"),
+        ETFEntry(ticker="A_NOM1", name="KTB", aum_krw=8e12,
+                 underlying_index="x", bucket="안전", category="국내채권_종합",
+                 sub_category="kr_treasury"),
+    ])
+    target = BucketTarget(
+        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
+        bond=1.0, cash_mmf=0.0, rationale="t",
+        # default bond_tips_share=0.0
+    )
+    all_tickers = [e.ticker for e in universe.etfs]
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    returns = _synthetic_returns(all_tickers)
+    panel = _trivial_panel(all_tickers, aum_lookup)
+    candidates = select_etf_candidates(
+        universe, target, as_of=date(2026, 5, 10),
+        returns=returns, factor_panel=panel,
+    )
+    # both tickers should be eligible (legacy path), no quota split
+    assert set(candidates.bucket_to_tickers["bond"]) == {"A_TIPS1", "A_NOM1"}
+
+
+def test_relaxed_min_aum_admits_inflation_linked_etf():
+    """sub_category='inflation_linked' ETF는 default 1조 미달이라도 100억 이상이면 통과."""
+    universe = Universe(version="t", etfs=[
+        ETFEntry(ticker="A_TIPS_SMALL", name="KR-TIPS small", aum_krw=200_000_000_000,
+                 underlying_index="x", bucket="안전", category="국내채권_종합",
+                 sub_category="inflation_linked"),  # 200억, default 1조 미달
+        ETFEntry(ticker="A_NOM_BIG", name="KTB big", aum_krw=2_000_000_000_000,
+                 underlying_index="x", bucket="안전", category="국내채권_종합",
+                 sub_category="kr_treasury"),  # 2조, default 통과
+        ETFEntry(ticker="A_NOM_SMALL", name="KTB small", aum_krw=200_000_000_000,
+                 underlying_index="x", bucket="안전", category="국내채권_종합",
+                 sub_category="kr_treasury"),  # 200억, default 1조 미달 → 탈락
+    ])
+    target = BucketTarget(
+        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
+        bond=1.0, cash_mmf=0.0, rationale="t",
+        bond_tips_share=0.5,
+    )
+    all_tickers = [e.ticker for e in universe.etfs]
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    returns = _synthetic_returns(all_tickers)
+    panel = _trivial_panel(all_tickers, aum_lookup)
+    candidates = select_etf_candidates(
+        universe, target, as_of=date(2026, 5, 10),
+        returns=returns, factor_panel=panel,
+    )
+    bond_picks = candidates.bucket_to_tickers["bond"]
+    # inflation_linked는 200억이지만 relaxed threshold(100억)에 의해 통과
+    assert "A_TIPS_SMALL" in bond_picks
+    # KTB big은 2조 default 통과
+    assert "A_NOM_BIG" in bond_picks
+    # KTB small은 default 1조 미달이라 탈락 (kr_treasury는 relax 대상 X)
+    assert "A_NOM_SMALL" not in bond_picks
+
+
+def test_bond_tips_quota_shortfall_falls_back_to_other_pool():
+    """tips_share=1.0 인데 TIPS 후보가 quota보다 적으면 nominal로 보충."""
+    universe = Universe(version="t", etfs=[
+        ETFEntry(ticker="A_TIPS1", name="TIPS-1", aum_krw=5e12,
+                 underlying_index="x", bucket="안전", category="해외채권_종합",
+                 sub_category="inflation_linked"),
+        ETFEntry(ticker="A_NOM1", name="KTB", aum_krw=8e12,
+                 underlying_index="x", bucket="안전", category="국내채권_종합",
+                 sub_category="kr_treasury"),
+        ETFEntry(ticker="A_NOM2", name="UST", aum_krw=7e12,
+                 underlying_index="x", bucket="안전", category="해외채권_종합",
+                 sub_category="us_treasury"),
+    ])
+    target = BucketTarget(
+        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
+        bond=1.0, cash_mmf=0.0, rationale="t",
+        bond_tips_share=1.0,  # TIPS만 원하지만 TIPS는 1개뿐
+    )
+    all_tickers = [e.ticker for e in universe.etfs]
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    returns = _synthetic_returns(all_tickers)
+    panel = _trivial_panel(all_tickers, aum_lookup)
+    candidates = select_etf_candidates(
+        universe, target, as_of=date(2026, 5, 10),
+        returns=returns, factor_panel=panel,
+    )
+    bond_picks = candidates.bucket_to_tickers["bond"]
+    # TIPS 1개 + 부족분 nominal 2개로 보충
+    assert "A_TIPS1" in bond_picks
+    assert len([t for t in bond_picks if t.startswith("A_NOM")]) >= 1
+
+
 def test_select_multi_factor_mode_uses_returns_and_regime():
     universe = Universe(version="t", etfs=[
         ETFEntry(ticker="A111111", name="A", aum_krw=10e12,

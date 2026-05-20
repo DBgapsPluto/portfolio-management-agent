@@ -25,6 +25,26 @@ BUCKET_TO_CATEGORIES = {
 }
 
 
+# Sub_category별 minimum AUM 완화 — KR 시장에 large-AUM 옵션이 부족한
+# sparse sub_category 한정. default min_aum_krw 대신 이 값 사용.
+# 운영 capital 10억-100억 가정에서 안전 (포지션 < AUM의 5%).
+_RELAXED_MIN_AUM_KRW: dict[str, float] = {
+    "inflation_linked": 10_000_000_000,   # 100억 — KR TIPS 시장 매우 작음
+}
+
+
+def _min_aum_for_etf(etf, default_threshold: float) -> float:
+    """ETF의 sub_category에 따라 minimum AUM 결정.
+
+    sub_category가 _RELAXED_MIN_AUM_KRW에 있으면 그 값과 default 중 작은 쪽 사용.
+    그 외엔 default 그대로.
+    """
+    sc = etf.sub_category
+    if sc and sc in _RELAXED_MIN_AUM_KRW:
+        return min(default_threshold, _RELAXED_MIN_AUM_KRW[sc])
+    return default_threshold
+
+
 def list_eligible_tickers(
     universe: Universe,
     bucket_target: BucketTarget,
@@ -51,7 +71,7 @@ def list_eligible_tickers(
         cats = BUCKET_TO_CATEGORIES[bucket_name]
         out[bucket_name] = [
             e.ticker for e in universe.etfs
-            if e.category in cats and e.aum_krw >= min_aum_krw
+            if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
         ]
     return out
 
@@ -107,24 +127,33 @@ def select_etf_candidates(
         cats = BUCKET_TO_CATEGORIES[bucket_name]
         eligible = [
             e for e in universe.etfs
-            if e.category in cats and e.aum_krw >= min_aum_krw
+            if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
         ]
         if not eligible:
             bucket_to_tickers[bucket_name] = []
             continue
 
-        ranked = _rank_by_factors(
-            eligible, returns, aum_lookup,
-            regime_quadrant, regime_confidence,
-            precomputed_panel=factor_panel,
-            dominant_scenario=dominant_scenario,
-        )
-        longlist_n = max(per_bucket_n * longlist_multiplier, per_bucket_n)
-        longlist = ranked[:longlist_n]
-        chosen = select_diverse(
-            longlist, returns, n=per_bucket_n,
-            correlation_threshold=correlation_threshold,
-        )
+        if bucket_name == "bond" and bucket_target.bond_tips_share > 0.0:
+            chosen = _select_bond_with_tips_quota(
+                eligible, returns, aum_lookup,
+                regime_quadrant, regime_confidence, factor_panel,
+                dominant_scenario, per_bucket_n,
+                correlation_threshold, longlist_multiplier,
+                tips_share=bucket_target.bond_tips_share,
+            )
+        else:
+            ranked = _rank_by_factors(
+                eligible, returns, aum_lookup,
+                regime_quadrant, regime_confidence,
+                precomputed_panel=factor_panel,
+                dominant_scenario=dominant_scenario,
+            )
+            longlist_n = max(per_bucket_n * longlist_multiplier, per_bucket_n)
+            longlist = ranked[:longlist_n]
+            chosen = select_diverse(
+                longlist, returns, n=per_bucket_n,
+                correlation_threshold=correlation_threshold,
+            )
 
         bucket_to_tickers[bucket_name] = chosen[:per_bucket_n]
 
@@ -140,6 +169,71 @@ def select_etf_candidates(
         )[:300],
         total_candidates=max(total, 1),
     )
+
+
+def _select_bond_with_tips_quota(
+    eligible,
+    returns: pd.DataFrame,
+    aum_lookup: dict[str, float],
+    regime_quadrant: str | None,
+    regime_confidence: float,
+    factor_panel: dict[str, FactorPanel],
+    dominant_scenario: str | None,
+    per_bucket_n: int,
+    correlation_threshold: float,
+    longlist_multiplier: int,
+    tips_share: float,
+) -> list[str]:
+    """bond bucket fill — inflation_linked sub_category에 quota 적용.
+
+    eligible을 sub_category=inflation_linked vs 나머지로 split → 각각 rank +
+    diverse select → tips_share 비율의 slot 채움. 한쪽이 부족하면 다른 쪽에서 보충.
+    """
+    tips_pool = [e for e in eligible if (e.sub_category or "") == "inflation_linked"]
+    nominal_pool = [e for e in eligible if (e.sub_category or "") != "inflation_linked"]
+
+    tips_quota = int(round(per_bucket_n * tips_share))
+    nominal_quota = per_bucket_n - tips_quota
+
+    def _pick(pool, n: int) -> list[str]:
+        if not pool or n <= 0:
+            return []
+        ranked = _rank_by_factors(
+            pool, returns, aum_lookup,
+            regime_quadrant, regime_confidence,
+            precomputed_panel=factor_panel,
+            dominant_scenario=dominant_scenario,
+        )
+        longlist = ranked[:max(n * longlist_multiplier, n)]
+        return select_diverse(
+            longlist, returns, n=n,
+            correlation_threshold=correlation_threshold,
+        )[:n]
+
+    tips_picks = _pick(tips_pool, tips_quota)
+    nominal_picks = _pick(nominal_pool, nominal_quota)
+
+    # Shortfall fallback — 한쪽 quota 못 채우면 다른 쪽에서 보충.
+    tips_short = tips_quota - len(tips_picks)
+    if tips_short > 0:
+        extra = _pick(nominal_pool, len(nominal_picks) + tips_short)
+        seen = set(nominal_picks)
+        for t in extra:
+            if t not in seen:
+                nominal_picks.append(t); seen.add(t)
+                if len(nominal_picks) >= nominal_quota + tips_short:
+                    break
+    nominal_short = nominal_quota - len(nominal_picks)
+    if nominal_short > 0:
+        extra = _pick(tips_pool, len(tips_picks) + nominal_short)
+        seen = set(tips_picks)
+        for t in extra:
+            if t not in seen:
+                tips_picks.append(t); seen.add(t)
+                if len(tips_picks) >= tips_quota + nominal_short:
+                    break
+
+    return tips_picks + nominal_picks
 
 
 def _rank_by_factors(
