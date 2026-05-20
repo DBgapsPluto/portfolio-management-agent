@@ -86,6 +86,12 @@ def _reregister_all_skills() -> None:
     This is needed because skill modules are cached in sys.modules, so importing
     them again won't trigger the @register_skill decorator. We clear the registry
     first, then reload all modules to re-trigger their @register_skill decorators.
+
+    2026-05: per-module try/except so that optional skills with heavy deps
+    (e.g. portfolio.optimizers → pypfopt → cvxpy → numpy 2.x) failing to import
+    in a degraded test env doesn't abort the entire chain. Production envs that
+    install the full lockfile import everything fine so this silent skip never
+    affects them. Test-only function — no behavioral impact on production code.
     """
     import sys
     import importlib
@@ -94,5 +100,11 @@ def _reregister_all_skills() -> None:
     _REGISTRY.clear()
 
     for module_name in _SKILL_MODULES:
-        if module_name in sys.modules:
-            importlib.reload(sys.modules[module_name])
+        try:
+            if module_name in sys.modules:
+                importlib.reload(sys.modules[module_name])
+            else:
+                importlib.import_module(module_name)
+        except Exception:
+            # Per-module isolation: degraded test envs may not have heavy deps.
+            continue

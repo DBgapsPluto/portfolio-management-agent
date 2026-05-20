@@ -1,10 +1,15 @@
 """Tier-3 — Universe breadth (188 ETF 집계 indicator).
 
 %above_MA / new highs-lows / advance-decline / universe vol regime.
+
+2026-05 Bug-E fix: 카테고리(국내/해외/채권/원자재/기타) prefix별 sub-breadth도
+계산하여 sub_pct_above_ma200 dict에 노출. 188 ETF가 자산군별로 섞여있어
+전체 pct만으론 KR vs US 분리된 신호를 못 잡음.
 """
 import numpy as np
 import pandas as pd
 
+from tradingagents.dataflows.universe import Universe
 from tradingagents.schemas.technical import UniverseBreadthSnapshot
 from tradingagents.skills.registry import register_skill
 
@@ -12,12 +17,23 @@ from tradingagents.skills.registry import register_skill
 _AD_RATIO_CAP = 10.0
 
 
+def _category_prefix(category: str) -> str:
+    """첫 단어를 prefix로 (국내_주식 → 국내). 분류 그룹."""
+    if not category:
+        return "기타"
+    head = category.split("_", 1)[0].split(" ", 1)[0]
+    return head or "기타"
+
+
 @register_skill(name="compute_universe_breadth", category="technical")
-def compute_universe_breadth(prices: pd.DataFrame) -> UniverseBreadthSnapshot:
+def compute_universe_breadth(
+    prices: pd.DataFrame, universe: Universe | None = None,
+) -> UniverseBreadthSnapshot:
     """Aggregate breadth metrics over the entire universe.
 
     prices: DataFrame with at minimum [date, close, ticker]. ≥252 rows of history
         recommended for 52w highs/lows; ≥260 rows for vol_z (60d + 252d window).
+    universe: optional. 제공 시 카테고리 prefix별 sub_pct_above_ma200 계산.
     """
     pivot = prices.pivot(index="date", columns="ticker", values="close").sort_index()
     if pivot.empty:
@@ -81,6 +97,22 @@ def compute_universe_breadth(prices: pd.DataFrame) -> UniverseBreadthSnapshot:
     else:
         regime = "narrow"
 
+    # Sub-breadth by category prefix (Bug-E fix). universe 제공 시에만.
+    sub_pct200: dict[str, float] = {}
+    if universe is not None:
+        prefix_lookup = {e.ticker: _category_prefix(e.category) for e in universe.etfs}
+        # 각 prefix의 tickers 모아서 prefix별 pct_above_ma200 계산
+        prefix_groups: dict[str, list[str]] = {}
+        for ticker, prefix in prefix_lookup.items():
+            if ticker in last_close.index:
+                prefix_groups.setdefault(prefix, []).append(ticker)
+        for prefix, tickers in prefix_groups.items():
+            mask = eligible_mask.loc[tickers] if all(t in eligible_mask.index for t in tickers) else None
+            if mask is None or mask.sum() == 0:
+                continue
+            sub_above = ((last_close.loc[tickers] > ma200.loc[tickers]) & mask).sum()
+            sub_pct200[prefix] = float(sub_above) / float(mask.sum())
+
     last_date = pivot.index[-1]
     source_date = (
         last_date.date() if hasattr(last_date, "date")
@@ -99,5 +131,6 @@ def compute_universe_breadth(prices: pd.DataFrame) -> UniverseBreadthSnapshot:
         universe_vol_median=current_vol,
         universe_vol_z=vol_z,
         regime=regime,
+        sub_pct_above_ma200=sub_pct200,
         source_date=source_date,
     )

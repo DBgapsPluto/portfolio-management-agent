@@ -14,12 +14,27 @@ from tradingagents.skills.registry import register_skill
 logger = logging.getLogger(__name__)
 
 
+_CNN_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/121.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Referer": "https://www.cnn.com/markets/fear-and-greed",
+}
+
+
 def _scrape_cnn_fg() -> dict | None:
-    """Scrape CNN Fear & Greed. Returns None on any failure (D5 tier3)."""
+    """Scrape CNN Fear & Greed. Returns None on any failure (D5 tier3).
+
+    CNN blocks default Python/urllib User-Agents with "I'm a teapot." — must
+    impersonate a real browser.
+    """
     try:
         r = requests.get(
             "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
-            timeout=10,
+            timeout=10, headers=_CNN_HEADERS,
         )
         r.raise_for_status()
         data = r.json()

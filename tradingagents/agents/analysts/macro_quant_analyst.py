@@ -13,6 +13,7 @@ Tier-1 확장 (KR cycle + US 선행/실시간 성장):
 from datetime import date, timedelta
 
 from tradingagents.dataflows.commodities import fetch_commodity_close
+from tradingagents.dataflows.equity_indices import fetch_equity_index_close
 from tradingagents.dataflows.pykrx_data import fetch_foreign_flow
 from tradingagents.schemas.macro import (
     ChinaLeadingSnapshot, DivergenceScore, FXSnapshot, FedPathSnapshot,
@@ -52,8 +53,8 @@ You are summarizing a macro snapshot for an asset-allocation team.
 Data:
 - Regime: {regime_quadrant} (confidence {confidence:.2f})
 - 10y-2y spread: {spread_2y_bps:.1f} bps (inverted {inverted_days} days)
-- CPI YoY: {cpi:.1f}% (accelerating: {accelerating})
-- Unemployment: {ur:.1f}% (Sahm: {sahm})
+- CPI YoY: {cpi:.1f}% (accelerating: {accelerating}); Core PCE YoY: {core_pce:.1f}% (3m ann: {pce_m3:.1f}%) — Fed 타겟
+- Unemployment: {ur:.1f}% (Sahm: {sahm}); JOLTS Openings 3m avg {jolts_open:.0f}k, Quits rate {jolts_quits:.1f}% (6m chg {jolts_quits_chg:+.2f})
 - KR export YoY: {kr_export_yoy:.1f}% (accelerating: {kr_export_acc})
 - KR leading index: {kr_cli:.1f} ({kr_phase})
 - KR mfg BSI: {kr_bsi:.1f} (contraction: {kr_contraction})
@@ -64,9 +65,8 @@ Data:
 - Fed path (DGS2-DFF): {fed_bps:+.0f} bps → market expects {fed_view}
 - FX: USD/KRW={usd_krw:.0f} ({krw_chg:+.1f}% 1m, {fx_regime})
 - Copper/Gold: {cu_signal} (1y pct {cu_pct:.0%})
-- China CLI: {china_cli:.1f} ({china_phase})
+- China CLI: {china_cli:.1f} ({china_phase}); USDCNH {usdcnh:.3f} ({usdcnh_chg:+.1f}%/1m), iron ore {iron:.0f} ({iron_chg:+.1f}%/3m) → realtime {china_realtime}
 - Foreign KOSPI 20d: {foreign_20d:+.1f}억 ({foreign_signal})
-- Policy uncertainty: US EPU={us_epu:.0f} ({epu_regime})
 - Tail risk: VVIX={vvix:.0f}, MOVE={move:.0f} ({tail_signal})
 - Upcoming events: {events}
 
@@ -186,11 +186,34 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
 
         cpi = fetch_fred_series_skill("us_cpi", start_macro, as_of, as_of_date=as_of)
         core_cpi = fetch_fred_series_skill("us_core_cpi", start_macro, as_of, as_of_date=as_of)
-        infl = compute_inflation_trend(cpi, core_cpi, as_of=as_of)
+        # PCE — Fed 공식 inflation 타겟 (2026-05 추가). 두 series 다 best-effort.
+        try:
+            pce = fetch_fred_series_skill("us_pce", start_macro, as_of, as_of_date=as_of)
+            core_pce = fetch_fred_series_skill("us_core_pce", start_macro, as_of, as_of_date=as_of)
+        except Exception:
+            pce = None
+            core_pce = None
+        infl = compute_inflation_trend(cpi, core_cpi, as_of=as_of, pce=pce, core_pce=core_pce)
 
         ur = fetch_fred_series_skill("us_unrate", start_macro, as_of, as_of_date=as_of)
         payems = fetch_fred_series_skill("us_payems", start_macro, as_of, as_of_date=as_of)
-        emp = compute_unemployment_trend(ur, payems, as_of=as_of)
+        # LFPR for Sahm rule cross-check (2026-05 fix — see employment.py)
+        try:
+            lfpr = fetch_fred_series_skill("us_lfpr", start_macro, as_of, as_of_date=as_of)
+        except Exception:
+            lfpr = None
+        # JOLTS — labor market leading indicators (2026-05 추가)
+        try:
+            jolts_open = fetch_fred_series_skill("us_jolts_openings", start_macro, as_of, as_of_date=as_of)
+            jolts_quits = fetch_fred_series_skill("us_jolts_quits", start_macro, as_of, as_of_date=as_of)
+        except Exception:
+            jolts_open = None
+            jolts_quits = None
+        emp = compute_unemployment_trend(
+            ur, payems, as_of=as_of,
+            labor_participation=lfpr,
+            job_openings=jolts_open, quits_rate=jolts_quits,
+        )
 
         # KR divergence (best-effort — ECOS may fail)
         try:
@@ -205,7 +228,12 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
                 as_of=as_of,
             )
         except Exception:
-            div = DivergenceScore(us_kr_rate_gap_bps=0, us_kr_inflation_gap=0, score=0, source_date=as_of)
+            # 2026-05 Bug-A fix: staleness_days=99로 sentinel 명시. 이전엔 실데이터
+            # score=0 (완전 일치)와 sentinel (모든 값 0)이 구분 안 됐음.
+            div = DivergenceScore(
+                us_kr_rate_gap_bps=0, us_kr_inflation_gap=0, score=0,
+                source_date=as_of, staleness_days=99,
+            )
 
         # Tier-1: KR exports (ECOS 403Y001 already wired)
         try:
@@ -289,12 +317,35 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         except Exception:
             risk_appetite = _sentinel_risk_appetite(as_of)
 
-        # Tier-3: China leading indicator (OECD CLI via FRED)
+        # Tier-3: China leading (OECD CLI + 2026-05 보강 USDCNH/iron ore 실시간).
+        # CLI 단독은 2-3개월 lag으로 부족. 보조 신호로 daily proxies 추가.
         try:
             china_cli_series = fetch_fred_series_skill(
                 "china_cli", start_macro, as_of, as_of_date=as_of,
             )
-            china_leading = compute_china_leading(china_cli_series, as_of=as_of)
+        except Exception:
+            china_cli_series = None
+        try:
+            usdcnh_series = fetch_equity_index_close(
+                "usdcnh", as_of - timedelta(days=120), as_of,
+            )
+        except Exception:
+            usdcnh_series = None
+        try:
+            iron_ore_series = fetch_equity_index_close(
+                "iron_ore", as_of - timedelta(days=200), as_of,
+            )
+        except Exception:
+            iron_ore_series = None
+        try:
+            if china_cli_series is not None:
+                china_leading = compute_china_leading(
+                    china_cli_series, as_of=as_of,
+                    usdcnh_series=usdcnh_series,
+                    iron_ore_series=iron_ore_series,
+                )
+            else:
+                china_leading = _sentinel_china_leading(as_of)
         except Exception:
             china_leading = _sentinel_china_leading(as_of)
 
@@ -307,22 +358,18 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         except Exception:
             foreign_flow = _sentinel_foreign_flow(as_of)
 
-        # Tier-4: Policy uncertainty (US + Global EPU)
-        try:
-            us_epu = fetch_fred_series_skill(
-                "us_epu", start_macro, as_of, as_of_date=as_of,
-            )
-            global_epu = fetch_fred_series_skill(
-                "global_epu", start_macro, as_of, as_of_date=as_of,
-            )
-            policy_uncertainty = compute_policy_uncertainty(us_epu, global_epu, as_of=as_of)
-        except Exception:
-            policy_uncertainty = _sentinel_policy_uncertainty(as_of)
+        # Tier-4: Policy uncertainty (US + Global EPU) — 2026-05 DEPRECATED.
+        # Baker-Bloom-Davis EPU는 학술 지표로 institutional 실무 사용 빈약하고,
+        # monthly + ~5d publication lag 때문에 시장 이벤트 대응에 너무 느림.
+        # 시장 기반 uncertainty proxies (VIX/MOVE/credit spread/SKEW)가 이미
+        # Stage 1 market_risk + Tier-4 tail_risk에 풍부히 있어 정보 중복.
+        # schema 호환성을 위해 sentinel은 그대로 채워 downstream LLM은 받지 않음.
+        policy_uncertainty = _sentinel_policy_uncertainty(as_of)
 
-        # Tier-4: Tail risk (VVIX + MOVE — GPR substitute)
+        # Tier-4: Tail risk (VVIX + MOVE via yfinance — FRED VVIXCLS/MOVE was retired)
         try:
-            vvix = fetch_fred_series_skill("vvix", start_macro, as_of, as_of_date=as_of)
-            move = fetch_fred_series_skill("move", start_macro, as_of, as_of_date=as_of)
+            vvix = fetch_equity_index_close("vvix", as_of - timedelta(days=400), as_of)
+            move = fetch_equity_index_close("move", as_of - timedelta(days=400), as_of)
             tail_risk = compute_tail_risk(vvix, move, as_of=as_of)
         except Exception:
             tail_risk = _sentinel_tail_risk(as_of)
@@ -336,8 +383,13 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             cpi_yoy=infl.cpi_yoy,
             momentum_3mo=infl.momentum_3mo,
             accelerating=infl.accelerating,
+            core_pce_yoy=infl.core_pce_yoy,
+            core_pce_3mo_ann=infl.pce_momentum_3mo,
             unemployment_rate=emp.unemployment_rate,
             sahm_rule_triggered=emp.sahm_rule_triggered,
+            jolts_openings_3mo=emp.job_openings_3mo_avg,
+            jolts_quits_rate=emp.quits_rate,
+            jolts_quits_change_6mo=emp.quits_rate_change_6mo,
             # Tier-1 신규 inputs
             kr_export_yoy=kr_export.yoy_pct,
             kr_export_accelerating=kr_export.accelerating,
@@ -365,12 +417,13 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             copper_gold_percentile=risk_appetite.ratio_percentile_1y,
             china_cli_value=china_leading.cli_value,
             china_cli_phase=china_leading.phase,
+            china_usdcnh=china_leading.usdcnh,
+            china_usdcnh_change_1m=china_leading.usdcnh_change_1m_pct,
+            china_iron_ore_change_3m=china_leading.iron_ore_change_3m_pct,
+            china_realtime_signal=china_leading.realtime_signal,
             foreign_flow_20d_krw=foreign_flow.net_20d_krw,
             foreign_flow_signal=foreign_flow.signal,
-            # Tier-4 신규 inputs
-            us_epu=policy_uncertainty.us_epu,
-            us_epu_regime=policy_uncertainty.regime,
-            us_epu_percentile=policy_uncertainty.us_epu_percentile_5y,
+            # Tier-4 신규 inputs (EPU 2026-05 DEPRECATED — VIX/credit/SKEW이 우월)
             vvix=tail_risk.vvix,
             move=tail_risk.move,
             tail_risk_signal=tail_risk.signal,
@@ -380,7 +433,10 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             regime_quadrant=regime.quadrant, confidence=regime.confidence,
             spread_2y_bps=yc.spread_10y_2y_bps, inverted_days=yc.inverted_days_count,
             cpi=infl.cpi_yoy, accelerating=infl.accelerating,
+            core_pce=infl.core_pce_yoy, pce_m3=infl.pce_momentum_3mo,
             ur=emp.unemployment_rate, sahm=emp.sahm_rule_triggered,
+            jolts_open=emp.job_openings_3mo_avg, jolts_quits=emp.quits_rate,
+            jolts_quits_chg=emp.quits_rate_change_6mo,
             kr_export_yoy=kr_export.yoy_pct, kr_export_acc=kr_export.accelerating,
             kr_cli=kr_leading.cli_value, kr_phase=kr_leading.phase,
             kr_bsi=kr_bsi.mfg_bsi, kr_contraction=kr_bsi.contraction_signal,
@@ -393,9 +449,11 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             usd_krw=fx.usd_krw, krw_chg=fx.krw_change_1m_pct, fx_regime=fx.regime,
             cu_signal=risk_appetite.signal, cu_pct=risk_appetite.ratio_percentile_1y,
             china_cli=china_leading.cli_value, china_phase=china_leading.phase,
+            usdcnh=china_leading.usdcnh, usdcnh_chg=china_leading.usdcnh_change_1m_pct,
+            iron=china_leading.iron_ore, iron_chg=china_leading.iron_ore_change_3m_pct,
+            china_realtime=china_leading.realtime_signal,
             foreign_20d=foreign_flow.net_20d_krw / 1e8,
             foreign_signal=foreign_flow.signal,
-            us_epu=policy_uncertainty.us_epu, epu_regime=policy_uncertainty.regime,
             vvix=tail_risk.vvix, move=tail_risk.move,
             tail_signal=tail_risk.signal,
             events=", ".join(f"{e.event_date} {e.bank}" for e in events[:3]) or "none",
@@ -406,7 +464,10 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             f"Regime: **{regime.quadrant}** ({regime.confidence:.2f})\n"
             f"YC 10y-2y: {yc.spread_10y_2y_bps:.0f}bps, inverted {yc.inverted_days_count}d\n"
             f"CPI: {infl.cpi_yoy:.1f}% YoY ({'↑' if infl.accelerating else '↓'})\n"
-            f"UR: {emp.unemployment_rate:.1f}% (Sahm: {emp.sahm_rule_triggered})\n"
+            f"Core PCE: {infl.core_pce_yoy:.1f}% YoY (3m ann {infl.pce_momentum_3mo:.1f}%) — Fed 타겟\n"
+            f"UR: {emp.unemployment_rate:.1f}% (Sahm: {emp.sahm_rule_triggered}) "
+            f"JOLTS: openings {emp.job_openings_3mo_avg/1000:.1f}M, quits {emp.quits_rate:.1f}% "
+            f"({emp.quits_rate_change_6mo:+.2f}/6m)\n"
             f"KR exports: {kr_export.yoy_pct:+.1f}% YoY ({'↑' if kr_export.accelerating else '↓'})\n"
             f"KR CLI: {kr_leading.cli_value:.1f} ({kr_leading.phase}), BSI mfg: {kr_bsi.mfg_bsi:.0f}\n"
             f"CFNAI MA3: {us_leading.cfnai_ma3:+.2f} ({'recession' if us_leading.recession_signal else 'expansion'})\n"
@@ -417,9 +478,11 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             f"Fed path: {fed_path.path_bps:+.0f}bps → {fed_path.market_view}\n"
             f"FX: USD/KRW {fx.usd_krw:.0f} ({fx.krw_change_1m_pct:+.1f}%/1m, {fx.regime})\n"
             f"Cu/Au: {risk_appetite.signal} (pct {risk_appetite.ratio_percentile_1y:.0%})\n"
-            f"China CLI: {china_leading.cli_value:.1f} ({china_leading.phase})\n"
+            f"China CLI: {china_leading.cli_value:.1f} ({china_leading.phase}) "
+            f"| USDCNH {china_leading.usdcnh:.3f} ({china_leading.usdcnh_change_1m_pct:+.1f}%/1m), "
+            f"iron {china_leading.iron_ore:.0f} ({china_leading.iron_ore_change_3m_pct:+.1f}%/3m) "
+            f"→ realtime {china_leading.realtime_signal}\n"
             f"Foreign 20d: {foreign_flow.net_20d_krw/1e8:+.0f}억 ({foreign_flow.signal})\n"
-            f"US EPU: {policy_uncertainty.us_epu:.0f} ({policy_uncertainty.regime})\n"
             f"Tail risk: VVIX={tail_risk.vvix:.0f}, MOVE={tail_risk.move:.0f} ({tail_risk.signal})\n"
             f"Drivers: {', '.join(regime.drivers[:3])}\n"
         )[:2000]

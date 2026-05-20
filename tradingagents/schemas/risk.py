@@ -92,6 +92,11 @@ class VxnSnapshot(StalenessAware):
     spread_vs_vix: float = Field(
         description="VXN - VIX. Positive = 기술주 stress > broad. >5 = 의미있는 편중"
     )
+    tech_focused_stress: bool = Field(
+        default=False,
+        description="2026-05 Bug-C fix: spread_vs_vix > 5 명시 flag. "
+                    "이전엔 docstring에만 임계가 있고 코드 사용 X.",
+    )
 
 
 class RealYieldsSnapshot(StalenessAware):

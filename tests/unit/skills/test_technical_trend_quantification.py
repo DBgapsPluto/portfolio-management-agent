@@ -55,7 +55,10 @@ def test_uptrend_score_positive():
 
 
 def test_downtrend_score_negative():
-    panel = quantify_trend(_prices(drift=-0.5, vol=0.3), "A069500")
+    # drift=-0.15: cumsum 400 step → mean ≈ -60 → close가 1.0 floor에 닿지 않고
+    # 깨끗한 monotonic downtrend 유지. drift=-0.5는 1.0 floor 가까이 가서 U-shape
+    # 으로 변형되어 distance_ma200_pct ≈ 0이 됨.
+    panel = quantify_trend(_prices(drift=-0.15, vol=0.2), "A069500")
     assert panel.trend_strength_score < 0.0
     assert panel.distance_ma200_pct < 0
 

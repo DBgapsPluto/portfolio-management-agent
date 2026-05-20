@@ -51,20 +51,26 @@ def compute_equity_bond_corr(
 
     aligned.columns = ["eq", "bd"]
 
-    # 현재 60일 corr
-    current_60d = float(aligned.tail(60)["eq"].corr(aligned.tail(60)["bd"]))
+    # 120일 corr window (2026-05 fix from 60d — 60일은 단일 이벤트로 corr 흔들림,
+    # 학계 표준 90-120d). field name correlation_60d는 backward compat 위해 유지.
+    WINDOW = 120
+    if len(aligned) < WINDOW:
+        # 120일 부족 시 60일로 graceful degrade
+        WINDOW = 60
 
-    # 3개월 전(약 63일 전) 60일 corr — change 계산
-    if len(aligned) >= 60 + 63:
-        prior_window = aligned.iloc[-(60 + 63):-63]
+    current_corr = float(aligned.tail(WINDOW)["eq"].corr(aligned.tail(WINDOW)["bd"]))
+
+    # 3개월 전(약 63일 전) 동일 window 의 corr — change 계산
+    if len(aligned) >= WINDOW + 63:
+        prior_window = aligned.iloc[-(WINDOW + 63):-63]
         prior_corr = float(prior_window["eq"].corr(prior_window["bd"]))
-        change_3m = current_60d - prior_corr
+        change_3m = current_corr - prior_corr
     else:
         change_3m = 0.0
 
     return EquityBondCorrelationSnapshot(
-        correlation_60d=current_60d,
+        correlation_60d=current_corr,  # 필드명 유지, 실제는 120d
         change_3m=change_3m,
-        regime=_classify_regime(current_60d),
+        regime=_classify_regime(current_corr),
         source_date=as_of,
     )

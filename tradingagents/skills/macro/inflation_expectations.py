@@ -7,6 +7,13 @@ from tradingagents.skills.registry import register_skill
 
 
 # 학문/Fed 가이드 임계. anchored = Fed 2% 타깃 부근 ±α 범위.
+#
+# ⚠️ HARDCODED CAVEAT (#7, 2026-05 audit):
+#   임계 (breakeven 1.5~3.0, michigan 2.0~4.0)는 **Fed 2% 타겟 + 학술 컨센서스**
+#   에 기반. Fed가 2% 타겟을 변경하면 (e.g. 2.5% target — 일부 논의 있음) 모두
+#   stale. Michigan은 retail survey라 systematic bias (가계가 일관되게 Fed보다
+#   높게 답함) 때문에 4% 까지 normal로 본 것.
+#   타겟 변경 시 update 필요. 2026-05 현재 Fed 2% 유효.
 BREAKEVEN_ANCHOR_LOW = 1.5
 BREAKEVEN_ANCHOR_HIGH = 3.0
 MICHIGAN_ANCHOR_LOW = 2.0

@@ -1,12 +1,22 @@
 """Cross-asset 일별 returns matrix fetcher for PCA / correlation analysis.
 
-Tier-4: 기존 synthetic 4-asset data를 실제 yfinance 데이터로 교체.
-5개 자산:
-- SPY: US large-cap equity
+Tier-4 (2026-05 expanded to 15 assets — 이전 5개는 PCA first eigenvalue가
+자산 수 적어서 거의 항상 0.5+ 나와 "concentrated" flag 의미 없었음.
+11 SP500 sectors + 글로벌 자산 분산으로 random portfolio 기준선 낮춤):
+
+Core asset proxies (5):
+- SPY: US large-cap equity (broad)
 - QQQ: US tech (NASDAQ-100)
-- TLT: US 20y Treasury bond ETF
-- GLD: Gold ETF
+- TLT: US 20y Treasury
+- GLD: Gold
 - EWY: iShares MSCI South Korea (KOSPI proxy)
+
+SP500 11 sectors (granular US equity, low pairwise corr in normal regime):
+- XLF (Financials), XLK (Tech), XLE (Energy), XLV (Healthcare), XLI (Industrials)
+- XLY (Discretionary), XLP (Staples), XLU (Utilities), XLB (Materials)
+- XLRE (Real Estate), XLC (Communication)
+
+→ 16 자산. random portfolio first eigenvalue 기댓값 ≈ 1/√16 = 0.25.
 """
 import logging
 from datetime import date, timedelta
@@ -19,7 +29,13 @@ from tenacity import (
 logger = logging.getLogger(__name__)
 
 
-CROSS_ASSET_TICKERS = ["SPY", "QQQ", "TLT", "GLD", "EWY"]
+CROSS_ASSET_TICKERS = [
+    # Core (5)
+    "SPY", "QQQ", "TLT", "GLD", "EWY",
+    # SP500 sectors (11)
+    "XLF", "XLK", "XLE", "XLV", "XLI", "XLY",
+    "XLP", "XLU", "XLB", "XLRE", "XLC",
+]
 
 
 @retry(

@@ -18,8 +18,16 @@ FRED_SERIES = {
     "us_3m": "DGS3MO",
     "us_cpi": "CPIAUCSL",
     "us_core_cpi": "CPILFESL",
+    # PCE deflator — Fed의 공식 inflation 타겟. 2026-05 추가.
+    "us_pce": "PCEPI",                 # Personal Consumption Expenditures Price Index
+    "us_core_pce": "PCEPILFE",         # Core PCE (ex food & energy) — Fed 핵심 모니터링
     "us_unrate": "UNRATE",
     "us_payems": "PAYEMS",
+    "us_lfpr": "CIVPART",              # Labor Force Participation Rate (2026-05 Sahm cross-check)
+    # JOLTS — labor market tightness leading indicator (2026-05 추가).
+    "us_jolts_openings": "JTSJOL",     # Job Openings (level, thousands)
+    "us_jolts_quits": "JTSQUR",        # Quits Rate (% of employment)
+    "us_jolts_hires": "JTSHIR",        # Hires Rate (% — supplementary)
     "fed_balance_sheet": "WALCL",
     "us_policy_rate": "DFF",
     "us_ig_oas": "BAMLC0A0CM",

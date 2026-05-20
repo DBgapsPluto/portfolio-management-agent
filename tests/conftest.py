@@ -1,9 +1,19 @@
 """Shared pytest fixtures that prevent CI hangs when API keys are absent."""
 
 import os
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# pandas_ta shim — PyPI no longer ships pandas-ta for Python 3.11. Tests use
+# `pandas_ta_classic` (drop-in fork) under the original module name.
+if "pandas_ta" not in sys.modules:
+    try:
+        import pandas_ta_classic as _ta_classic  # type: ignore
+        sys.modules["pandas_ta"] = _ta_classic
+    except ImportError:
+        pass  # let the test fail with the original ImportError
 
 
 def pytest_configure(config):

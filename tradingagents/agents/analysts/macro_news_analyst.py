@@ -179,7 +179,7 @@ def create_macro_news_analyst(quick_llm, deep_llm):
 
         # Tier-4: CB speaker tone tracker
         try:
-            speaker_events = extract_speaker_events(items, quick_llm=quick_llm)
+            speaker_events = extract_speaker_events(items, quick_llm=quick_llm, as_of=as_of)
             speaker_aggregate = compute_speaker_aggregate(
                 speaker_events, as_of=as_of,
             )

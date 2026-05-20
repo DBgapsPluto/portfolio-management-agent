@@ -77,8 +77,15 @@ DEFAULT_CONFIG.update({
     "publication_lag_days": {
         "us_cpi": 15,
         "us_core_cpi": 15,
+        "us_pce": 30,           # PCE는 매월 마지막주 발표 (CPI보다 2주 늦음)
+        "us_core_pce": 30,
         "us_unrate": 7,
         "us_payems": 7,
+        "us_lfpr": 7,
+        # JOLTS는 매월 첫째 주 발표 (2개월 lag — 2025년 2월 데이터가 4월 발표).
+        "us_jolts_openings": 45,
+        "us_jolts_quits": 45,
+        "us_jolts_hires": 45,
         "us_10y": 1, "us_2y": 1, "us_3m": 1,
         "us_policy_rate": 1,
         "us_ig_oas": 1, "us_hy_oas": 1,

@@ -20,6 +20,12 @@ EQUITY_INDEX_TICKERS = {
     "vxn_alt": "^VXN",      # VXN backup
     "rut": "^RUT",          # Russell 2000 (future breadth use)
     "ndx": "^NDX",          # NASDAQ-100 (future use)
+    # Tail risk (FRED VVIXCLS/MOVE 2025년경 삭제 후 yfinance가 유일 소스)
+    "vvix": "^VVIX",        # CBOE VIX-of-VIX
+    "move": "^MOVE",        # ICE BofA MOVE Index (Treasury vol)
+    # China real-time proxies (2026-05 추가 — OECD CLI는 2-3개월 lag이라 보강 필요)
+    "usdcnh": "CNH=X",      # USD/CNH offshore 위안화 — China 정책/경제 우려 신호
+    "iron_ore": "TIO=F",    # SGX TSI Iron Ore Futures — China 건설 수요 proxy
     # Tier-2 dual_momentum 벤치마크
     "kospi200": "069500.KS",  # KODEX 200 ETF (KOSPI200 prox; ^KS200 도 가능)
     "spy": "SPY",

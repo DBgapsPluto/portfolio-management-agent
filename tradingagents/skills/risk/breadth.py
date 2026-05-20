@@ -28,6 +28,17 @@ def _kospi200_breadth(as_of: date) -> BreadthSnapshot:
 
     pykrx `get_market_ohlcv_by_ticker(date, "KOSPI")`가 단일 일자의 모든 KOSPI
     종목 OHLCV를 반환. "등락률" 컬럼이 이미 계산돼 있어 그대로 사용.
+
+    KNOWN LIMITATION (2026-05 audit, pykrx 1.2.8):
+      `stock.get_index_portfolio_deposit_file(date, "1028")`이 모든 날짜에
+      빈 list 반환 — KRX가 KOSPI200 구성종목 endpoint를 변경했으나 pykrx가
+      따라가지 못함. 결과적으로 빈 constituents → ValueError → sentinel
+      (staleness_days=99, advancing_pct=0.5) fallback.
+      systemic_score에는 SP500 sector breadth + breadth_us가 그대로 들어가고
+      KOSPI200 breadth는 0.5 neutral로 들어감. systemic_score의 KR breadth
+      가중치는 작아서 영향 제한적.
+      해결책 후보: (a) KOSPI200 ETF(069500.KS)의 11 KR 섹터 ETF로 proxy
+      (SP500과 동일 패턴), (b) KRX OpenAPI 직접 호출, (c) pykrx 패치.
     """
     try:
         from pykrx import stock

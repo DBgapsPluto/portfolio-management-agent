@@ -22,11 +22,12 @@ from tradingagents.skills.registry import register_skill
 _HAWKISH_KEYWORDS = (
     "cpi", "ppi", "core", "wage", "employment", "payroll", "nonfarm",
     "ism", "pmi", "gdp", "retail", "industrial",
-    "물가", "고용", "취업", "산업생산",
+    "물가", "고용", "취업", "산업생산", "소매판매", "수출",
 )
 _DOVISH_INVERTED = (
-    "unemployment rate", "jobless claims", "초기 실업",
-    # 이런 지표는 actual 값이 클수록 dovish
+    "unemployment rate", "jobless claims", "initial claims",
+    # actual ↑ = dovish (긴축 명분 ↓). 한국어 키워드 (Bug-D fix 2026-05).
+    "실업률", "실업수당", "초기 실업", "신규실업", "취업자수",
 )
 
 
@@ -69,7 +70,14 @@ def normalize_release(
 ) -> ReleaseSurprise:
     """forecast/actual을 받아 surprise + zscore + direction 채워서 반환.
 
-    historical_std가 있으면 zscore 계산. 없으면 그대로 None.
+    Zscore 계산 우선순위 (2026-05 fix — 이전엔 historical_std 없으면 항상 None
+    이라 bias_30d가 항상 "balanced"로 떨어지는 critical bug 였음):
+      1) historical_std 제공: surprise / std (전통적 z-score)
+      2) |forecast| ≥ 0.1: surprise / |forecast| (% deviation, indicator-agnostic)
+      3) forecast ≈ 0 (e.g., 소매판매 0.0%): surprise 자체를 1σ 가정해 그대로 사용
+
+    이 fallback은 indicator별 정확한 std는 아니지만 cross-indicator scale을 어느
+    정도 맞추므로 bias_score 누적이 의미를 갖는다.
     """
     if raw.actual is None or raw.forecast is None:
         return raw.model_copy(update={
@@ -78,10 +86,13 @@ def normalize_release(
             "direction": "unknown",
         })
     surprise = float(raw.actual - raw.forecast)
-    zscore = (
-        float(surprise / historical_std) if historical_std and historical_std > 0
-        else None
-    )
+    if historical_std and historical_std > 0:
+        zscore: float | None = float(surprise / historical_std)
+    elif abs(raw.forecast) >= 0.1:
+        zscore = float(surprise / abs(raw.forecast))
+    else:
+        # forecast near 0 — surprise 자체를 1σ equivalent로 사용
+        zscore = float(surprise)
     direction = _classify_direction(surprise, raw.importance)
     return raw.model_copy(update={
         "surprise": surprise,

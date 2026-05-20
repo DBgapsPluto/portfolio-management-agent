@@ -24,9 +24,20 @@ class YieldCurveSnapshot(StalenessAware):
 class InflationSnapshot(StalenessAware):
     cpi_yoy: float = Field(description="CPI YoY %")
     core_cpi_yoy: float = Field(description="Core CPI YoY %")
-    momentum_3mo: float = Field(description="3-month annualized rate")
-    momentum_6mo: float = Field(description="6-month annualized rate")
-    accelerating: bool = Field(description="True if 3mo > 6mo > 12mo")
+    momentum_3mo: float = Field(description="CPI 3-month annualized rate")
+    momentum_6mo: float = Field(description="CPI 6-month annualized rate")
+    accelerating: bool = Field(description="True if 3mo > 6mo > 12mo (CPI)")
+    # 2026-05 보강: Fed 공식 inflation 타겟은 PCE. CPI는 시장이 보지만 정책
+    # 결정 anchor는 PCE (특히 Core PCE). 두 다 노출하여 LLM이 균형 판단.
+    pce_yoy: float = Field(
+        default=0.0, description="PCE YoY % — Fed 공식 inflation 타겟",
+    )
+    core_pce_yoy: float = Field(
+        default=0.0, description="Core PCE YoY % — Fed 핵심 모니터링 (ex food/energy)",
+    )
+    pce_momentum_3mo: float = Field(
+        default=0.0, description="Core PCE 3-month annualized — Powell이 자주 인용",
+    )
 
 
 class EmploymentSnapshot(StalenessAware):
@@ -34,6 +45,20 @@ class EmploymentSnapshot(StalenessAware):
     rate_change_3mo: float = Field(description="3-month change in UR")
     sahm_rule_triggered: bool = Field(description="Sahm rule recession indicator")
     non_farm_payrolls_3mo_avg: float
+    # 2026-05 보강: JOLTS (labor market tightness). UR보다 leading.
+    # Job openings는 노동수요, quits rate는 자발적 이직 (confidence proxy).
+    job_openings_3mo_avg: float = Field(
+        default=0.0,
+        description="JOLTS Job Openings (천 명, 3개월 평균). 침체 전 6-12개월 선행 하락.",
+    )
+    quits_rate: float = Field(
+        default=0.0,
+        description="JOLTS Quits Rate (% of employment). 노동시장 tightness 핵심.",
+    )
+    quits_rate_change_6mo: float = Field(
+        default=0.0,
+        description="Quits rate 6개월 변화. 큰 하락 = 노동시장 cooling.",
+    )
 
 
 class DivergenceScore(StalenessAware):
@@ -88,6 +113,11 @@ class USLeadingIndexSnapshot(StalenessAware):
     cfnai_value: float = Field(description="Current month CFNAI value (standardized, 0=trend)")
     cfnai_ma3: float = Field(description="3-month moving average (CFNAIMA3)")
     recession_signal: bool = Field(description="True if cfnai_ma3 < -0.7 (recession entry threshold)")
+    recession_severity: Literal["none", "mild", "moderate", "severe"] = Field(
+        default="none",
+        description="2026-05 보강: -0.7 mild / -1.5 moderate / -2.5 severe. "
+                    "단일 임계 -0.7만으론 강도 분간 못함 (예: COVID -7 vs 일반 침체 -1).",
+    )
 
 
 class GDPNowSnapshot(StalenessAware):
@@ -160,15 +190,39 @@ class RiskAppetiteSnapshot(StalenessAware):
 
 
 class ChinaLeadingSnapshot(StalenessAware):
-    """OECD China amplitude-adjusted Composite Leading Indicator (CHNLOLITONOSTSAM).
+    """OECD China CLI + 보조 실시간 proxies (USDCNH + iron ore).
 
-    Caixin PMI 라이선스 회피 대안. 100 = trend, 100+ = expansion. KR 수출의 25%가
-    중국이라 KR ETF 결정에 직접 transmission.
+    2026-05 보강: OECD CLI는 2-3개월 lag이라 단독으로는 too slow. KR 수출의
+    25%가 중국이라 실시간 추적이 필수. Free source로 Caixin PMI 어려워서:
+      - USDCNH: 위안 약세 = 정책/경제 우려 신호 (daily)
+      - iron ore: China 건설/제조 수요 proxy (daily)
+    실무 표준은 Caixin PMI이지만 본 시스템은 무료 source 한계로 보조 신호로 대체.
     """
     cli_value: float = Field(description="China CLI (100 = trend)")
     change_3mo: float = Field(description="3-month absolute change")
     phase: Literal["expansion", "peak", "contraction", "trough"] = Field(
         description="Cycle phase by (level, momentum)"
+    )
+    # 2026-05 보강 — 실시간 China proxies
+    usdcnh: float = Field(
+        default=0.0,
+        description="USD/CNH offshore. 7.20+ = 정책 약세 / 경제 우려.",
+    )
+    usdcnh_change_1m_pct: float = Field(
+        default=0.0,
+        description="USDCNH 1개월 변화. +1.5%+ = 강한 약세 신호.",
+    )
+    iron_ore: float = Field(
+        default=0.0,
+        description="SGX iron ore futures (USD/tonne). China 건설 수요 직접 proxy.",
+    )
+    iron_ore_change_3m_pct: float = Field(
+        default=0.0,
+        description="Iron ore 3개월 변화율. +10%+ = construction demand 반등.",
+    )
+    realtime_signal: Literal["expansion", "neutral", "contraction"] = Field(
+        default="neutral",
+        description="USDCNH + iron ore 합성. CLI lag 보정용 실시간 view.",
     )
 
 

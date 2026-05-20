@@ -9,6 +9,14 @@ from tradingagents.skills.registry import register_skill
 # 신용잔고 signal 임계
 # euphoria: 1년 percentile > 0.85 AND 20일 변화 > +10%  (과열, peak signal)
 # deleveraging: 20일 변화 < -15% (forced selling, 위기 신호)
+#
+# ⚠️ HARDCODED CAVEAT (#6, 2026-05 audit):
+#   임계 (0.85 pct + 10% change / -15% change)는 **2021년 1월 retail euphoria peak
+#   single observation 캘리브레이션**. 다른 historical 사례 부족 (한국 신용잔고
+#   data 자체가 2007+ 단기 시리즈, 그중 euphoria event는 2021이 거의 유일).
+#   → false-negative 가능성 (다른 형태의 peak이 이 임계를 안 건드릴 수 있음).
+#   다른 시기 calibration 필요. percentile 기반 (예: deleveraging도 percentile<0.15)
+#   으로 변환 가능하나 single observation으론 보수적 임계 유지.
 EUPHORIA_PCT = 0.85
 EUPHORIA_CHANGE = 10.0
 DELEVERAGING_CHANGE = -15.0

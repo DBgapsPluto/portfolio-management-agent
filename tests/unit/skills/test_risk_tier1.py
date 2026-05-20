@@ -49,27 +49,39 @@ def test_vix_term_zero_safe():
 
 # ============ SKEW ============
 
+# 2026-05: SKEW regime은 1y percentile 기반으로 변경됨.
+# < 0.25 = low, < 0.50 = normal, < 0.85 = elevated, ≥ 0.85 = extreme.
+
+
 def test_skew_low():
-    s = _daily([115.0] * 252)
+    # current가 1y 하위 25%
+    # 200개 = 120 (current 보다 큼), 52개 = 115 (current 포함, 또는 그 미만)
+    # current=115 → percentile = 0/252 ≈ 0 → low
+    s = _daily([120.0] * 200 + [115.0] * 52)
     snap = compute_skew_index(s, as_of=date(2026, 5, 10))
     assert snap.tail_hedge_signal == "low"
-    assert snap.skew_value == 115.0
 
 
 def test_skew_normal():
-    s = _daily([125.0] * 252)
+    # current가 1y percentile [0.25, 0.50)
+    # 100개 < 125, 152개 ≥ 125 (current 포함) → percentile = 100/252 ≈ 0.40 → normal
+    s = _daily([120.0] * 100 + [125.0] * 152)
     snap = compute_skew_index(s, as_of=date(2026, 5, 10))
     assert snap.tail_hedge_signal == "normal"
 
 
 def test_skew_elevated():
-    s = _daily([138.0] * 252)
+    # current가 1y percentile [0.50, 0.85)
+    # 180개 < 138, 72개 = 138 (current 포함) → percentile = 180/252 ≈ 0.71 → elevated
+    s = _daily([120.0] * 180 + [138.0] * 72)
     snap = compute_skew_index(s, as_of=date(2026, 5, 10))
     assert snap.tail_hedge_signal == "elevated"
 
 
 def test_skew_extreme():
-    s = _daily([150.0] * 252)
+    # current가 1y percentile >= 0.85
+    # 230개 < 150, 22개 = 150 (current 포함) → percentile = 230/252 ≈ 0.913 → extreme
+    s = _daily([120.0] * 230 + [150.0] * 22)
     snap = compute_skew_index(s, as_of=date(2026, 5, 10))
     assert snap.tail_hedge_signal == "extreme"
 

@@ -18,7 +18,10 @@ def _daily(values, start="2025-05-10"):
 # ============ Policy Uncertainty ============
 
 def test_epu_normal_regime():
-    us = _monthly([100.0] * 59 + [120.0])
+    # current가 last_5y의 mid-low percentile (<0.70) → normal
+    # 50개 값이 < 120, 10개가 > 120 (current=120 포함) → percentile = 50/60 = 0.83 (이건 elevated)
+    # normal을 위해선 current가 mid-low: 30개 < 120, 30개 ≥ 120 → percentile ≈ 0.5
+    us = _monthly([100.0] * 30 + [140.0] * 29 + [120.0])
     glob = _monthly([105.0] * 60)
     snap = compute_policy_uncertainty(us, glob, as_of=date(2026, 5, 10))
     assert snap.regime == "normal"
@@ -26,22 +29,26 @@ def test_epu_normal_regime():
 
 
 def test_epu_elevated_regime():
-    us = _monthly([100.0] * 59 + [170.0])
+    # current가 percentile ∈ [0.70, 0.90)
+    # 45개 < 200, 14개 ≥ 200, current=200 → percentile = 45/60 = 0.75 → elevated
+    us = _monthly([100.0] * 45 + [200.0] * 15)
     glob = _monthly([130.0] * 60)
     snap = compute_policy_uncertainty(us, glob, as_of=date(2026, 5, 10))
     assert snap.regime == "elevated"
 
 
 def test_epu_extreme_regime():
-    us = _monthly([100.0] * 59 + [250.0])
+    # current가 percentile >= 0.90
+    # 55개 < 300, 5개 = 300 (current 포함) → percentile = 55/60 ≈ 0.917 → extreme
+    us = _monthly([100.0] * 55 + [300.0] * 5)
     glob = _monthly([200.0] * 60)
     snap = compute_policy_uncertainty(us, glob, as_of=date(2026, 5, 10))
     assert snap.regime == "extreme"
-    assert snap.us_epu_percentile_5y > 0.95
+    assert snap.us_epu_percentile_5y >= 0.90
 
 
 def test_epu_percentile_mid():
-    # 50개는 50, 9개는 100, 마지막 = 80 → percentile ≈ 50/60 ≈ 0.83
+    # 50개는 50, 9개는 100, 마지막 = 80 → percentile = 50/60 ≈ 0.83
     us = _monthly([50.0] * 50 + [100.0] * 9 + [80.0])
     glob = _monthly([80.0] * 60)
     snap = compute_policy_uncertainty(us, glob, as_of=date(2026, 5, 10))

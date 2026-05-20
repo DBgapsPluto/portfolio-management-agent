@@ -108,22 +108,36 @@ def test_china_cli_trough():
 
 # ============ Foreign Flow ============
 
+# 2026-05: foreign_flow signal은 1y rolling 20d-sum percentile 기반 (top 20% / bottom 20%).
+# 1y 데이터 부족 (rolling 20d-sum count < 30) 시 neutral.
+
+
 def test_foreign_flow_net_buying():
-    # 20일 누적 +1.5조
-    daily = [75_000_000_000] * 20  # 750억 × 20일 = 1.5조
+    # 252+ days history. 최근 20일이 상위 percentile에 들어가게 구성.
+    # 200일은 작은 매수 (50억), 마지막 52일이 큰 매수 (750억) → 최근 20일 sum 1.5조
+    # 1y의 rolling 20d-sum 중 최근 20일이 상위.
+    daily = [5_000_000_000] * 232 + [75_000_000_000] * 40  # 252+ days
     snap = compute_foreign_flow(pd.Series(daily), as_of=date(2026, 5, 10))
     assert snap.signal == "net_buying"
     assert snap.net_20d_krw > 1e12
 
 
 def test_foreign_flow_net_selling():
-    daily = [-75_000_000_000] * 20  # -1.5조
+    daily = [-5_000_000_000] * 232 + [-75_000_000_000] * 40
     snap = compute_foreign_flow(pd.Series(daily), as_of=date(2026, 5, 10))
     assert snap.signal == "net_selling"
 
 
-def test_foreign_flow_neutral():
-    daily = [10_000_000_000] * 20  # 100억 × 20 = 2000억 (1조 미만)
+def test_foreign_flow_neutral_short_history():
+    # 데이터 부족 (1y rolling 20d-sum < 30) → neutral fallback
+    daily = [10_000_000_000] * 20
+    snap = compute_foreign_flow(pd.Series(daily), as_of=date(2026, 5, 10))
+    assert snap.signal == "neutral"
+
+
+def test_foreign_flow_neutral_mid_percentile():
+    # 모두 같은 값 → percentile = 0 (rolling sum constant) → neutral
+    daily = [10_000_000_000] * 280
     snap = compute_foreign_flow(pd.Series(daily), as_of=date(2026, 5, 10))
     assert snap.signal == "neutral"
 

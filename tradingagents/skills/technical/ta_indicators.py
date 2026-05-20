@@ -3,6 +3,7 @@ import pandas_ta as ta
 
 from tradingagents.schemas.technical import IndicatorPanel
 from tradingagents.skills.registry import register_skill
+from tradingagents.skills.technical.extended_indicators import _clamp_bounded
 
 
 @register_skill(name="compute_ta_indicators", category="technical")
@@ -23,7 +24,8 @@ def compute_ta_indicators(prices: pd.DataFrame, ticker: str) -> IndicatorPanel:
 
     ma200 = float(ta.sma(close, length=200).iloc[-1])
     ma50 = float(ta.sma(close, length=50).iloc[-1])
-    rsi = float(ta.rsi(close, length=14).iloc[-1])
+    # IndicatorPanel.rsi has ge=0, le=100 — clamp IEEE ε overshoot (see extended_indicators)
+    rsi = _clamp_bounded(float(ta.rsi(close, length=14).iloc[-1]), "rsi")
 
     macd_df = ta.macd(close, fast=12, slow=26, signal=9)
     macd_line = float(macd_df.iloc[-1, 0])         # MACD column

@@ -81,7 +81,13 @@ def fetch_etf_ohlcv_batch(
     end: date,
     cache: ParquetCache | None = None,
 ) -> pd.DataFrame:
-    """Fetch multiple ETFs' OHLCV (time-series, ticker-by-ticker)."""
+    """Fetch multiple ETFs' OHLCV (time-series, ticker-by-ticker).
+
+    2026-05 Bug-F fix: `fetch_etf_ohlcv` returns a DataFrame with only OHLCV
+    columns (no 'ticker'/'date') when the upstream pykrx call yields empty.
+    Previously this raised KeyError on the column slice; now empties are
+    skipped so historical backtests with mixed-availability tickers don't die.
+    """
     frames: list[pd.DataFrame] = []
     for t in tickers:
         if cache is not None and cache.has(t, start, end):
@@ -92,11 +98,15 @@ def fetch_etf_ohlcv_batch(
             frames.append(sub[mask][["ticker", "date", "open", "high", "low", "close", "volume"]])
             continue
         df = fetch_etf_ohlcv(t, start, end)
-        if not df.empty and cache is not None:
+        if df.empty:
+            continue
+        if cache is not None:
             cache.write_append(df)
         frames.append(df[["ticker", "date", "open", "high", "low", "close", "volume"]])
     if not frames:
-        return pd.DataFrame()
+        return pd.DataFrame(
+            columns=["ticker", "date", "open", "high", "low", "close", "volume"]
+        )
     return pd.concat(frames, ignore_index=True)
 
 
@@ -186,6 +196,17 @@ def fetch_credit_balance(
     max_staleness: int = 7,
 ) -> pd.Series:
     """KRX 신용잔고 시계열 (KRW). pykrx detail=True의 '신용공여' 컬럼 사용.
+
+    KNOWN LIMITATION (2026-05 audit, pykrx 1.2.8):
+      `get_market_trading_value_by_date(detail=True)`가 현재 거래주체별
+      "거래대금"(외국인합계/기관계/개인 등) 컬럼만 반환하고 "신용공여" /
+      "신용잔고" 컬럼은 포함하지 않는다. KRX가 신용잔고 endpoint를 분리한
+      것으로 추정 — 함수명은 trading_value지만 detail=True 시 historical로
+      신용 데이터가 같이 왔던 시절의 기대값과 다름.
+      → 빈 Series 반환 → kr_margin_debt sentinel(signal="normal", staleness=99).
+      해결책: 네이버 증권 신용잔고 페이지 스크레이프 (`finance.naver.com`의
+      투자자별 신용공여 잔고 페이지) 또는 KRX 정보데이터시스템 OpenAPI 직접
+      호출. 둘 다 신규 모듈 작성 필요.
 
     Cache: ~/.tradingagents/cache/pykrx_index/credit_balance/{end}.json
     """

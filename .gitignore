@@ -1,3 +1,7 @@
+# Claude Code local settings (not committed)
+.claude/
+.venv/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

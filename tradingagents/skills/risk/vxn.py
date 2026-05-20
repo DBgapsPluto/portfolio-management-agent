@@ -35,5 +35,6 @@ def compute_vxn(
         zscore_30d=float(z),
         percentile_5y=pct,
         spread_vs_vix=spread,
+        tech_focused_stress=spread > 5.0,
         source_date=as_of,
     )

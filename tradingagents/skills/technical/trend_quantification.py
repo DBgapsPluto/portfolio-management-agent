@@ -28,7 +28,16 @@ def _ma_cross_days(close: pd.Series, ma: pd.Series) -> int:
 def _trend_strength(
     distance_ma200_pct: float, ma50_above_ma200: bool, adx: float, rsi: float,
 ) -> float:
-    """合成 -1..+1. 가중치는 후속 eval에서 조정 가능."""
+    """合成 -1..+1.
+
+    ⚠️ HARDCODED CAVEAT (#2, 2026-05 audit):
+      가중치 (0.40 / 0.30 / 0.20 / 0.10) 와 정규화 분모 (/10, /50, /50)
+      모두 **학술/실무 근거 없는 임의 선택**. 합이 1.0이 되도록 맞춘 것.
+      backtest 캘리브레이션 TODO. 현재는 LLM이 raw score를 직접 해석하지 않고
+      sector_rotation/universe_breadth 같은 합성 신호에 흡수돼서 systematic bias
+      위험이 낮지만, ranking 정확성에 영향 가능.
+      Stage 3 candidate_selector 백테스트 결과로 weights 재추정 권장.
+    """
     score = (
         0.40 * float(np.clip(distance_ma200_pct / 10.0, -1.0, 1.0))
         + 0.30 * float(np.clip(adx / 50.0, 0.0, 1.0)) * (1.0 if ma50_above_ma200 else -1.0)

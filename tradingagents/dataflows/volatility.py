@@ -36,9 +36,16 @@ def fetch_vkospi(
 ) -> pd.Series:
     """VKOSPI close from KRX via pykrx. Empty Series on any failure.
 
-    KRX의 일부 지수 endpoint(VKOSPI 포함)는 KRX_ID/KRX_PW 환경 변수가 있어야
-    완전히 동작. 자격증명이 없으면 pykrx가 빈 JSON을 받아 KeyError 발생하지만
-    graceful degradation으로 빈 Series 반환.
+    KNOWN LIMITATION (2026-05 audit, pykrx 1.2.8):
+      KRX가 신규 API에서 VKOSPI 인덱스 코드 1037을 더 이상 ticker list에
+      노출하지 않는다 (`stock.get_index_ticker_list(date)` 결과에 1037 없음).
+      KRX 응답이 영문 컬럼(TRD_DD/CLSPRC_IDX/...)을 반환하지만 pykrx가
+      한글 컬럼을 기대해서 `KeyError: '1037'` 발생. KRX_ID/PW가 있어도 동일.
+      → graceful 빈 Series 반환. 호출자(market_risk_analyst)는 sentinel
+      (staleness_days=99)로 떨어지며 systemic_score는 VIX/SKEW/VXN 등
+      다른 변동성 신호로 보완.
+      해결책: (1) pykrx 라이브러리 패치(외부) (2) KRX OpenAPI 직접 호출 모듈
+      신규 작성 (3) yfinance에는 VKOSPI 등가 ticker 없음.
 
     Cache: ~/.tradingagents/cache/pykrx_index/vkospi/{end}.json
     """

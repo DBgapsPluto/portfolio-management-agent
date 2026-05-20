@@ -147,6 +147,14 @@ class UniverseBreadthSnapshot(StalenessAware):
         description="universe vol median의 1년치 z-score (regime 식별).",
     )
     regime: BreadthRegime
+    # 2026-05 Bug-E fix: 카테고리 prefix별 sub-breadth.
+    # 188 ETF는 KR equity / US equity / bond / commodity 등이 섞여 있어서
+    # 전체 pct_above_ma200 하나만으론 정보 흐림. category prefix 단위로 분리.
+    # key 예시: "국내", "해외", "채권", "원자재", "기타" → pct_above_ma200 값.
+    sub_pct_above_ma200: dict[str, float] = Field(
+        default_factory=dict,
+        description="카테고리 prefix별 pct_above_ma200 (188 ETF 통합값과 별도).",
+    )
 
 
 # ---------- Tier-4: Sector Rotation + Correlation regime ----------

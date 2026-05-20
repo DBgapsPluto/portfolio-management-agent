@@ -35,15 +35,18 @@ def compute_risk_appetite(
     aligned["ratio"] = aligned["cu"] / aligned["au"] * 100.0
     current_ratio = float(aligned["ratio"].iloc[-1])
 
-    # 1년 percentile (≈252 거래일)
-    last_1y = aligned["ratio"].tail(252)
-    percentile = float((last_1y < current_ratio).sum() / max(len(last_1y), 1))
+    # 5년 percentile (≈252×5 거래일, 2026-05 fix).
+    # 이전: 1y window — 2024-2025 Cu supply shock (DRC 광산 폐쇄, smelting capacity
+    # 부족 등)으로 ratio가 fundamental과 분리되어 signal degrade. 5y로 확장해
+    # 단발성 supply 노이즈에 robust 하게.
+    last_5y = aligned["ratio"].tail(252 * 5)
+    percentile = float((last_5y < current_ratio).sum() / max(len(last_5y), 1))
 
     return RiskAppetiteSnapshot(
         copper_price=float(aligned["cu"].iloc[-1]),
         gold_price=float(aligned["au"].iloc[-1]),
         ratio=current_ratio,
-        ratio_percentile_1y=percentile,
+        ratio_percentile_1y=percentile,  # 필드명은 backward compat 위해 유지, 의미는 5y
         signal=_classify_signal(percentile),
         source_date=as_of,
     )

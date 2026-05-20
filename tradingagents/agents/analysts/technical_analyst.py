@@ -211,7 +211,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
 
         # Tier-3: universe-wide breadth snapshot.
         try:
-            universe_breadth = compute_universe_breadth(prices)
+            universe_breadth = compute_universe_breadth(prices, universe)
             breadth_summary = (
                 f"Tier-3 (universe breadth, n={universe_breadth.n_eligible}):\n"
                 f"  %above MA50: {universe_breadth.pct_above_ma50:.1%}, "

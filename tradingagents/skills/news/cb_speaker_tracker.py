@@ -16,51 +16,109 @@ from tradingagents.schemas.news import (
 from tradingagents.skills.registry import register_skill
 
 
-# Speaker → (central_bank, voting_2026)
-# voting은 시간에 따라 바뀌므로 (Fed regional president rotation 등) 정적 매핑은
-# 2026 시점 단순화. 모르면 None.
-SPEAKER_DIRECTORY: dict[str, tuple[CentralBank, bool | None]] = {
-    # Fed - 영구 voting
-    "powell":    ("Fed", True),
-    "jefferson": ("Fed", True),
-    "williams":  ("Fed", True),
-    "bowman":    ("Fed", True),
-    "cook":      ("Fed", True),
-    "kugler":    ("Fed", True),
-    "waller":    ("Fed", True),
-    # Fed - 2026 rotating voting (예시 — 정확치는 매년 변경)
-    "goolsbee":  ("Fed", False),
-    "bostic":    ("Fed", False),
-    "schmid":    ("Fed", False),
-    "musalem":   ("Fed", False),
-    "barkin":    ("Fed", False),
-    "logan":     ("Fed", False),
-    "daly":      ("Fed", False),
-    "kashkari":  ("Fed", False),
-    "harker":    ("Fed", False),
-    "collins":   ("Fed", False),
+# Speaker → central_bank (구성원 매핑). voting 여부는 연도별 별도 lookup.
+# 2026-05 hardcode #1 fix: 이전엔 voting flag가 dict 안에 박혀 매년 1월 Fed
+# regional president 회전을 따라가지 못했음. 이제 SPEAKER_TO_CB는 영속적 매핑,
+# FED_VOTING_BY_YEAR가 연도별 voting set을 보유. as_of.year로 lookup.
+SPEAKER_TO_CB: dict[str, CentralBank] = {
+    # Fed Board of Governors (항상 voting — 정원 7명, 임명/사임 시 update)
+    "powell":    "Fed",
+    "jefferson": "Fed",
+    "williams":  "Fed",   # NY Fed president (영구 voting)
+    "bowman":    "Fed",
+    "cook":      "Fed",
+    "kugler":    "Fed",
+    "waller":    "Fed",
+    # Fed regional presidents (voting은 매년 회전 — 아래 FED_VOTING_BY_YEAR 참조)
+    "goolsbee":  "Fed",   # Chicago
+    "bostic":    "Fed",   # Atlanta
+    "schmid":    "Fed",   # Kansas City
+    "musalem":   "Fed",   # St. Louis
+    "barkin":    "Fed",   # Richmond
+    "logan":     "Fed",   # Dallas
+    "daly":      "Fed",   # San Francisco
+    "kashkari":  "Fed",   # Minneapolis
+    "harker":    "Fed",   # Philadelphia
+    "collins":   "Fed",   # Boston
+    "hammack":   "Fed",   # Cleveland
+    "paulson":   "Fed",   # 다음 후보 (placeholder, 임명 시 확정)
     # BOK
-    "이창용":     ("BOK", True),
-    "rhee":      ("BOK", True),
+    "이창용":     "BOK",
+    "rhee":      "BOK",
     # ECB
-    "lagarde":   ("ECB", True),
-    "schnabel":  ("ECB", True),
-    "lane":      ("ECB", True),
+    "lagarde":   "ECB",
+    "schnabel":  "ECB",
+    "lane":      "ECB",
     # BOJ
-    "ueda":      ("BOJ", True),
-    "uchida":    ("BOJ", True),
+    "ueda":      "BOJ",
+    "uchida":    "BOJ",
     # BoE
-    "bailey":    ("BoE", True),
+    "bailey":    "BoE",
     # PBoC
-    "pan":       ("PBoC", True),
+    "pan":       "PBoC",
 }
 
 
-def _detect_speaker(text: str) -> tuple[str, CentralBank, bool | None] | None:
+# Fed regional president voting rotation — 매년 1월 회전.
+# Board of Governors는 항상 voting (7명) + NY Fed president는 영구 voting.
+# 나머지 11개 regional presidents 중 4명만 매년 voting (4-1-1-1-1 rotation).
+# 참고: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+#
+# 이 dict는 매년 1월에 update 필요. 모르는 연도는 가장 가까운 연도의 voting list
+# 사용 (best-effort fallback). 정확한 신호 위해서는 연 1회 reviewed가 좋음.
+_FED_PERMANENT_VOTING = {
+    "powell", "jefferson", "williams", "bowman", "cook", "kugler", "waller",
+}
+
+FED_VOTING_BY_YEAR: dict[int, set[str]] = {
+    # 2026 voting regional presidents (예시 — 실제 매년 변경. 확인 필요):
+    # cf. Atlanta, Boston, Chicago, St. Louis (일반적 4-bank rotation pattern)
+    2026: _FED_PERMANENT_VOTING | {"bostic", "collins", "goolsbee", "musalem"},
+    # 2027부터: 다음 4 banks (Cleveland, Philadelphia, Dallas, Minneapolis 추정)
+    2027: _FED_PERMANENT_VOTING | {"hammack", "harker", "logan", "kashkari"},
+    # 2028: Atlanta, Boston, Chicago, St. Louis 순환 가정
+    2028: _FED_PERMANENT_VOTING | {"bostic", "collins", "goolsbee", "musalem"},
+}
+
+
+def _is_fed_voting(speaker_key: str, year: int) -> bool:
+    """as_of 연도의 Fed voting set에서 lookup. 등록 안 된 연도는 가장 가까운 연도."""
+    if year in FED_VOTING_BY_YEAR:
+        return speaker_key in FED_VOTING_BY_YEAR[year]
+    # Best-effort: 가장 가까운 등록 연도 사용
+    closest = min(FED_VOTING_BY_YEAR.keys(), key=lambda y: abs(y - year))
+    return speaker_key in FED_VOTING_BY_YEAR[closest]
+
+
+def _voting_for(speaker_key: str, cb: CentralBank, year: int) -> bool | None:
+    """Fed regional/Board는 연도별, 그 외 CB는 정원 voting=True."""
+    if cb == "Fed":
+        return _is_fed_voting(speaker_key, year)
+    # 다른 CB는 위원회 정원 — Powell이 임명한 ECB/BOJ governors 등 모두 voting.
+    # 사임/교체 시 SPEAKER_TO_CB에서 빼면 됨.
+    return True
+
+
+# Backward-compat: 외부에서 SPEAKER_DIRECTORY import하는 코드를 위해 dict 유지.
+# voting flag는 현재 연도의 best guess.
+from datetime import date as _date  # noqa: E402
+_DEFAULT_YEAR = _date.today().year
+SPEAKER_DIRECTORY: dict[str, tuple[CentralBank, bool | None]] = {
+    name: (cb, _voting_for(name, cb, _DEFAULT_YEAR))
+    for name, cb in SPEAKER_TO_CB.items()
+}
+
+
+def _detect_speaker(
+    text: str, year: int | None = None,
+) -> tuple[str, CentralBank, bool | None] | None:
+    """뉴스 텍스트에서 speaker 매칭. as_of year 제공 시 연도별 voting 적용."""
     lower = text.lower()
-    for name, (cb, voting) in SPEAKER_DIRECTORY.items():
+    use_year = year if year is not None else _date.today().year
+    for name, cb in SPEAKER_TO_CB.items():
         if name in lower:
             display = name.title() if name.isascii() else name
+            voting = _voting_for(name, cb, use_year)
             return display, cb, voting
     return None
 
@@ -100,11 +158,16 @@ def _llm_classify_tone_batch(
 
 def extract_speaker_events(
     items: list[NewsItem], quick_llm=None, batch_size: int = 10,
+    as_of: date | None = None,
 ) -> list[CBSpeakerEvent]:
-    """뉴스에서 CB speaker 매칭 + tone 분류."""
+    """뉴스에서 CB speaker 매칭 + tone 분류.
+
+    as_of: 연도별 Fed voting rotation 정확 적용용. 미제공 시 오늘 기준.
+    """
     matched: list[tuple[NewsItem, str, CentralBank, bool | None]] = []
+    year_for_lookup = (as_of.year if as_of is not None else _date.today().year)
     for item in items:
-        det = _detect_speaker(item.headline)
+        det = _detect_speaker(item.headline, year=year_for_lookup)
         if det is None:
             continue
         speaker, cb, voting = det

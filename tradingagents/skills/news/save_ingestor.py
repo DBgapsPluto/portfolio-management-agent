@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 # 경제지표 한 줄 패턴 (KST 시간 + region + indicator + ★ + 실제값 + (예상: ... 이전: ...))
+# OCR이 한글 음절 사이에 공백을 끼우는 경우(`( 예상 :` 등)도 허용.
 RELEASE_LINE_RE = re.compile(
     r"(?P<time>\d{2}:\d{2})\s*[-–]\s*"
     r"(?P<region>[가-힣A-Za-z][가-힣A-Za-z\s]+?)\s*[-–]\s*"
@@ -34,9 +35,16 @@ RELEASE_LINE_RE = re.compile(
     r"(?P<stars>★+)\s*"
     r"(?P<actual>[\+\-\d.,KMB%]+)?\s*"
     r"[▲▼=]?\s*"
-    r"\(예상\s*[:：]?\s*(?P<forecast>[\+\-\d.,KMB%]+)?\s*"
-    r"(?:[\s,]+이전\s*[:：]?\s*(?P<previous>[\+\-\d.,KMB%]+)?)?\s*\)?",
+    r"\(\s*예\s*상\s*[:：]?\s*(?P<forecast>[\+\-\d.,KMB%]+)?\s*"
+    r"(?:[\s,]+이\s*전\s*[:：]?\s*(?P<previous>[\+\-\d.,KMB%]+)?)?\s*\)?",
     re.MULTILINE,
+)
+
+
+# 페이지 헤더 매칭 — OCR이 `[ 경 제   지 표 ]`처럼 공백을 끼우는 경우도 허용.
+_RELEASE_HEADER_RE = re.compile(r"경\s*제\s*지\s*표")
+_WEEKLY_HEADER_RE = re.compile(
+    r"이\s*번\s*주|주\s*간\s*일\s*정|주\s*요\s*일\s*정"
 )
 
 
@@ -82,7 +90,7 @@ def parse_economic_releases(
     """[경제 지표] 섹션이 있는 페이지에서 발표 list 추출."""
     out: list[ReleaseSurprise] = []
     for page in pages:
-        if "[경제 지표]" not in page and "경제지표" not in page:
+        if not _RELEASE_HEADER_RE.search(page):
             continue
         for m in RELEASE_LINE_RE.finditer(page):
             region = _to_region(m.group("region") or "")
@@ -198,10 +206,11 @@ _WEEKLY_EVENT_RE = re.compile(
 def parse_weekly_schedule(
     pages: list[str], brief_date: date,
 ) -> list[CalendarEvent]:
-    """마지막 페이지들에서 '이번 주' 키워드 또는 매크로 이벤트 라인 추출."""
+    """마지막 페이지들에서 '이번 주' / '주간 일정' / '주요 일정' 키워드가 있는
+    페이지에서 매크로 이벤트 라인 추출. OCR 공백 변형 허용."""
     out: list[CalendarEvent] = []
     for page in pages[-5:]:  # 보통 마지막 페이지에 있음
-        if "이번 주" not in page and "주간 일정" not in page:
+        if not _WEEKLY_HEADER_RE.search(page):
             continue
         for ln in page.splitlines():
             ln = ln.strip()

@@ -49,6 +49,39 @@ def _obv_slope(obv: pd.Series, window: int = 20) -> float:
     return 0.0
 
 
+# 2026-05: pandas_ta_classic의 RSI/MFI/Stochastic 등 0-100 bounded indicator가
+# IEEE 부동소수점 산술 순서로 100.00000000000001 같은 ε 오버슈트를 반환하는
+# 경우가 있음 (특히 합성 데이터 boundary case). schema의 strict bound와 충돌.
+# 아래 helper는 tolerance 안의 ε만 흡수하고, 그 밖이면 ValueError로 라이브러리
+# 버그를 fail-fast로 노출. 단순 clamp가 라이브러리 버그를 silently 숨기는 것을 방지.
+_BOUND_TOL = 0.01
+_NEUTRAL_50 = 50.0
+
+
+def _clamp_bounded(
+    val: float, name: str, lo: float = 0.0, hi: float = 100.0,
+    on_nan: float = _NEUTRAL_50,
+) -> float:
+    """Tolerance clamp for [lo, hi] bounded indicators (RSI/MFI/Stoch/ADX).
+
+    - 정상 범위 → 그대로
+    - IEEE ε 오버슈트 (≤ _BOUND_TOL) → strict bound로 잘림
+    - NaN → on_nan default (보통 50 = neutral). pandas_ta_classic 등이 monotonic
+      합성 데이터(real에선 거의 없음)에서 division-by-zero로 NaN 반환할 수 있어
+      panel 산출을 통째로 fail 시키지 않고 neutral로 격하.
+    - tolerance 밖 → ValueError (라이브러리 진짜 버그 노출).
+    """
+    import math
+    if math.isnan(val):
+        return on_nan
+    if lo - _BOUND_TOL <= val <= hi + _BOUND_TOL:
+        return min(hi, max(lo, val))
+    raise ValueError(
+        f"{name}={val} outside [{lo}, {hi}] beyond floating-point tolerance "
+        f"({_BOUND_TOL}). Underlying TA library may have a bug."
+    )
+
+
 @register_skill(name="compute_extended_indicators", category="technical")
 def compute_extended_indicators(
     prices: pd.DataFrame, ticker: str,
@@ -76,17 +109,17 @@ def compute_extended_indicators(
     bb_bandwidth = (bb_upper - bb_lower) / bb_mid if bb_mid > 0 else 0.0
 
     adx_df = ta.adx(high, low, close, length=14)
-    adx_val = float(adx_df.iloc[-1, 0])  # ADX_14
+    adx_val = _clamp_bounded(float(adx_df.iloc[-1, 0]), "adx")  # ADX_14
 
     stoch_df = ta.stoch(high, low, close, k=14, d=3)
-    stoch_k = float(stoch_df.iloc[-1, 0])
-    stoch_d = float(stoch_df.iloc[-1, 1])
+    stoch_k = _clamp_bounded(float(stoch_df.iloc[-1, 0]), "stoch_k")
+    stoch_d = _clamp_bounded(float(stoch_df.iloc[-1, 1]), "stoch_d")
 
     obv_series = ta.obv(close, volume)
     obv_val = float(obv_series.iloc[-1])
     obv_slope = _obv_slope(obv_series, window=20)
 
-    mfi_val = float(ta.mfi(high, low, close, volume, length=14).iloc[-1])
+    mfi_val = _clamp_bounded(float(ta.mfi(high, low, close, volume, length=14).iloc[-1]), "mfi")
 
     rsi_series = ta.rsi(close, length=14)
     macd_df = ta.macd(close, fast=12, slow=26, signal=9)
@@ -103,7 +136,7 @@ def compute_extended_indicators(
     if len(sub_weekly) >= 50:
         w_close = sub_weekly["close"].astype(float)
         weekly_ma50 = float(ta.sma(w_close, length=50).iloc[-1])
-        weekly_rsi = float(ta.rsi(w_close, length=14).iloc[-1])
+        weekly_rsi = _clamp_bounded(float(ta.rsi(w_close, length=14).iloc[-1]), "weekly_rsi")
         w_last = float(w_close.iloc[-1])
         if w_last > weekly_ma50 and weekly_rsi > 50:
             weekly_trend = "up"
