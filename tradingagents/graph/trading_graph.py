@@ -112,13 +112,19 @@ class TradingAgentsGraph:
         # LLM이 weight 직접 산출 X. RiskOverlay constraint만 생성, Stage 3 2차 호출.
         risk_judge = archive_wrap_node(
             create_risk_judge(quick, deep),
-            ["risk_overlay", "weight_vector", "risk_debate_summary"],
+            ["risk_overlay", "weight_vector", "risk_debate_summary",
+             "portfolio_numerics"],
         )
 
         # Stage 2 research_decision도 archive (Stage 2 Phase 1 산출물).
         research_debate_node = archive_wrap_node(
             research_debate_node,
-            ["research_decision", "research_debate_summary"],
+            ["research_decision", "research_debate_summary", "bucket_target"],
+        )
+
+        validator = archive_wrap_node(
+            validator,
+            ["validation_report", "rebalance_mode"],
         )
 
         nodes = {
@@ -130,6 +136,8 @@ class TradingAgentsGraph:
             "fallback": fallback,
             "portfolio_manager": pm,
         }
+        # Exposed for stage-isolated replay (scripts/replay_stage.py).
+        self.nodes = nodes
 
         def factory(agent_id: str):
             return nodes.get(agent_id, lambda s: s)

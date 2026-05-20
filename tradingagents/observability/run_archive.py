@@ -92,4 +92,7 @@ def archive_wrap_node(node: Callable[[dict], dict], report_keys: list[str]):
             if key in result and result[key] is not None:
                 archive_report(as_of_date, key, result[key])
         return result
+    # Expose raw node so replay tooling can re-run a stage without overwriting
+    # the baseline archive (replay calls wrapped.__wrapped__(state)).
+    wrapped.__wrapped__ = node
     return wrapped
