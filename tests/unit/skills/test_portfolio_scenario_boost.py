@@ -11,19 +11,40 @@ from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.skills.portfolio.candidate_selector import select_etf_candidates
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 from tradingagents.skills.portfolio.sub_category import (
-    SCENARIO_SUBCATEGORY_BOOST, boost_for_scenario, log_boost,
+    BOOST_BY_CYCLE, BOOST_BY_KR, BOOST_BY_TAIL,
+    boost_for_scenario, compose_boost, log_boost,
 )
 
 
-def test_boost_for_scenario_known():
-    boost = boost_for_scenario("ai_concentration")
-    assert "semiconductor" in boost
-    assert boost["us_tech_nasdaq"] >= 1.5
+def test_compose_boost_multiplicative():
+    # D cycle stagflation × N tail × F → gold 1.8, inflation_linked 1.6
+    composed = compose_boost("D", "N", "F")
+    assert composed["gold"] == pytest.approx(1.8)
+    assert composed["inflation_linked"] == pytest.approx(1.6)
+
+    # C cycle × T tail → us_treasury 1.3 × 1.5 = 1.95
+    composed = compose_boost("C", "T", "F")
+    assert composed["us_treasury"] == pytest.approx(1.3 * 1.5)
+
+
+def test_boost_for_scenario_legacy_name_maps_to_cell():
+    # legacy "stagflation" → (D, N, F) → D 축의 D-cycle boosts
+    boost = boost_for_scenario("stagflation")
+    assert "gold" in boost
+    assert boost["gold"] >= 1.5
+
+
+def test_boost_for_scenario_cell_key_direct():
+    # cell key 직접
+    boost = boost_for_scenario("D_T_F")
+    # D cycle × T tail compounded
+    assert boost.get("inflation_linked", 0) >= 1.4  # D boost
+    assert boost.get("us_treasury", 0) >= 1.3       # T boost
 
 
 def test_boost_for_scenario_unknown_or_none():
     assert boost_for_scenario(None) == {}
-    assert boost_for_scenario("nonexistent") == {}
+    assert boost_for_scenario("nonexistent_xyz") == {}
 
 
 def test_log_boost_neutral_is_zero():
@@ -33,13 +54,13 @@ def test_log_boost_neutral_is_zero():
 
 
 def test_log_boost_positive_for_favored_subcategory():
-    # ai_concentration → ai_robotics 2.0배 → ln(2) ≈ 0.69
-    assert log_boost("ai_concentration", "ai_robotics") == pytest.approx(math.log(2.0), 0.01)
+    # legacy stagflation → (D, N, F) → gold 1.8 → ln(1.8)
+    assert log_boost("stagflation", "gold") == pytest.approx(math.log(1.8), abs=0.01)
 
 
 def test_log_boost_penalty_for_disfavored_subcategory():
-    # global_credit → us_high_yield 0.3배 → ln(0.3) ≈ -1.20
-    assert log_boost("global_credit", "us_high_yield") == pytest.approx(math.log(0.3), 0.01)
+    # legacy global_credit → (C, T, F) → us_high_yield 0.4 (T tail) → ln(0.4)
+    assert log_boost("global_credit", "us_high_yield") == pytest.approx(math.log(0.4), abs=0.01)
 
 
 def _make_universe_with_subcat() -> Universe:
@@ -70,7 +91,7 @@ def _trivial_panel(tickers):
     }
 
 
-def test_ai_scenario_boosts_semiconductor_over_dividend():
+def test_kr_boom_scenario_boosts_semiconductor_over_dividend():
     universe = _make_universe_with_subcat()
     target = BucketTarget(
         kr_equity=1.0, global_equity=0.0, fx_commodity=0.0,
@@ -80,30 +101,21 @@ def test_ai_scenario_boosts_semiconductor_over_dividend():
     returns = _trivial_returns(tickers)
     panel = _trivial_panel(tickers)
 
-    # 시나리오 없을 때: 두 ETF 점수 비슷 (양쪽 모두 동일 panel)
-    no_scenario = select_etf_candidates(
+    # KR boom: semiconductor 1.7배 → A111111 (semiconductor) 우선
+    kr_boom = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         per_bucket_n=1, returns=returns, factor_panel=panel,
         regime_quadrant="growth_disinflation", regime_confidence=0.8,
-        dominant_scenario=None,
+        dominant_scenario="kr_boom",  # legacy 이름, A_N_boom으로 매핑
     )
-    # tie-breaking depends on dict order, just verify both could be picked
+    assert kr_boom.bucket_to_tickers["kr_equity"] == ["A111111"]
 
-    # ai_concentration: semiconductor 강한 boost → A111111 우선
-    ai = select_etf_candidates(
-        universe, target, as_of=date(2026, 5, 10),
-        per_bucket_n=1, returns=returns, factor_panel=panel,
-        regime_quadrant="growth_disinflation", regime_confidence=0.8,
-        dominant_scenario="ai_concentration",
-    )
-    assert ai.bucket_to_tickers["kr_equity"] == ["A111111"]
-
-    # broad_recession: factor_value_dividend boost → A222222 우선
+    # C cycle (recession): factor_value_dividend 1.3 → A222222 우선
     rec = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         per_bucket_n=1, returns=returns, factor_panel=panel,
         regime_quadrant="recession_disinflation", regime_confidence=0.8,
-        dominant_scenario="broad_recession",
+        dominant_scenario="C_N_F",  # 새 cell key 직접
     )
     assert rec.bucket_to_tickers["kr_equity"] == ["A222222"]
 
@@ -135,17 +147,19 @@ def test_no_subcategory_means_no_boost_effect():
     chosen_with_scenario = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         per_bucket_n=2, returns=returns, factor_panel=panel,
-        dominant_scenario="ai_concentration",
+        dominant_scenario="kr_boom",
     ).bucket_to_tickers["kr_equity"]
 
     # sub_category 없으면 boost 효과 없음 — 같은 순서
     assert chosen_no_scenario == chosen_with_scenario
 
 
-def test_all_boost_values_in_safe_range():
-    """모든 boost 값이 [0.3, 2.0] 범위 — 극단 값으로 다른 factor 가리지 않도록."""
-    for scenario, boosts in SCENARIO_SUBCATEGORY_BOOST.items():
-        for label, value in boosts.items():
-            assert 0.3 <= value <= 2.0, (
-                f"{scenario}.{label} = {value} outside safe range [0.3, 2.0]"
-            )
+def test_all_axis_boost_values_in_safe_range():
+    """3축 boost 모두 [0.3, 2.0]. compose 후 [0.3*0.3, 2*2]=[0.09, 4.0] 가능하나
+    실제 caller에서 dominant cell이 한 axis별 single value라 outlier 합성 드묾."""
+    for axis_dict in (BOOST_BY_CYCLE, BOOST_BY_KR, BOOST_BY_TAIL):
+        for coord, boosts in axis_dict.items():
+            for label, value in boosts.items():
+                assert 0.3 <= value <= 2.0, (
+                    f"{coord}.{label} = {value} outside [0.3, 2.0]"
+                )

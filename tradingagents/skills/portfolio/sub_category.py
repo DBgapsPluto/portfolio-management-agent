@@ -89,77 +89,128 @@ def bucket_for_category(category: str) -> str | None:
     return _CATEGORY_TO_BUCKET.get(category)
 
 
-# Stage 2 dominant_scenario → sub_category boost 배율.
-# 값 > 1.0 = 가중치 ↑, < 1.0 = 페널티, 미명시 = 1.0 (영향 없음).
-# 안전 위해 [0.3, 2.0] 범위로 제한 — 극단 boost는 다른 factor를 너무 가림.
-SCENARIO_SUBCATEGORY_BOOST: dict[str, dict[str, float]] = {
-    "goldilocks": {
-        # 광범위 risk-on, 별 boost 없음 (균형)
-        "index_broad": 1.2, "us_broad": 1.2,
+# 24-cell framework — axis별 boost를 곱(multiplicative)으로 합성.
+# 7-scenario dict를 24개로 확장하지 않고 (cycle/tail/kr) 좌표별 따로.
+BOOST_BY_CYCLE: dict[str, dict[str, float]] = {
+    "A": {  # growth + disinflation
+        "index_broad": 1.2, "us_broad": 1.2, "us_tech_nasdaq": 1.2,
+        "ai_theme_global": 1.3, "ai_robotics": 1.3,
     },
-    "ai_concentration": {
-        # AI mega-cap rally — narrow leadership
-        "ai_robotics": 2.0, "semiconductor": 1.8, "it_software": 1.4,
-        "us_tech_nasdaq": 2.0, "ai_theme_global": 2.0,
+    "B": {  # growth + inflation
+        "materials_energy": 1.5, "broad_commodity": 1.4,
+        "oil_energy": 1.4, "inflation_linked": 1.4,
     },
-    "stagflation": {
-        # 인플레 hedge
-        "gold": 2.0, "silver_precious": 1.5,
-        "oil_energy": 1.8, "agricultural": 1.4,
-        "broad_commodity": 1.6,
-        "materials_energy": 1.5,
-        "inflation_linked": 1.8,
+    "C": {  # recession + disinflation
+        "factor_value_dividend": 1.3, "us_treasury": 1.3,
+        "us_aggregate": 1.3, "short_duration": 1.2,
+        "kr_treasury": 1.3,
     },
-    "broad_recession": {
-        # 안전자산 + defensive equity
-        "kr_treasury": 1.5, "us_treasury": 1.5,
-        "us_aggregate": 1.3,
-        "factor_value_dividend": 1.3,
-        "short_duration": 1.2,
+    "D": {  # stagflation
+        "gold": 1.8, "silver_precious": 1.4,
+        "oil_energy": 1.5, "agricultural": 1.3,
+        "broad_commodity": 1.5, "materials_energy": 1.4,
+        "inflation_linked": 1.6,
     },
-    "global_credit": {
-        # 극단 defensive — HY 회피
-        "us_treasury": 2.0, "kr_treasury": 1.8,
-        "short_duration": 1.5,
-        "mmf_kr": 1.5, "mmf_usd": 1.5,
-        "us_high_yield": 0.3, "em_bond": 0.5,
+}
+
+BOOST_BY_TAIL: dict[str, dict[str, float]] = {
+    "N": {},  # normal — boost 없음
+    "T": {  # systemic tail
+        "us_treasury": 1.5, "kr_treasury": 1.3,
+        "us_high_yield": 0.4, "em_bond": 0.6,
+        "mmf_kr": 1.3, "mmf_usd": 1.3, "short_kr_bond": 1.2,
+        "short_duration": 1.4,
+        "gold": 1.3,  # tail flight to gold
     },
-    "kr_boom": {
-        # KR-specific 호황 — 수출/반도체/AI
-        "semiconductor": 1.8, "ai_robotics": 1.5,
-        "battery_ev": 1.3, "industrial_defense": 1.3,
-        "index_broad": 1.4,
+}
+
+BOOST_BY_KR: dict[str, dict[str, float]] = {
+    "F": {},  # follow — boost 없음
+    "boom": {  # KR-specific 호황
+        "semiconductor": 1.7, "ai_robotics": 1.4,
+        "battery_ev": 1.3, "industrial_defense": 1.2,
+        "index_broad": 1.3,
     },
-    "kr_stress": {
-        # KR 회피 + 안전자산
-        "us_broad": 1.3, "us_treasury": 1.5,
-        "kr_corporate": 0.5,  # KR 신용 위험 회피
+    "stress": {  # KR-specific 위기
+        "us_broad": 1.3, "us_treasury": 1.3,
+        "kr_corporate": 0.5,
     },
 }
 
 
-def boost_for_scenario(scenario: str | None) -> dict[str, float]:
-    """Return sub_category → boost dict. Unknown scenario → empty dict (= 영향 없음)."""
-    if scenario is None:
+def compose_boost(cycle: str, tail: str, kr: str) -> dict[str, float]:
+    """3축 boost를 곱셈으로 합성. sub_category → composed multiplier."""
+    result: dict[str, float] = {}
+    for source in (
+        BOOST_BY_CYCLE.get(cycle, {}),
+        BOOST_BY_TAIL.get(tail, {}),
+        BOOST_BY_KR.get(kr, {}),
+    ):
+        for sub, mult in source.items():
+            result[sub] = result.get(sub, 1.0) * mult
+    return result
+
+
+def boost_for_cell(cycle: str | None, tail: str | None, kr: str | None) -> dict[str, float]:
+    """24-cell의 한 cell coord에 대한 합성 boost. None이면 empty."""
+    if cycle is None or tail is None or kr is None:
         return {}
-    return SCENARIO_SUBCATEGORY_BOOST.get(scenario, {})
+    return compose_boost(cycle, tail, kr)
+
+
+# Legacy 7-scenario name → 24-cell axis 좌표 매핑 (back-compat).
+# candidate_selector 같이 dominant_scenario 문자열을 받는 caller가 있어서 유지.
+# 새 코드는 boost_for_cell(cycle, tail, kr) 직접 호출 권장.
+_LEGACY_SCENARIO_TO_AXES: dict[str, tuple[str, str, str]] = {
+    "goldilocks":       ("A", "N", "F"),
+    "ai_concentration": ("A", "N", "F"),  # 정확한 cell 매핑 없음 (breadth는 axis 아님)
+    "stagflation":      ("D", "N", "F"),
+    "broad_recession":  ("C", "N", "F"),
+    "global_credit":    ("C", "T", "F"),
+    "kr_boom":          ("A", "N", "boom"),
+    "kr_stress":        ("A", "N", "stress"),
+}
 
 
 def log_boost(scenario: str | None, sub_category: str | None) -> float:
-    """Additive boost = ln(multiplier). 0이면 영향 없음.
+    """Additive boost = ln(composed multiplier). 0이면 영향 없음.
 
-    - boost=1.0 → 0
-    - boost=2.0 → +ln(2) ≈ +0.69
-    - boost=0.3 → ln(0.3) ≈ -1.20
-
-    score_candidates 결과 (음수 가능)에 *가산*하여 부호 안전.
+    `scenario` 인자:
+      - legacy 7-scenario name 문자열 (e.g. "stagflation") → axis tuple 매핑 후 합성
+      - 또는 "{cycle}_{tail}_{kr}" 형식의 cell key (e.g. "D_N_F") → 그대로 사용
+      - None → 0 반환
     """
-    if not scenario or not sub_category:
+    if not sub_category or not scenario:
         return 0.0
-    boost = SCENARIO_SUBCATEGORY_BOOST.get(scenario, {}).get(sub_category, 1.0)
-    if boost <= 0:
-        return -10.0  # effective elimination
-    return math.log(boost)
+    coords = _scenario_to_axes(scenario)
+    if coords is None:
+        return 0.0
+    composed = compose_boost(*coords).get(sub_category, 1.0)
+    if composed <= 0:
+        return -10.0
+    return math.log(composed)
+
+
+def _scenario_to_axes(scenario: str) -> tuple[str, str, str] | None:
+    """legacy name이나 cell key를 (cycle, tail, kr) tuple로. 못 풀면 None."""
+    # legacy 이름이 우선 (global_credit 같은 underscore 포함 케이스 처리).
+    if scenario in _LEGACY_SCENARIO_TO_AXES:
+        return _LEGACY_SCENARIO_TO_AXES[scenario]
+    # cell key 형식 "{cycle}_{tail}_{kr}"
+    parts = scenario.split("_")
+    if len(parts) == 3 and parts[0] in ("A", "B", "C", "D") \
+            and parts[1] in ("N", "T") and parts[2] in ("F", "boom", "stress"):
+        return (parts[0], parts[1], parts[2])
+    return None
+
+
+def boost_for_scenario(scenario: str | None) -> dict[str, float]:
+    if not scenario:
+        return {}
+    coords = _scenario_to_axes(scenario)
+    if coords is None:
+        return {}
+    return compose_boost(*coords)
 
 
 def is_valid_subcategory(bucket: str, label: str) -> bool:

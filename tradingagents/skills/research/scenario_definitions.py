@@ -1,98 +1,197 @@
-"""7개 직교 시나리오 정의 + mandate-safe SCENARIO_BUCKETS.
+"""24-cell scenario framework — axis-driven algorithmic playbook.
 
-직교 차원:
-  1. 글로벌 매크로 사이클 (growth/inflation vs recession/disinflation)
-  2. 시장 breadth (broad vs narrow)
-  3. 신용/금융 안정성 (stable vs crisis)
-  4. KR ↔ Global decoupling (follow vs KR-specific)
+7-scenario hand-coded dict → 3-axis 함수로 대체. 24 cell의 playbook을
+(equity_base, kr_share, fx_commodity, bond, cash_residual) 5개 파라미터에서
+산출하므로 24×5=120개 숫자 하드코딩 X.
 
-각 시나리오가 최소 1개 직교 차원에서 다른 시나리오와 갈림.
-
-SCENARIO_BUCKETS Invariant:
-  모든 시나리오의 위험자산(kr_eq+gl_eq+fx_comm) ≤ 0.70
-  → 임의 확률 가중 평균도 ≤ 0.70 보장 (선형 invariant, mandate §2.2 안전).
+Cell key 형식: {cycle}_{tail}_{kr}, 예 "A_N_F" = goldilocks classic.
 """
-from tradingagents.schemas.research import ScenarioName
+from tradingagents.schemas.research import (
+    ALL_CELLS, CYCLE_CODES, CycleQuadrant, KRDirection, TAIL_CODES, TRANSIENT_CELLS,
+    TailState, cell_key, parse_cell_key,
+)
 
 
-# 시나리오 텍스트 — estimator prompt에 그대로 주입
-SCENARIO_DEFINITIONS: dict[ScenarioName, str] = {
-    "goldilocks": (
-        "Goldilocks (broad growth + disinflation). "
-        "Stage 1 신호: macro_quant regime=growth_disinflation, "
-        "market_risk score<5, technical universe_breadth=broad_risk_on. "
-        "참고 사례: 1995, 2017, 2024 초"
+# === Cycle 정의 텍스트 (LLM prompt 주입용) ===
+CYCLE_DEFINITIONS: dict[CycleQuadrant, str] = {
+    "A": (
+        "growth + disinflation. macro_quant regime=growth_disinflation, "
+        "CPI disinflation, GDPNow positive, broad equity risk-on. "
+        "참고: 1995, 2017, 2024H1"
     ),
-    "ai_concentration": (
-        "AI/Tech Concentration Rally — growth+disinflation이지만 mega-cap 편중. "
-        "Stage 1 신호: technical sector_rotation momentum_spread>+15%, "
-        "universe_breadth=narrow, breadth_us<0.5, market_risk pca concentrated. "
-        "참고: 2023-2024 mega-cap rally"
+    "B": (
+        "growth + inflation. macro_quant regime=growth_inflation, "
+        "CPI persistent/accelerating, real_yields tight, but GDP positive. "
+        "참고: 1972, 2021H2"
     ),
-    "stagflation": (
-        "Stagflation — 인플레 끈끈 + 성장 둔화. "
-        "Stage 1 신호: macro_quant regime=growth_inflation or recession_inflation, "
-        "TIPS 10y>2%, real_yields=very_tight, news release_surprise bias=hawkish. "
-        "참고: 1973-80, 2022 peak inflation"
+    "C": (
+        "recession + disinflation. macro_quant regime=recession_disinflation, "
+        "Sahm rule trigger, CFNAI weak, CPI cooling. credit은 stable이면 C-N. "
+        "참고: 1990-91, 2001"
     ),
-    "broad_recession": (
-        "Broad Recession (recession + disinflation, credit-stable). "
-        "Stage 1 신호: regime=recession_disinflation, Sahm rule trigger, "
-        "yield_curve inverted long duration, breadth broad-down. "
-        "Credit 위기는 아직 (HY OAS<600bp). 참고: 1990-91, 2001"
+    "D": (
+        "recession + inflation (classic stagflation). regime=recession_inflation, "
+        "growth slowing while inflation sticky. real_yields very_tight. "
+        "참고: 1973-80, 2022-23 일부"
     ),
-    "global_credit": (
-        "Global Credit Event — systemic credit 위기. "
-        "Stage 1 신호: market_risk systemic_score≥8, funding_stress=stress, "
-        "credit_quality=stress, HY OAS>1000bp, VIX backwardation, "
-        "equity_bond_corr extreme_positive. "
-        "참고: 2008 Q4 Lehman, 2020 Q1 COVID, 1998 LTCM"
+}
+
+TAIL_DEFINITIONS: dict[TailState, str] = {
+    "N": (
+        "normal — Conditional Stress Surprise aggregate_z < +1.0. "
+        "D1 baseline 대비 평소 수준."
     ),
-    "kr_boom": (
-        "KR Decoupling Boom — 글로벌과 무관 KR 자체 cycle 호황. "
-        "Stage 1 신호: macro_quant kr_export accelerating=True (3mo>6mo>yoy), "
-        "kr_leading expanding, technical kr_market_tier=small_cap_risk_on, "
-        "foreign_flow KR 순매수. 참고: 2017 반도체 super-cycle, 2020 Q4"
+    "T": (
+        "tail — Conditional Stress Surprise aggregate_z ≥ +1.0 (D1 conditional "
+        "surprise). 절대값 HY OAS가 아니라 cycle-baseline 대비 추가 widening. "
+        "참고: 2008 Q4 (C-T), 1998 LTCM (A-T), late 1970s 일부 (D-T)"
     ),
-    "kr_stress": (
-        "KR Decoupling Stress — 글로벌 OK + KR-specific 위기. "
-        "Stage 1 신호: market_risk kr_yield_curve inverted, "
-        "kr_corp_spread=stress (레고랜드형), kr_margin_debt deleveraging, "
-        "kr_market_tier=large_cap_risk_off, kr_export 둔화. "
-        "참고: 2022 레고랜드, 2023 부동산 PF 위기"
+}
+
+KR_DEFINITIONS: dict[KRDirection, str] = {
+    "F": "follow — KR가 글로벌 cycle을 따라감 (default).",
+    "boom": (
+        "KR boom decoupling — KR Residual Signals의 kr_boom_score ≥ +1.0. "
+        "kr_corp_spread_residual < -30bps (KR 신용 양호), foreign flow z>+1, "
+        "kr_export accelerating. cycle 신호가 아니라 KR-specific residual만 사용."
+    ),
+    "stress": (
+        "KR stress decoupling — kr_stress_score ≥ +1.0. "
+        "kr_corp_spread_residual > +50bps (KR 자체 widening), margin_z<-1, "
+        "foreign flow z<-1. kr_yield_curve inversion은 cycle proxy라 미사용."
     ),
 }
 
 
-# Mandate-safe SCENARIO_BUCKETS. 모든 시나리오 위험자산 ≤ 0.70.
-# Weights는 §대회 §2.2 (위험자산 ≤ 0.70) + 실무적 5-bucket 분산 고려해서 설계.
-SCENARIO_BUCKETS: dict[ScenarioName, dict[str, float]] = {
-    "goldilocks":        {"kr_equity": 0.25, "global_equity": 0.30, "fx_commodity": 0.10, "bond": 0.25, "cash_mmf": 0.10},
-    "ai_concentration":  {"kr_equity": 0.15, "global_equity": 0.45, "fx_commodity": 0.10, "bond": 0.25, "cash_mmf": 0.05},
-    "stagflation":       {"kr_equity": 0.10, "global_equity": 0.15, "fx_commodity": 0.25, "bond": 0.40, "cash_mmf": 0.10},
-    "broad_recession":   {"kr_equity": 0.10, "global_equity": 0.10, "fx_commodity": 0.10, "bond": 0.55, "cash_mmf": 0.15},
-    "global_credit":     {"kr_equity": 0.05, "global_equity": 0.05, "fx_commodity": 0.10, "bond": 0.45, "cash_mmf": 0.35},
-    "kr_boom":           {"kr_equity": 0.40, "global_equity": 0.20, "fx_commodity": 0.05, "bond": 0.30, "cash_mmf": 0.05},
-    "kr_stress":         {"kr_equity": 0.05, "global_equity": 0.30, "fx_commodity": 0.10, "bond": 0.45, "cash_mmf": 0.10},
+# === Playbook 함수 (axes → 5-bucket dict) ===
+
+# equity_total: (cycle, tail) → equity 총량.
+# 값들은 1991-2024 backtest로 informed: A_T eq 0.30→0.40 (Sharpe 1.74 backtest).
+# 나머지 cell은 backtest sample 부족/recency bias로 hand judgment 유지.
+_EQUITY_TOTAL: dict[tuple[CycleQuadrant, TailState], float] = {
+    ("A", "N"): 0.65,  # goldilocks classic (backtest n=42 confirmed)
+    ("A", "T"): 0.40,  # ↑ 1998 LTCM recovery; backtest n=16 Sharpe 1.74
+    ("B", "N"): 0.30,  # overheating; backtest recency-biased (2022) ignored
+    ("B", "T"): 0.15,  # transient
+    ("C", "N"): 0.20,  # mild recession
+    ("C", "T"): 0.10,  # 2008 Q4-like
+    ("D", "N"): 0.15,  # stagflation classic (backtest n=2 numerical artifact)
+    ("D", "T"): 0.10,  # severe stagflation + credit
+}
+
+# KR vs Global split. Backtest gave 0/100 corners (overfit); informed compromise.
+_KR_SHARE: dict[KRDirection, tuple[float, float]] = {
+    "F":      (0.30, 0.70),  # was 0.35/0.65; backtest 0/100 무시, soft nudge
+    "boom":   (0.65, 0.35),  # was 0.70; 집중 risk 완화
+    "stress": (0.10, 0.90),  # 유지 (backtest 동의)
+}
+
+# fx_commodity (inflation flag → tail level). backtest는 fx 빼는 corner solution
+# 자주 도출 (Sharpe 단기 최대화 vs 다양화 우선 충돌) → hand judgment 유지.
+_FX_COMMODITY: dict[tuple[str, TailState], float] = {
+    ("disinflation", "N"): 0.05,
+    ("disinflation", "T"): 0.10,  # gold flight
+    ("inflation",    "N"): 0.30,
+    ("inflation",    "T"): 0.35,  # commodity + gold
+}
+
+# bond: (cycle, tail) → bond total. backtest 방향 신호 수용 (A_N/A_T/C_N/C_T 모두 +5pt).
+_BOND_TOTAL: dict[tuple[CycleQuadrant, TailState], float] = {
+    ("A", "N"): 0.30,  # ↑ was 0.25; backtest n=42 0.35
+    ("A", "T"): 0.45,  # ↑ was 0.40; backtest n=16 0.55
+    ("B", "N"): 0.20,  # B는 backtest 신뢰 X
+    ("B", "T"): 0.30,
+    ("C", "N"): 0.60,  # ↑ was 0.55; backtest n=3 0.70
+    ("C", "T"): 0.55,  # ↑ was 0.40; backtest n=2 0.75 — 2008Q4 lesson
+    ("D", "N"): 0.20,
+    ("D", "T"): 0.35,
+}
+
+# bond_tips_share: backtest는 TIPS-heavy 일관 산출(2004+ 단기 sample 한계).
+# disinflation에서 0.05→0.15로 다양화 차원 소폭 ↑. inflation은 거의 그대로.
+_BOND_TIPS_SHARE: dict[str, float] = {
+    "disinflation": 0.15,  # was 0.05
+    "inflation":    0.80,  # was 0.75
 }
 
 
-# Self-validation (모듈 import 시 보장)
+def _inflation_flag(cycle: CycleQuadrant) -> str:
+    return "inflation" if cycle in ("B", "D") else "disinflation"
+
+
+def make_playbook(cycle: CycleQuadrant, tail: TailState, kr: KRDirection) -> dict[str, float]:
+    """24-cell의 한 cell에 대한 5-bucket playbook 산출.
+
+    Invariant: sum = 1.0, risk_asset (kr+gl+fx) ≤ 0.70.
+    """
+    equity_total = _EQUITY_TOTAL[(cycle, tail)]
+    kr_share, gl_share = _KR_SHARE[kr]
+    kr_eq = equity_total * kr_share
+    gl_eq = equity_total * gl_share
+
+    infl = _inflation_flag(cycle)
+    fx_commodity = _FX_COMMODITY[(infl, tail)]
+    bond = _BOND_TOTAL[(cycle, tail)]
+
+    cash = 1.0 - kr_eq - gl_eq - fx_commodity - bond
+    # 부동소수 음수 방어 (이론적으로 발생 안 함)
+    if cash < 0:
+        cash = 0.0
+    return {
+        "kr_equity": kr_eq,
+        "global_equity": gl_eq,
+        "fx_commodity": fx_commodity,
+        "bond": bond,
+        "cash_mmf": cash,
+    }
+
+
+def make_bond_tips_share(cycle: CycleQuadrant, tail: TailState, kr: KRDirection) -> float:
+    """Bond bucket 내부 inflation_linked 비율 — inflation cell만 높음."""
+    return _BOND_TIPS_SHARE[_inflation_flag(cycle)]
+
+
+def make_cell_definition(cycle: CycleQuadrant, tail: TailState, kr: KRDirection) -> str:
+    """LLM prompt 주입용 cell 설명 (1줄)."""
+    key = cell_key(cycle, tail, kr)
+    cycle_short = {"A": "growth+disinfl", "B": "growth+inflation",
+                   "C": "recession+disinfl", "D": "stagflation"}[cycle]
+    tail_short = {"N": "normal", "T": "TAIL"}[tail]
+    kr_short = {"F": "KR-follow", "boom": "KR-boom", "stress": "KR-stress"}[kr]
+    transient_note = " [TRANSIENT, expect very low P]" if key in TRANSIENT_CELLS else ""
+    return f"{key}: {cycle_short} × {tail_short} × {kr_short}{transient_note}"
+
+
+def all_cells_definition_block() -> str:
+    """24 cell 전체를 한 텍스트 블록으로 — prompt 주입용."""
+    lines = []
+    for c in CYCLE_CODES:
+        lines.append(f"=== Cycle {c} ({CYCLE_DEFINITIONS[c]}) ===")
+        for t in TAIL_CODES:
+            for k in ("F", "boom", "stress"):
+                lines.append("  " + make_cell_definition(c, t, k))
+    return "\n".join(lines)
+
+
+# === Self-validation (모듈 import 시 보장) ===
 _BUCKET_KEYS = ("kr_equity", "global_equity", "fx_commodity", "bond", "cash_mmf")
 
 
 def _validate() -> None:
-    for name, w in SCENARIO_BUCKETS.items():
-        if set(w.keys()) != set(_BUCKET_KEYS):
-            raise ValueError(f"{name}: bucket keys mismatch")
-        total = sum(w.values())
+    for key in ALL_CELLS:
+        c, t, k = parse_cell_key(key)
+        pb = make_playbook(c, t, k)
+        if set(pb.keys()) != set(_BUCKET_KEYS):
+            raise ValueError(f"{key}: bucket keys mismatch")
+        total = sum(pb.values())
         if abs(total - 1.0) > 1e-6:
-            raise ValueError(f"{name}: weights sum {total} != 1.0")
-        risk = w["kr_equity"] + w["global_equity"] + w["fx_commodity"]
+            raise ValueError(f"{key}: weights sum {total} != 1.0")
+        risk = pb["kr_equity"] + pb["global_equity"] + pb["fx_commodity"]
         if risk > 0.70 + 1e-6:
-            raise ValueError(
-                f"{name}: 위험자산 {risk:.3f} > 0.70 (mandate §2.2 위반)"
-            )
+            raise ValueError(f"{key}: 위험자산 {risk:.3f} > 0.70 (mandate §2.2)")
+        tips = make_bond_tips_share(c, t, k)
+        if not (0.0 <= tips <= 1.0):
+            raise ValueError(f"{key}: bond_tips_share {tips} not in [0,1]")
 
 
 _validate()

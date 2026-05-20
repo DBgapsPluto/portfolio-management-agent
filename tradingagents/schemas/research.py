@@ -1,71 +1,205 @@
-"""Stage 2 (Research) 스키마 — 시나리오 확률 기반 의사결정.
+"""Stage 2 (Research) 스키마 — 24-cell Cartesian product framework.
 
-폐기: Bull/Bear advocacy (ResearcherTurn). 토론 구조는 motivated reasoning을
-유발하고 진짜 disagreement 측정을 못 함. 대체:
-  estimator가 7개 직교 시나리오 확률을 추정 → 결정적 매핑이 BucketTarget 산출.
+설계 동기 (점수 simplex 혼합 문제 해결):
+  과거 7-scenario 구조는 "cycle을 가리키는 점 4개" + "modifier 3개"를 같은
+  확률 simplex에 욱여넣어 mutually exclusive 가정이 깨졌음 (예: 2017의 goldilocks
+  + KR boom 동시 발생을 표현 못 함). 24-cell Cartesian product는 모든 시나리오를
+  3축 (cycle × tail × kr) 좌표 한 점으로 정의 → 진짜 직교.
+
+3축 정의:
+  D1 cycle (4): A=growth+disinflation, B=growth+inflation,
+                 C=recession+disinflation, D=recession+inflation
+  D2 tail (2):  N=normal, T=tail (D1 conditional surprise z ≥ +1.0)
+  D3 kr (3):    F=follow global, boom=KR outperform, stress=KR underperform
+
+총 24 cell. transient (B-T-*) 3개도 schema에 두되 prompt에서 "very rare" 안내.
 """
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from tradingagents.schemas.portfolio import BucketTarget
 
-
-# 7개 직교 시나리오 — 4차원 (글로벌 cycle / breadth / credit / KR cycle) 조합
-ScenarioName = Literal[
-    "goldilocks",         # A: growth + disinflation, broad
-    "ai_concentration",   # B: growth + disinflation, narrow (mega-cap rally)
-    "stagflation",        # C: inflation 끈끈 + 성장 둔화
-    "broad_recession",    # D: recession + disinflation, broad-down
-    "global_credit",      # E: credit event (HY spike, systemic risk)
-    "kr_boom",            # F: KR 단독 decoupling boom (수출 cycle ↑)
-    "kr_stress",          # G: KR-specific stress (레고랜드형, 부동산 PF)
-]
+CycleQuadrant = Literal["A", "B", "C", "D"]
+TailState = Literal["N", "T"]
+KRDirection = Literal["F", "boom", "stress"]
 
 ConvictionLevel = Literal["high", "medium", "low"]
 
+CYCLE_CODES: tuple[CycleQuadrant, ...] = ("A", "B", "C", "D")
+TAIL_CODES: tuple[TailState, ...] = ("N", "T")
+KR_CODES: tuple[KRDirection, ...] = ("F", "boom", "stress")
 
-class ScenarioProbabilities(BaseModel):
-    """LLM estimator 출력 — 7개 시나리오 확률 (합 = 1.0)."""
-    goldilocks: float = Field(ge=0, le=1)
-    ai_concentration: float = Field(ge=0, le=1)
-    stagflation: float = Field(ge=0, le=1)
-    broad_recession: float = Field(ge=0, le=1)
-    global_credit: float = Field(ge=0, le=1)
-    kr_boom: float = Field(ge=0, le=1)
-    kr_stress: float = Field(ge=0, le=1)
-    reasoning: str = Field(max_length=800, description="시나리오별 evidence 근거 ≤800자")
+
+def cell_key(cycle: CycleQuadrant, tail: TailState, kr: KRDirection) -> str:
+    return f"{cycle}_{tail}_{kr}"
+
+
+def parse_cell_key(key: str) -> tuple[CycleQuadrant, TailState, KRDirection]:
+    parts = key.split("_")
+    if len(parts) != 3:
+        raise ValueError(f"Invalid cell key: {key}")
+    return parts[0], parts[1], parts[2]  # type: ignore[return-value]
+
+
+ALL_CELLS: tuple[str, ...] = tuple(
+    cell_key(c, t, k)
+    for c in CYCLE_CODES for t in TAIL_CODES for k in KR_CODES
+)
+assert len(ALL_CELLS) == 24
+
+# Transient cells — historically rare, transitional states (growth+inflation+tail).
+# Schema에는 존재하나 LLM prompt에서 "expect very low P" 안내.
+TRANSIENT_CELLS: tuple[str, ...] = tuple(
+    cell_key("B", "T", k) for k in KR_CODES
+)
+
+
+class ScenarioProbabilities24(BaseModel):
+    """LLM estimator 출력 — 24 cell 확률. 합 = 1.0 ± 0.001 (validator).
+
+    Cell key는 {cycle}_{tail}_{kr} 형식.
+    """
+    A_N_F: float = Field(ge=0, le=1)
+    A_N_boom: float = Field(ge=0, le=1)
+    A_N_stress: float = Field(ge=0, le=1)
+    A_T_F: float = Field(ge=0, le=1)
+    A_T_boom: float = Field(ge=0, le=1)
+    A_T_stress: float = Field(ge=0, le=1)
+
+    B_N_F: float = Field(ge=0, le=1)
+    B_N_boom: float = Field(ge=0, le=1)
+    B_N_stress: float = Field(ge=0, le=1)
+    B_T_F: float = Field(ge=0, le=1)
+    B_T_boom: float = Field(ge=0, le=1)
+    B_T_stress: float = Field(ge=0, le=1)
+
+    C_N_F: float = Field(ge=0, le=1)
+    C_N_boom: float = Field(ge=0, le=1)
+    C_N_stress: float = Field(ge=0, le=1)
+    C_T_F: float = Field(ge=0, le=1)
+    C_T_boom: float = Field(ge=0, le=1)
+    C_T_stress: float = Field(ge=0, le=1)
+
+    D_N_F: float = Field(ge=0, le=1)
+    D_N_boom: float = Field(ge=0, le=1)
+    D_N_stress: float = Field(ge=0, le=1)
+    D_T_F: float = Field(ge=0, le=1)
+    D_T_boom: float = Field(ge=0, le=1)
+    D_T_stress: float = Field(ge=0, le=1)
+
+    reasoning: str = Field(
+        max_length=1500,
+        description="cycle/tail/kr axis별 evidence + dominant cell 근거 ≤1500자",
+    )
 
     @model_validator(mode="after")
     def _sum_to_one(self):
-        total = (
-            self.goldilocks + self.ai_concentration + self.stagflation
-            + self.broad_recession + self.global_credit
-            + self.kr_boom + self.kr_stress
-        )
-        if abs(total - 1.0) > 1e-3:
-            raise ValueError(f"Scenario probabilities must sum to 1.0, got {total}")
+        # 24-dim에서 LLM이 정확히 sum=1.0 맞추기 어려움. 0.5% tolerance.
+        total = sum(self.as_dict().values())
+        if abs(total - 1.0) > 5e-3:
+            raise ValueError(f"Cell probabilities must sum to 1.0 ± 0.005, got {total}")
         return self
 
-    def as_dict(self) -> dict[ScenarioName, float]:
-        return {
-            "goldilocks": self.goldilocks,
-            "ai_concentration": self.ai_concentration,
-            "stagflation": self.stagflation,
-            "broad_recession": self.broad_recession,
-            "global_credit": self.global_credit,
-            "kr_boom": self.kr_boom,
-            "kr_stress": self.kr_stress,
-        }
+    def as_dict(self) -> dict[str, float]:
+        return {key: getattr(self, key) for key in ALL_CELLS}
+
+    def cycle_marginal(self, cycle: CycleQuadrant) -> float:
+        """D1 marginal probability for given cycle."""
+        return sum(
+            getattr(self, cell_key(cycle, t, k))
+            for t in TAIL_CODES for k in KR_CODES
+        )
+
+    def tail_marginal(self, tail: TailState) -> float:
+        """D2 marginal."""
+        return sum(
+            getattr(self, cell_key(c, tail, k))
+            for c in CYCLE_CODES for k in KR_CODES
+        )
+
+    def kr_marginal(self, kr: KRDirection) -> float:
+        """D3 marginal."""
+        return sum(
+            getattr(self, cell_key(c, t, kr))
+            for c in CYCLE_CODES for t in TAIL_CODES
+        )
+
+
+# Backward-compat alias (이전 7-scenario 코드 잔재 정리 중 import 에러 방지용).
+# 새 코드는 ScenarioProbabilities24 사용.
+ScenarioProbabilities = ScenarioProbabilities24
+
+
+class CellCoord(BaseModel):
+    """24 cell의 3-axis 좌표 — dominant_cell 표기/parsing 용."""
+    cycle: CycleQuadrant
+    tail: TailState
+    kr: KRDirection
+
+    @property
+    def key(self) -> str:
+        return cell_key(self.cycle, self.tail, self.kr)
+
+    @classmethod
+    def from_key(cls, key: str) -> "CellCoord":
+        c, t, k = parse_cell_key(key)
+        return cls(cycle=c, tail=t, kr=k)
+
+
+# Forward import to avoid circular reference
+from tradingagents.schemas.portfolio import BucketTarget  # noqa: E402
 
 
 class ResearchDecision(BaseModel):
-    """Stage 2 종합 출력 — Stage 3/4/5는 bucket_target만 봐도 OK,
-    리포트와 Stage 4 Risk Judge는 scenario/conviction 활용 가능."""
+    """Stage 2 종합 출력 — 24-cell framework."""
     bucket_target: BucketTarget
-    scenario_probabilities: ScenarioProbabilities
-    dominant_scenario: ScenarioName
-    dominant_probability: float = Field(ge=0, le=1)
-    conviction: ConvictionLevel = Field(
-        description="high: max_prob≥0.45, medium: ≥0.30, low: else",
+    scenario_probabilities: ScenarioProbabilities24
+    dominant_cell: CellCoord                    # max P_cell의 좌표
+    dominant_cell_probability: float = Field(ge=0, le=1)
+    dominant_cycle: CycleQuadrant               # max D1 marginal cycle
+    dominant_cycle_probability: float = Field(ge=0, le=1)
+    cycle_marginals: dict[str, float] = Field(
+        default_factory=dict, description="cycle code → marginal P, 분석용"
     )
+    tail_marginals: dict[str, float] = Field(default_factory=dict)
+    kr_marginals: dict[str, float] = Field(default_factory=dict)
+    conviction: ConvictionLevel = Field(
+        description=(
+            "dominant_cycle_probability 기준. "
+            "high: ≥0.55, medium: ≥0.35, low: 그 외."
+        ),
+    )
+    # Conviction sharpening (P0 step 3) — cycle marginal에 P^β/Z 적용한 후
+    # P(tail, kr | cycle) 보존하며 cell 재구성. β = max(1, 1 + 3(p_dom - 0.30)).
+    conviction_beta: float = Field(
+        default=1.0, ge=0.5, le=5.0,
+        description="P^β/Z sharpening 강도. β=1이면 raw, >1이면 dominant 강화.",
+    )
+    effective_cycle_marginals: dict[str, float] = Field(
+        default_factory=dict,
+        description="sharpening 적용 후 cycle 분포. portfolio가 이 값으로 산출됨.",
+    )
+
+    @property
+    def dominant_scenario(self) -> str:
+        """Legacy compat — 7-scenario 이름 추정. 새 코드는 dominant_cell/cycle 권장.
+
+        risk_lens / method_picker 등 기존 caller가 string 매칭으로 게이팅하므로 유지.
+        매핑 우선순위:
+          1. tail marginal ≥ 0.30 → global_credit
+          2. kr_marginal[stress] ≥ 0.30 → kr_stress
+          3. kr_marginal[boom]  ≥ 0.30 → kr_boom
+          4. dominant_cycle → A:goldilocks B:stagflation C:broad_recession D:stagflation
+        """
+        if self.tail_marginals.get("T", 0.0) >= 0.30:
+            return "global_credit"
+        if self.kr_marginals.get("stress", 0.0) >= 0.30:
+            return "kr_stress"
+        if self.kr_marginals.get("boom", 0.0) >= 0.30:
+            return "kr_boom"
+        cycle = self.dominant_cycle
+        if cycle in ("B", "D"):
+            return "stagflation"
+        if cycle == "C":
+            return "broad_recession"
+        return "goldilocks"

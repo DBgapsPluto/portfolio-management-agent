@@ -18,6 +18,10 @@ class BucketTarget(BaseModel):
     bond: float = Field(ge=0, le=1)
     cash_mmf: float = Field(ge=0, le=1)
     rationale: str = Field(max_length=500)
+    # Within the bond bucket, fraction allocated to inflation-linked candidates
+    # (sub_category="inflation_linked"). Nominal candidates take the remainder.
+    # Default 0.0 keeps legacy fixtures valid; mapper overrides at runtime.
+    bond_tips_share: float = Field(default=0.0, ge=0, le=1)
 
     @property
     def total(self) -> float:
