@@ -3,75 +3,118 @@
   "capital_krw": 1000000000,
   "method": "risk_parity",
   "bucket_target": {
-    "kr_equity": 0.19850000000000004,
-    "global_equity": 0.2275,
-    "fx_commodity": 0.13250000000000003,
-    "bond": 0.35250000000000004,
-    "cash_mmf": 0.089,
-    "rationale": "Dominant: stagflation (31%, medium conviction). Base leans stagflation/KR boom mix: MQ regime growth_inflation 0.83, CPI 3.9% YoY and 3m ann 7.32%, TIPS 10y 2.00% very_tight, oil +4.2%, equity-bond corr +0.46 all support inflationary growth rather "
+    "kr_equity": 0.09803545011119437,
+    "global_equity": 0.19566158234994457,
+    "fx_commodity": 0.29987255762005777,
+    "bond": 0.20661788478867874,
+    "cash_mmf": 0.19981252513012457,
+    "rationale": "Cycle dominant: B (76%, high, β=2.38→eff 99%). Top cell: B_N_F (53%). D1: Macro Quant strongly points to B growth+inflation (regime 0.82, CPI 3.95% with 3m ann 7.32% accelerating, GDPNow 4.0%, Sahm false, CFNAI near expansion, easy NFCI). Small A mass from risk-on techn",
+    "bond_tips_share": 0.7942182761738618
   },
   "weights": {
-    "A0061Z0": 0.16499835001649985,
-    "A102110": 0.07315926840731593,
-    "A133690": 0.06487935120648793,
-    "A144600": 0.03985960140398596,
-    "A273130": 0.042689573104268956,
-    "A278530": 0.07075929240707593,
-    "A360750": 0.07999920000799991,
-    "A381180": 0.01853981460185398,
-    "A385540": 0.030599694003059966,
-    "A395270": 0.04068959310406895,
-    "A411060": 0.0833691663083369,
-    "A423160": 0.017099829001709983,
-    "A453850": 0.14541854581454183,
-    "A456600": 0.04815951840481595,
-    "A488770": 0.07977920220797792
+    "A395270": 0.02623,
+    "A102110": 0.03787,
+    "A278530": 0.03394,
+    "A381180": 0.01683,
+    "A360750": 0.06245,
+    "A456600": 0.04344,
+    "A133690": 0.07294,
+    "A411060": 0.18896,
+    "A144600": 0.11091,
+    "A468370": 0.09048,
+    "A430500": 0.07362,
+    "A0061Z0": 0.0155,
+    "A273130": 0.02702,
+    "A488770": 0.11509,
+    "A455890": 0.039,
+    "A423160": 0.04572
   },
-  "rationale": "Stage 4 overlay applied (strength=0.70, mult=0.93). critical 1 → 70% strength (conservative initial)",
-  "expected_volatility": null,
-  "expected_sharpe": null,
+  "rationale": "risk_parity with single-asset cap 20% AND bucket constraints (strict bucket equality). 위험자산 target 59.4%.",
+  "expected_volatility": 37.7866100468449,
+  "expected_sharpe": 0.019379412794528324,
   "research_decision": {
     "bucket_target": {
-      "kr_equity": 0.19850000000000004,
-      "global_equity": 0.2275,
-      "fx_commodity": 0.13250000000000003,
-      "bond": 0.35250000000000004,
-      "cash_mmf": 0.089,
-      "rationale": "Dominant: stagflation (31%, medium conviction). Base leans stagflation/KR boom mix: MQ regime growth_inflation 0.83, CPI 3.9% YoY and 3m ann 7.32%, TIPS 10y 2.00% very_tight, oil +4.2%, equity-bond corr +0.46 all support inflationary growth rather "
+      "kr_equity": 0.09803545011119437,
+      "global_equity": 0.19566158234994457,
+      "fx_commodity": 0.29987255762005777,
+      "bond": 0.20661788478867874,
+      "cash_mmf": 0.19981252513012457,
+      "rationale": "Cycle dominant: B (76%, high, β=2.38→eff 99%). Top cell: B_N_F (53%). D1: Macro Quant strongly points to B growth+inflation (regime 0.82, CPI 3.95% with 3m ann 7.32% accelerating, GDPNow 4.0%, Sahm false, CFNAI near expansion, easy NFCI). Small A mass from risk-on techn",
+      "bond_tips_share": 0.7942182761738618
     },
     "scenario_probabilities": {
-      "goldilocks": 0.07,
-      "ai_concentration": 0.17,
-      "stagflation": 0.31,
-      "broad_recession": 0.08,
-      "global_credit": 0.03,
-      "kr_boom": 0.28,
-      "kr_stress": 0.06,
-      "reasoning": "Base leans stagflation/KR boom mix: MQ regime growth_inflation 0.83, CPI 3.9% YoY and 3m ann 7.32%, TIPS 10y 2.00% very_tight, oil +4.2%, equity-bond corr +0.46 all support inflationary growth rather than disinflation. Against recession/credit: GDPNow 4.0%, Sahm false, CFNAI -0.03 expansion, NFCI -0.52 easy, HY OAS 280, SOFR-Tbill -4bp, VIX contango 1.21. AI concentration gets weight from US breadth 9%, PCA 0.68 concentrated, VXN-VIX +6.8, mom spread +70.6%; but technical universe breadth is broad_risk_on, so not pure narrow rally. KR boom high on exports +50.2% YoY, KR CLI 100.1 expansion, BSI 100, domestic equity leadership +42%; but foreign flow neutral and news risk-off temper it. Goldilocks low because inflation is re-accelerating, not disinflating. Global credit very low given calm/f"
+      "A_N_F": 0.035,
+      "A_N_boom": 0.01,
+      "A_N_stress": 0.015,
+      "A_T_F": 0.004,
+      "A_T_boom": 0.001,
+      "A_T_stress": 0.005,
+      "B_N_F": 0.53,
+      "B_N_boom": 0.12,
+      "B_N_stress": 0.08,
+      "B_T_F": 0.015,
+      "B_T_boom": 0.004,
+      "B_T_stress": 0.011,
+      "C_N_F": 0.05,
+      "C_N_boom": 0.005,
+      "C_N_stress": 0.01,
+      "C_T_F": 0.012,
+      "C_T_boom": 0.001,
+      "C_T_stress": 0.008,
+      "D_N_F": 0.045,
+      "D_N_boom": 0.004,
+      "D_N_stress": 0.016,
+      "D_T_F": 0.007,
+      "D_T_boom": 0.001,
+      "D_T_stress": 0.011,
+      "reasoning": "D1: Macro Quant strongly points to B growth+inflation (regime 0.82, CPI 3.95% with 3m ann 7.32% accelerating, GDPNow 4.0%, Sahm false, CFNAI near expansion, easy NFCI). Small A mass from risk-on technical breadth; some D from tight real yields/oil jump/news risk-off; limited C. D2: Tail remains mostly N because VVIX/MOVE calm, HY OAS mom flat, funding calm, BBB-AAA calm; however SKEW 146, equity-bond corr extreme positive, narrow breadth/concentration, overnight risk-off/news shocks justify modest conditional T probability. D3: KR residual favors mostly F; no clear boom/stress score given. KR exports very strong and CLI/BSI expansion support some boom, but macro_news notes foreign selling/KOSPI drop and USDKRW 1493 support some stress. Top cells: B_N_F dominant as global cycle B with no clear tail and KR mostly following. B_N_boom second on strong KR exports and decent domestic activity. B_N_stress third because KR-specific sentiment/flows are mixed-negative despite calm spreads."
     },
-    "dominant_scenario": "stagflation",
-    "dominant_probability": 0.31,
-    "conviction": "medium"
+    "dominant_cell": {
+      "cycle": "B",
+      "tail": "N",
+      "kr": "F"
+    },
+    "dominant_cell_probability": 0.53,
+    "dominant_cycle": "B",
+    "dominant_cycle_probability": 0.76,
+    "cycle_marginals": {
+      "A": 0.07,
+      "B": 0.76,
+      "C": 0.08600000000000001,
+      "D": 0.08399999999999999
+    },
+    "tail_marginals": {
+      "N": 0.92,
+      "T": 0.08
+    },
+    "kr_marginals": {
+      "F": 0.6980000000000001,
+      "boom": 0.146,
+      "stress": 0.156
+    },
+    "conviction": "high",
+    "conviction_beta": 2.38,
+    "effective_cycle_marginals": {
+      "A": 0.0033792890914549614,
+      "B": 0.9858897712910882,
+      "C": 0.005515670641065933,
+      "D": 0.005215268976391007
+    }
   },
   "method_choice": {
     "method": "risk_parity",
     "params": {},
-    "reasoning": "scenario=stagflation, conviction=medium: stagflation → 균형 분산, risk parity"
+    "reasoning": "scenario=stagflation, conviction=high: stagflation → 균형 분산, risk parity"
   },
   "risk_overlay": {
     "staleness_days": 0,
     "source_date": "2026-05-15",
-    "weight_ceilings": {
-      "A0061Z0": 0.165,
-      "A453850": 0.165
-    },
-    "cluster_caps": {
-      "cluster_12": 0.42600000000000005
-    },
-    "risk_asset_multiplier": 0.93,
+    "weight_ceilings": {},
+    "cluster_caps": {},
+    "risk_asset_multiplier": 1.0,
     "tail_hedge_floor": {},
-    "severity_decision": "critical 1 → 70% strength (conservative initial)",
-    "strength_applied": 0.7,
+    "severity_decision": "low/single medium/none → archive only",
+    "strength_applied": 0.0,
     "lens_concerns": [
       {
         "lens": "tail_risk",
@@ -82,23 +125,18 @@
           "risk_asset_multiplier": 0.9,
           "tail_hedge_floor": {}
         },
-        "evidence": "CVaR_95_1d=2.31%, systemic_score=7.0, vix_term=contango, funding=calm"
+        "evidence": "CVaR_95_1d=2.60%, systemic_score=6.7, vix_term=contango, funding=calm"
       },
       {
         "lens": "concentration",
-        "level": "critical",
+        "level": "none",
         "proposed_overlay": {
-          "weight_ceilings": {
-            "A0061Z0": 0.15,
-            "A453850": 0.15
-          },
-          "cluster_caps": {
-            "cluster_12": 0.18
-          },
+          "weight_ceilings": {},
+          "cluster_caps": {},
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "HHI=0.096, top1=20.0%, top3_sum=39.4%, max_cluster=13.9% (2 clusters)"
+        "evidence": "HHI=0.094, top1=18.9%, top3_sum=41.5%, max_cluster=13.3% (3 clusters)"
       },
       {
         "lens": "macro_conditional",
@@ -109,25 +147,26 @@
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "risk_asset_weight=55.8%, scenario=stagflation, conviction=medium, systemic=7.0, regime=growth_inflation"
+        "evidence": "risk_asset_weight=59.4%, scenario=stagflation, conviction=high, systemic=6.7, regime=growth_inflation"
       }
     ]
   },
   "portfolio_numerics": {
     "staleness_days": 0,
     "source_date": "2026-05-15",
-    "hhi": 0.096268,
-    "top1_weight": 0.2,
-    "top3_weight_sum": 0.393732,
+    "hhi": 0.094105,
+    "top1_weight": 0.18896,
+    "top3_weight_sum": 0.41496,
     "cluster_exposure": {
-      "cluster_12": 0.139112,
-      "cluster_13": 0.120471
+      "cluster_1": 0.09048,
+      "cluster_14": 0.13321,
+      "cluster_15": 0.06017
     },
-    "max_cluster_exposure": 0.139112,
-    "realized_vol_60d": 0.012696,
-    "var_95_1d": 0.013232,
-    "cvar_95_1d": 0.023141,
-    "n_assets": 15
+    "max_cluster_exposure": 0.13321,
+    "realized_vol_60d": 0.011496,
+    "var_95_1d": 0.014967,
+    "cvar_95_1d": 0.025983,
+    "n_assets": 16
   },
   "validation_report": {
     "passed": true,
