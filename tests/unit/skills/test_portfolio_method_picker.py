@@ -110,3 +110,30 @@ def test_returns_method_choice_with_reasoning():
     assert isinstance(out, MethodChoice)
     assert len(out.reasoning) > 0
     assert len(out.reasoning) <= 300
+
+
+# === Issue #7: B cycle (overheating) ≠ stagflation, separate HRP processing ===
+
+
+def test_method_picker_overheating_returns_hrp():
+    """Issue #7: B cycle (growth+inflation) 은 stagflation 아니라 overheating.
+
+    overheating 처방: equity tilt 살아있되 inflation 위험 분산 → HRP.
+    (이전엔 "stagflation" mis-label → RISK_PARITY 잘못 트리거.)
+    """
+    out = pick_optimization_method(
+        regime_quadrant="growth_inflation", systemic_score=5.0,
+        research_decision=_decision("overheating", "high"),
+    )
+    assert out.method == OptimizationMethod.HRP
+    assert "overheating" in out.reasoning.lower()
+
+
+def test_method_picker_overheating_low_conviction_downgrade():
+    """overheating + low conviction → 기존 HRP downgrade 룰로 RISK_PARITY."""
+    out = pick_optimization_method(
+        regime_quadrant="growth_inflation", systemic_score=5.0,
+        research_decision=_decision("overheating", "low"),
+    )
+    # method_picker.py line 82-84: low conviction + HRP → RISK_PARITY 격하
+    assert out.method == OptimizationMethod.RISK_PARITY

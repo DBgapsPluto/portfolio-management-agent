@@ -38,7 +38,22 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 ```
 
 ## Post-C1
-(C1 commit 직후 갱신)
+
+### Unit test
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 604 passed, 5 warnings in 16.33s
+```
+Δ vs baseline: +9 tests (7 dominant_scenario + 2 overheating). 0 new failures.
+
+### Integration test
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 14 passed, 1 warning in 25.08s
+```
+Δ vs baseline: identical (18/14). 0 new failures.
 
 ## Post-C2
 (C2 commit 직후 갱신)

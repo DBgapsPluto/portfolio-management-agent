@@ -252,6 +252,173 @@ Depends on: #4-a
 
 ---
 
+## Issue #5 — research_mapper: β-sharpening 이 24-cell 을 1-cell 로 짓누름
+
+### Problem
+`scenario_mapper._compute_conviction_beta` 가 `_BETA_SLOPE=3.0` 으로 sharpening. 2026-05-15 run 에서 p_dom=0.76 → β=2.38 → effective B marginal 0.98 (raw 0.76). 24-cell 디자인의 cross-effect 가 high-conviction 에서 통째로 사라짐. backtest 캘리 근거 없는 magic number.
+
+### Proposed approach
+variance n=20 + backtest grid (β_slope ∈ {0,1,2,3}) 측정 후 셋 중 하나:
+- A. β=1 고정 (sharpening 제거) — default
+- B. backtest 결과로 (slope, threshold) 캘리
+- C. Bayesian shrinkage (역방향, low conviction 시 prior 로 끌어당김)
+
+### Acceptance criteria
+- [ ] variance 측정 결과 인용 + 옵션 선택 근거 commit body 에 명시
+- [ ] `_compute_conviction_beta` 변경 후 unit test (옵션별)
+- [ ] e2e snapshot 으로 portfolio 영향 검증
+
+### Effort
+~3-4시간 (분석 백그라운드 제외)
+
+### Risk
+β 변경이 portfolio 방향을 크게 흔들 수 있음 → C5 산출물 diff 검증 단계로 mitigation.
+
+---
+
+## Issue #6 — D2/D3 baseline σ 가 hand-coded — decontamination 가 placeholder
+
+### Problem
+`conditional_stress._BASELINE` 의 (mean, σ) 20개 entry, `kr_residual_signals._BETA_KR_CORP_VS_HY=0.50`, `_ALPHA_KR_CORP=50.0`, `_KR_MARGIN_SIGMA_PCT=8.0` 모두 hand-coded. 코드 주석이 직접 인정: "P1 TODO: 1970-2024 quarterly historical regression 으로 교체". z-score 외관만 있고 통계적 의미 없음 (false precision).
+
+### Proposed approach
+- `_BASELINE` 5 metrics × 4 quadrants = 20 entries 를 1970-2024 분기 데이터에서 quadrant-conditional mean/std 로 회귀.
+- KR β/α 는 1990-2024 분기 `kr_corp_spread ~ hy_oas` OLS 실측.
+- `_KR_MARGIN_SIGMA_PCT` 도 실측 σ.
+- `scripts/regress_stage2_baselines.py` 로 reproducibility 보장.
+
+### Acceptance criteria
+- [ ] 회귀 산출 스크립트 commit
+- [ ] `_BASELINE` 코멘트에 회귀 hash + 데이터 출처 명시
+- [ ] 2008 Q4 같은 historical event 가 z>+1.0 으로 검증되는 sanity test
+
+### Effort
+~4-6시간 (data 보유 여부에 따라)
+
+### Risk
+KR 분기 데이터 부족 시 US 부분만 회귀, KR 은 hand-coded 유지 + TODO.
+
+---
+
+## Issue #7 — research.dominant_scenario 가 B(growth+inflation) 를 stagflation 으로 mis-label
+
+### Problem
+`schemas/research.py:201` `if cycle in ("B", "D"): return "stagflation"`. B 는 growth+inflation (overheating, 1972/2021H2), D 는 recession+inflation (real stagflation, 1973-80). 둘을 같은 label 로 묶어 downstream method_picker 가 stagflation defensive (RISK_PARITY) 를 잘못 트리거. 2026-05-15 run: dominant_cycle=B, GDPNow 4.0% 였으나 risk_parity 적용됨. expected_sharpe 0.02 의 직접 원인일 가능성.
+
+### Proposed approach
+- `cycle == "D"` → `"stagflation"`
+- `cycle == "B"` → `"overheating"` (신규 label)
+- method_picker `_SCENARIO_METHOD` 에 `"overheating"` case 추가 (HRP — equity-tilted 분산)
+
+### Acceptance criteria
+- [x] 매핑 unit test 7개 (각 cycle × tail 조합)
+- [x] method_picker overheating branch test
+- [x] 595 기존 unit test pass
+
+### Effort
+~30분 (즉시 fix)
+
+### Risk
+없음 — 한 줄 production bug fix.
+
+---
+
+## Issue #8 — Stage 2 의 incremental information value 미측정
+
+### Problem
+Stage 2 는 macro_quant_analyst 의 regime quadrant 를 cycle marginal 로 거의 1:1 reformat 하는 것에 가까울 가능성. 2026-05-15 run: macro_quant `growth_inflation=0.84` → stage 2 cycle B=0.76. ablation 실험 없이는 stage 2 LLM 호출 ($, latency 243s) 의 ROI 미지수.
+
+### Proposed approach
+`scripts/measure_stage2_ablation.py` 로 3-mode 실험:
+- `baseline`: 정상 (n=3)
+- `no_macro`: macro_summary block 제거 (n=3)
+- `perturb_quadrant`: macro 의 regime quadrant swap (n=3)
+
+L1 distance 로 anchoring 정도 정량화. > 90% anchoring 시 stage 2 LLM 호출 자체 제거 평가.
+
+### Acceptance criteria
+- [ ] 3-mode 실험 결과 artifacts 보관
+- [ ] anchoring 정도 followup_issues.md 에 인용
+- [ ] (option) stage 2 input pruning 결정 commit body 명시
+
+### Effort
+~30-40분 wall (백그라운드)
+
+### Risk
+LLM 비용 ~$2. anchoring 결과가 모호 (60-90%) 면 입력 그대로 유지.
+
+---
+
+## Issue #9 — Stage 2 LLM noise 의 portfolio 흡수 미측정
+
+### Problem
+24-dim simplex sampling 은 LLM categorical sampling 분산이 큰 영역. variance 측정 인프라(`measure_llm_variance.py`) 있으나 실측 결과 미보고. dominant_cycle flip rate, bucket weight σ 모르면 smoothing 처방 필요성 판단 불가. variance 만으로 매주 portfolio 가 흔들리는 turnover 비용은 expected Sharpe 0.02 환경에서 결정적 손실.
+
+### Proposed approach
+- `measure_llm_variance.py --n 20` 백그라운드 실행 (~80분 wall).
+- 산출 metric: dominant_cycle flip rate, cycle marginal σ, bucket weight σ.
+- bond σ > 3pp 또는 fx σ > 3pp 또는 flip > 5% → C3 EMA + hysteresis 의무.
+
+### Acceptance criteria
+- [ ] variance n=20 결과 artifacts 보관
+- [ ] flip rate, σ followup_issues.md 인용
+- [ ] EMA λ 값 선택 근거 commit body 명시
+
+### Effort
+~80분 wall (백그라운드)
+
+### Risk
+LLM 비용 ~$1.
+
+---
+
+## Issue #10 — Prompt 의 ~50% 가 고정인데 prompt caching 미사용
+
+### Problem
+ESTIMATOR_PROMPT 는 ~10KB. 그 중 framework + 24-cell 정의 + 추정 절차 (~5KB) 가 매 호출 동일. Anthropic API 의 `cache_control` 적용 시 cache hit 시 input cost 90% 절감 + latency 단축. 현재 single `{"role": "user", "content": prompt}` 로 통째 전송.
+
+### Proposed approach
+- 고정 부분을 system message 로 분리.
+- system message 에 `cache_control: {"type": "ephemeral"}` 적용.
+- `invoke_with_structured_retry` 가 system/user 분리 message format 지원하는지 검증, 필요 시 보강.
+
+### Acceptance criteria
+- [ ] system/user 분리된 prompt 구조
+- [ ] cache_control 마커 mock client 가 받는 messages 에서 검증
+- [ ] variance 측정 시 latency 감소 확인
+
+### Effort
+~30-60분
+
+### Risk
+LLM client wrapper 가 cache_control 미지원 시 wrapper 자체 보강 필요.
+
+---
+
+## Issue #11 — Time-series smoothing 부재 — 매주 portfolio 가 LLM noise 로 흔들림
+
+### Problem
+`research_manager.node` 가 stateless. 이전 ResearchDecision 을 prior 로 안 봄. cycle regime 은 slowly-varying latent state 인데 매주 독립 추정 → LLM sampling 으로 dominant_cycle flip 가능 → bond ±15pp, fx ±20pp swing → turnover 비용 (5-15bps round-trip × 회전). expected Sharpe 0.02 환경에서 직접 손실.
+
+### Proposed approach
+- state 에 `prior_research_decision` 키 추가, wire 통과.
+- EMA blend: `final = λ · new + (1-λ) · prior`. λ 는 variance + ablation 결과로 결정.
+- Hysteresis (옵션): dominant_cycle 변경에 +Δ threshold.
+
+### Acceptance criteria
+- [ ] state wire 검증 unit test
+- [ ] EMA blend (prior None / present) unit test
+- [ ] hysteresis (off/on) unit test
+- [ ] e2e snapshot 으로 prior 적용 시 portfolio 변동 폭 감소 확인
+
+### Effort
+~1-2시간
+
+### Risk
+λ 값 정당화 안 되면 magic number. variance 결과 의존.
+
+---
+
 ## 우선순위 제안
 
 대회 5/28 일정과 ROI 관점에서:
@@ -263,3 +430,9 @@ Depends on: #4-a
 | 3 | **#4-a (analyst 지표 확장 minimal)** | narrative 품질 ↑, 본 제출 직전 가치. 3~4시간. |
 | 4 | **#3 (risk_debate → stress scenarios)** | philosophy.md "5. 시장 충격 시나리오" 섹션 자동화에 직결. 4~6시간. #2에 의존. |
 | 5 | #4-b, #4-c | 시간 남으면 5/28 후 작업. |
+| 6 | **#7 (B mis-label)** | 1줄 production bug, downstream 영향 결정적. 즉시 fix. |
+| 7 | **#9 + #5 (variance + β)** | 분석 후 처방 핵심. EMA λ, β 옵션 결정. |
+| 8 | **#11 (hysteresis)** | #9 측정 결과 의존. turnover 직접 절감. |
+| 9 | **#10 (caching)** | 비용/latency 즉시 개선. |
+| 10 | **#8 (ablation)** | stage 2 ROI 정량화. |
+| 11 | **#6 (baseline 회귀)** | data 의존, 시간 가장 큼. |

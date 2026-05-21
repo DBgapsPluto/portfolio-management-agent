@@ -182,14 +182,21 @@ class ResearchDecision(BaseModel):
 
     @property
     def dominant_scenario(self) -> str:
-        """Legacy compat — 7-scenario 이름 추정. 새 코드는 dominant_cell/cycle 권장.
+        """Legacy compat — 7-scenario 이름 추정 (downstream method_picker 등 string 매칭).
 
-        risk_lens / method_picker 등 기존 caller가 string 매칭으로 게이팅하므로 유지.
+        Issue #7 fix: B(growth+inflation) was previously mis-labeled as "stagflation",
+        triggering RISK_PARITY defensive in 2026-05-15 run (GDPNow 4.0%, dominant_cycle=B).
+        B 는 1972/2021H2 의 overheating regime — equity tilt 유지 + 분산 (HRP) 가 적절.
+
         매핑 우선순위:
           1. tail marginal ≥ 0.30 → global_credit
           2. kr_marginal[stress] ≥ 0.30 → kr_stress
           3. kr_marginal[boom]  ≥ 0.30 → kr_boom
-          4. dominant_cycle → A:goldilocks B:stagflation C:broad_recession D:stagflation
+          4. dominant_cycle:
+               A → goldilocks
+               B → overheating   (growth+inflation; ≠ stagflation)
+               C → broad_recession
+               D → stagflation   (recession+inflation; the real stagflation)
         """
         if self.tail_marginals.get("T", 0.0) >= 0.30:
             return "global_credit"
@@ -198,8 +205,11 @@ class ResearchDecision(BaseModel):
         if self.kr_marginals.get("boom", 0.0) >= 0.30:
             return "kr_boom"
         cycle = self.dominant_cycle
-        if cycle in ("B", "D"):
-            return "stagflation"
+        if cycle == "A":
+            return "goldilocks"
+        if cycle == "B":
+            return "overheating"
         if cycle == "C":
             return "broad_recession"
-        return "goldilocks"
+        # cycle == "D"
+        return "stagflation"

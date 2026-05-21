@@ -164,6 +164,7 @@ def boost_for_cell(cycle: str | None, tail: str | None, kr: str | None) -> dict[
 _LEGACY_SCENARIO_TO_AXES: dict[str, tuple[str, str, str]] = {
     "goldilocks":       ("A", "N", "F"),
     "ai_concentration": ("A", "N", "F"),  # 정확한 cell 매핑 없음 (breadth는 axis 아님)
+    "overheating":      ("B", "N", "F"),  # Issue #7: B (growth+inflation) 신규 label
     "stagflation":      ("D", "N", "F"),
     "broad_recession":  ("C", "N", "F"),
     "global_credit":    ("C", "T", "F"),

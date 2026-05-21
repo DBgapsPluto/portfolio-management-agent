@@ -204,3 +204,69 @@ def test_scenario_probabilities_must_sum_to_one():
     kwargs["A_N_F"] = 0.5  # 합 = 0.5
     with pytest.raises(ValueError, match="sum to 1.0"):
         ScenarioProbabilities24(**kwargs, reasoning="t")
+
+
+# === Task C1: dominant_scenario mapping (B→overheating, D→stagflation) ===
+
+
+def _make_decision_with_cycle_dominant(cycle: str, marg: float = 0.7):
+    """Helper: dominant cycle 이 주어진 값인 ResearchDecision."""
+    kwargs = {k: 0.0 for k in ALL_CELLS}
+    cell = f"{cycle}_N_F"
+    others = ["A_N_F", "B_N_F", "C_N_F", "D_N_F"]
+    others.remove(cell)
+    kwargs[cell] = marg
+    remaining = (1.0 - marg) / len(others)
+    for o in others:
+        kwargs[o] = remaining
+    probs = ScenarioProbabilities24(**kwargs, reasoning="t")
+    return map_probs_to_bucket(probs)
+
+
+def test_dominant_scenario_A_is_goldilocks():
+    d = _make_decision_with_cycle_dominant("A")
+    assert d.dominant_scenario == "goldilocks"
+
+
+def test_dominant_scenario_B_is_overheating_not_stagflation():
+    """Issue #7 production bug fix: B=growth+inflation ≠ stagflation."""
+    d = _make_decision_with_cycle_dominant("B")
+    assert d.dominant_scenario == "overheating"
+
+
+def test_dominant_scenario_C_is_broad_recession():
+    d = _make_decision_with_cycle_dominant("C")
+    assert d.dominant_scenario == "broad_recession"
+
+
+def test_dominant_scenario_D_is_stagflation():
+    d = _make_decision_with_cycle_dominant("D")
+    assert d.dominant_scenario == "stagflation"
+
+
+def test_dominant_scenario_tail_overrides_to_global_credit():
+    """tail marginal ≥ 0.30 → global_credit (cycle 무관)."""
+    kwargs = {k: 0.0 for k in ALL_CELLS}
+    # B cycle 0.65, but tail T=0.35 from A_T_F 0.35
+    kwargs.update({"B_N_F": 0.65, "A_T_F": 0.35})
+    probs = ScenarioProbabilities24(**kwargs, reasoning="t")
+    d = map_probs_to_bucket(probs)
+    assert d.dominant_scenario == "global_credit"
+
+
+def test_dominant_scenario_kr_stress_override():
+    """kr stress marginal ≥ 0.30 → kr_stress (cycle 무관)."""
+    kwargs = {k: 0.0 for k in ALL_CELLS}
+    kwargs.update({"B_N_F": 0.40, "A_N_stress": 0.35, "C_N_stress": 0.25})
+    probs = ScenarioProbabilities24(**kwargs, reasoning="t")
+    d = map_probs_to_bucket(probs)
+    # tail marginal = 0 < 0.30, kr stress = 0.60 ≥ 0.30 → kr_stress
+    assert d.dominant_scenario == "kr_stress"
+
+
+def test_dominant_scenario_kr_boom_override():
+    kwargs = {k: 0.0 for k in ALL_CELLS}
+    kwargs.update({"A_N_F": 0.40, "A_N_boom": 0.35, "B_N_boom": 0.25})
+    probs = ScenarioProbabilities24(**kwargs, reasoning="t")
+    d = map_probs_to_bucket(probs)
+    assert d.dominant_scenario == "kr_boom"
