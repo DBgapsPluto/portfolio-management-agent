@@ -351,10 +351,10 @@ L1 distance 로 anchoring 정도 정량화. > 90% anchoring 시 stage 2 LLM 호�
 ### Measurement result (2026-05-21, 3 mode, 2026-05-15 fixture)
 - baseline (n=3): cycle B=0.79, dominant_scenario=overheating × 3
 - no_macro (n=2): cycle A=0.49, dominant_scenario=goldilocks × 2 (큰 shift)
-- perturb_quadrant (n=1): cycle B=0.49, dominant_scenario=overheating
+- perturb_quadrant (combined n=3 from 9 attempts): cycle B=0.47, dominant_scenario=overheating × 3
 - L1(baseline, no_macro): **0.995** (≫ 0.15)
-- L1(baseline, perturb): **0.721** (> 0.40)
-- Anchoring ratio: **0.72** (< 2.0 — 단순 reformat 아님)
+- L1(baseline, perturb): **0.727** (> 0.40)
+- Anchoring ratio: **0.73** (< 2.0 — 단순 reformat 아님)
 - Summary: `artifacts/2026-05-20/ablation/summary.md`
 - **C3 input pruning: keep prompt as-is** — decisions.md D5
 - Caveat: no_macro/perturb 일부 runs LLM sum-to-1 validator (0.5% tol) 실패. n 작음.
