@@ -94,10 +94,14 @@ class ScenarioProbabilities24(BaseModel):
 
     @model_validator(mode="after")
     def _sum_to_one(self):
-        # 24-dim에서 LLM이 정확히 sum=1.0 맞추기 어려움. 0.5% tolerance.
+        # 24-dim categorical 에서 LLM 의 sum-to-1 정확도 한계. tol 0.005 일 때
+        # ablation perturb 67% / no_macro 33% 실패 (artifacts/2026-05-20/ablation/
+        # summary.md). tol 0.02 로 완화 — sum way off (0.5/1.5) 는 여전히 거름.
+        # downstream map_probs_to_bucket 이 _renormalize 로 정확한 합 보장.
+        # (Issue #9 caveat 후속, C5 regen unblock)
         total = sum(self.as_dict().values())
-        if abs(total - 1.0) > 5e-3:
-            raise ValueError(f"Cell probabilities must sum to 1.0 ± 0.005, got {total}")
+        if abs(total - 1.0) > 2e-2:
+            raise ValueError(f"Cell probabilities must sum to 1.0 ± 0.02, got {total}")
         return self
 
     def as_dict(self) -> dict[str, float]:

@@ -116,4 +116,24 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 Δ vs Post-C3: identical (19 pass). 0 new failures.
 
 ## Post-C5
-(C5 commit 직후 갱신)
+
+### Unit test
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 619 passed, 5 warnings in 46.99s
+```
+Δ vs Post-C4: identical (619 passed). 0 new failures.
+
+### Integration test
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 19 passed, 1 warning in 26.76s
+```
+Δ vs Post-C4: identical (19 pass). 0 new failures.
+
+### Final summary
+- Total Δ vs Post-C0 baseline: +24 unit test, +5 integration test, 0 new failures.
+- All 3 pre-existing unit fail + 18 pre-existing integration fail unchanged.
+- mega-PR (C1-C5) merge criteria: **0 regression 만족**.
