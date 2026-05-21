@@ -1,0 +1,37 @@
+{
+  "mode": "perturb_quadrant",
+  "n": 1,
+  "runs": [
+    {
+      "run": 3,
+      "mode": "perturb_quadrant",
+      "elapsed_s": 9.41420578956604,
+      "dominant_cycle": "B",
+      "dominant_cycle_prob": 0.49,
+      "dominant_scenario": "overheating",
+      "cycle_marginals": {
+        "A": 0.185,
+        "B": 0.49,
+        "C": 0.304,
+        "D": 0.019
+      },
+      "tail_marginals": {
+        "N": 0.9359999999999999,
+        "T": 0.062
+      },
+      "kr_marginals": {
+        "F": 0.614,
+        "boom": 0.147,
+        "stress": 0.237
+      },
+      "portfolio": {
+        "kr_equity": 0.0941741124550973,
+        "global_equity": 0.21367896848356827,
+        "fx_commodity": 0.20123899438974763,
+        "bond": 0.32776409147114693,
+        "bond_tips_share": 0.5357245456265056,
+        "cash_mmf": 0.16314383320043996
+      }
+    }
+  ]
+}

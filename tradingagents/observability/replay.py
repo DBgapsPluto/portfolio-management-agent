@@ -25,7 +25,9 @@ from tradingagents.agents.utils.agent_states import AgentState, _create_empty_st
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.schemas.mandate import ValidationReport
 from tradingagents.schemas.portfolio import BucketTarget, CandidateSet, WeightVector
-from tradingagents.schemas.reports import MacroReport, RiskReport
+from tradingagents.schemas.reports import (
+    MacroReport, NewsReport, RiskReport, TechnicalReport,
+)
 from tradingagents.schemas.research import ResearchDecision
 from tradingagents.schemas.risk_overlay import RiskOverlay
 from tradingagents.skills.portfolio.method_picker import MethodChoice
@@ -49,16 +51,19 @@ STAGE_PREREQUISITES: dict[str, list[str]] = {
         "technical_summary", "news_summary",
         "macro_report", "risk_report",
     ],
-    # Stage 3 allocator
+    # Stage 3 allocator (C5: technical_report.factor_panel + macro_report.regime +
+    # risk_report.systemic_score 추가 — node 가 직접 접근)
     "allocator": [
         "macro_summary", "risk_summary",
         "technical_summary", "news_summary",
+        "macro_report", "risk_report", "technical_report",
         "research_debate_summary", "research_decision", "bucket_target",
     ],
     # Stage 4 risk_judge
     "risk_debate": [
         "macro_summary", "risk_summary",
         "technical_summary", "news_summary",
+        "macro_report", "risk_report", "technical_report",
         "research_debate_summary", "research_decision", "bucket_target",
         "candidate_set", "weight_vector", "method_choice",
     ],
@@ -71,6 +76,7 @@ STAGE_PREREQUISITES: dict[str, list[str]] = {
     "portfolio_manager": [
         "macro_summary", "risk_summary",
         "technical_summary", "news_summary",
+        "macro_report", "risk_report", "technical_report",
         "research_debate_summary", "research_decision", "bucket_target",
         "candidate_set", "weight_vector", "method_choice",
         "risk_overlay", "portfolio_numerics",
@@ -91,6 +97,8 @@ SCHEMA_MAP: dict[str, type[BaseModel]] = {
     "validation_report": ValidationReport,
     "macro_report": MacroReport,
     "risk_report": RiskReport,
+    "technical_report": TechnicalReport,
+    "news_report": NewsReport,
 }
 
 

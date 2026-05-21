@@ -1,0 +1,68 @@
+{
+  "mode": "no_macro",
+  "n": 2,
+  "runs": [
+    {
+      "run": 2,
+      "mode": "no_macro",
+      "elapsed_s": 10.023799657821655,
+      "dominant_cycle": "A",
+      "dominant_cycle_prob": 0.51,
+      "dominant_scenario": "goldilocks",
+      "cycle_marginals": {
+        "A": 0.51,
+        "B": 0.23299999999999998,
+        "C": 0.166,
+        "D": 0.08900000000000001
+      },
+      "tail_marginals": {
+        "N": 0.911,
+        "T": 0.08700000000000001
+      },
+      "kr_marginals": {
+        "F": 0.6900000000000001,
+        "boom": 0.133,
+        "stress": 0.175
+      },
+      "portfolio": {
+        "kr_equity": 0.1579474614124773,
+        "global_equity": 0.34591421236963066,
+        "fx_commodity": 0.10996367188764286,
+        "bond": 0.31648144313445087,
+        "bond_tips_share": 0.2962785535995822,
+        "cash_mmf": 0.06969321119579829
+      }
+    },
+    {
+      "run": 3,
+      "mode": "no_macro",
+      "elapsed_s": 8.091152667999268,
+      "dominant_cycle": "A",
+      "dominant_cycle_prob": 0.47000000000000003,
+      "dominant_scenario": "goldilocks",
+      "cycle_marginals": {
+        "A": 0.47000000000000003,
+        "B": 0.35,
+        "C": 0.106,
+        "D": 0.072
+      },
+      "tail_marginals": {
+        "N": 0.91,
+        "T": 0.088
+      },
+      "kr_marginals": {
+        "F": 0.716,
+        "boom": 0.057999999999999996,
+        "stress": 0.224
+      },
+      "portfolio": {
+        "kr_equity": 0.13298075152471567,
+        "global_equity": 0.336688365529033,
+        "fx_commodity": 0.15064474352411464,
+        "bond": 0.28649884316055335,
+        "bond_tips_share": 0.40191075868234505,
+        "cash_mmf": 0.09318729626158334
+      }
+    }
+  ]
+}

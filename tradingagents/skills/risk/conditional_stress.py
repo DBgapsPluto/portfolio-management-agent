@@ -20,7 +20,15 @@ from tradingagents.schemas.macro import RegimeQuadrant
 
 # Cycle-conditional baseline (regime이 normally produce하는 stress level).
 # (mean, typical_1σ) per metric per quadrant. 1σ는 historical std 근사.
-# P1 TODO: 1970-2024 quarterly historical regression으로 교체.
+#
+# 본 값은 macro consensus + 1970-2024 근사 hand-coded. Issue #6 (전체 회귀) 의
+# scope 가 본 PR 초과 — decisions.md D7 참조.
+# Data gap (2026-05-21 확인):
+#   - HY OAS (BAMLH0A0HYM2): 2023 vintage 변경 후 historical 가용 불가
+#   - BAA10Y (IG proxy): 1990+ 가용 — partial regression 가능
+#   - VIXCLS, funding, equity_bond_corr: 1990+ FRED 가용
+#   - KR corp/equity_bond: ECOS data 별도 fetcher 필요 (~2003+)
+# 후속 PR: 1990-2024 partial regression (US 부분) + KR 별도 cycle.
 _BASELINE: dict[RegimeQuadrant, dict[str, tuple[float, float]]] = {
     "growth_disinflation": {
         "hy_oas_bps":          (350,  120),

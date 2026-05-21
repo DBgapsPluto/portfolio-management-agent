@@ -1,0 +1,99 @@
+{
+  "mode": "baseline",
+  "n": 3,
+  "runs": [
+    {
+      "run": 1,
+      "mode": "baseline",
+      "elapsed_s": 9.964131593704224,
+      "dominant_cycle": "B",
+      "dominant_cycle_prob": 0.827,
+      "dominant_scenario": "overheating",
+      "cycle_marginals": {
+        "A": 0.06,
+        "B": 0.827,
+        "C": 0.051000000000000004,
+        "D": 0.062
+      },
+      "tail_marginals": {
+        "N": 0.967,
+        "T": 0.033
+      },
+      "kr_marginals": {
+        "F": 0.634,
+        "boom": 0.093,
+        "stress": 0.273
+      },
+      "portfolio": {
+        "kr_equity": 0.0838473823674091,
+        "global_equity": 0.213182306410737,
+        "fx_commodity": 0.30056478958511834,
+        "bond": 0.20248152708637787,
+        "bond_tips_share": 0.7987688733896998,
+        "cash_mmf": 0.19992399455035775
+      }
+    },
+    {
+      "run": 2,
+      "mode": "baseline",
+      "elapsed_s": 17.61223816871643,
+      "dominant_cycle": "B",
+      "dominant_cycle_prob": 0.665,
+      "dominant_scenario": "overheating",
+      "cycle_marginals": {
+        "A": 0.045,
+        "B": 0.665,
+        "C": 0.149,
+        "D": 0.139
+      },
+      "tail_marginals": {
+        "N": 0.922,
+        "T": 0.076
+      },
+      "kr_marginals": {
+        "F": 0.664,
+        "boom": 0.149,
+        "stress": 0.18500000000000003
+      },
+      "portfolio": {
+        "kr_equity": 0.09749700878990608,
+        "global_equity": 0.19014013480039751,
+        "fx_commodity": 0.2909281845632165,
+        "bond": 0.21929410815946798,
+        "bond_tips_share": 0.7717781376021375,
+        "cash_mmf": 0.202140563687012
+      }
+    },
+    {
+      "run": 3,
+      "mode": "baseline",
+      "elapsed_s": 19.122962951660156,
+      "dominant_cycle": "B",
+      "dominant_cycle_prob": 0.872,
+      "dominant_scenario": "overheating",
+      "cycle_marginals": {
+        "A": 0.037,
+        "B": 0.872,
+        "C": 0.044,
+        "D": 0.045
+      },
+      "tail_marginals": {
+        "N": 0.948,
+        "T": 0.05
+      },
+      "kr_marginals": {
+        "F": 0.565,
+        "boom": 0.176,
+        "stress": 0.257
+      },
+      "portfolio": {
+        "kr_equity": 0.09359823566766877,
+        "global_equity": 0.20087517191627965,
+        "fx_commodity": 0.3017173546625346,
+        "bond": 0.20380898765779568,
+        "bond_tips_share": 0.7996834146893332,
+        "cash_mmf": 0.20000025009572128
+      }
+    }
+  ]
+}
