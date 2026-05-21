@@ -14,7 +14,9 @@ axis 정의:
 
 mandate (위험자산 ≤ 0.70)은 모든 cell playbook이 ≤ 0.70 → 선형결합 자동 보장.
 """
-from tradingagents.schemas.research import ResearchDecision, ScenarioProbabilities24
+from tradingagents.schemas.research import (
+    ALL_CELLS, ResearchDecision, ScenarioProbabilities24,
+)
 from tradingagents.skills._helpers import invoke_with_structured_retry
 from tradingagents.skills.research.scenario_definitions import (
     CYCLE_DEFINITIONS, KR_DEFINITIONS, TAIL_DEFINITIONS,
@@ -23,6 +25,64 @@ from tradingagents.skills.research.scenario_definitions import (
 from tradingagents.skills.research.scenario_mapper import map_probs_to_bucket
 from tradingagents.skills.risk.conditional_stress import compute_conditional_stress
 from tradingagents.skills.risk.kr_residual_signals import compute_kr_residual_signals
+
+
+# Temporal smoothing (Issue #11 / spec §2 C3 / decisions.md D2, D3).
+# C2 variance n=20: flip rate 0%, bond σ 0.3pp ≪ 3pp → 둘 다 no-op default.
+# infrastructure 만 구축 — 미래 cycle transition 시점 재측정 후 활성화 권장.
+_EMA_LAMBDA: float = 1.0      # D2: λ=1.0 (new only, prior 무시 — no smoothing)
+_HYSTERESIS_DELTA: float = 0.0  # D3: Δ=0.0 (off — flip threshold 0)
+
+
+def _blend_with_prior(
+    new: ScenarioProbabilities24,
+    prior_decision: ResearchDecision | None,
+    lam: float,
+) -> ScenarioProbabilities24:
+    """EMA blend: final_probs = λ·new + (1-λ)·prior. λ=1.0 또는 prior None 시 identity.
+
+    24-cell 분포 합 = 1.0 보장 (renormalize). reasoning 은 new 의 것 유지.
+    """
+    if prior_decision is None or lam >= 1.0 - 1e-9:
+        return new
+    prior_probs = prior_decision.scenario_probabilities
+    blended = {
+        key: lam * getattr(new, key) + (1.0 - lam) * getattr(prior_probs, key)
+        for key in ALL_CELLS
+    }
+    total = sum(blended.values())
+    if total <= 0:
+        return new
+    blended = {k: v / total for k, v in blended.items()}
+    return ScenarioProbabilities24(**blended, reasoning=new.reasoning)
+
+
+def _apply_hysteresis(
+    decision: ResearchDecision,
+    prior_decision: ResearchDecision | None,
+    delta: float,
+) -> ResearchDecision:
+    """Dominant cycle 변경 시 새 marginal 이 기존 cycle marginal 보다 +Δ 이상 앞서야 변경.
+
+    Δ=0.0 또는 prior None 또는 cycle 변경 없음 → identity.
+    변경 거부 시 dominant_cycle/probability 만 prior 의 값으로 override (marginal 값 보존).
+    """
+    if prior_decision is None or delta <= 0:
+        return decision
+    if decision.dominant_cycle == prior_decision.dominant_cycle:
+        return decision
+    new_dominant = decision.dominant_cycle
+    prior_dominant = prior_decision.dominant_cycle
+    new_marg = decision.cycle_marginals.get(new_dominant, 0.0)
+    prior_in_new = decision.cycle_marginals.get(prior_dominant, 0.0)
+    if (new_marg - prior_in_new) >= delta:
+        return decision  # large enough — allow change
+    # Override: keep prior dominant label (marginal 값은 raw 유지)
+    overridden = decision.model_copy(update={
+        "dominant_cycle": prior_dominant,  # type: ignore[arg-type]
+        "dominant_cycle_probability": prior_in_new,
+    })
+    return overridden
 
 
 _CYCLE_BLOCK = "\n".join(f"- {c}: {defn}" for c, defn in CYCLE_DEFINITIONS.items())
@@ -148,9 +208,16 @@ def create_research_manager(deep_llm):
             max_retries=1,
         )
 
+        # EMA temporal smoothing (Issue #11 / D2). λ=1.0 default → identity.
+        prior_decision: ResearchDecision | None = state.get("prior_research_decision")
+        smoothed_probs = _blend_with_prior(probs, prior_decision, _EMA_LAMBDA)
+
         decision: ResearchDecision = map_probs_to_bucket(
-            probs, rationale_seed=probs.reasoning[:200],
+            smoothed_probs, rationale_seed=smoothed_probs.reasoning[:200],
         )
+
+        # Hysteresis (Issue #11 / D3). Δ=0.0 default → identity.
+        decision = _apply_hysteresis(decision, prior_decision, _HYSTERESIS_DELTA)
 
         target = decision.bucket_target
         # Top cells 표기 (5개만)

@@ -23,10 +23,14 @@ from tradingagents.skills.research.scenario_definitions import (
 _CONVICTION_HIGH = 0.55
 _CONVICTION_MEDIUM = 0.35
 
-# Sharpening 파라미터 — β(p_dom) = max(1, 1 + k × (p_dom - threshold))
-_BETA_THRESHOLD = 0.30   # p_dom < threshold면 β=1.0 (no sharpening)
-_BETA_SLOPE = 3.0         # p_dom 0.1 증가 시 β 0.3 증가
-_BETA_CAP = 4.0           # numerical 안전 상한
+# Sharpening 옵션 — Issue #5 / spec §2 C3 / decisions.md D1.
+# C2 variance n=20 측정 결과 (2026-05-15 fixture):
+#   - dominant_cycle flip rate: 0% (20/20 모두 B)
+#   - bond σ: 0.3pp ≪ 3pp 임계
+#   - effective B (post β=2.38 sharpening): 99.2% — 24-cell cross-effect 통째 짓누름
+# → 옵션 A 채택: β=1 고정 (sharpening 자체 제거).
+# 미래 cycle transition 시점에 variance 재측정하여 옵션 B/C 재평가 권장.
+# 옛 상수 (_BETA_THRESHOLD=0.30, _BETA_SLOPE=3.0, _BETA_CAP=4.0) 는 결정 후 제거.
 
 
 def _classify_conviction(max_cycle_prob: float) -> ConvictionLevel:
@@ -38,16 +42,11 @@ def _classify_conviction(max_cycle_prob: float) -> ConvictionLevel:
 
 
 def _compute_conviction_beta(dominant_cycle_prob: float) -> float:
-    """Continuous β(p_dom) — dominant cycle marginal 기준 sharpening 강도.
+    """β=1.0 고정 — sharpening 비활성 (option A, decisions.md D1).
 
-    p_dom < 0.30 → β=1.0 (no sharpening, low conviction에서는 dilution 유지)
-    p_dom = 0.40 → β=1.30
-    p_dom = 0.55 → β=1.75 (high conviction threshold)
-    p_dom = 0.70 → β=2.20
-    p_dom = 0.90 → β=2.80
+    인자 보존 (legacy caller 호환) 하되 항상 1.0 반환.
     """
-    beta = 1.0 + _BETA_SLOPE * max(0.0, dominant_cycle_prob - _BETA_THRESHOLD)
-    return min(_BETA_CAP, max(1.0, beta))
+    return 1.0
 
 
 def _sharpen_cycle_marginal(

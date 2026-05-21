@@ -92,6 +92,10 @@ class AgentState(MessagesState):
 
     # === Cross-run ===
     previous_portfolio: Annotated[Optional[dict], "For monthly rebalancing"]
+    prior_research_decision: Annotated[
+        Optional[ResearchDecision],
+        "Previous week ResearchDecision — Stage 2 EMA blend prior (Issue #11)",
+    ]
 
 
 def _create_empty_state(
@@ -125,6 +129,7 @@ def _create_empty_state(
         final_portfolio_path="", philosophy_doc_path="", trade_plan_csv_path="",
         warnings=[],
         previous_portfolio=previous_portfolio,
+        prior_research_decision=None,
     )
 
 

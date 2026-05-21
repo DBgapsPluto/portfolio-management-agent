@@ -133,59 +133,52 @@ def test_kr_marginal_aggregates_correctly():
     assert decision.kr_marginals["stress"] == pytest.approx(0.30, abs=1e-6)
 
 
-def test_conviction_beta_no_sharpen_below_threshold():
-    """p_dom < 0.30 → β=1.0 (sharpening 비활성)."""
-    assert _compute_conviction_beta(0.25) == pytest.approx(1.0)
-    assert _compute_conviction_beta(0.30) == pytest.approx(1.0)
-    assert _compute_conviction_beta(0.10) == pytest.approx(1.0)
+def test_conviction_beta_always_one_option_a():
+    """C3 / decisions.md D1: β=1.0 고정 (option A, sharpening 제거).
+
+    이전: p_dom 별 β=1.0~2.80. 현재: 항상 1.0.
+    근거: variance n=20 측정 (bond σ 0.3pp ≪ 3pp, flip 0%) — sharpening 자체 불필요.
+    """
+    for p_dom in (0.10, 0.25, 0.30, 0.40, 0.55, 0.70, 0.90, 1.0):
+        assert _compute_conviction_beta(p_dom) == pytest.approx(1.0), \
+            f"β must be 1.0 for p_dom={p_dom} (option A)"
 
 
-def test_conviction_beta_increases_above_threshold():
-    """p_dom 증가 시 β 증가 (sharpening 강화)."""
-    assert _compute_conviction_beta(0.40) == pytest.approx(1.30, abs=0.01)
-    assert _compute_conviction_beta(0.55) == pytest.approx(1.75, abs=0.01)
-    assert _compute_conviction_beta(0.70) == pytest.approx(2.20, abs=0.01)
+def test_sharpen_helper_identity_at_beta_one():
+    """β=1.0 일 때 _sharpen_cycle_marginal 은 input 을 그대로 반환 (identity).
 
-
-def test_sharpen_preserves_tail_kr_conditional():
-    """β>1로 cycle marginal sharpen해도 P(tail, kr | cycle)은 동일해야."""
+    option A 채택 후 mapper 가 호출하는 _sharpen 의 사실상 유일한 path.
+    """
     kwargs = {k: 0.0 for k in ALL_CELLS}
-    # A cycle: A_N_F 0.3, A_T_F 0.1 (A marginal 0.4)
-    # B cycle: B_N_F 0.4, B_N_boom 0.2 (B marginal 0.6)
     kwargs.update({
         "A_N_F": 0.30, "A_T_F": 0.10,
         "B_N_F": 0.40, "B_N_boom": 0.20,
     })
-    sharp = _sharpen_cycle_marginal(kwargs, beta=2.0)
-    # A 내부 conditional: A_N_F was 0.30/0.40=0.75, A_T_F was 0.10/0.40=0.25
-    new_a_marg = sharp["A_N_F"] + sharp["A_T_F"]
-    new_b_marg = sharp["B_N_F"] + sharp["B_N_boom"]
-    assert sharp["A_N_F"] / new_a_marg == pytest.approx(0.75, abs=1e-6)
-    assert sharp["A_T_F"] / new_a_marg == pytest.approx(0.25, abs=1e-6)
-    assert sharp["B_N_F"] / new_b_marg == pytest.approx(2/3, abs=1e-6)
-    # B was bigger, so β=2 makes B even bigger
-    assert new_b_marg > 0.6
-    assert abs(new_a_marg + new_b_marg - 1.0) < 1e-6
+    sharp = _sharpen_cycle_marginal(kwargs, beta=1.0)
+    for key in ALL_CELLS:
+        assert sharp.get(key, 0) == pytest.approx(kwargs.get(key, 0), abs=1e-9)
 
 
-def test_sharpening_makes_dominant_cycle_more_concentrated():
-    """β>1로 sharpening 후 dominant cycle marginal 증가, others 감소."""
+def test_effective_equals_raw_under_option_a():
+    """C3 / D1: β=1.0 고정 → effective marginal == raw marginal (모든 p_dom)."""
     kwargs = {k: 0.0 for k in ALL_CELLS}
+    # high-conviction B (이전엔 β=2.20 으로 sharpening 됐던 case)
     kwargs.update({
-        "A_N_F": 0.20, "B_N_F": 0.50, "C_N_F": 0.20, "D_N_F": 0.10,
+        "A_N_F": 0.10, "B_N_F": 0.70, "C_N_F": 0.15, "D_N_F": 0.05,
     })
     probs = ScenarioProbabilities24(**kwargs, reasoning="t")
     decision = map_probs_to_bucket(probs)
-    # raw: B=0.50, after β=1.0+3×0.20=1.60: B^1.6 / Z
     assert decision.dominant_cycle == "B"
-    assert decision.dominant_cycle_probability == pytest.approx(0.50, abs=1e-6)
-    # effective B marginal > raw B marginal
-    assert decision.effective_cycle_marginals["B"] > 0.50
-    assert decision.conviction_beta > 1.0
+    assert decision.conviction_beta == pytest.approx(1.0)
+    # effective == raw 모든 cycle 에서
+    for c in ("A", "B", "C", "D"):
+        assert decision.effective_cycle_marginals[c] == pytest.approx(
+            decision.cycle_marginals[c], abs=1e-6,
+        ), f"effective[{c}] != raw[{c}] under option A"
 
 
 def test_sharpening_inactive_at_low_conviction():
-    """p_dom < 0.30이면 effective ≈ raw, β=1."""
+    """p_dom < 0.30 이면 effective ≈ raw, β=1 — option A 와도 일관."""
     kwargs = {k: 0.0 for k in ALL_CELLS}
     # 4 cycle 균등 — dominant 0.25
     kwargs.update({"A_N_F": 0.25, "B_N_F": 0.25, "C_N_F": 0.25, "D_N_F": 0.25})
