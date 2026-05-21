@@ -56,7 +56,28 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 Δ vs baseline: identical (18/14). 0 new failures.
 
 ## Post-C2
-(C2 commit 직후 갱신)
+
+### Unit test
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 604 passed, 5 warnings in 47.97s
+```
+Δ vs Post-C1: identical (604 passed, 3 pre-existing fails). C2 신규 6 smoke tests 는 `tests/scripts/` 위치 (sibling) 라 별도 path 로 collect.
+
+### Scripts smoke test (신규 path)
+```
+$ uv run pytest tests/scripts/ -v 2>&1 | tail -3
+============================== 6 passed in 0.14s ==============================
+```
+
+### Integration test
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 14 passed, 1 warning in 51.03s
+```
+Δ vs baseline: identical (18/14). 0 new regressions.
 
 ## Post-C3
 (C3 commit 직후 갱신)

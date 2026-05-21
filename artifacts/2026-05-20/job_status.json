@@ -1,4 +1,50 @@
 {
-  "comment": "Background process tracker. 결과 인용 전 ls + tail 로 검증.",
-  "jobs": {}
+  "comment": "Background process tracker. 결과 인용 전 ls + tail 로 검증. 첫 launch 에서 variance+baseline 동시 실행 시 pyarrow parquet DLL paging 오류 (transient) 발생 → 이후 sequential 로 launch.",
+  "jobs": {
+    "variance_n20_attempt1": {
+      "status": "failed_transient",
+      "log_path": "artifacts/2026-05-20/variance/n20_run.log (overwritten by attempt2)",
+      "error": "ImportError: pyarrow parquet DLL load failed (Windows paging file too small) — variance+ablation 동시 import 시 발생. 재시도 성공."
+    },
+    "ablation_baseline_n3_attempt1": {
+      "status": "completed_wiped",
+      "note": "JSON 산출됐으나 parallel stage1 session 의 git clean 으로 wipe. 재실행 (attempt2)."
+    },
+    "variance_n20_attempt2": {
+      "status": "completed",
+      "out_path": "artifacts/2026-05-20/variance/n20_run.json",
+      "log_path": "artifacts/2026-05-20/variance/n20_run.log",
+      "n_runs": 20,
+      "result_summary": "dominant_cycle B × 20 (100% consistent), bond σ 0.3pp, fx σ 0.2pp, effective B 99.2% (post-sharpening)"
+    },
+    "ablation_baseline_n3_attempt2": {
+      "status": "completed",
+      "out_path": "artifacts/2026-05-20/ablation/baseline_n3.json",
+      "log_path": "artifacts/2026-05-20/ablation/baseline_run.log",
+      "n_runs": 3,
+      "result_summary": "cycle B=0.79, overheating × 3"
+    },
+    "ablation_no_macro_n3": {
+      "status": "partial",
+      "out_path": "artifacts/2026-05-20/ablation/no_macro_n3.json",
+      "log_path": "artifacts/2026-05-20/ablation/no_macro_run.log",
+      "n_runs": 2,
+      "n_failed_validation": 1,
+      "result_summary": "cycle A=0.49, goldilocks × 2. 1 run LLM sum-to-1 (0.5% tol) 실패."
+    },
+    "ablation_perturb_quadrant_n3": {
+      "status": "partial",
+      "out_path": "artifacts/2026-05-20/ablation/perturb_quadrant_n3.json",
+      "log_path": "artifacts/2026-05-20/ablation/perturb_run.log",
+      "n_runs": 1,
+      "n_failed_validation": 2,
+      "result_summary": "cycle B=0.49, overheating × 1. 2 runs LLM sum-to-1 (0.5% tol) 실패."
+    },
+    "_aggregate": {
+      "L1_baseline_no_macro": 0.995,
+      "L1_baseline_perturb": 0.721,
+      "anchoring_ratio": 0.72,
+      "decisions_applied": ["D1=A(β=1)", "D2=λ=1.0", "D3=off", "D5=keep prompt"]
+    }
+  }
 }

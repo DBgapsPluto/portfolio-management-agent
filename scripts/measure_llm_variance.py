@@ -50,7 +50,8 @@ def _fmt_stats(s: dict, fmt: str = ".3f", scale: float = 1.0) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--as-of", default="2026-05-15")
-    parser.add_argument("--n", type=int, default=5, help="반복 횟수")
+    parser.add_argument("--n", type=int, default=20,
+                        help="반복 횟수 (default 20, variance 측정 표준)")
     parser.add_argument("--out", default=None,
                         help="raw 결과 JSON 저장 경로 (default: runs/{as_of}/variance/{ts}.json)")
     args = parser.parse_args()
@@ -67,7 +68,8 @@ def main() -> int:
 
     runs: list[dict] = []
     for i in range(args.n):
-        logger.info("Run %d/%d ...", i + 1, args.n)
+        logger.info("Run %d/%d (%.0f%% complete)...",
+                    i + 1, args.n, 100.0 * i / args.n)
         state, _missing = restore_state(
             as_of_date=args.as_of, stage="research_debate",
             universe_path=DEFAULT_CONFIG["universe_path"],
