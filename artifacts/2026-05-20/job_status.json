@@ -1,0 +1,4 @@
+{
+  "comment": "Background process tracker. 결과 인용 전 ls + tail 로 검증.",
+  "jobs": {}
+}
