@@ -18,7 +18,13 @@ from dataclasses import dataclass
 
 # Hand-coded β: kr_corp_spread = α + β × hy_oas + ε
 # 대략 KR AA-3y corp spread vs US HY OAS 회귀 — KR이 US 신용 cycle을 약 50%
-# 만큼 흡수한다고 보는 보수적 추정. P1 TODO: pandas OLS로 실측.
+# 만큼 흡수한다고 보는 보수적 추정.
+#
+# Issue #6 (pandas OLS 실측) 의 scope 가 본 PR 초과 — decisions.md D7 참조.
+# Data gap (2026-05-21 확인): ECOS KR 분기 corp spread series 별도 fetcher 필요
+# (~2003+). HY OAS (BAMLH0A0HYM2) historical 가용 불가 — BAA10Y proxy 도 KR 회귀
+# 에 부적합 (IG 가 HY 보다 KR 신용 cycle 와 약한 상관). 후속 PR 에서 ECOS data
+# 확보 후 실측.
 _BETA_KR_CORP_VS_HY = 0.50
 _ALPHA_KR_CORP = 50.0  # bps, KR baseline corp premium
 

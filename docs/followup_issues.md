@@ -294,16 +294,35 @@ variance n=20 + backtest grid (β_slope ∈ {0,1,2,3}) 측정 후 셋 중 하나
 - `_KR_MARGIN_SIGMA_PCT` 도 실측 σ.
 - `scripts/regress_stage2_baselines.py` 로 reproducibility 보장.
 
-### Acceptance criteria
-- [ ] 회귀 산출 스크립트 commit
-- [ ] `_BASELINE` 코멘트에 회귀 hash + 데이터 출처 명시
-- [ ] 2008 Q4 같은 historical event 가 z>+1.0 으로 검증되는 sanity test
+### Acceptance criteria (재정의 — 2026-05-21 data gap 확인 후)
+- [ ] (Phase A) US partial regression: BAA10Y/VIXCLS/funding/equity_bond_corr 1990-2024
+  분기 quadrant-conditional mean/σ 산출. HY OAS 는 BAA10Y proxy 로 대체 또는
+  ICE BofA 대체 source 확보 (예: FRED `BAMLC0A4CBBB` BBB-spread).
+- [ ] (Phase B) KR fetcher: ECOS API 로 KR AA-3y corp spread + KR 국고채 3y 분기
+  series 확보 (~2003+). `tradingagents/dataflows/ecos.py` 확장.
+- [ ] (Phase C) `_BETA_KR_CORP_VS_HY` OLS 실측 (Phase B 완료 후).
+- [ ] `scripts/regress_stage2_baselines.py` reproducibility.
+- [ ] 2008 Q4 historical event z>+1.0 sanity test (Phase A 후 가능).
 
-### Effort
-~4-6시간 (data 보유 여부에 따라)
+### Status (2026-05-21, C4 시점)
+**Defer full regression to follow-up PR** (decisions.md D7).
+본 PR (Stage 2 mega-PR) 의 C4 scope 는 prompt caching 만 처리.
+`_BASELINE` 5×4 + `_BETA_KR_CORP_VS_HY` 는 hand-coded 유지 + 데이터 gap 명시 주석 추가.
+
+근거:
+1. HY OAS (BAMLH0A0HYM2) 2023 vintage 변경 — historical 가용 불가 (proxy 별도 결정 필요)
+2. KR 분기 corp spread series 별도 ECOS fetcher 필요 (현재 미구현)
+3. 1970-2024 quarterly 전체는 새 data infrastructure 작업 — 4-6시간 단순 회귀 아니라 fetcher + reconciliation 포함
+
+### Effort (재추정)
+- Phase A (US partial, proxy 결정 포함): ~3-4시간
+- Phase B (ECOS KR fetcher): ~2-3시간
+- Phase C (OLS + sanity): ~1-2시간
+- 총 ~6-9시간 — 별도 PR cycle 필요
 
 ### Risk
-KR 분기 데이터 부족 시 US 부분만 회귀, KR 은 hand-coded 유지 + TODO.
+- HY OAS proxy 선택이 결정적 — BAA10Y (IG) 는 KR 신용 cycle 와 약한 상관, BAMLC0A4CBBB (BBB) 가 더 가까울 가능성. proxy backtest 필요.
+- ECOS API rate limit 으로 historical fetch 가 batch 필요.
 
 ---
 

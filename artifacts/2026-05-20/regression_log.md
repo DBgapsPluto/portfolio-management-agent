@@ -98,7 +98,22 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 Δ vs Post-C2: +5 tests (test_stage2_e2e_snapshot 신규). 0 new failures (14→19 pass).
 
 ## Post-C4
-(C4 commit 직후 갱신)
+
+### Unit test
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 619 passed, 5 warnings in 58.87s
+```
+Δ vs Post-C3: +5 tests (test_research_manager 의 C4 prompt structure 신규 5). 0 new failures.
+
+### Integration test
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 19 passed, 1 warning in 84.85s
+```
+Δ vs Post-C3: identical (19 pass). 0 new failures.
 
 ## Post-C5
 (C5 commit 직후 갱신)

@@ -91,7 +91,11 @@ _KR_BLOCK = "\n".join(f"- {k}: {defn}" for k, defn in KR_DEFINITIONS.items())
 _ALL_CELLS_BLOCK = all_cells_definition_block()
 
 
-ESTIMATOR_PROMPT = f"""\
+# Prompt 분리 (Issue #10 / spec §2 C4 / decisions.md): 고정/가변 구분.
+# - SYSTEM_PROMPT (~5KB, 매 호출 동일): Framework + axis 정의 + 24-cell + 절차 + 금지.
+#   prompt caching 대상 — Anthropic 은 cache_control, OpenAI 는 auto-prefix-cache 활용.
+# - USER_TEMPLATE (~3-5KB, 호출마다 다름): Stage 1 4 summary + signal blocks.
+_SYSTEM_PROMPT = f"""\
 당신은 자산배분 시나리오 분석가입니다. Stage 1의 4명 분석가 (macro_quant,
 market_risk, technical, macro_news)가 만든 요약 4개를 받습니다.
 
@@ -110,23 +114,6 @@ D3 kr (3 cells):
 
 [24 Cell 전체 list — cycle_tail_kr 형식]
 {_ALL_CELLS_BLOCK}
-
-[Stage 1 요약]
-=== Macro Quant ===
-{{macro_summary}}
-
-=== Market Risk ===
-{{risk_summary}}
-
-=== Technical ===
-{{technical_summary}}
-
-=== Macro News ===
-{{news_summary}}
-
-[축 직교성 가이드 — D2, D3 신호 cycle-decontamination (Stage 0)]
-{{conditional_stress_block}}
-{{kr_residual_block}}
 
 [추정 절차 — axis-aware reasoning]
 1. 머릿속에서 먼저 axis별 marginal 추정:
@@ -147,6 +134,59 @@ D3 kr (3 cells):
 
 ScenarioProbabilities24 JSON 출력. 합 검증 자동 적용.
 """
+
+
+_USER_TEMPLATE = """\
+[Stage 1 요약]
+=== Macro Quant ===
+{macro_summary}
+
+=== Market Risk ===
+{risk_summary}
+
+=== Technical ===
+{technical_summary}
+
+=== Macro News ===
+{news_summary}
+
+[축 직교성 가이드 — D2, D3 신호 cycle-decontamination (Stage 0)]
+{conditional_stress_block}
+{kr_residual_block}
+"""
+
+
+# Backward-compat alias — 일부 외부 caller (test/script) 가 합쳐진 prompt 를 사용.
+# 새 코드는 _SYSTEM_PROMPT + _USER_TEMPLATE 권장.
+ESTIMATOR_PROMPT = _SYSTEM_PROMPT + "\n" + _USER_TEMPLATE
+
+
+def _build_messages(
+    macro_summary: str, risk_summary: str, technical_summary: str,
+    news_summary: str, conditional_stress_block: str, kr_residual_block: str,
+) -> list[dict]:
+    """System + user 메시지 구조. system 에 cache_control 마커 (Anthropic 만 사용, OpenAI 무시).
+
+    OpenAI Responses API 는 ≥1024 token 동일 prefix 자동 캐싱 (별도 마커 불요).
+    Anthropic 은 explicit cache_control. langchain-openai/anthropic 둘 다 dict 통과.
+    """
+    user_msg = _USER_TEMPLATE.format(
+        macro_summary=macro_summary,
+        risk_summary=risk_summary,
+        technical_summary=technical_summary,
+        news_summary=news_summary,
+        conditional_stress_block=conditional_stress_block,
+        kr_residual_block=kr_residual_block,
+    )
+    return [
+        {
+            "role": "system",
+            "content": _SYSTEM_PROMPT,
+            # Anthropic prompt cache marker (5분 TTL). 다른 provider 는 ignore.
+            "cache_control": {"type": "ephemeral"},
+        },
+        {"role": "user", "content": user_msg},
+    ]
 
 
 def _build_signal_blocks(state) -> tuple[str, str]:
@@ -194,7 +234,7 @@ def _build_signal_blocks(state) -> tuple[str, str]:
 def create_research_manager(deep_llm):
     def node(state):
         conditional_stress_block, kr_residual_block = _build_signal_blocks(state)
-        prompt = ESTIMATOR_PROMPT.format(
+        messages = _build_messages(
             macro_summary=state.get("macro_summary", ""),
             risk_summary=state.get("risk_summary", ""),
             technical_summary=state.get("technical_summary", ""),
@@ -203,9 +243,7 @@ def create_research_manager(deep_llm):
             kr_residual_block=kr_residual_block,
         )
         probs: ScenarioProbabilities24 = invoke_with_structured_retry(
-            deep_llm, ScenarioProbabilities24,
-            [{"role": "user", "content": prompt}],
-            max_retries=1,
+            deep_llm, ScenarioProbabilities24, messages, max_retries=1,
         )
 
         # EMA temporal smoothing (Issue #11 / D2). λ=1.0 default → identity.
