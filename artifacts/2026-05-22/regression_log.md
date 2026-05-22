@@ -57,5 +57,28 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 - Integration: -1 passed (test_subgraph_isolation.py 삭제 — sub-graph wrapper 폐기로 obsolete), 0 new failure
 - 0 *new* regression confirmed
 
-## Post-C2 ... Post-C8
+## Post-C2
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 665 passed, 5 warnings in 8.06s
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 18 passed, 1 warning in 13.99s
+```
+
+### Δ from Post-C1
+- Unit: +42 passed (4 baseline + 5 audit + 5 fetcher + 20 estimator individual + 4 news fallback + 4 news component = 42), 0 new failure
+- Integration: unchanged (18 failed / 18 passed), 0 new failure
+- 0 *new* regression confirmed
+
+## Post-C3 ... Post-C8
 (각 commit 직후 갱신)
