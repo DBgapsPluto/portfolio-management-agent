@@ -110,16 +110,14 @@ def main() -> int:
         elapsed = time.time() - t0
         rd = result["research_decision"]
         bt = rd.bucket_target
+        # C5 (2026-05-23): 24-cell field 제거됨. factor model 의 z-score 기록.
         runs.append({
             "run": i + 1,
             "mode": args.mode,
             "elapsed_s": elapsed,
-            "dominant_cycle": rd.dominant_cycle,
-            "dominant_cycle_prob": rd.dominant_cycle_probability,
             "dominant_scenario": rd.dominant_scenario,
-            "cycle_marginals": dict(rd.cycle_marginals),
-            "tail_marginals": dict(rd.tail_marginals),
-            "kr_marginals": dict(rd.kr_marginals),
+            "conviction": rd.conviction,
+            "factor_scores": dict(rd.factor_scores),
             "portfolio": {
                 "kr_equity": bt.kr_equity, "global_equity": bt.global_equity,
                 "fx_commodity": bt.fx_commodity, "bond": bt.bond,
@@ -130,12 +128,14 @@ def main() -> int:
 
     # 평균
     if runs:
-        avg_cycle = {c: 0.0 for c in ("A", "B", "C", "D")}
-        for r in runs:
-            for c in avg_cycle:
-                avg_cycle[c] += r["cycle_marginals"].get(c, 0) / len(runs)
+        # factor mean (9 dim)
+        all_factors = sorted({f for r in runs for f in r["factor_scores"]})
+        avg_factors = {
+            f: sum(r["factor_scores"].get(f, 0.0) for r in runs) / len(runs)
+            for f in all_factors
+        }
         print(f"\n=== Mode={args.mode} (n={len(runs)}) ===")
-        print(f"Avg cycle marginal: {avg_cycle}")
+        print(f"Avg factor z-scores: {avg_factors}")
         scenarios = [r["dominant_scenario"] for r in runs]
         print(f"Dominant scenarios: {scenarios}")
 

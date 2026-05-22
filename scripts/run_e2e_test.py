@@ -96,14 +96,16 @@ def main() -> int:
 
     rd = result.get("research_decision")
     if rd:
+        # C5 (2026-05-23): 24-cell field 제거됨. factor model 의 scenario / conviction
+        # + top factor z-scores 만 로그.
+        top_factors = sorted(
+            (rd.factor_scores or {}).items(),
+            key=lambda kv: -abs(kv[1] or 0),
+        )[:3]
+        top_str = ", ".join(f"{f}={z:+.2f}" for f, z in top_factors)
         logger.info(
-            "  research: cycle=%s (%.0f%% raw, β=%.2f, %s), top cell=%s (%.0f%%)",
-            rd.dominant_cycle,
-            rd.dominant_cycle_probability * 100,
-            rd.conviction_beta,
-            rd.conviction,
-            rd.dominant_cell.key,
-            rd.dominant_cell_probability * 100,
+            "  research: scenario=%s, conviction=%s, top factors: %s",
+            rd.dominant_scenario, rd.conviction, top_str,
         )
 
     overlay = result.get("risk_overlay")

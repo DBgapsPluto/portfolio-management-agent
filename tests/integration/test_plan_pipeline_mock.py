@@ -23,9 +23,7 @@ from tradingagents.schemas.macro import (
 )
 from tradingagents.schemas.news import ImpactAssessment
 from tradingagents.schemas.portfolio import BucketTarget
-from tradingagents.schemas.research import (
-    ResearchDecision, ScenarioProbabilities,
-)
+from tradingagents.schemas.research import ResearchDecision
 from tradingagents.schemas.risk import (
     BreadthSnapshot, PCASnapshot, SentimentSnapshot, SpreadSnapshot,
     SystemicRiskScore, VolatilitySnapshot,
@@ -100,21 +98,14 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
         method=OptimizationMethod.HRP, params={},
         reasoning="recession + risk_off → defensive HRP.",
     )
-    # Phase 1: research_manager는 deep_llm으로 ScenarioProbabilities 산출 →
-    # 결정적 mapper가 BucketTarget으로 변환. 따라서 deep_llm mock에 시나리오
-    # 확률만 등록 (BucketTarget mock은 더 이상 필요 없음).
-    scenario_out = ScenarioProbabilities(
-        goldilocks=0.50, ai_concentration=0.20, stagflation=0.10,
-        broad_recession=0.05, global_credit=0.03,
-        kr_boom=0.10, kr_stress=0.02,
-        reasoning="mock scenario probs — goldilocks dominant",
-    )
+    # C5 (2026-05-23): Stage 2 가 factor model 로 전환되어 ScenarioProbabilities
+    # LLM 호출 자체가 없음. deep_llm mock 에 RegimeClassification / SystemicRiskScore /
+    # MethodChoice 만 등록.
 
     deep_llm = _mock_llm_factory({
         "RegimeClassification": regime_out,
         "SystemicRiskScore": systemic_out,
         "MethodChoice": method_out,
-        "ScenarioProbabilities": scenario_out,
     })
     quick_llm = _mock_llm_factory({
         "ImpactAssessment": impact_out,
@@ -134,10 +125,9 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
         fake_create_llm_client,
     )
 
-    # Phase 1 Stage 2: research_manager 자체를 mock으로 우회.
+    # Stage 2: research_manager 자체를 mock으로 우회.
     # 5 ETF fixture (1 per bucket) 가정 + allocator의 단일 자산 cap 20% 호환을
-    # 위해 균등 0.20씩 강제. ScenarioProbabilities mock은 그대로 두지만 mapper
-    # 결과 대신 균등 BucketTarget을 직접 반환한다.
+    # 위해 균등 0.20씩 강제. factor model 결과 대신 균등 BucketTarget을 직접 반환.
     _fixture_bucket = BucketTarget(
         kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
         bond=0.20, cash_mmf=0.20,
@@ -145,10 +135,8 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
     )
     _fixture_decision = ResearchDecision(
         bucket_target=_fixture_bucket,
-        scenario_probabilities=scenario_out,
-        dominant_scenario="goldilocks",
-        dominant_probability=scenario_out.goldilocks,
         conviction="high",
+        dominant_scenario="goldilocks",
     )
 
     def _fixture_research_manager(_deep_llm):

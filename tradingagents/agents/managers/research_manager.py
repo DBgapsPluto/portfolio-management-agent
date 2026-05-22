@@ -164,21 +164,11 @@ def create_research_manager(deep_llm):
             rationale=rationale,
         )
 
-        # 6. ResearchDecision — factor field 채움 + 24-cell legacy placeholder (C5 에서 제거)
+        # 6. ResearchDecision — factor model 만 (C5: 24-cell field 제거됨)
         decision = ResearchDecision(
             bucket_target=target,
-            # Legacy 24-cell placeholder (C5 에서 제거)
-            scenario_probabilities=_legacy_empty_probs(),
-            dominant_cell=_legacy_dominant_cell(dominant_scenario),
-            dominant_cell_probability=0.0,
-            dominant_cycle=_scenario_to_cycle(dominant_scenario),
-            dominant_cycle_probability=0.0,
-            cycle_marginals={"A": 0.0, "B": 0.0, "C": 0.0, "D": 0.0},
-            tail_marginals={"N": 1.0, "T": 0.0},
-            kr_marginals={"F": 1.0, "boom": 0.0, "stress": 0.0},
             conviction=conviction,
-            conviction_beta=1.0,
-            effective_cycle_marginals={"A": 0.0, "B": 0.0, "C": 0.0, "D": 0.0},
+            dominant_scenario=dominant_scenario,
             # Factor model
             factor_scores=z_dict,
             factor_contributions=contributions,
@@ -208,25 +198,3 @@ def create_research_manager(deep_llm):
         }
 
     return node
-
-
-# Legacy helpers (C5 에서 ResearchDecision schema 의 24-cell field 와 함께 제거)
-def _legacy_empty_probs():
-    from tradingagents.schemas.research import ALL_CELLS, ScenarioProbabilities24
-    kwargs = {k: 0.0 for k in ALL_CELLS}
-    kwargs["A_N_F"] = 1.0
-    return ScenarioProbabilities24(**kwargs, reasoning="factor model (legacy compat)")
-
-
-def _legacy_dominant_cell(scenario):
-    from tradingagents.schemas.research import CellCoord
-    return CellCoord(cycle="A", tail="N", kr="F")
-
-
-def _scenario_to_cycle(scenario):
-    return {
-        "goldilocks": "A",
-        "overheating": "B",
-        "broad_recession": "C",
-        "stagflation": "D",
-    }.get(scenario, "A")

@@ -77,17 +77,17 @@ def run_one(as_of: str) -> dict | None:
     vr = portfolio.get("validation_report", {})
 
     pn = portfolio.get("portfolio_numerics") or {}
+    # C5 (2026-05-23): 24-cell field 제거됨. factor model 의 dominant_scenario /
+    # factor_scores 만 노출. archive (legacy portfolio.json) 에 24-cell field 가
+    # 남아있을 경우 _safe_round / .get 으로 graceful fallback.
     return {
         "as_of": as_of,
         "elapsed_sec": _safe_round(elapsed, 1),
-        "dominant_cycle": rd.get("dominant_cycle"),
-        "dominant_cycle_prob": _safe_round(rd.get("dominant_cycle_probability"), 3),
+        "dominant_scenario": rd.get("dominant_scenario"),
         "conviction": rd.get("conviction"),
-        "conviction_beta": _safe_round(rd.get("conviction_beta"), 2),
-        "dominant_cell": rd.get("dominant_cell"),
-        "dominant_cell_prob": _safe_round(rd.get("dominant_cell_probability"), 3),
-        "tail_marginals": {k: _safe_round(v, 3) for k, v in (rd.get("tail_marginals") or {}).items()},
-        "kr_marginals": {k: _safe_round(v, 3) for k, v in (rd.get("kr_marginals") or {}).items()},
+        "factor_scores": {
+            k: _safe_round(v, 2) for k, v in (rd.get("factor_scores") or {}).items()
+        },
         "bucket_target": {
             k: _safe_round(v, 3) if isinstance(v, (int, float)) else v
             for k, v in bt.items() if k not in ("rationale",)
@@ -120,15 +120,18 @@ def format_table(rows: list[dict]) -> str:
     for r in rows:
         out.append("")
         out.append(f"## {r['as_of']}  ({r.get('elapsed_sec', '—')}s)  {r.get('regime_label','')}")
+        # C5: factor model — dominant_scenario string + factor z-scores
         out.append(
-            f"  Cycle:    {r['dominant_cycle']!s:<4} ({_fmt(r['dominant_cycle_prob'], '.0%')}) "
-            f"conviction={r['conviction']} (β={_fmt(r['conviction_beta'], '.2f')})"
+            f"  Scenario: {r.get('dominant_scenario')!s:<18} "
+            f"conviction={r.get('conviction')}"
         )
-        out.append(
-            f"  Cell:     {r['dominant_cell']} ({_fmt(r['dominant_cell_prob'], '.0%')})"
-        )
-        out.append(f"  Tail:     {r['tail_marginals']}")
-        out.append(f"  KR:       {r['kr_marginals']}")
+        factor_scores = r.get("factor_scores") or {}
+        if factor_scores:
+            top = sorted(factor_scores.items(), key=lambda kv: -abs(kv[1] or 0))[:3]
+            out.append(
+                "  Factors:  "
+                + ", ".join(f"{f}={_fmt(z, '+.2f')}" for f, z in top)
+            )
         out.append(f"  Buckets:  {r['bucket_target']}")
         out.append(f"  Method:   {r['method']}  — {r['method_reasoning']}")
         out.append(

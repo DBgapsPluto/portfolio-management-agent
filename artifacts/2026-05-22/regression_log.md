@@ -150,5 +150,68 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
   derive (factor 의 `derive_dominant_scenario` 결과를 cycle 로 round-trip 변환). C5 에서
   factor 결과 직접 노출로 일원화 예정.
 
-## Post-C5 ... Post-C8
+## Post-C5
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 661 passed, 5 warnings in 7.73s
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 16 passed, 1 warning in 15.97s
+```
+
+### Δ from Post-C4
+- Unit: -20 passed (delete `test_research_scenario_mapper.py` ~21 tests; +1 new `test_extra_fields_ignored_for_archive_compat` in factor schema test). 0 new failure.
+- Integration: -1 skipped (delete `test_stage2_e2e_snapshot.py` which had module-level `pytest.skip`). passed/failed counts unchanged (18 failed / 16 passed). 0 new failure.
+- 0 *new* regression confirmed (pre-existing 3 unit fail + 18 integ fail 그대로).
+
+### Notes — C5 의 핵심 (24-cell framework 완전 제거)
+- 삭제 모듈:
+  - `tradingagents/skills/research/scenario_mapper.py` (~180 LOC)
+  - `tradingagents/skills/research/scenario_definitions.py` (~200 LOC)
+  - `tests/unit/skills/test_research_scenario_mapper.py` (~265 LOC)
+  - `tests/integration/test_stage2_e2e_snapshot.py` (~16 LOC, stub)
+- `tradingagents/schemas/research.py`: 242 → 71 LOC. 제거된 symbol —
+  `ScenarioProbabilities24`, `CellCoord`, `ALL_CELLS`, `TRANSIENT_CELLS`,
+  `cell_key`, `parse_cell_key`, `CycleQuadrant`, `TailState`, `KRDirection`,
+  `CYCLE_CODES`, `TAIL_CODES`, `KR_CODES`, `ScenarioProbabilities` alias,
+  `@property dominant_scenario`, ResearchDecision 의 24-cell field 10개
+  (scenario_probabilities / dominant_cell / dominant_cell_probability /
+  dominant_cycle / dominant_cycle_probability / cycle_marginals /
+  tail_marginals / kr_marginals / conviction_beta / effective_cycle_marginals).
+- `ResearchDecision.dominant_scenario`: `@property` (marginal derive) → *field*
+  (factor model 의 derive_dominant_scenario 가 명시적으로 set). research_manager
+  생성 코드에서 명시.
+- Archive backward-compat: `ResearchDecision.model_config = {"extra": "ignore"}`
+  로 기존 archive (24-cell field 포함) deserialize 가능. C7 에서 재생성 예정.
+- 유지 — 24-cell 와 *별개* 의 legacy:
+  - `sub_category.py` 의 `_LEGACY_SCENARIO_TO_AXES` + `BOOST_BY_CYCLE/TAIL/KR`
+    + `log_boost` + `compose_boost` 전부 그대로. downstream method_picker /
+    candidate_selector 가 dominant_scenario string 으로 log_boost 호출.
+- 영향 받은 caller 정리:
+  - `research_manager.py`: `_legacy_empty_probs` / `_legacy_dominant_cell` /
+    `_scenario_to_cycle` helper 삭제. ResearchDecision 생성에서 factor field
+    만 채움.
+  - `tradingagents/reports/philosophy.py`: `_format_scenario_probs` 가 factor
+    z-score top 5 sorted summary 로 재작성.
+  - `scripts/measure_llm_variance.py`: OBSOLETE 처리 (Stage 2 deterministic 후
+    측정 대상 사라짐).
+  - `scripts/measure_stage2_ablation.py`: factor_scores 기록으로 변경.
+  - `scripts/run_backtest.py`: 24-cell field summary 제거, factor scenario /
+    top factor z-score 표시.
+  - `scripts/run_e2e_test.py`: 동일.
+  - `tests/integration/test_plan_pipeline_mock.py`, `test_5_28_dry_run.py`:
+    `ScenarioProbabilities` import 제거, `_fixture_decision` 단순화.
+  - `tradingagents/skills/_registry_init.py`: scenario_mapper import 제거.
+  - `tradingagents/backtest/__init__.py`: docstring 업데이트 (calibration
+    pipeline 의 downstream consumer 사라짐 명시).
+
+## Post-C6 ... Post-C8
 (각 commit 직후 갱신)
