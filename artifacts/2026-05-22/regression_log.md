@@ -80,5 +80,34 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 - Integration: unchanged (18 failed / 18 passed), 0 new failure
 - 0 *new* regression confirmed
 
-## Post-C3 ... Post-C8
+## Post-C3
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 689 passed, 5 warnings in 8.38s
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 18 passed, 1 warning in 13.49s
+```
+
+### Δ from Post-C2
+- Unit: +24 passed (15 test_factor_to_bucket + 9 test_mandate_projection — 24 total new tests pass), 0 new failure
+- Integration: unchanged (18 failed / 18 passed), 0 new failure
+- 0 *new* regression confirmed
+
+### Notes
+- `scipy>=1.11.0` 을 pyproject.toml 에 명시 추가. 기존엔 scikit-learn / pyportfolioopt
+  의 transitive dep 로 import 가능했으나, factor_to_bucket 의 `scipy.optimize.minimize`
+  직접 의존 → 명시 dependency 로 격상.
+- uv.lock 은 본 commit scope 외 (WIP 보호) — 별도 `uv lock` 동기화 필요.
+
+## Post-C4 ... Post-C8
 (각 commit 직후 갱신)
