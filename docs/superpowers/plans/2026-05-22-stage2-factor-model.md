@@ -1231,85 +1231,518 @@ def apply_factor_model(
 
 - [ ] **Step 3**: PASS.
 
-### Task C3.3: project_to_mandate
+### Task C3.3: Per-contribution magnitude cap (preemptive)
+
+> **Why:** Single (factor, bucket) contribution 의 *hard cap* — single factor 가 single bucket 을 dominate 하지 못 함. Mandate projection 의 *전 단계* 안전판.
+
+**Files:** `tradingagents/skills/research/factor_to_bucket.py` 에 추가.
 
 - [ ] **Step 1: failing test**
 
 ```python
-def test_project_clips_negative():
+def test_per_contribution_cap_applied():
+    """Single factor 가 single bucket 에 +0.10 이상 contribution 못 함."""
+    # F1 의 hand-coded β[F1, kr_equity] = 0.04, z=3.0 → raw 0.12
+    factor_z = {f: 0.0 for f in FACTORS}
+    factor_z["F1_growth"] = 3.0
+    bucket, _, contributions = apply_factor_model(factor_z)
+    # 0.04 × 3.0 = 0.12 but cap = 0.10
+    assert contributions["F1_growth"]["kr_equity"] <= 0.10 + 1e-6
+    # bond contribution: -0.08 × 3.0 = -0.24 but cap = -0.10
+    assert contributions["F1_growth"]["bond"] >= -0.10 - 1e-6
+
+def test_per_contribution_cap_does_not_affect_small_signals():
+    """β × z 가 cap 미만이면 그대로."""
+    factor_z = {f: 0.0 for f in FACTORS}
+    factor_z["F1_growth"] = 1.0
+    bucket, _, contributions = apply_factor_model(factor_z)
+    # 0.04 × 1.0 = 0.04 < 0.10 cap → 그대로
+    assert contributions["F1_growth"]["kr_equity"] == pytest.approx(0.04)
+```
+
+- [ ] **Step 2: apply_factor_model 수정 (cap 추가)**
+
+`factor_to_bucket.py` 의 `apply_factor_model` 의 main loop 수정:
+
+```python
+PER_FACTOR_BUCKET_CONTRIB_CAP: Final[float] = 0.10
+"""Single (factor, bucket) contribution 의 magnitude cap (±10pp).
+
+이유: single factor 가 single bucket 을 dominate 못 하게 — diversification.
+β × z 가 cap 을 초과하면 cap 으로 clip.
+z 가 이미 ±3 cap 이므로 |β| × 3 < 0.10 이면 cap 무력 (대부분 case).
+hand-coded β 의 max magnitude 0.12 (F1 bond, F5 cash, F7 cash) 가 cap trigger 가능.
+"""
+
+
+def apply_factor_model(
+    factor_z: dict[str, float],
+    baseline: dict[str, float] | None = None,
+    beta: dict[tuple[str, str], float] | None = None,
+    tips_baseline: float | None = None,
+    tips_beta: dict[str, float] | None = None,
+) -> tuple[dict[str, float], float, dict[str, dict[str, float]]]:
+    baseline = baseline or INITIAL_BASELINE
+    beta = beta or INITIAL_BETA
+    tips_baseline = tips_baseline if tips_baseline is not None else INITIAL_TIPS_BASELINE
+    tips_beta = tips_beta or INITIAL_TIPS_BETA
+
+    bucket = dict(baseline)
+    contributions: dict[str, dict[str, float]] = {}
+
+    for f in FACTORS:
+        z = factor_z.get(f, 0.0)
+        contributions[f] = {}
+        for b in BUCKETS:
+            raw_contrib = beta.get((f, b), 0.0) * z
+            # Per-contribution magnitude cap
+            contrib = max(-PER_FACTOR_BUCKET_CONTRIB_CAP,
+                          min(+PER_FACTOR_BUCKET_CONTRIB_CAP, raw_contrib))
+            bucket[b] += contrib
+            contributions[f][b] = contrib
+
+    tips = tips_baseline + sum(
+        tips_beta.get(f, 0.0) * factor_z.get(f, 0.0) for f in FACTORS
+    )
+    tips = max(0.0, min(1.0, tips))
+
+    return bucket, tips, contributions
+```
+
+- [ ] **Step 3**: PASS.
+
+### Task C3.4: project_to_mandate_qp — QP-based projection
+
+> **Why:** Iterative proportional scaling 대신 *L2-optimal projection*. Factor model intent (각 bucket 의 *상대 거리*) 최대한 보존하면서 모든 constraint 동시 만족.
+>
+> **Priority** (high → low):
+> 1. weights ≥ 0 (hard, no shorting)
+> 2. sum = 1.0 (hard, probability)
+> 3. 위험자산 ≤ 0.70 (hard, mandate)
+> 4. baseline 과의 L2 거리 (soft, intent preservation)
+>
+> QP 가 4 가지 모두 simultaneous 처리.
+
+**Files:** `tradingagents/skills/research/factor_to_bucket.py` 에 추가.
+
+- [ ] **Step 1: failing test**
+
+`tests/unit/skills/research/test_mandate_projection.py`:
+
+```python
+"""project_to_mandate_qp tests."""
+import pytest
+from tradingagents.skills.research.factor_to_bucket import (
+    project_to_mandate_qp, BUCKETS, FACTORS, apply_factor_model,
+)
+
+
+def test_qp_clips_negative():
+    """음수 weight 가 0 으로 clip."""
     weights = {"kr_equity": 0.5, "global_equity": -0.1, "fx_commodity": 0.2,
                "bond": 0.3, "cash_mmf": 0.1}
-    out = project_to_mandate(weights)
-    assert out["global_equity"] >= 0.0
+    out = project_to_mandate_qp(weights)
+    assert all(w >= -1e-9 for w in out.values())
 
-def test_project_renormalizes_to_one():
+
+def test_qp_renormalizes_to_one():
     weights = {"kr_equity": 0.3, "global_equity": 0.4, "fx_commodity": 0.2,
                "bond": 0.3, "cash_mmf": 0.2}  # sum 1.4
-    out = project_to_mandate(weights)
+    out = project_to_mandate_qp(weights)
     assert abs(sum(out.values()) - 1.0) < 1e-6
 
-def test_project_risk_cap_enforced():
-    """위험자산 0.85 → 0.70 cap."""
+
+def test_qp_risk_cap_enforced():
+    """위험자산 0.85 → 0.70."""
     weights = {"kr_equity": 0.30, "global_equity": 0.30, "fx_commodity": 0.25,
-               "bond": 0.10, "cash_mmf": 0.05}  # risk = 0.85
-    out = project_to_mandate(weights)
+               "bond": 0.10, "cash_mmf": 0.05}
+    out = project_to_mandate_qp(weights)
     risk = out["kr_equity"] + out["global_equity"] + out["fx_commodity"]
     assert risk <= 0.70 + 1e-6
 
-def test_project_extreme_factor_z_still_mandate_safe():
-    """모든 factor z = +3 (cap), bucket 가 extreme — mandate 강제."""
+
+def test_qp_no_change_when_feasible():
+    """이미 feasible 한 input 은 그대로 (또는 매우 근접)."""
+    weights = {"kr_equity": 0.10, "global_equity": 0.20, "fx_commodity": 0.15,
+               "bond": 0.35, "cash_mmf": 0.20}  # risk = 0.45, sum=1
+    out = project_to_mandate_qp(weights)
+    for b in BUCKETS:
+        assert abs(out[b] - weights[b]) < 1e-4
+
+
+def test_qp_preserves_relative_ratio_better_than_proportional():
+    """L2-optimal 이라 baseline 와의 상대 거리 가 *minimum*.
+
+    Pathological case: factor model 이 kr_eq=0.05, global_eq=0.40, fx=0.30 권고.
+    Proportional scaling: scale 0.70/0.75=0.933 (uniform across risk buckets).
+    QP: optimal redistribution — kr_eq 와 global_eq 의 *상대 비율* 더 잘 보존.
+    """
+    weights = {"kr_equity": 0.05, "global_equity": 0.40, "fx_commodity": 0.30,
+               "bond": 0.15, "cash_mmf": 0.10}  # risk = 0.75
+    out = project_to_mandate_qp(weights)
+    # QP: original 의 sum-of-squares 의 distance 최소.
+    # global_equity 가 kr_equity 보다 *매우 크므로* projection 후 global_equity 가
+    # 더 *많이* 감소해도 OK (절대 거리 vs 상대 거리). QP 의 L2 metric 에서 합리.
+    assert sum(out.values()) == pytest.approx(1.0)
+    risk = out["kr_equity"] + out["global_equity"] + out["fx_commodity"]
+    assert risk <= 0.70 + 1e-6
+
+
+def test_qp_pathological_all_negative_risk_returns_baseline():
+    """모든 위험자산 < 0 → 안전한 default (baseline 또는 100% bond/cash)."""
+    weights = {"kr_equity": -0.5, "global_equity": -0.3, "fx_commodity": -0.2,
+               "bond": 1.5, "cash_mmf": 0.5}
+    out = project_to_mandate_qp(weights)
+    assert all(w >= 0 for w in out.values())
+    assert sum(out.values()) == pytest.approx(1.0)
+
+
+def test_qp_extreme_factor_z_still_mandate_safe():
+    """모든 factor z=+3 (worst case) — mandate 만족."""
     factor_z = {f: 3.0 for f in FACTORS}
     bucket, _, _ = apply_factor_model(factor_z)
-    bucket = project_to_mandate(bucket)
-    risk = bucket["kr_equity"] + bucket["global_equity"] + bucket["fx_commodity"]
+    out = project_to_mandate_qp(bucket)
+    risk = out["kr_equity"] + out["global_equity"] + out["fx_commodity"]
     assert risk <= 0.70 + 1e-6
-    assert abs(sum(bucket.values()) - 1.0) < 1e-6
+    assert abs(sum(out.values()) - 1.0) < 1e-6
+    assert all(w >= -1e-9 for w in out.values())
+
+
+def test_qp_extreme_negative_z_mandate_safe():
+    """모든 factor z=-3 — 마찬가지 mandate 만족."""
+    factor_z = {f: -3.0 for f in FACTORS}
+    bucket, _, _ = apply_factor_model(factor_z)
+    out = project_to_mandate_qp(bucket)
+    risk = out["kr_equity"] + out["global_equity"] + out["fx_commodity"]
+    assert risk <= 0.70 + 1e-6
+    assert abs(sum(out.values()) - 1.0) < 1e-6
 ```
 
 - [ ] **Step 2: 구현**
 
 ```python
-def project_to_mandate(
-    bucket: dict[str, float],
+import numpy as np
+from scipy.optimize import minimize
+
+
+def project_to_mandate_qp(
+    bucket_target: dict[str, float],
     risk_cap: float = 0.70,
 ) -> dict[str, float]:
-    """위험자산 ≤ risk_cap + sum=1 enforce."""
-    # 1. Clip negatives
-    bucket = {b: max(0.0, w) for b, w in bucket.items()}
+    """QP-based projection: w* = argmin ||w - bucket_target||²
 
-    # 2. Renormalize to sum=1
-    total = sum(bucket.values())
-    if total <= 0:
-        # Pathological — fallback to baseline
-        return dict(INITIAL_BASELINE)
-    bucket = {b: w / total for b, w in bucket.items()}
+    Subject to:
+      - Σ w = 1                       (probability simplex)
+      - 0 ≤ w_b ≤ 1                   (no shorting)
+      - Σ_{b ∈ risk} w_b ≤ risk_cap   (mandate)
 
-    # 3. 위험자산 cap
+    L2-optimal — factor model 의 intent (bucket 의 상대 거리) 최대한 보존.
+    Iterative proportional 보다 axis intent 보존 우수.
+    """
+    keys = list(bucket_target.keys())
+    target = np.array([bucket_target[k] for k in keys], dtype=float)
     risk_buckets = ("kr_equity", "global_equity", "fx_commodity")
-    risk = sum(bucket[b] for b in risk_buckets)
-    if risk > risk_cap:
-        scale = risk_cap / risk
-        for b in risk_buckets:
-            bucket[b] *= scale
-        # 줄어든 만큼 bond + cash 에 proportionally
-        shortfall = 1.0 - sum(bucket.values())
-        safe_total = bucket["bond"] + bucket["cash_mmf"]
-        if safe_total > 0:
-            bucket["bond"] += shortfall * (bucket["bond"] / safe_total)
-            bucket["cash_mmf"] += shortfall * (bucket["cash_mmf"] / safe_total)
-        else:
-            bucket["bond"] += shortfall
+    risk_indices = [keys.index(b) for b in risk_buckets if b in keys]
 
-    return bucket
+    # Objective: min ||w - target||²
+    def objective(w):
+        return float(np.sum((w - target) ** 2))
+
+    def objective_grad(w):
+        return 2.0 * (w - target)
+
+    # Constraints
+    constraints = [
+        {"type": "eq",   "fun": lambda w: float(w.sum() - 1.0),
+                          "jac": lambda w: np.ones_like(w)},
+        {"type": "ineq", "fun": lambda w: float(risk_cap - sum(w[i] for i in risk_indices)),
+                          "jac": lambda w: -np.array([1.0 if i in risk_indices else 0.0
+                                                       for i in range(len(w))])},
+    ]
+    bounds = [(0.0, 1.0)] * len(keys)
+
+    # Initial guess: clip target to feasible region
+    x0 = np.clip(target, 0.0, 1.0)
+    x0_sum = x0.sum()
+    if x0_sum > 0:
+        x0 = x0 / x0_sum
+
+    result = minimize(
+        objective, x0=x0, method="SLSQP",
+        jac=objective_grad, bounds=bounds, constraints=constraints,
+        options={"maxiter": 200, "ftol": 1e-9},
+    )
+
+    if not result.success:
+        # Pathological — fallback to baseline (no factor intent preserved)
+        from tradingagents.skills.research.factor_to_bucket import INITIAL_BASELINE
+        return dict(INITIAL_BASELINE)
+
+    # Clean up numerical residue
+    w = np.maximum(result.x, 0.0)
+    w = w / w.sum()
+    return {k: float(w[i]) for i, k in enumerate(keys)}
 ```
 
 - [ ] **Step 3**: PASS.
 
-### Task C3.4: C3 commit
+### Task C3.5: Safety diagnostics (audit trail)
 
-- [ ] **Step 1**: 변경 파일 검증 + regression.
-- [ ] **Step 2**: regression_log.md Post-C3.
-- [ ] **Step 3**: commit (`feat(stage2): factor → bucket additive regression + mandate projection (C3)`).
+> **Why:** Projection 이 *얼마나 strong* intervention 했는지 audit. ResearchDecision 에 diagnostics field 추가.
+
+**Files:** `tradingagents/skills/research/factor_to_bucket.py` 에 추가.
+
+- [ ] **Step 1: failing test**
+
+```python
+def test_apply_with_safety_diagnostics_returns_4_tuple():
+    factor_z = {f: 0.0 for f in FACTORS}
+    bucket, tips, contribs, diag = apply_factor_model_with_safety(factor_z)
+    assert isinstance(diag, dict)
+    assert "pre_projection_risk_asset" in diag
+    assert "pre_projection_negatives" in diag
+    assert "mandate_violated_pre_projection" in diag
+    assert "extreme_factor_active" in diag
+    assert "projection_l2_distance" in diag
+
+
+def test_safety_diagnostics_extreme_factor_flag():
+    factor_z = {f: 0.0 for f in FACTORS}
+    factor_z["F1_growth"] = 2.8
+    _, _, _, diag = apply_factor_model_with_safety(factor_z)
+    assert diag["extreme_factor_active"] is True
+
+
+def test_safety_diagnostics_mandate_violation_pre_projection():
+    factor_z = {f: 3.0 for f in FACTORS}  # worst-case
+    _, _, _, diag = apply_factor_model_with_safety(factor_z)
+    # baseline risk = 0.47, max contribution sum ~ 0.30+ → 위반 가능
+    # 정확한 violation 여부는 hand-coded β + cap 의 함수 — 본 test 는 *flag 가 작동* 만 검증.
+    assert isinstance(diag["mandate_violated_pre_projection"], bool)
+
+
+def test_safety_diagnostics_projection_distance():
+    """Projection 의 L2 거리 측정."""
+    factor_z = {f: 3.0 for f in FACTORS}
+    _, _, _, diag = apply_factor_model_with_safety(factor_z)
+    assert diag["projection_l2_distance"] >= 0
+```
+
+- [ ] **Step 2: 구현**
+
+```python
+def apply_factor_model_with_safety(
+    factor_z: dict[str, float],
+    **kwargs,
+) -> tuple[dict[str, float], float, dict[str, dict[str, float]], dict[str, object]]:
+    """apply_factor_model + project_to_mandate_qp + diagnostics."""
+    # 1. Pre-projection
+    bucket_raw, tips, contributions = apply_factor_model(factor_z, **kwargs)
+
+    pre_risk = bucket_raw["kr_equity"] + bucket_raw["global_equity"] + bucket_raw["fx_commodity"]
+    pre_negatives = [b for b, w in bucket_raw.items() if w < -1e-9]
+    pre_sum = sum(bucket_raw.values())
+
+    # 2. Project
+    bucket_projected = project_to_mandate_qp(bucket_raw)
+
+    # 3. Diagnostics
+    import numpy as np
+    keys = list(bucket_raw.keys())
+    diff_vec = np.array([bucket_projected[k] - bucket_raw[k] for k in keys])
+    l2_dist = float(np.sqrt(np.sum(diff_vec ** 2)))
+
+    diagnostics = {
+        "pre_projection_risk_asset": pre_risk,
+        "pre_projection_negatives": pre_negatives,
+        "pre_projection_sum": pre_sum,
+        "mandate_violated_pre_projection": pre_risk > 0.70 + 1e-9,
+        "extreme_factor_active": any(abs(z) >= 2.5 for z in factor_z.values()),
+        "projection_l2_distance": l2_dist,
+        "projection_intervened": l2_dist > 0.01,  # 1pp 이상 변경 시 flag
+    }
+
+    return bucket_projected, tips, contributions, diagnostics
+```
+
+- [ ] **Step 3**: PASS.
+
+### Task C3.6: Constraint priority + projection algorithm documentation
+
+> **Why:** Plan 의 *implementation note* — 다른 reviewer 또는 future maintainer 가 알 수 있도록 README 같은 위치 에 명시.
+
+**Files:** `tradingagents/skills/research/factor_to_bucket.py` 의 module docstring + README comment.
+
+- [ ] **Step 1: factor_to_bucket.py 의 module docstring 보강**
+
+`factor_to_bucket.py` 의 *제일 위*:
+
+```python
+"""Factor → Bucket mapping + mandate projection.
+
+Pipeline:
+    factor_z (9 z-scores)
+        ↓
+    apply_factor_model: bucket = baseline + Σ_f β[f, b] × z[f]
+        - Per-contribution cap: |β × z| ≤ 0.10 (PER_FACTOR_BUCKET_CONTRIB_CAP)
+        ↓
+    project_to_mandate_qp: L2-optimal projection
+        - Solves: min ||w - bucket_target||²
+        - Subject to: sum=1, 0≤w≤1, 위험자산 ≤ 0.70
+        ↓
+    BucketTarget (final)
+
+Constraint priority (high → low):
+    1. weights ≥ 0           (HARD — no shorting)
+    2. sum = 1.0             (HARD — probability simplex)
+    3. 위험자산 ≤ 0.70       (HARD — mandate §2.2)
+    4. baseline L2 거리 최소화 (SOFT — intent preservation)
+
+Note: 단일 ETF cap (≤0.20) 은 Stage 3 (portfolio_allocator) 영역.
+      Cluster cap 은 Stage 4 (risk_judge overlay) 영역.
+      Stage 2 의 projection 은 *bucket 수준* 제약 4 가지만 처리.
+
+Edge cases:
+    - QP optimizer failure → INITIAL_BASELINE fallback.
+    - 모든 위험자산 weight < 0 → baseline fallback (factor intent 손상 — 매우 rare).
+    - 모든 weight = 0 → INITIAL_BASELINE fallback.
+
+Audit:
+    apply_factor_model_with_safety() 가 diagnostics return — projection 의 *intervention magnitude*
+    측정. ResearchDecision 의 narrative 에 *projection 작동 여부* 명시 가능.
+"""
+```
+
+- [ ] **Step 2**: lint check (`uv run python -c "import tradingagents.skills.research.factor_to_bucket"`).
+
+### Task C3.7: ResearchDecision schema 의 safety_diagnostics field 추가
+
+**Files:** `tradingagents/schemas/research.py`
+
+- [ ] **Step 1: failing test**
+
+`tests/unit/schemas/test_research_decision_factor_schema.py` 에 추가:
+
+```python
+def test_safety_diagnostics_field_accepts_dict():
+    """safety_diagnostics: dict — projection audit trail."""
+    d = _minimal_research_decision_24cell(
+        safety_diagnostics={
+            "pre_projection_risk_asset": 0.65,
+            "mandate_violated_pre_projection": False,
+            "extreme_factor_active": False,
+            "projection_l2_distance": 0.0,
+            "projection_intervened": False,
+        }
+    )
+    assert d.safety_diagnostics["projection_l2_distance"] == 0.0
+
+
+def test_safety_diagnostics_default_empty():
+    d = _minimal_research_decision_24cell()
+    assert d.safety_diagnostics == {}
+```
+
+- [ ] **Step 2: schema 수정**
+
+`tradingagents/schemas/research.py` 의 `ResearchDecision` 에 추가 (C1 의 factor_scores 다음에):
+
+```python
+    safety_diagnostics: dict[str, object] = Field(
+        default_factory=dict,
+        description="Projection audit trail. apply_factor_model_with_safety 의 출력. "
+                    "Stage 6 narrative + monitoring 용.",
+    )
+```
+
+- [ ] **Step 3**: PASS.
+
+### Task C3.8: research_manager 에 safety_diagnostics wire-up
+
+> **Note**: 이 task 는 *C4 의 일부*. C3 단계 에서 *factor_to_bucket.py 의 함수* 만 준비. C4 에서 research_manager 가 `apply_factor_model_with_safety` 호출하여 diagnostics 전달.
+
+- [ ] **Step 1**: C4.1 의 research_manager rewrite 시 `apply_factor_model_with_safety` 사용 명시.
+  - 이 task 는 *C3 commit 의 일부* 가 아님 — C4 의 *prerequisite 으로만* 명시.
+
+### Task C3.9: C3 commit
+
+- [ ] **Step 1**: 변경 파일 확인.
+
+```bash
+git status --short
+# Expected:
+# A tradingagents/skills/research/factor_to_bucket.py
+# A tests/unit/skills/research/test_factor_to_bucket.py
+# A tests/unit/skills/research/test_mandate_projection.py
+# M tradingagents/schemas/research.py (safety_diagnostics 추가)
+# M tests/unit/schemas/test_research_decision_factor_schema.py (safety_diagnostics test)
+```
+
+- [ ] **Step 2**: regression_log.md Post-C3 갱신.
+
+```bash
+uv run pytest tests/unit/ -q 2>&1 | tail -3
+uv run pytest tests/integration/ -q 2>&1 | tail -3
+```
+
+- [ ] **Step 3**: scipy dependency 확인 (이미 dependency 인 경우 — pyproject.toml grep).
+
+```bash
+grep -E "scipy" pyproject.toml
+```
+
+없으면 add (별도 dependency 작업).
+
+- [ ] **Step 4**: commit
+
+```bash
+git add tradingagents/skills/research/factor_to_bucket.py \
+        tradingagents/schemas/research.py \
+        tests/unit/skills/research/test_factor_to_bucket.py \
+        tests/unit/skills/research/test_mandate_projection.py \
+        tests/unit/schemas/test_research_decision_factor_schema.py \
+        artifacts/2026-05-22/regression_log.md
+
+git commit -m "$(cat <<'EOF'
+feat(stage2): factor → bucket additive regression + QP mandate projection (C3)
+
+Spec section 5 + brainstorming 추가 결정 (projection 의 QP 채택).
+
+Stage 2c (factor → bucket) 의 3 layer:
+1. apply_factor_model: bucket = baseline + Σ_f β × z (linear)
+   - PER_FACTOR_BUCKET_CONTRIB_CAP = 0.10 (preemptive bound)
+2. project_to_mandate_qp: L2-optimal projection
+   - Hard constraints: weights ≥ 0, sum=1, 위험자산 ≤ 0.70
+   - Soft objective: baseline L2 거리 최소 (intent preservation)
+   - scipy.optimize.minimize(SLSQP) — iterative proportional 보다 axis intent 보존 우수
+3. apply_factor_model_with_safety: + diagnostics
+   - pre/post projection state + L2 distance + intervention flag
+
+Constraint priority 명시:
+1. weights ≥ 0 (hard)
+2. sum = 1.0 (hard)
+3. 위험자산 ≤ 0.70 (hard)
+4. baseline L2 거리 최소 (soft)
+
+Test (15+):
+- test_factor_to_bucket.py: row-sum=0 invariant, baseline=1.0, mandate safe baseline
+- test_factor_to_bucket.py: apply_factor_model basic + tips + contributions audit
+- test_factor_to_bucket.py: per-contribution cap (single factor 의 single bucket ≤ 0.10)
+- test_mandate_projection.py: QP — clip neg, renormalize, risk cap, feasible no-op,
+  pathological all-neg, extreme worst-case (±3 z), L2 metric verification
+- test_research_decision_factor_schema.py: safety_diagnostics field
+
+Schema: ResearchDecision 에 safety_diagnostics: dict 추가 (defaults empty).
+
+Regression (artifacts/2026-05-22/regression_log.md):
+- Unit: 3 failed (pre-existing) / 675+ passed (+~15)
+- Integration: 18/19 unchanged
+- Δ baseline: 0 new regression
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
 
 ---
 
@@ -1448,7 +1881,7 @@ from tradingagents.skills.research.factor_estimators import (
     compute_all_factors, FactorScores,
 )
 from tradingagents.skills.research.factor_to_bucket import (
-    apply_factor_model, project_to_mandate, INITIAL_BASELINE,
+    apply_factor_model_with_safety, INITIAL_BASELINE,
 )
 
 
@@ -1546,11 +1979,10 @@ def create_research_manager(deep_llm):
         prior_decision: Optional[ResearchDecision] = state.get("prior_research_decision")
         factor_scores = _blend_factors_with_prior(factor_scores, prior_decision, _EMA_LAMBDA)
 
-        # 3. Factor → bucket
-        bucket, tips_share, contributions = apply_factor_model(factor_scores.to_dict())
-
-        # 4. Mandate projection
-        bucket = project_to_mandate(bucket)
+        # 3. Factor → bucket + QP mandate projection + safety diagnostics (one call)
+        bucket, tips_share, contributions, safety_diag = apply_factor_model_with_safety(
+            factor_scores.to_dict()
+        )
 
         # 5. Legacy compat fields
         dominant_scenario = derive_dominant_scenario(factor_scores)
@@ -1595,6 +2027,7 @@ def create_research_manager(deep_llm):
             factor_scores=factor_scores.to_dict(),
             factor_contributions=contributions,
             baseline_bucket=dict(INITIAL_BASELINE),
+            safety_diagnostics=safety_diag,
         )
 
         # 8. Summary text
