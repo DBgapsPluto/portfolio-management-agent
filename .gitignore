@@ -2,6 +2,9 @@
 .claude/
 .venv/
 
+# Stage 3 run artifacts (anchor reports, ablation, sensitivity)
+artifacts/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

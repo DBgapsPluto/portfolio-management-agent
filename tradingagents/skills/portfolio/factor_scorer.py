@@ -112,7 +112,13 @@ def compute_factor_panel(
 
 
 def _zscore(values: dict[str, float | None]) -> dict[str, float]:
-    """Z-score across tickers; tickers with None get 0 (neutral)."""
+    """Z-score across tickers; tickers with None get 0 (neutral).
+
+    Range is unbounded (extreme outliers can have z > +3). This causes
+    "size dominance" in heterogeneous baskets where one factor's
+    distribution is much wider than others. Use `_rank_normalize` for
+    bounded, scale-invariant normalization.
+    """
     arr = np.array(
         [v for v in values.values() if v is not None and not math.isnan(v)],
         dtype=float,
@@ -132,20 +138,61 @@ def _zscore(values: dict[str, float | None]) -> dict[str, float]:
     return out
 
 
-def score_candidates(
+def _rank_normalize(values: dict[str, float | None]) -> dict[str, float]:
+    """Rank-based percentile normalization → uniform [-0.5, +0.5].
+
+    Worst value → -0.5, best value → +0.5. Ties get average rank.
+    None / NaN tickers get 0 (median position — neutral).
+
+    Compared to z-score:
+      - Bounded range (∈ [-0.5, +0.5]) prevents extreme outliers from dominating
+      - Scale-invariant: distributions with different spreads end up uniform
+      - Loses information about magnitude (only relative order matters)
+
+    Resolves the "size dominance" problem where one factor's z-range is
+    much wider than others. With rank, all factors contribute equally
+    per the weights — no implicit weighting via spread.
+    """
+    valid_items = [
+        (k, float(v)) for k, v in values.items()
+        if v is not None and not (isinstance(v, float) and math.isnan(v))
+    ]
+    if len(valid_items) < 2:
+        return {k: 0.0 for k in values}
+
+    # pandas rank with 'average' method handles ties gracefully
+    s = pd.Series({k: v for k, v in valid_items})
+    ranks = s.rank(method="average")
+    n = len(ranks)
+    # ranks ∈ [1, n] → normalize to [-0.5, +0.5]
+    percentile = (ranks - 1) / (n - 1) - 0.5
+
+    out: dict[str, float] = {k: 0.0 for k in values}
+    for k in percentile.index:
+        out[k] = float(percentile[k])
+    return out
+
+
+def score_candidates_with_components(
     panels: dict[str, FactorPanel],
     regime_quadrant: str | None,
     regime_confidence: float,
-) -> dict[str, float]:
-    """Compute composite score per ticker. Higher = better.
+    normalization: str = "rank_percentile",
+) -> tuple[dict[str, float], dict[str, dict], dict[str, float]]:
+    """Same as score_candidates but also returns per-ticker breakdown + weights.
 
-    Z-scores are computed across the input ticker set (typically one bucket's
-    eligible pool), so scores are *relative* within the bucket.
+    Args:
+        normalization: "rank_percentile" (default, bounded ∈ [-0.5, +0.5],
+            scale-invariant — recommended) or "zscore" (legacy, unbounded).
+
+    Returns:
+        scores:     ticker → composite base_score
+        breakdown:  ticker → dict with raw values, normalized values, contributions
+        weights:    factor → blended regime weight (4 keys: mom/lowvol/qual/size)
     """
     if not panels:
-        return {}
+        return {}, {}, blend_regime_weights(regime_quadrant, regime_confidence)
 
-    # Composite momentum = mean of three skip-1m windows (where available)
     mom_values: dict[str, float | None] = {}
     for t, p in panels.items():
         windows = [p.skip1m_mom_3m, p.skip1m_mom_6m, p.skip1m_mom_12m]
@@ -156,21 +203,67 @@ def score_candidates(
     sharpe_values = {t: p.sharpe_60d for t, p in panels.items()}
     size_values: dict[str, float | None] = {t: p.log_aum for t, p in panels.items()}
 
-    z_mom = _zscore(mom_values)
-    z_vol = _zscore(vol_values)  # higher vol = higher z; we'll negate below
-    z_qual = _zscore(sharpe_values)
-    z_size = _zscore(size_values)
+    if normalization == "rank_percentile":
+        normalize = _rank_normalize
+    elif normalization == "zscore":
+        normalize = _zscore
+    else:
+        raise ValueError(
+            f"unknown normalization {normalization!r} (expected 'rank_percentile' or 'zscore')"
+        )
+
+    n_mom = normalize(mom_values)
+    n_vol = normalize(vol_values)
+    n_qual = normalize(sharpe_values)
+    n_size = normalize(size_values)
 
     weights = blend_regime_weights(regime_quadrant, regime_confidence)
 
     scores: dict[str, float] = {}
+    breakdown: dict[str, dict] = {}
     for t in panels:
-        scores[t] = (
-            weights["mom"]    * z_mom[t]
-            + weights["lowvol"] * (-z_vol[t])     # low vol = high score
-            + weights["qual"]   * z_qual[t]
-            + weights["size"]   * z_size[t]
-        )
+        contribs = {
+            "mom":    weights["mom"]    * n_mom[t],
+            "lowvol": weights["lowvol"] * (-n_vol[t]),
+            "qual":   weights["qual"]   * n_qual[t],
+            "size":   weights["size"]   * n_size[t],
+        }
+        base = sum(contribs.values())
+        scores[t] = base
+        breakdown[t] = {
+            "raw": {
+                "mom_value":    mom_values[t],
+                "vol_value":    vol_values[t],
+                "sharpe_value": sharpe_values[t],
+                "size_value":   size_values[t],
+            },
+            "normalization": normalization,
+            "normalized": {
+                "mom":  n_mom[t],
+                "vol":  n_vol[t],
+                "qual": n_qual[t],
+                "size": n_size[t],
+            },
+            "contributions": contribs,
+            "base_score":    base,
+        }
+    return scores, breakdown, weights
+
+
+def score_candidates(
+    panels: dict[str, FactorPanel],
+    regime_quadrant: str | None,
+    regime_confidence: float,
+    normalization: str = "rank_percentile",
+) -> dict[str, float]:
+    """Compute composite score per ticker. Higher = better.
+
+    Normalized values are computed across the input ticker set (typically one
+    bucket's eligible pool), so scores are *relative* within the bucket.
+    """
+    scores, _, _ = score_candidates_with_components(
+        panels, regime_quadrant, regime_confidence, normalization=normalization,
+    )
     return scores
 
 
@@ -179,28 +272,47 @@ def select_diverse(
     returns: pd.DataFrame,
     n: int,
     correlation_threshold: float = 0.85,
+    selection_trace: dict | None = None,
 ) -> list[str]:
     """Greedy correlation-aware selection.
 
     Walk down `ranked_tickers` (best first); accept a ticker only if its
     correlation with every already-accepted ticker is below threshold.
     Pad with remaining ranked tickers if fewer than n pass the filter.
+
+    If `selection_trace` dict is provided, mutates it in place to record
+    {ticker: {selected, reason, corr_max, corr_with}} for every walked ticker.
     """
     if n <= 0:
         return []
     selected: list[str] = []
+    rejected_by_corr: set[str] = set()
+
+    def _record(ticker, *, selected_flag, reason, corr_max=None, corr_with=None):
+        if selection_trace is None:
+            return
+        selection_trace[ticker] = {
+            "selected":  selected_flag,
+            "reason":    reason,
+            "corr_max":  corr_max,
+            "corr_with": corr_with or [],
+        }
+
     for ticker in ranked_tickers:
         if len(selected) >= n:
             break
         if not selected:
             selected.append(ticker)
+            _record(ticker, selected_flag=True, reason="first pick")
             continue
         if ticker not in returns.columns:
-            # No correlation data — accept (treated as orthogonal).
             selected.append(ticker)
+            _record(ticker, selected_flag=True,
+                    reason="no return data — treated as orthogonal")
             continue
         max_corr = 0.0
-        too_correlated = False
+        too_correlated_with: str | None = None
+        corr_with: list[tuple[str, float]] = []
         for s in selected:
             if s not in returns.columns:
                 continue
@@ -208,17 +320,34 @@ def select_diverse(
             if pd.isna(c):
                 continue
             ac = abs(float(c))
+            corr_with.append((s, ac))
             if ac >= correlation_threshold:
-                too_correlated = True
+                too_correlated_with = s
+                max_corr = ac
                 break
             max_corr = max(max_corr, ac)
-        if not too_correlated:
+        if too_correlated_with is None:
             selected.append(ticker)
+            _record(ticker, selected_flag=True,
+                    reason=f"passed corr filter (max={max_corr:.3f})",
+                    corr_max=max_corr, corr_with=corr_with)
+        else:
+            rejected_by_corr.add(ticker)
+            _record(ticker, selected_flag=False,
+                    reason=f"corr {max_corr:.3f} ≥ {correlation_threshold:.3f} with {too_correlated_with}",
+                    corr_max=max_corr, corr_with=corr_with)
 
     if len(selected) < n:
         for ticker in ranked_tickers:
             if ticker not in selected:
                 selected.append(ticker)
+                if selection_trace is not None and ticker in selection_trace:
+                    prev = selection_trace[ticker]
+                    prev["selected"] = True
+                    prev["reason"] = f"padding fallback (was: {prev['reason']})"
+                else:
+                    _record(ticker, selected_flag=True,
+                            reason="padding fallback (mandate-priority)")
                 if len(selected) >= n:
                     break
 

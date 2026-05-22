@@ -1,0 +1,61 @@
+{
+  "anchor_id": "2024-03_goldilocks",
+  "as_of_date": "2024-03-15",
+  "title": "Soft landing / AI 랠리 / disinflation 재확인",
+  "description": "Fed pivot 기대 정점, 시장은 6회 cut 가격 (실제론 0회였지만 그건 사후). NVDA 폭등 진행, CPI 3.2%로 하락 안정, 실업률 3.9% 유지. equity (SPY YTD +9%), 광범위한 risk-on 분위기. 고용/소비 견조, 인플레는 천천히 cooling.",
+
+  "consensus_reasoning": "교과서 골디락스 — 성장 견조 + 인플레 cooling. 자산배분 합의:\n- equity overweight (특히 us_broad, us_tech)\n- duration 회복 (rate cuts 기대로 Treasury 매수)\n- commodity는 정상 비중 (큰 인플레 헷지 불필요)\n- defensive 자산 underweight\n- AI/tech 테마 강함 (NVDA Q4 earnings shock 직후)\nRisk-on이지만 leverage 늘리는 시기 아님 — valuation 부담 시작.",
+
+  "sources": [
+    "JPM Q2 2024 guide: 'goldilocks confirmed, but valuations stretched'",
+    "Goldman 2024 outlook: 'broad equity overweight, focus on profitability'",
+    "Bridgewater 2024-Q1: 'AI capex super-cycle is real, not just hype'",
+    "BoFA FMS Mar 2024: equity overweight, cash underweight, bonds neutral"
+  ],
+
+  "stage1": {
+    "regime": {
+      "quadrant": "growth_disinflation",
+      "confidence": 0.85
+    },
+    "systemic": {
+      "score": 3.0,
+      "regime": "risk_on"
+    }
+  },
+
+  "stage2": {
+    "dominant_cell": "A_N_F",
+    "dominant_scenario_legacy": "goldilocks",
+    "conviction": "high",
+    "bucket_target": {
+      "kr_equity":       0.18,
+      "global_equity":   0.35,
+      "fx_commodity":    0.08,
+      "bond":            0.25,
+      "cash_mmf":        0.14,
+      "bond_tips_share": 0.20
+    }
+  },
+
+  "expected_stage3": {
+    "acceptable_methods": ["hrp", "risk_parity"],
+    "min_sub_category_weights": {},
+    "max_sub_category_weights": {
+      "gold":         0.07,
+      "us_treasury":  0.15
+    },
+    "required_sub_categories": [],
+    "required_substitute_groups": [
+      {
+        "name": "us_equity_core",
+        "description": "Goldilocks 환경 — 광범위 미국 주식 핵심 (S&P500 OR Nasdaq).",
+        "any_of": ["us_broad", "us_tech_nasdaq"],
+        "min_total_weight": 0.08
+      }
+    ],
+    "forbidden_sub_categories": [],
+    "min_unique_sub_categories": 8,
+    "risk_asset_max": 0.70
+  }
+}

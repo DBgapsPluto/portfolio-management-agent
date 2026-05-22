@@ -1,0 +1,64 @@
+{
+  "anchor_id": "2024-11_kr_boom",
+  "as_of_date": "2024-11-15",
+  "title": "Trump 당선 / KR 반도체 호황 본격 / KR boom regime",
+  "description": "Trump 당선 후 'America First + Reshoring' 정책 기대. NVDA H100/Blackwell 수요 폭증, 삼성·하이닉스 HBM 수요 급증. KOSPI 반도체 섹터 YTD +30%+. KRW 강세 (1330대). 글로벌 매크로는 여전히 골디락스 유지 (Fed 25bps cut).",
+
+  "consensus_reasoning": "한국 시장에 매우 특이적인 시기 — global goldilocks + 'KR-specific boom' 동시. 자산배분 합의:\n- KR equity overweight (특히 semiconductor)\n- ai_robotics, battery_ev 같은 KR 강세 섹터 보유\n- 글로벌은 정상 비중 (overconcentration 회피)\n- 인플레 헷지 약간만 (큰 인플레 우려 없음)\n- KR boom은 일시적일 수 있어 leverage X\n핵심: KR 자산이 글로벌 평균을 outperform 하는 시기로 인식.",
+
+  "sources": [
+    "한국은행 통화신용정책보고서 2024-11: '수출 회복 지속'",
+    "Goldman KR equity strategy Nov 2024: 'semiconductor super-cycle peak window'",
+    "Morgan Stanley 2025 outlook: 'EM/Korea overweight, semis structurally bullish'",
+    "BoFA FMS Nov 2024: 'Trump trade = US/KR domestic winners'",
+    "Howard Marks (2024-10) memo on 'narrow leadership concentration risk'"
+  ],
+
+  "stage1": {
+    "regime": {
+      "quadrant": "growth_disinflation",
+      "confidence": 0.75
+    },
+    "systemic": {
+      "score": 3.5,
+      "regime": "risk_on"
+    }
+  },
+
+  "stage2": {
+    "dominant_cell": "A_N_boom",
+    "dominant_scenario_legacy": "kr_boom",
+    "conviction": "high",
+    "bucket_target": {
+      "kr_equity":       0.30,
+      "global_equity":   0.25,
+      "fx_commodity":    0.10,
+      "bond":            0.20,
+      "cash_mmf":        0.15,
+      "bond_tips_share": 0.15
+    }
+  },
+
+  "expected_stage3": {
+    "acceptable_methods": ["hrp"],
+    "min_sub_category_weights": {
+      "us_broad": 0.04
+    },
+    "max_sub_category_weights": {
+      "gold":         0.05,
+      "us_treasury":  0.10
+    },
+    "required_sub_categories": [],
+    "required_substitute_groups": [
+      {
+        "name": "kr_growth_theme",
+        "description": "KR 성장 테마 익스포저 — 명시 섹터 ETF OR KOSPI200(=암묵적 반도체 35%) OR 코스닥150(성장 tilt)로 확보 가능. corr 필터가 중복 reject해도 한 가지는 들어와야.",
+        "any_of": ["semiconductor", "ai_robotics", "battery_ev", "index_broad"],
+        "min_total_weight": 0.15
+      }
+    ],
+    "forbidden_sub_categories": [],
+    "min_unique_sub_categories": 8,
+    "risk_asset_max": 0.75
+  }
+}
