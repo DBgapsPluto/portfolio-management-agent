@@ -184,6 +184,28 @@ class ResearchDecision(BaseModel):
         description="sharpening 적용 후 cycle 분포. portfolio가 이 값으로 산출됨.",
     )
 
+    # === Factor model fields (Stage 2 factor model PR 2026-05-22) ===
+    # PR1: factor model 와 24-cell 가 *공존*. C5 에서 24-cell field 제거.
+    # 본 field 는 *defaults empty* — backward-compat.
+    factor_scores: dict[str, float] = Field(
+        default_factory=dict,
+        description="9 factor (F1-F9) 의 z-score. {factor_name: z}",
+    )
+    factor_contributions: dict[str, dict[str, float]] = Field(
+        default_factory=dict,
+        description="Factor → bucket contribution (attribution). "
+                    "{factor_name: {bucket_name: pp_contribution}}",
+    )
+    baseline_bucket: dict[str, float] = Field(
+        default_factory=dict,
+        description="Calibration 의 baseline bucket weight. attribution 용.",
+    )
+    safety_diagnostics: dict[str, object] = Field(
+        default_factory=dict,
+        description="Projection audit trail. apply_factor_model_with_safety 의 출력. "
+                    "Stage 6 narrative + monitoring 용.",
+    )
+
     @property
     def dominant_scenario(self) -> str:
         """Legacy compat — 7-scenario 이름 추정 (downstream method_picker 등 string 매칭).

@@ -35,7 +35,27 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 ```
 
 ## Post-C1
-(C1 commit 직후 갱신)
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 623 passed, 5 warnings in 12.58s
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 18 passed, 1 warning in 14.31s
+```
+
+### Δ from baseline
+- Unit: +4 passed (5 new factor schema test - 1 removed cell-key test), 0 new failure
+- Integration: -1 passed (test_subgraph_isolation.py 삭제 — sub-graph wrapper 폐기로 obsolete), 0 new failure
+- 0 *new* regression confirmed
 
 ## Post-C2 ... Post-C8
 (각 commit 직후 갱신)

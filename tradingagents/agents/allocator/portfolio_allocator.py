@@ -74,15 +74,11 @@ def create_portfolio_allocator(
             raise RuntimeError("returns matrix empty — Stage 3 cannot proceed")
 
         # 2. Multi-factor + corr de-dup + (Phase C) scenario sub_category boost.
-        # 24-cell framework: dominant_cell.key (e.g. "A_N_F") 우선 사용 — log_boost가
-        # cell-axis 좌표 직접 받아 3축 boost 합성. 없으면 legacy dominant_scenario.
+        # Factor model PR (2026-05-22): dominant_cell 제거. 항상 legacy scenario name string 사용.
+        # log_boost 가 cell key 받던 path 도 해당 path 제거됨 (sub_category.py).
         dominant_scenario = None
         if research_decision is not None:
-            cell = getattr(research_decision, "dominant_cell", None)
-            if cell is not None and hasattr(cell, "key"):
-                dominant_scenario = cell.key  # "A_N_F" 같은 cell key
-            else:
-                dominant_scenario = getattr(research_decision, "dominant_scenario", None)
+            dominant_scenario = getattr(research_decision, "dominant_scenario", None)
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,

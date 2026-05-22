@@ -34,14 +34,6 @@ def test_boost_for_scenario_legacy_name_maps_to_cell():
     assert boost["gold"] >= 1.5
 
 
-def test_boost_for_scenario_cell_key_direct():
-    # cell key 직접
-    boost = boost_for_scenario("D_T_F")
-    # D cycle × T tail compounded
-    assert boost.get("inflation_linked", 0) >= 1.4  # D boost
-    assert boost.get("us_treasury", 0) >= 1.3       # T boost
-
-
 def test_boost_for_scenario_unknown_or_none():
     assert boost_for_scenario(None) == {}
     assert boost_for_scenario("nonexistent_xyz") == {}
@@ -110,12 +102,13 @@ def test_kr_boom_scenario_boosts_semiconductor_over_dividend():
     )
     assert kr_boom.bucket_to_tickers["kr_equity"] == ["A111111"]
 
-    # C cycle (recession): factor_value_dividend 1.3 → A222222 우선
+    # broad_recession: factor_value_dividend 1.3 → A222222 우선
+    # (Factor model PR: cell key path 제거 — legacy name 만 사용)
     rec = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         per_bucket_n=1, returns=returns, factor_panel=panel,
         regime_quadrant="recession_disinflation", regime_confidence=0.8,
-        dominant_scenario="C_N_F",  # 새 cell key 직접
+        dominant_scenario="broad_recession",  # legacy name
     )
     assert rec.bucket_to_tickers["kr_equity"] == ["A222222"]
 

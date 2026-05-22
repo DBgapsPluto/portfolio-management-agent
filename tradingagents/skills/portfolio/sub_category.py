@@ -193,16 +193,10 @@ def log_boost(scenario: str | None, sub_category: str | None) -> float:
 
 
 def _scenario_to_axes(scenario: str) -> tuple[str, str, str] | None:
-    """legacy name이나 cell key를 (cycle, tail, kr) tuple로. 못 풀면 None."""
-    # legacy 이름이 우선 (global_credit 같은 underscore 포함 케이스 처리).
-    if scenario in _LEGACY_SCENARIO_TO_AXES:
-        return _LEGACY_SCENARIO_TO_AXES[scenario]
-    # cell key 형식 "{cycle}_{tail}_{kr}"
-    parts = scenario.split("_")
-    if len(parts) == 3 and parts[0] in ("A", "B", "C", "D") \
-            and parts[1] in ("N", "T") and parts[2] in ("F", "boom", "stress"):
-        return (parts[0], parts[1], parts[2])
-    return None
+    """legacy scenario name 을 (cycle, tail, kr) axis tuple 로.
+    Factor model PR (2026-05-22): cell key path 제거. dominant_scenario 가 항상 legacy name string.
+    """
+    return _LEGACY_SCENARIO_TO_AXES.get(scenario)
 
 
 def boost_for_scenario(scenario: str | None) -> dict[str, float]:
