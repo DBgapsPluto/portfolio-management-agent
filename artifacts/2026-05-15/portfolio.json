@@ -3,117 +3,154 @@
   "capital_krw": 1000000000,
   "method": "min_variance",
   "bucket_target": {
-    "kr_equity": 0.08827309236947795,
-    "global_equity": 0.20555220883534137,
-    "fx_commodity": 0.27899096385542166,
-    "bond": 0.22806224899598396,
-    "cash_mmf": 0.1991214859437751,
-    "rationale": "Cycle dominant: B (84%, high, β=1.00→eff 84%). Top cell: B_N_F (62%). D1: Macro Quant strongly points to B growth+inflation: regime=growth_inflation 0.84, CPI 3.9% with 3m ann 7.3% accelerating, GDPNow +4.0, CFNAI near expansion, Sahm false. A still possible because bro",
-    "bond_tips_share": 0.7373249999999999
+    "kr_equity": 0.07899152556920923,
+    "global_equity": 0.16737744007797575,
+    "fx_commodity": 0.07605623178103078,
+    "bond": 0.45734009400623904,
+    "cash_mmf": 0.22023470856554528,
+    "rationale": "Factor model: dominant_scenario=goldilocks, conviction=medium. Top contributors: F7_equity_vol_regime=+2.32, F2_inflation=-0.50, F5_credit_cycle=-0.48",
+    "bond_tips_share": 0.23173883944422774
   },
   "weights": {
-    "A0061Z0": 0.13705862941370583,
-    "A102110": 0.03449965500344997,
-    "A133690": 0.0825591744082559,
-    "A144600": 0.11398886011139887,
-    "A273130": 0.052359476405235944,
-    "A278530": 0.03695963040369596,
-    "A360750": 0.05783942160578394,
-    "A381180": 0.016329836701632985,
-    "A395270": 0.01680983190168098,
-    "A411060": 0.16499835001649985,
-    "A423160": 0.025599744002559974,
-    "A430500": 0.03863961360386396,
-    "A455890": 0.04971950280497195,
-    "A456600": 0.04882951170488295,
-    "A488770": 0.12380876191238087
+    "A0061Z0": 0.165,
+    "A102110": 0.0119,
+    "A133690": 0.04908,
+    "A144600": 0.03661,
+    "A273130": 0.10248,
+    "A278530": 0.01697,
+    "A360750": 0.07957,
+    "A381180": 0.00181,
+    "A385540": 0.06201,
+    "A411060": 0.03945,
+    "A423160": 0.03976,
+    "A455890": 0.03961,
+    "A456600": 0.03691,
+    "A468370": 0.12785,
+    "A487240": 0.05012,
+    "A488770": 0.14087
   },
   "rationale": "Stage 4 overlay applied (strength=0.70, mult=1.00). critical 1 → 70% strength (conservative initial)",
   "expected_volatility": null,
   "expected_sharpe": null,
   "research_decision": {
     "bucket_target": {
-      "kr_equity": 0.08827309236947795,
-      "global_equity": 0.20555220883534137,
-      "fx_commodity": 0.27899096385542166,
-      "bond": 0.22806224899598396,
-      "cash_mmf": 0.1991214859437751,
-      "rationale": "Cycle dominant: B (84%, high, β=1.00→eff 84%). Top cell: B_N_F (62%). D1: Macro Quant strongly points to B growth+inflation: regime=growth_inflation 0.84, CPI 3.9% with 3m ann 7.3% accelerating, GDPNow +4.0, CFNAI near expansion, Sahm false. A still possible because bro",
-      "bond_tips_share": 0.7373249999999999
+      "kr_equity": 0.07899152556920923,
+      "global_equity": 0.16737744007797575,
+      "fx_commodity": 0.07605623178103078,
+      "bond": 0.45734009400623904,
+      "cash_mmf": 0.22023470856554528,
+      "rationale": "Factor model: dominant_scenario=goldilocks, conviction=medium. Top contributors: F7_equity_vol_regime=+2.32, F2_inflation=-0.50, F5_credit_cycle=-0.48",
+      "bond_tips_share": 0.23173883944422774
     },
-    "scenario_probabilities": {
-      "A_N_F": 0.02,
-      "A_N_boom": 0.005,
-      "A_N_stress": 0.01,
-      "A_T_F": 0.002,
-      "A_T_boom": 0.0005,
-      "A_T_stress": 0.0025,
-      "B_N_F": 0.62,
-      "B_N_boom": 0.08,
-      "B_N_stress": 0.12,
-      "B_T_F": 0.01,
-      "B_T_boom": 0.002,
-      "B_T_stress": 0.008,
-      "C_N_F": 0.03,
-      "C_N_boom": 0.004,
-      "C_N_stress": 0.01,
-      "C_T_F": 0.004,
-      "C_T_boom": 0.0005,
-      "C_T_stress": 0.003,
-      "D_N_F": 0.035,
-      "D_N_boom": 0.003,
-      "D_N_stress": 0.02,
-      "D_T_F": 0.003,
-      "D_T_boom": 0.0005,
-      "D_T_stress": 0.003,
-      "reasoning": "D1: Macro Quant strongly points to B growth+inflation: regime=growth_inflation 0.84, CPI 3.9% with 3m ann 7.3% accelerating, GDPNow +4.0, CFNAI near expansion, Sahm false. A still possible because broad risk-on and financial conditions neutral/calm, but inflation acceleration argues against disinflation. D small but nonzero due to tight real yields and inflation fears; C low given no recession anchors. D2: mostly N. Tail block calm/neutral: VVIX 90 calm, MOVE 100 calm, VIX 18.4, contango, HY OAS mom z -0.04, funding calm, risk score 4.8/10. So T only small residual from inflation-fear headlines and large-cap risk-off pockets. D3: mostly F, but KR stress residual is meaningful. KR corp spread +63bp exceeds stress cue, foreign 20d flow negative though tagged neutral, KOSDAQ/KOSPI -25% large-cap risk-off, so stress > boom. Boom still possible from KR exports +50% and expansion CLI, but those are partly cycle-linked, so only modest boom weight. Top cells: B_N_F dominant baseline; B_N_stress second from KR-specific spread/tier weakness; B_N_boom third from strong exports/CLI under non-tail backdrop."
+    "conviction": "medium",
+    "dominant_scenario": "goldilocks",
+    "factor_scores": {
+      "F1_growth": -0.06394115983339325,
+      "F2_inflation": -0.5,
+      "F3_real_rate": 0.0,
+      "F4_term_premium": 0.0,
+      "F5_credit_cycle": -0.4833333333333333,
+      "F6_krw_regime": 0.0,
+      "F7_equity_vol_regime": 2.3162979298153465,
+      "F8_valuation": 0.0,
+      "F9_liquidity_regime": -0.3589743589743589
     },
-    "dominant_cell": {
-      "cycle": "B",
-      "tail": "N",
-      "kr": "F"
+    "factor_contributions": {
+      "F1_growth": {
+        "kr_equity": -0.00255764639333573,
+        "global_equity": -0.003836469590003595,
+        "fx_commodity": -0.0006394115983339325,
+        "bond": 0.00511529278667146,
+        "cash_mmf": 0.0019182347950017975
+      },
+      "F2_inflation": {
+        "kr_equity": 0.01,
+        "global_equity": 0.015,
+        "fx_commodity": -0.035,
+        "bond": 0.025,
+        "cash_mmf": -0.015
+      },
+      "F3_real_rate": {
+        "kr_equity": -0.0,
+        "global_equity": -0.0,
+        "fx_commodity": -0.0,
+        "bond": -0.0,
+        "cash_mmf": 0.0
+      },
+      "F4_term_premium": {
+        "kr_equity": 0.0,
+        "global_equity": 0.0,
+        "fx_commodity": 0.0,
+        "bond": 0.0,
+        "cash_mmf": -0.0
+      },
+      "F5_credit_cycle": {
+        "kr_equity": 0.024166666666666666,
+        "global_equity": 0.028999999999999995,
+        "fx_commodity": -0.004833333333333333,
+        "bond": 0.009666666666666665,
+        "cash_mmf": -0.05799999999999999
+      },
+      "F6_krw_regime": {
+        "kr_equity": -0.0,
+        "global_equity": 0.0,
+        "fx_commodity": 0.0,
+        "bond": -0.0,
+        "cash_mmf": -0.0
+      },
+      "F7_equity_vol_regime": {
+        "kr_equity": -0.09265191719261387,
+        "global_equity": -0.1,
+        "fx_commodity": -0.046325958596306935,
+        "bond": 0.09265191719261387,
+        "cash_mmf": 0.1
+      },
+      "F8_valuation": {
+        "kr_equity": -0.0,
+        "global_equity": -0.0,
+        "fx_commodity": 0.0,
+        "bond": 0.0,
+        "cash_mmf": 0.0
+      },
+      "F9_liquidity_regime": {
+        "kr_equity": 0.010769230769230767,
+        "global_equity": 0.017948717948717947,
+        "fx_commodity": 0.0035897435897435893,
+        "bond": -0.014358974358974357,
+        "cash_mmf": -0.017948717948717947
+      }
     },
-    "dominant_cell_probability": 0.62,
-    "dominant_cycle": "B",
-    "dominant_cycle_probability": 0.84,
-    "cycle_marginals": {
-      "A": 0.04,
-      "B": 0.84,
-      "C": 0.0515,
-      "D": 0.0645
+    "baseline_bucket": {
+      "kr_equity": 0.12,
+      "global_equity": 0.2,
+      "fx_commodity": 0.15,
+      "bond": 0.33,
+      "cash_mmf": 0.2
     },
-    "tail_marginals": {
-      "N": 0.957,
-      "T": 0.039
-    },
-    "kr_marginals": {
-      "F": 0.724,
-      "boom": 0.0955,
-      "stress": 0.1765
-    },
-    "conviction": "high",
-    "conviction_beta": 1.0,
-    "effective_cycle_marginals": {
-      "A": 0.04000000000000001,
-      "B": 0.84,
-      "C": 0.051500000000000004,
-      "D": 0.06450000000000002
+    "safety_diagnostics": {
+      "pre_projection_risk_asset": 0.29462962227043155,
+      "pre_projection_negatives": [],
+      "pre_projection_sum": 0.953674041403693,
+      "mandate_violated_pre_projection": false,
+      "extreme_factor_active": false,
+      "projection_l2_distance": 0.02071759850883664,
+      "projection_intervened": true
     }
   },
   "method_choice": {
     "method": "hrp",
     "params": {},
-    "reasoning": "scenario=overheating, conviction=high: overheating (growth+inflation) → equity tilt + 분산, HRP"
+    "reasoning": "scenario=goldilocks, conviction=medium: goldilocks → 분산 친화, HRP"
   },
   "risk_overlay": {
     "staleness_days": 0,
     "source_date": "2026-05-15",
     "weight_ceilings": {
-      "A411060": 0.165,
-      "A430500": 0.165
+      "A0061Z0": 0.165,
+      "A468370": 0.165
     },
     "cluster_caps": {
-      "cluster_12": 0.42600000000000005
+      "cluster_1": 0.42600000000000005
     },
     "risk_asset_multiplier": 1.0,
     "tail_hedge_floor": {},
@@ -122,30 +159,30 @@
     "lens_concerns": [
       {
         "lens": "tail_risk",
-        "level": "low",
+        "level": "none",
         "proposed_overlay": {
           "weight_ceilings": {},
           "cluster_caps": {},
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "CVaR_95_1d=2.22%, systemic_score=4.8, vix_term=contango, funding=calm"
+        "evidence": "CVaR_95_1d=0.98%, systemic_score=4.8, vix_term=contango, funding=calm"
       },
       {
         "lens": "concentration",
         "level": "critical",
         "proposed_overlay": {
           "weight_ceilings": {
-            "A411060": 0.15,
-            "A430500": 0.15
+            "A0061Z0": 0.15,
+            "A468370": 0.15
           },
           "cluster_caps": {
-            "cluster_12": 0.18
+            "cluster_1": 0.18
           },
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "HHI=0.103, top1=20.0%, top3_sum=44.9%, max_cluster=27.9% (5 clusters)"
+        "evidence": "HHI=0.097, top1=20.0%, top3_sum=40.1%, max_cluster=10.6% (4 clusters)"
       },
       {
         "lens": "macro_conditional",
@@ -156,27 +193,26 @@
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "risk_asset_weight=57.3%, scenario=overheating, conviction=high, systemic=4.8, regime=growth_inflation"
+        "evidence": "risk_asset_weight=32.2%, scenario=goldilocks, conviction=medium, systemic=4.8, regime=growth_inflation"
       }
     ]
   },
   "portfolio_numerics": {
     "staleness_days": 0,
     "source_date": "2026-05-15",
-    "hhi": 0.102836,
+    "hhi": 0.096545,
     "top1_weight": 0.2,
-    "top3_weight_sum": 0.449483,
+    "top3_weight_sum": 0.400748,
     "cluster_exposure": {
-      "cluster_1": 0.030749,
-      "cluster_8": 0.137407,
-      "cluster_12": 0.278991,
-      "cluster_14": 0.026939,
-      "cluster_15": 0.040619
+      "cluster_1": 0.105983,
+      "cluster_12": 0.076056,
+      "cluster_14": 0.021936,
+      "cluster_15": 0.036904
     },
-    "max_cluster_exposure": 0.278991,
-    "realized_vol_60d": 0.009827,
-    "var_95_1d": 0.013176,
-    "cvar_95_1d": 0.022223,
+    "max_cluster_exposure": 0.105983,
+    "realized_vol_60d": 0.005054,
+    "var_95_1d": 0.005435,
+    "cvar_95_1d": 0.00979,
     "n_assets": 18
   },
   "validation_report": {

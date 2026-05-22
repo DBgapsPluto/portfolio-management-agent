@@ -235,5 +235,49 @@ FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
 - Note: synthetic data 가 factor-return 의 deliberate correlation 갖음 — 실측은 훨씬 낮을 것.
   INITIAL_BETA 의 *update 는 real fetch 후* (Stage 1 backlog Issue #18).
 
-## Post-C7 ... Post-C8
-(각 commit 직후 갱신)
+## Post-C7
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -5
+FAILED tests/unit/agents/test_macro_quant_analyst.py::test_macro_analyst_orchestration
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 668 passed, 5 warnings in 120.86s (0:02:00)
+```
+
+### Integration
+unchanged (data-only change; code 미수정). Post-C6 = 18 failed / 16 passed 그대로.
+
+### Δ from Post-C6
+- Unit: 668 → 668 (no test code change). 0 new failure.
+- Integration: unchanged.
+- 0 *new* regression confirmed.
+
+### Replay 결과 (2026-05-15 fixture, Stage 2-6 sequential)
+- `research_debate`: factor pipeline 동작 — factor_scores 산출 + bucket_target 갱신.
+  - dominant_scenario = `goldilocks`, conviction = `medium`
+  - bucket_target: kr=0.079, global=0.167, fx=0.076, bond=0.457, cash=0.220, tips_share=0.232
+  - safety_diagnostics: projection_intervened=True (L2=0.0207), extreme_factor=False, mandate violation pre-projection=False
+- `allocator`: candidate_set + method_choice + weight_vector 갱신. method=hrp.
+- `risk_debate`: risk_overlay 적용 (concentration=critical, strength=0.70).
+- `validator`: **mandate.passed = True** (violations=0, suggestions=0).
+- `portfolio_manager`: artifacts/2026-05-15/{portfolio,philosophy,trade_plan} 재생성. final_portfolio_path = `artifacts/2026-05-15/portfolio.json`. 중첩 디렉토리 (artifacts/2026-05-15/2026-05-15/) 생성되지 않음 (--artifacts-dir artifacts + 자동 date suffix 동작 정상).
+
+### Key contributor — philosophy narrative
+- **F7_equity_vol_regime z=+2.32** 이 5 bucket 모두에서 1위 contributor — bond/cash ↑, equity/fx ↓ 방향성의 핵심 driver.
+- F2_inflation z=-0.50, F5_credit_cycle z=-0.48, F9_liquidity_regime z=-0.36 — 보조 contributor.
+- philosophy.md narrative 가 factor z + contribution attribution 으로 재작성됨 (Stage 2 의 24-cell scenario table 참조 사라지고 F1-F9 factor 명시 인용으로 대체).
+
+### Mandate
+- pre-C7 (24-cell): passed=True
+- post-C7 (factor): **passed=True**
+- 양쪽 모두 mandate 통과. QP projection 이 bucket 단계에서 mandate band enforcement.
+
+### Notes
+- 2026-05-15 archive (runs/2026-05-15/*.json) 도 `--write-archive` 로 갱신 — *backward-compat 없는* archive (이전 24-cell field 사라지고 factor field 만). 다른 PR/branch 에서 이 archive 로 replay 불가.
+- stage2_diff_factor_model.md (NEW): pre (24-cell, 47b5590) vs post (factor) 정량 비교.
+- artifacts/2026-05-22/decisions.md D7/D8 확정 (synthetic 기준 + real fetch 후 재결정 명시).
+
+## Post-C8
+(commit 직후 갱신)
