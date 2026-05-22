@@ -109,5 +109,46 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
   직접 의존 → 명시 dependency 로 격상.
 - uv.lock 은 본 commit scope 외 (WIP 보호) — 별도 `uv lock` 동기화 필요.
 
-## Post-C4 ... Post-C8
+## Post-C4
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 681 passed, 5 warnings in 7.63s
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 16 passed, 1 skipped, 1 warning in 15.01s
+```
+
+### Δ from Post-C3
+- Unit: -8 passed (delete test_research_manager.py — 13 tests removed; new test_research_manager_factor_model.py — 8 tests added; net -5 → but baseline shifts because 3 previously-deleted tests counted), 0 new failure.
+  - Removed (C5 합병 대상이지만 import 깨짐으로 인해 본 commit 에서 처리):
+    `tests/unit/agents/test_research_manager.py` (24-cell prompt/EMA/hysteresis 의존 — `_blend_with_prior`, `_apply_hysteresis` import 깨짐)
+  - Added: `tests/unit/agents/test_research_manager_factor_model.py` (8 tests, 모두 pass)
+- Integration: -2 passed (snapshot 5 tests → 1 module skip + 3 new e2e tests; net -2), 0 new failure.
+  - Stubbed (C5 합병 대상이지만 import 깨짐으로 인해 본 commit 에서 module-level skip 처리):
+    `tests/integration/test_stage2_e2e_snapshot.py` (24-cell `_blend_with_prior` import 깨짐; 5 → 1 skipped)
+  - Added: `tests/integration/test_stage2_factor_model_e2e.py` (3 tests, 모두 pass)
+- 0 *new* regression confirmed (pre-existing 3 unit fail + 18 integ fail 그대로).
+
+### Notes
+- C4 의 핵심: `research_manager.py` 전면 rewrite — 24-cell prompt + EMA + hysteresis
+  → factor pipeline (compute_all_factors → _blend_factors_with_prior →
+   apply_factor_model_with_safety → derive_dominant_scenario/conviction).
+- Stage 2 LLM 호출 0 — deterministic. macro_news_analyst 의 NewsReport struct 활용 (Option Z).
+- Legacy 24-cell placeholder field (`scenario_probabilities` / `dominant_cell` /
+  `dominant_cycle` / cycle/tail/kr marginals) — 모두 valid value 로 채움 → ResearchDecision
+  pydantic validation pass. `_legacy_*` helper 사용. C5 에서 schema 자체 제거 예정.
+- `dominant_scenario` 는 `ResearchDecision.@property` 가 cycle/tail/kr marginal 로부터
+  derive (factor 의 `derive_dominant_scenario` 결과를 cycle 로 round-trip 변환). C5 에서
+  factor 결과 직접 노출로 일원화 예정.
+
+## Post-C5 ... Post-C8
 (각 commit 직후 갱신)
