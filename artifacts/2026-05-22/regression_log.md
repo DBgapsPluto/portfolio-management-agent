@@ -213,5 +213,27 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
   - `tradingagents/backtest/__init__.py`: docstring 업데이트 (calibration
     pipeline 의 downstream consumer 사라짐 명시).
 
-## Post-C6 ... Post-C8
+## Post-C6
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 668 passed, 5 warnings in 131.07s (0:02:11)
+```
+
+### Δ from Post-C5
+- Unit: 661 → 668 (+7 new factor_calibration test). 0 new failure.
+
+### Calibration result (synthetic data — infrastructure validation)
+- INITIAL_BETA Sharpe: 1.702
+- Calibrated β Sharpe: 2.364 (Δ +0.662)
+- 60/40 KR-tilted Sharpe: 1.071 (Δ +1.293 vs calibrated)
+- Validation: **PASS** (both acceptance criteria)
+- Selected shrinkage: 1.00 (median OOS Sharpe peak)
+- Note: synthetic data 가 factor-return 의 deliberate correlation 갖음 — 실측은 훨씬 낮을 것.
+  INITIAL_BETA 의 *update 는 real fetch 후* (Stage 1 backlog Issue #18).
+
+## Post-C7 ... Post-C8
 (각 commit 직후 갱신)
