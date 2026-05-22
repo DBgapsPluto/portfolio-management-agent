@@ -15,6 +15,7 @@
 | Scope | Stage 2 *내부* algorithm 만 교체. Stage 1 *변경 없음*. 필요 input 부재 시 *문서화 후 후속 PR*. | User Q1 |
 | Calibration | Hybrid (theory prior + walk-forward Sharpe maximization with shrinkage) | User Q2 |
 | LLM role in Stage 2 | **None** — 완전 deterministic. LLM critic 은 future expansion. | User clarification |
+| macro_news 활용 | **Option Z** — Stage 1 `macro_news_analyst` 의 *structured NewsReport* (Tier-1~4) 의 *quantitative scalar/dict* 만 사용. Stage 2 추가 LLM 없음. | User clarification |
 | Migration | Hard cutover (24-cell × playbook 완전 제거) | User Q4 |
 | Acceptance criterion | Walk-forward OOS Sharpe > 현 framework + 0.05 AND OOS Sharpe ≥ 60/40 | User Q5 |
 | Regression test policy | 모든 코드 수정 시 *의무*. Factor 추가 시 backtest contribution + sign restriction 검증 의무. | User 추가 요구 |
@@ -140,89 +141,116 @@ research_debate_node = create_research_manager(deep)  # single node
 
 각 factor 의 *Stage 1 source field* + *availability*. 2026-05 *현재 reliability* 포함.
 
+**중요**: 본 PR 는 `macro_report`, `risk_report`, `technical_report`, **`news_report`** 4 가지 모두 사용.
+`news_report` (NewsReport schema, `tradingagents/schemas/news.py`) 의 *Tier-1 ~ Tier-4 structured field* 가 *macro_news_analyst (Stage 1) LLM 의 출력* — Stage 2 는 그 *float scalar / dict[str, float]* 만 *deterministic* 사용. Stage 2 추가 LLM 호출 0.
+
+`NewsReport` 의 핵심 *quantitative field* (Option Z 의 input):
+- **Tier-1 `GlobalOvernightSnapshot`**: `krw.change_pct` (USDKRW overnight % change), `risk_regime_overnight` (enum)
+- **Tier-2 `ReleaseSurpriseSnapshot`**: `surprise_index_30d: float` (30d z-score), `bias_30d: enum` (hawkish/balanced/dovish), `high_importance_today: int`
+- **Tier-3 `NewsSentimentSnapshot`**: `avg_sentiment: dict[Category, float]`, `count_change_vs_7d: dict[Category, float]`, `sentiment_dispersion: float`, `rising_category: Category | None`
+- **Tier-4 `SpeakerToneAggregate`**: `fed_tone_balance: float ∈ [-1,+1]`, `bok_tone_balance: float ∈ [-1,+1]`, `fed_voting_balance: float ∈ [-1,+1]`
+
+**Availability fallback 원칙**: 각 NewsReport tier 가 *Optional* — analyst 가 실패 또는 부분 실행 시 None. Factor estimator 는 *component 누락 시 weight 0* 처리 → factor 의 *available components 만으로* z-score 산출 (degraded but functional).
+
 #### F1 — growth_surprise
 
 | Component | Stage 1 source | Available | 2026 reliability | Weight in F1 |
 |---|---|---|---|---|
-| GDPNow | `macro_report.growth.gdp_nowcast` | ✓ | high | 0.25 |
-| CFNAI | `macro_report.growth.cfnai` | ✓ | high | 0.20 |
-| NFCI (inverted) | `macro_report.growth.nfci` | ✓ | high | 0.15 |
-| Sahm trigger | `macro_report.employment.sahm_trigger` | ✓ | **medium-low** (post-COVID 왜곡, Sahm 자체 false-positive 인정) | **0.10 cap** |
-| Yield curve 2-10y | `macro_report.yield_curve.slope_2_10y_bps` | ✓ | **medium** (post-COVID de-anchored) | **0.15 cap** |
+| GDPNow | `macro_report.growth.gdp_nowcast` | ✓ | high | 0.20 |
+| CFNAI | `macro_report.growth.cfnai` | ✓ | high | 0.15 |
+| NFCI (inverted) | `macro_report.growth.nfci` | ✓ | high | 0.12 |
+| Sahm trigger | `macro_report.employment.sahm_trigger` | ✓ | **medium-low** (post-COVID 왜곡) | **0.08 cap** |
+| Yield curve 2-10y | `macro_report.yield_curve.slope_2_10y_bps` | ✓ | **medium** (post-COVID de-anchored) | **0.12 cap** |
+| **Release surprise index 30d** ★ | `news_report.release_surprise.surprise_index_30d` | partial (depends on analyst tier-2) | high (forward-tilt info) | **0.18** |
+| **Macro release hawkish bias** ★ | `news_report.release_surprise.bias_30d` (mapped to {-0.8, 0, +0.8}) | partial | high | 0.05 |
+| **Macro sentiment** ★ | `news_report.news_sentiment.avg_sentiment["macro"]` | partial | medium | 0.05 |
+| Risk regime overnight | `news_report.global_overnight.risk_regime_overnight` (mapped to {-1, 0, +1}) | partial | high | 0.05 |
 | LEI 6m change | not in Stage 1 (Gap A) | ✗ | high | 0 (post-Stage-1-PR) |
 | ISM PMI sub-components | not in Stage 1 (Gap B) | ✗ | high | 0 (post-Stage-1-PR) |
 
-PR1 component weight sum = 0.85 (LEI/ISM 추가 후 1.0 으로 rebalance).
+PR1 component weight sum = 1.00 (news-derived 33%, traditional quant 67%).
+News-derived: forward macro surprise + sentiment + overnight regime — *quant 의 backward-looking* 보완.
 
 #### F2 — inflation_surprise
 
 | Component | Stage 1 source | Available | 2026 reliability | Weight |
 |---|---|---|---|---|
-| CPI YoY | `macro_report.cpi.yoy_pct` | ✓ | high | 0.20 |
-| CPI 3m annualized | `macro_report.cpi.three_month_annualized_pct` | ✓ | high | 0.20 |
-| Core PCE YoY | `macro_report.cpi.core_pce_yoy` (검증) | partial | high | 0.15 |
-| 5y5y forward | `macro_report.inflation_exp.five_y_five_y_pct` | ✓ | high | 0.15 |
-| Michigan 1y | `macro_report.inflation_exp.michigan_1y_pct` | ✓ | **medium** (behavioral noise ↑) | 0.10 cap |
-| Real yields 10y (inverted) | `macro_report.real_yields.ten_y_pct` | ✓ | high | 0.10 |
-| Fed path 6m bps | `macro_report.fed_path.implied_change_6m_bps` | ✓ | high | 0.10 |
+| CPI YoY | `macro_report.cpi.yoy_pct` | ✓ | high | 0.18 |
+| CPI 3m annualized | `macro_report.cpi.three_month_annualized_pct` | ✓ | high | 0.18 |
+| Core PCE YoY | `macro_report.cpi.core_pce_yoy` | partial | high | 0.13 |
+| 5y5y forward | `macro_report.inflation_exp.five_y_five_y_pct` | ✓ | high | 0.13 |
+| Michigan 1y | `macro_report.inflation_exp.michigan_1y_pct` | ✓ | **medium** | 0.08 cap |
+| Real yields 10y (inverted) | `macro_report.real_yields.ten_y_pct` | ✓ | high | 0.08 |
+| Fed path 6m bps | `macro_report.fed_path.implied_change_6m_bps` | ✓ | high | 0.08 |
+| **Release hawkish bias** ★ | `news_report.release_surprise.bias_30d` | partial | high | 0.07 |
+| **Macro sentiment (inverted — negative sent = recession but disinflation also)** ★ | `news_report.news_sentiment.avg_sentiment["macro"]` (carefully signed) | partial | medium | 0.07 |
 
 #### F3 — real_rate
 
 | Component | Stage 1 source | Available | 2026 reliability | Weight |
 |---|---|---|---|---|
-| 10y TIPS yield | `macro_report.real_yields.ten_y_pct` | ✓ | high | 0.85 |
-| r-star (HLW) | not in Stage 1 (Gap C) | ✗ | **medium** (post-COVID modeling uncertainty) | 0 (long-run mean 1.0% fallback) |
+| 10y TIPS yield | `macro_report.real_yields.ten_y_pct` | ✓ | high | 0.55 |
+| **Fed voting balance** ★ | `news_report.cb_speakers.fed_voting_balance` (∈[-1,+1], voting members 가중) | partial | high (forward path 신호) | **0.35** |
+| r-star (HLW) | not in Stage 1 (Gap C) | ✗ | medium | 0 (long-run mean 1.0% fallback) |
+| Fed path implied bps | `macro_report.fed_path.implied_change_6m_bps` | ✓ | high | 0.10 |
 
-PR1 effective weight: TIPS yield 만 사용.
+PR1 effective: TIPS (current) + Fed voting (forward expected). News tier-4 의 *voting balance* 가 *시장 영향 핵심* (schema 문서 인용).
 
 #### F4 — term_premium
 
 | Component | Stage 1 source | Available | 2026 reliability | Weight |
 |---|---|---|---|---|
-| 2-10y slope | `macro_report.yield_curve.slope_2_10y_bps` | ✓ | **medium** (F1 와 같은 de-anchor 이슈) | 0.40 |
-| 5-30y slope | `macro_report.yield_curve.slope_5_30y_bps` (검증) | partial | high | 0.30 |
-| ACM term premium | not in Stage 1 (Gap D) | ✗ | **uncertain** (NY Fed 2024 methodology review) | 0 (fallback to slope only) |
-| Kim-Wright term premium | not in Stage 1 | ✗ | high (still published) | 0 (post-Stage-1-PR) |
+| 2-10y slope | `macro_report.yield_curve.slope_2_10y_bps` | ✓ | **medium** (post-COVID de-anchored) | 0.30 |
+| 5-30y slope | `macro_report.yield_curve.slope_5_30y_bps` | partial | high | 0.25 |
+| **Fed tone balance (full speakers)** ★ | `news_report.cb_speakers.fed_tone_balance` (long-end 영향) | partial | high | **0.30** |
+| **Fed voting balance** (간접 — F3 와 overlap 주의) | `news_report.cb_speakers.fed_voting_balance` | partial | high | 0.15 |
+| ACM term premium | not in Stage 1 (Gap D) | ✗ | uncertain (NY Fed 2024 review) | 0 (post-Stage-1-PR) |
+| Kim-Wright term premium | not in Stage 1 | ✗ | high | 0 (post-Stage-1-PR) |
 
-PR1 effective: slope only. F4 의 *signal quality* 가 다른 factor 보다 낮음 — *weight bound at calibration*.
+PR1 effective: slope + news tier-4. F3 와 voting balance share — *factor-shared signal* 으로 calibration 시 cross-factor correlation 인지.
 
 #### F5 — credit_cycle
 
 | Component | Stage 1 source | Available | 2026 reliability | Weight |
 |---|---|---|---|---|
-| US HY OAS current | `risk_report.credit_spread_us_hy.current_bps` | ✓ | high (real-time) | 0.40 |
-| HY OAS 4w momentum z | `risk_report.credit_spread_us_hy.momentum_z` | ✓ | high | 0.30 |
-| Cycle-conditional baseline | `_BASELINE[quadrant]` (hand-coded — Issue #6 D7 deferred) | ✓ | medium | (baseline 으로 z 산출) |
-| Credit quality spread | `risk_report.credit_quality.quality_spread_bps` | ✓ | high | 0.20 |
+| US HY OAS current | `risk_report.credit_spread_us_hy.current_bps` | ✓ | high (real-time) | 0.30 |
+| HY OAS 4w momentum z | `risk_report.credit_spread_us_hy.momentum_z` | ✓ | high | 0.25 |
+| Credit quality spread | `risk_report.credit_quality.quality_spread_bps` | ✓ | high | 0.15 |
 | Funding stress | `risk_report.funding_stress.spread_bps` | ✓ | high | 0.10 |
+| **Corporate news distress** ★ | `news_report.news_sentiment.count_change_vs_7d["corporate"]` × `-avg_sentiment["corporate"]` (가속+부정 = distress) | partial | medium | **0.15** |
+| **Macro release dovish bias (recession proxy)** ★ | `news_report.release_surprise.bias_30d == dovish_surprise` → +0.5 | partial | medium | 0.05 |
+| Cycle-conditional baseline | `_BASELINE[quadrant]` (hand-coded — Issue #6 D7 deferred) | ✓ | medium | (baseline 으로 z 산출) |
 
-PR1: 모두 available. Quadrant 는 `macro_report.regime.quadrant`.
+Quadrant: `macro_report.regime.quadrant`. News-derived: corporate distress detection (earnings warning surge etc.) + macro release dovish bias (recession proxy).
 
-#### F6 — KRW regime (★ critical gap)
+#### F6 — KRW regime (★ critical gap + news enhanced)
 
 | Component | Stage 1 source | Available | 2026 reliability | Weight |
 |---|---|---|---|---|
-| KRW/USD level | not in Stage 1 (Gap E — *critical*) | ✗ | high | (PR1: yfinance fetch 임시 workaround) |
+| **KRW/USD overnight % change** ★ | `news_report.global_overnight.krw.change_pct` | partial | high (★ already provided by macro_news!) | **0.20** |
+| KRW/USD current level (z vs history) | external fetch (`external_fetchers.py`, yfinance) — Stage 1 PR 후 정식 wire | ✗ (fetch in Stage 2) | high | 0.20 |
 | KRW REER | not in Stage 1 (Gap F) | ✗ | high | 0 (long-run mean fallback) |
-| KR-US rate diff | `macro_report.kr_macro.bok_us_rate_diff_bps` (검증) | partial | high | 0.30 |
-| Foreign flow z | `macro_report.foreign_flow.net_flow_z` | ✓ | high | 0.30 |
-| KR exports YoY z | `macro_report.kr_macro.exports_yoy_z` (검증) | partial | high | 0.20 |
+| KR-US rate diff | `macro_report.kr_macro.bok_us_rate_diff_bps` | partial | high | 0.15 |
+| Foreign flow z | `macro_report.foreign_flow.net_flow_z` | ✓ | high | 0.20 |
+| KR exports YoY z | `macro_report.kr_macro.exports_yoy_z` | partial | high | 0.10 |
+| **BOK tone balance** ★ | `news_report.cb_speakers.bok_tone_balance` (∈[-1,+1]) | partial | high (forward BOK) | **0.15** |
 
-**Gap E (KRW/USD)** 가 *블로커*. Workaround:
-- PR1: `tradingagents/skills/external/krw_fetcher.py` 신설 — yfinance `KRW=X` 직접 fetch + cache. Stage 2 안에서 호출. Stage 1 변경 0.
-- 후속 Stage 1 PR 으로 macro_quant 안의 정식 KR FX skill 로 이동.
+**Gap E revised**: NewsReport 의 `global_overnight.krw` 가 *이미 매일 USDKRW overnight* 제공 — *partial fix*. 그러나 *current level* (1300 vs 1450 절대값) 은 별도 필요 → `external_fetchers.py` workaround.
+**News-derived contribution**: KRW overnight (20%) + BOK tone (15%) = 35% — *quant 의 backward indicator* 보완.
 
 #### F7 — equity_vol_regime
 
 | Component | Stage 1 source | Available | 2026 reliability | Weight |
 |---|---|---|---|---|
-| VIX level | `risk_report.vix.current_value` | ✓ | high | 0.25 |
-| VIX z-score | `risk_report.vix.z_score` | ✓ | high | 0.15 |
-| VIX term ratio | `risk_report.vix.term_ratio` | ✓ | high | 0.15 |
-| MOVE | `risk_report.move.current_value` (검증) | partial | high | 0.20 |
-| SKEW level | `risk_report.skew.current_value` (검증) | partial | **medium-low** (post-2018 structurally elevated) | 0 (SKEW change 만 사용) |
-| SKEW 1m change | derived | partial | medium | 0.10 |
-| Realized vol 60d | `risk_report.realized_vol.sixty_d` (검증) | partial | high | 0.15 |
+| VIX level | `risk_report.vix.current_value` | ✓ | high | 0.22 |
+| VIX z-score | `risk_report.vix.z_score` | ✓ | high | 0.12 |
+| VIX term ratio | `risk_report.vix.term_ratio` | ✓ | high | 0.12 |
+| MOVE | `risk_report.move.current_value` | partial | high | 0.18 |
+| SKEW level | `risk_report.skew.current_value` | partial | **medium-low** (post-2018 structurally elevated) | 0 (change 만 사용) |
+| SKEW 1m change | derived | partial | medium | 0.08 |
+| Realized vol 60d | `risk_report.realized_vol.sixty_d` | partial | high | 0.13 |
+| **Sentiment dispersion (uncertainty proxy)** ★ | `news_report.news_sentiment.sentiment_dispersion` | partial | high | **0.08** |
+| **Geopolitical event surge** ★ | `news_report.news_sentiment.count_change_vs_7d["geopolitical"]` (positive 만) | partial | high | **0.07** |
 
 #### F8 — valuation (★ 2026 uncertainty)
 
@@ -239,10 +267,12 @@ PR1: trailing P/E via yfinance. *2026 reliability medium* → F8 의 *overall we
 
 | Component | Stage 1 source | Available | 2026 reliability | Weight |
 |---|---|---|---|---|
-| VRP (VIX² − realized²) | derived from F7 components | ✓ (derived) | high | 0.40 |
-| Equity-bond corr 60d | `risk_report.equity_bond_corr.correlation_60d` | ✓ | high | 0.20 |
-| Sector dispersion | `technical_report.sector_dispersion` (검증) | partial | high | 0.20 |
-| Breadth (A/D) | `technical_report.breadth` (검증) | partial | **medium** (narrow AI rally distortion) | 0.10 cap |
+| VRP (VIX² − realized²) | derived from F7 components | ✓ (derived) | high | 0.35 |
+| Equity-bond corr 60d | `risk_report.equity_bond_corr.correlation_60d` | ✓ | high | 0.18 |
+| Sector dispersion | `technical_report.sector_dispersion` | partial | high | 0.18 |
+| Breadth (A/D) | `technical_report.breadth` | partial | **medium** (narrow AI rally distortion) | 0.08 cap |
+| **Event cluster (★★★ today)** ★ | `news_report.release_surprise.high_importance_today` (z normalized) | partial | high | **0.12** |
+| **Rising category signal** ★ | `news_report.news_sentiment.rising_category is not None` → +1.0 (regime change leading) | partial | medium | **0.09** |
 | Cross-currency basis | not in Stage 1 (Gap H) | ✗ | high | 0 (post-Stage-1-PR) |
 
 ### 3.3 Gap 종합 + workaround
@@ -343,20 +373,37 @@ def compute_factor_f(stage1_inputs, components_weights: dict[str, float]) -> Fac
 
 ```python
 def compute_growth_surprise(stage1) -> FactorScore:
-    # Component z-scores
+    # Traditional quant components (struct from macro_report)
     z_gdpnow = z(stage1.macro_report.growth.gdp_nowcast, mean=2.0, sd=2.0)
     z_cfnai = z(stage1.macro_report.growth.cfnai, mean=0.0, sd=0.5)
-    z_nfci = -z(stage1.macro_report.growth.nfci, mean=0.0, sd=0.5)  # tight = recession
+    z_nfci = -z(stage1.macro_report.growth.nfci, mean=0.0, sd=0.5)
     z_sahm = -1.0 if stage1.macro_report.employment.sahm_trigger else +0.5
     z_curve = z(stage1.macro_report.yield_curve.slope_2_10y_bps, mean=80, sd=80)
 
-    # Weighted aggregation (Sahm + curve weight cap per 2026 reliability)
+    # ★ News-derived components (from macro_news_analyst, structured)
+    rs = stage1.news_report.release_surprise if stage1.news_report else None
+    sent = stage1.news_report.news_sentiment if stage1.news_report else None
+    ovr = stage1.news_report.global_overnight if stage1.news_report else None
+
+    z_release_surprise = rs.surprise_index_30d if rs else None   # 이미 30d z
+    z_hawkish_bias = {                                            # bias enum → numeric
+        "hawkish_surprise": +0.8,
+        "balanced": 0.0,
+        "dovish_surprise": -0.8,
+    }.get(rs.bias_30d if rs else None, None)
+    z_macro_sent = sent.avg_sentiment.get("macro") if sent else None
+    z_risk_regime = {                                              # overnight risk regime enum → numeric
+        "risk_on": +1.0, "mixed": 0.0, "risk_off": -1.0,
+    }.get(ovr.risk_regime_overnight if ovr else None, None)
+
     weights = {
-        "gdpnow": 0.25, "cfnai": 0.20, "nfci": 0.15,
-        "sahm": 0.10, "curve": 0.15,  # capped at low weight
-        # "lei": 0.10, "ism_sub": 0.05  # post-Stage-1-PR
+        "gdpnow": 0.20, "cfnai": 0.15, "nfci": 0.12,
+        "sahm": 0.08, "curve": 0.12,
+        "release_surprise": 0.18, "hawkish_bias": 0.05,
+        "macro_sent": 0.05, "risk_regime_overnight": 0.05,
     }
-    return aggregate_z(components, weights)
+    # aggregate_z 가 component 가 None 이면 weight 0 처리 + total 재정규화
+    return aggregate_z(components, weights, factor_name="F1_growth")
 
 # Sign convention: +z = growth, -z = recession
 ```
@@ -821,10 +868,12 @@ candidate_selector 의 `log_boost(scenario, sub_category)` 가 cell key 받던 p
 #### Unit tests
 
 - `tests/unit/skills/research/test_factor_estimators.py`: 9 factor 각각의 *deterministic computation* 검증. Mock Stage 1 input → expected z-score.
-- `tests/unit/skills/research/test_factor_indicator_validity.py`: §4.5 의 reliability audit 강제 (component / weight 변경 시 test fail).
+- `tests/unit/skills/research/test_factor_estimators_news_components.py`: ★ NewsReport 의 *각 tier field* 가 factor 의 component 로 정상 사용 검증. Mock tier-2/3/4 → expected component z.
+- `tests/unit/skills/research/test_factor_estimators_news_fallback.py`: ★ NewsReport 의 *각 tier 가 None* (analyst 부분 실패) 인 경우 → factor 가 degraded but functional. Weight 0 처리 + 나머지 component renormalize 검증.
+- `tests/unit/skills/research/test_factor_indicator_validity.py`: §4.5 의 reliability audit 강제 (component / weight 변경 시 test fail). News-derived component 도 audit table 에 포함.
 - `tests/unit/skills/research/test_factor_to_bucket.py`: additive regression formula 검증. Mock factor scores → expected bucket weights.
 - `tests/unit/skills/research/test_mandate_projection.py`: mandate enforcement 검증 (extreme z 입력 시 항상 위험자산 ≤ 0.70).
-- `tests/unit/agents/test_research_manager_factor_model.py`: end-to-end node 호출 (mock state → ResearchDecision).
+- `tests/unit/agents/test_research_manager_factor_model.py`: end-to-end node 호출 (mock state → ResearchDecision). NewsReport 가 None 인 case 도 검증.
 - `tests/unit/schemas/test_research_decision_schema.py`: 신 schema validation.
 
 #### Integration tests
@@ -956,7 +1005,7 @@ C8: 문서 + Stage 1 backlog 등록
 
 ## 13. Non-goals (의식적 제외)
 
-- LLM critic (PR1 외 future expansion)
+- **Stage 2 내 LLM 호출** (PR1 외 future expansion). 단, macro_news_analyst (Stage 1) 의 LLM 작업 *결과* (NewsReport structured fields) 는 Option Z 으로 *Stage 2 가 deterministic 사용*.
 - Bucket grouping 재정의 (fx_commodity 분할 등) — mandate 호환 별도 결정
 - Stage 1 신호 추가 (Gap A-H) — 별도 Stage 1 PR
 - Stage 3 (ETF selection) 변경 — 별도 작업 중
