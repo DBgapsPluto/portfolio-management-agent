@@ -46,7 +46,7 @@ from tradingagents.skills.macro.regime_classifier import classify_regime
 from tradingagents.skills.macro.risk_appetite import compute_risk_appetite
 from tradingagents.skills.macro.tail_risk import compute_tail_risk
 from tradingagents.skills.macro.us_leading import compute_us_leading_index
-from tradingagents.skills.macro.yield_curve import compute_yield_curve
+from tradingagents.skills.macro.yield_curve import compute_yield_curve, compute_yield_curve_extras
 
 
 logger = logging.getLogger(__name__)
@@ -188,6 +188,28 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         s_2y = fetch_fred_series_skill("us_2y", start_macro, as_of, as_of_date=as_of)
         s_3m = fetch_fred_series_skill("us_3m", start_macro, as_of, as_of_date=as_of)
         yc = compute_yield_curve(s_10y, s_2y, s_3m, as_of=as_of)
+
+        # 2026-05-23 C4 — slope_5_30y fold-in for factor model F4 term_premium.
+        # D7: scalar return + yc.model_copy(update=...).
+        # D8: skill returns None on missing input → yc.spread_30y_5y_bps default 0.0 유지.
+        # D9: no retry / no cache (fetcher 의 TieredCache 와 별개로 skill 매번 fresh).
+        try:
+            s_5y = fetch_fred_series_skill("us_5y", start_macro, as_of, as_of_date=as_of)
+            s_30y = fetch_fred_series_skill("us_30y", start_macro, as_of, as_of_date=as_of)
+            dgs5_latest = (
+                float(s_5y.iloc[-1]) if s_5y is not None and not s_5y.empty else None
+            )
+            dgs30_latest = (
+                float(s_30y.iloc[-1]) if s_30y is not None and not s_30y.empty else None
+            )
+            spread_30y_5y_bps = compute_yield_curve_extras(
+                dgs5_pct=dgs5_latest, dgs30_pct=dgs30_latest, as_of=as_of,
+            )
+            if spread_30y_5y_bps is not None:
+                yc = yc.model_copy(update={"spread_30y_5y_bps": spread_30y_5y_bps})
+            # else: skill already logged warning; yc default 0.0 유지 (factor F4 영향).
+        except Exception as e:
+            logger.warning("slope_5_30y fetch failed (factor F4 affected): %s", e)
 
         cpi = fetch_fred_series_skill("us_cpi", start_macro, as_of, as_of_date=as_of)
         core_cpi = fetch_fred_series_skill("us_core_cpi", start_macro, as_of, as_of_date=as_of)

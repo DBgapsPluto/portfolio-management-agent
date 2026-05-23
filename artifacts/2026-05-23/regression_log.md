@@ -211,3 +211,59 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 - 분기 (try/except): outer analyst try wraps fetch + skill; inner skill
   also wraps with try (defense-in-depth — fetcher exception 도 graceful).
 
+## Post-C4
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -5
+FAILED tests/unit/agents/test_macro_quant_analyst.py::test_macro_analyst_orchestration
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 681 passed, 5 warnings in 117.33s (0:01:57)
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 21 passed, 1 warning in 13.88s
+```
+
+### Δ from Post-C3
+- Unit: 675 → 681 pass (+6: 2 schema + 4 skill), 3 pre-existing fail 동일
+- Integration: 변경 0 (18 fail pre-existing 동일, 21 pass 동일)
+- 0 *new* regression
+
+### 변경 사항
+- tradingagents/schemas/macro.py: YieldCurveSnapshot 에 spread_30y_5y_bps field
+  (default 0.0) 추가. C8 의 factor_estimators F4 term_premium component 에서
+  활성화 예정 (long-end real economy term premium signal).
+- tradingagents/skills/macro/yield_curve.py: compute_yield_curve_extras skill
+  추가 (기존 compute_yield_curve 의 sibling). D7/D8/D9 patterns 적용.
+  - D7: scalar float return → analyst applies yc.model_copy
+  - D8: None input → None + logger.warning (no default fill, no raise)
+  - D9: no retry, no cache inside skill
+- tradingagents/dataflows/fred.py: FRED_SERIES dict 에 us_5y → DGS5,
+  us_30y → DGS30 추가 (기존 us_10y/us_2y/us_3m 와 parallel).
+- tradingagents/default_config.py: publication_lag_days 에 us_5y/us_30y = 1 추가
+  (daily Treasury yields — 다른 us_10y/us_2y 와 동일).
+- tradingagents/agents/analysts/macro_quant_analyst.py: yc block 직후
+  slope_5_30y fold-in. fetch_fred_series_skill("us_5y", ...) + ("us_30y", ...)
+  + compute_yield_curve_extras → yc.model_copy(update={"spread_30y_5y_bps": ...}).
+- tests/unit/schemas/test_factor_model_schemas.py: 2 new tests
+  - spread_30y_5y default 0.0
+  - spread_30y_5y value acceptance
+- tests/unit/skills/macro/test_yield_curve.py (NEW): 4 tests
+  - basic slope (positive), inverted (negative),
+  - None dgs5 → None, both None → None
+
+### IMPLEMENTER verify 결과
+- FRED friendly key 확인: us_dgs5 / us_dgs30 는 FRED_SERIES dict 에 *없었음*.
+  Plan 의 instruction 대로 add (us_5y → DGS5, us_30y → DGS30; 기존 us_10y/us_2y
+  naming convention 과 일관). publication_lag_days 도 함께 추가.
+- 기존 yield_curve.py 모듈에 compute_yield_curve_extras 추가 (별도 file 생성 X) —
+  같은 도메인 (yield curve) + skills/registry.py 의 module list 변경 불필요.
+- C3 pattern 일관성 확인 완료 (D7 scalar, D8 None+warning, D9 no cache,
+  outer+inner try/except defense-in-depth).
+

@@ -16,6 +16,9 @@ FRED_SERIES = {
     "us_10y": "DGS10",
     "us_2y": "DGS2",
     "us_3m": "DGS3MO",
+    # 2026-05-23 C4: 5y + 30y Treasury yields — F4 term_premium (5-30y long-end slope)
+    "us_5y": "DGS5",
+    "us_30y": "DGS30",
     "us_cpi": "CPIAUCSL",
     "us_core_cpi": "CPILFESL",
     # PCE deflator — Fed의 공식 inflation 타겟. 2026-05 추가.

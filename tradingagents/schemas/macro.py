@@ -20,6 +20,15 @@ class YieldCurveSnapshot(StalenessAware):
     inverted_days_count: int = Field(ge=0, description="Days inverted in last 365")
     percentile_5y: float = Field(ge=0, le=1, description="5y historical percentile")
 
+    # 2026-05-23 C4 — factor model F4 term_premium component.
+    # 5-30y slope: long-end curve. spread_10y_2y 는 단기-중기 정책 기대 반영하지만,
+    # 5-30y 는 longer-horizon term premium (real economy 기대 / inflation risk premium)
+    # 의 signal. C8 의 factor_estimators 에서 active 화 예정.
+    spread_30y_5y_bps: float = Field(
+        default=0.0,
+        description="30Y - 5Y in basis points. Long-end curve — F4 term_premium component.",
+    )
+
 
 class InflationSnapshot(StalenessAware):
     cpi_yoy: float = Field(description="CPI YoY %")
