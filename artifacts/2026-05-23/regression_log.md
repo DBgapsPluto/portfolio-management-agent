@@ -333,3 +333,79 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
   - 후속 C6/C7 의 sector_dispersion / vrp 가 동일 패턴 (신규 class 라면) 또는
     scalar+model_copy (기존 schema extend) 인지 plan 에서 확인 필요.
 
+## Post-C6
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -5
+FAILED tests/unit/agents/test_macro_quant_analyst.py::test_macro_analyst_orchestration
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 697 passed, 5 warnings in 110.90s (0:01:50)
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 21 passed, 1 warning in 15.64s
+```
+
+### Δ from Post-C5
+- Unit: 688 → 697 pass (+9: 4 schema + 5 skill), 3 pre-existing fail 동일
+- Integration: 변경 0 (18 fail pre-existing 동일, 21 pass 동일)
+- 0 *new* regression
+
+### 변경 사항
+- tradingagents/schemas/risk.py: RealVolSnapshot 신규 class (realized_vol_60d,
+  realized_vol_20d, vrp_60d=0.0 default). C8 의 factor_estimators F7 vol regime +
+  F9 liquidity (VRP) 에서 활성화 예정.
+- tradingagents/schemas/reports.py: RiskReport.real_vol Optional field
+  (default None — backward compat). RealVolSnapshot import 추가.
+- tradingagents/skills/risk/realized_volatility.py (NEW): compute_realized_volatility
+  skill. 5 indicator pattern 의 두 번째 *신규 class indicator* 사례 (C5 와 동일 D7 path).
+  - D7 (신규 class): full Snapshot 반환 — analyst 가 RiskReport 의 Optional
+    field 에 직접 채움 (model_copy 아님).
+  - D8: empty / short (<5 obs) / exception → None + logger.warning.
+  - D9: no retry, no cache inside skill.
+  - VRP = (VIX/100)² - realized_60d², × 10000 (bps²-like).
+- tradingagents/skills/registry.py: realized_volatility 모듈 등록.
+- tradingagents/agents/analysts/market_risk_analyst.py:
+  - logger 추가 (module-level).
+  - kr_market_tier block 직후 realized vol block 추가. yfinance SPY 120d daily
+    history fetch → pct_change → compute_realized_volatility 호출.
+  - RiskReport 생성자에 real_vol=real_vol 추가.
+  - vix variable: `vix = fetch_volatility_index("VIX", as_of)` (VolatilitySnapshot).
+    level 은 `vix.current_value`.
+- tests/unit/skills/risk/__init__.py (NEW)
+- tests/unit/skills/risk/test_realized_volatility.py (NEW): 5 tests
+  - basic (annualized 0.158 within 0.10~0.25)
+  - VRP positive when VIX>realized (low_vol_returns + VIX 20)
+  - VIX None → vrp=0
+  - empty series → None
+  - short (<5 obs) → None
+- tests/unit/schemas/test_factor_model_schemas.py: 4 new tests + _build_minimal_risk_report
+  - snapshot basic + with VRP
+  - RiskReport.real_vol Optional default None + accept readback
+  - _build_minimal_risk_report local helper (integration 의 _build_baseline_risk_report
+    schema 와 동일, unit↛integration 의존성 차단).
+
+### IMPLEMENTER verify 결과
+- market_risk_analyst 의 vix variable 확인: line 132 `vix = fetch_volatility_index("VIX", as_of)`
+  → VolatilitySnapshot return. level 은 vix.current_value (float). None guard 불필요
+  (skill 이 D5 tier-3 degradation sentinel 반환; None 절대 X) 이지만 defense-in-depth
+  로 `if vix is not None else None` 패턴 유지.
+- yfinance API: `yf.Ticker("SPY").history(period="120d", interval="1d")` → DataFrame.
+  daily returns = Close.pct_change().dropna(). empty 시 pd.Series([], dtype=float)
+  로 fallback (skill 내부 len<5 guard 와 redundant 하지만 explicit).
+- logger 는 module-level (`logging.getLogger(__name__)`). market_risk_analyst.py 에
+  기존 logger import 없었음 — 추가.
+- D7 신규 class indicator path 두 번째 사례 (C5: macro/kr_valuation, C6: risk/realized_volatility).
+  RiskReport 의 Optional field 에 직접 삽입 — model_copy 불필요.
+- 의문점: yfinance fetch 는 *network call* 으로, market_risk_analyst 의 unit test
+  (`test_market_risk_analyst.py::test_risk_analyst_orchestration`) 는 network 호출 시
+  실제로 SPY 데이터 다운로드 (mock 미적용). 현재 test PASS 확인되었으나 network 단절
+  환경 (CI airgap) 시 try/except 의 outer logger.warning + real_vol=None path 로 fallback.
+  기존 yfinance 의존 skill (breadth, equity_indices, cross_asset_returns) 와 동일 위험 프로필.
+

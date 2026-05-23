@@ -200,3 +200,17 @@ class EquityBondCorrelationSnapshot(StalenessAware):
     regime: Literal["normal_hedge", "weakening_hedge", "positive_flip", "extreme_positive"] = Field(
         description="<-0.3 normal_hedge, -0.3~0 weakening, 0~+0.3 positive_flip, >+0.3 extreme"
     )
+
+
+class RealVolSnapshot(StalenessAware):
+    """Realized volatility — SPY 60d/20d stddev (annualized).
+
+    For factor model F7 vol regime + F9 liquidity (VRP) components (C8 활성화 예정).
+    VRP (variance risk premium) = (VIX/100)² - realized_60d², scaled to bps²-like.
+    """
+    realized_vol_60d: float = Field(description="SPY 60-day stddev (annualized)")
+    realized_vol_20d: float = Field(description="SPY 20-day stddev (annualized)")
+    vrp_60d: float = Field(
+        default=0.0,
+        description="Variance risk premium: VIX² - realized_60d² (bps²-like)",
+    )

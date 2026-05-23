@@ -1,10 +1,13 @@
-"""Stage 1 enhance 의 신규 schema fields 검증 (C3-C5 — factor model F1 / F4 / F8 components)."""
+"""Stage 1 enhance 의 신규 schema fields 검증 (C3-C6 — factor model F1 / F4 / F7 / F8 / F9 components)."""
 from datetime import date, datetime
+
+import pytest
 
 from tradingagents.schemas.macro import (
     FinancialConditionsSnapshot, KRValuationSnapshot, YieldCurveSnapshot,
 )
-from tradingagents.schemas.reports import MacroReport
+from tradingagents.schemas.reports import MacroReport, RiskReport
+from tradingagents.schemas.risk import RealVolSnapshot
 
 
 def test_financial_conditions_has_cfnai_field():
@@ -172,3 +175,140 @@ def _build_minimal_macro_report(**override) -> MacroReport:
     )
     base.update(override)
     return MacroReport(**base)
+
+
+# ---------- C6 — SPY realized vol + RealVolSnapshot 신설 (F7 + F9 components) ----------
+
+
+def test_real_vol_snapshot_basic():
+    rv = RealVolSnapshot(
+        realized_vol_60d=0.12, realized_vol_20d=0.10,
+        source_date=datetime.now().date(),
+    )
+    assert rv.realized_vol_60d == pytest.approx(0.12)
+    assert rv.realized_vol_20d == pytest.approx(0.10)
+    assert rv.vrp_60d == 0.0  # default
+
+
+def test_real_vol_snapshot_with_vrp():
+    rv = RealVolSnapshot(
+        realized_vol_60d=0.12, realized_vol_20d=0.10, vrp_60d=120.0,
+        source_date=datetime.now().date(),
+    )
+    assert rv.vrp_60d == 120.0
+
+
+def test_risk_report_real_vol_optional_default_none():
+    """RiskReport.real_vol Optional, default None — backward compat."""
+    risk = _build_minimal_risk_report()
+    assert risk.real_vol is None
+
+
+def test_risk_report_real_vol_accepted():
+    rv = RealVolSnapshot(
+        realized_vol_60d=0.15, realized_vol_20d=0.13, vrp_60d=80.0,
+        source_date=datetime.now().date(),
+    )
+    risk = _build_minimal_risk_report(real_vol=rv)
+    assert risk.real_vol is not None
+    assert risk.real_vol.realized_vol_60d == pytest.approx(0.15)
+
+
+def _build_minimal_risk_report(**override) -> RiskReport:
+    """Minimal RiskReport — integration test 의 _build_baseline_risk_report 와 동일
+    schema 를 직접 빌드 (unit test 가 integration test 모듈에 의존하지 않도록).
+    """
+    from tradingagents.schemas.risk import (
+        BreadthSnapshot, CreditQualitySnapshot, EquityBondCorrelationSnapshot,
+        FundingStressSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
+        KRMarketTierSnapshot, KRYieldCurveSnapshot, PCASnapshot,
+        RealYieldsSnapshot, SentimentSnapshot, SkewSnapshot, SpreadSnapshot,
+        SystemicRiskScore, VIXTermStructureSnapshot, VolatilitySnapshot,
+        VxnSnapshot,
+    )
+    today = date.today()
+    base = dict(
+        narrative="minimal", summary_for_downstream="minimal",
+        vix=VolatilitySnapshot(
+            index_name="VIX", current_value=20.0, zscore_30d=0.0,
+            percentile_5y=0.5, change_4w=0.0, source_date=today,
+        ),
+        vkospi=VolatilitySnapshot(
+            index_name="VKOSPI", current_value=20.0, zscore_30d=0.0,
+            percentile_5y=0.5, change_4w=0.0, source_date=today,
+        ),
+        credit_spread_us_ig=SpreadSnapshot(
+            region="US_IG", current_bps=120.0, percentile_5y=0.5,
+            widening=False, momentum_zscore=0.0, source_date=today,
+        ),
+        credit_spread_us_hy=SpreadSnapshot(
+            region="US_HY", current_bps=400.0, percentile_5y=0.5,
+            widening=False, momentum_zscore=0.0, source_date=today,
+        ),
+        fear_greed=SentimentSnapshot(
+            index_name="fear_greed_cnn", current_value=50,
+            label="neutral", trend_7d="flat", source_date=today,
+        ),
+        breadth_kr=BreadthSnapshot(
+            market="KOSPI200", advancing_pct=0.55, declining_pct=0.45,
+            new_highs_minus_lows=0, source_date=today,
+        ),
+        breadth_us=BreadthSnapshot(
+            market="SP500", advancing_pct=0.55, declining_pct=0.45,
+            new_highs_minus_lows=0, source_date=today,
+        ),
+        correlation_concentration=PCASnapshot(
+            first_eigenvalue_share=0.4, n_assets_analyzed=20,
+            is_concentrated=False, source_date=today,
+        ),
+        systemic_score=SystemicRiskScore(
+            score=5.0, regime="neutral", drivers=["baseline"],
+            reasoning="baseline", source_date=today,
+        ),
+        vix_term=VIXTermStructureSnapshot(
+            vix_front=20.0, vix_3m=20.0, ratio=1.0, regime="flat",
+            source_date=today,
+        ),
+        skew=SkewSnapshot(
+            skew_value=118.0, percentile_1y=0.5, tail_hedge_signal="normal",
+            source_date=today,
+        ),
+        vxn=VxnSnapshot(
+            current_value=22.0, zscore_30d=0.0, percentile_5y=0.5,
+            spread_vs_vix=2.0, tech_focused_stress=False, source_date=today,
+        ),
+        real_yields=RealYieldsSnapshot(
+            tips_10y=0.5, tips_5y=0.3, spread_10y_5y=0.2, regime="neutral",
+            source_date=today,
+        ),
+        funding_stress=FundingStressSnapshot(
+            sofr=5.3, tbill_3m=5.2, spread_bps=10.0, regime="calm",
+            source_date=today,
+        ),
+        credit_quality=CreditQualitySnapshot(
+            aaa_oas_bps=60.0, bbb_oas_bps=150.0, quality_spread_bps=90.0,
+            percentile_5y=0.5, regime="calm", source_date=today,
+        ),
+        kr_yield_curve=KRYieldCurveSnapshot(
+            treasury_3y=3.5, treasury_10y=4.0, spread_10y_3y_bps=50.0,
+            inverted=False, regime="flat", source_date=today,
+        ),
+        kr_corp_spread=KRCorpSpreadSnapshot(
+            corp_yield_3y=4.5, treasury_3y=3.5, spread_bps=100.0,
+            percentile_5y=0.5, regime="calm", source_date=today,
+        ),
+        kr_margin_debt=KRMarginDebtSnapshot(
+            balance_krw=20e12, change_20d_pct=0.0, percentile_1y=0.5,
+            signal="normal", source_date=today,
+        ),
+        kr_market_tier=KRMarketTierSnapshot(
+            kospi_return_20d_pct=0.0, kosdaq_return_20d_pct=0.0,
+            relative_perf_pct=0.0, signal="neutral", source_date=today,
+        ),
+        equity_bond_corr=EquityBondCorrelationSnapshot(
+            correlation_60d=-0.2, change_3m=0.0, regime="normal_hedge",
+            source_date=today,
+        ),
+    )
+    base.update(override)
+    return RiskReport(**base)

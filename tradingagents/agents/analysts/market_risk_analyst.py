@@ -7,6 +7,7 @@ Tier-1 확장 (equity stress 깊이):
 - breadth real: pykrx KOSPI200 + SP500 11 섹터 ETF proxy (stub 교체)
 - volatility 강화: change_4w 추가
 """
+import logging
 from datetime import date, timedelta
 
 import pandas as pd
@@ -35,11 +36,14 @@ from tradingagents.skills.risk.kr_margin_debt import compute_kr_margin_debt
 from tradingagents.skills.risk.kr_market_tier import compute_kr_market_tier
 from tradingagents.skills.risk.kr_yield_curve import compute_kr_yield_curve
 from tradingagents.skills.risk.real_yields import compute_real_yields
+from tradingagents.skills.risk.realized_volatility import compute_realized_volatility
 from tradingagents.skills.risk.skew_index import compute_skew_index
 from tradingagents.skills.risk.systemic_score import score_systemic_risk
 from tradingagents.skills.risk.vix_term_structure import compute_vix_term_structure
 from tradingagents.skills.risk.volatility import fetch_volatility_index
 from tradingagents.skills.risk.vxn import compute_vxn
+
+logger = logging.getLogger(__name__)
 
 
 def _sentinel_vix_term(as_of: date) -> VIXTermStructureSnapshot:
@@ -289,6 +293,25 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         except Exception:
             kr_market_tier = _sentinel_kr_tier(as_of)
 
+        # 2026-05-23 C6 — SPY realized vol (60d/20d) + VRP for factor model F7 + F9.
+        # D7 (신규 class indicator): full Snapshot return → RiskReport 의 Optional
+        # real_vol field 에 직접 채움 (model_copy 아님; C5 의 kr_valuation 과 동일 path).
+        # D8: skill 이 None 반환 시 real_vol = None (Optional, backward compat).
+        # D9: no retry / no skill-internal cache (yfinance 호출 자체는 fetcher cache 없음).
+        try:
+            import yfinance as yf
+            spy = yf.Ticker("SPY")
+            hist = spy.history(period="120d", interval="1d")
+            if not hist.empty:
+                daily_returns = hist["Close"].pct_change().dropna()
+            else:
+                daily_returns = pd.Series([], dtype=float)
+            vix_level = vix.current_value if vix is not None else None
+            real_vol = compute_realized_volatility(daily_returns, vix_level, as_of)
+        except Exception as e:
+            logger.warning("Realized vol fetch failed (factor F7/F9 affected): %s", e)
+            real_vol = None
+
         systemic = score_systemic_risk(
             quick_llm, deep_llm,
             vix=vix.current_value, vix_z=vix.zscore_30d, vix_pct=vix.percentile_5y,
@@ -365,6 +388,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             kr_yield_curve=kr_yield_curve, kr_corp_spread=kr_corp_spread,
             kr_margin_debt=kr_margin, kr_market_tier=kr_market_tier,
             equity_bond_corr=eq_bd_corr,
+            real_vol=real_vol,  # ★ NEW C6 (Optional, None on fail)
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"risk_report": report, "risk_summary": summary}

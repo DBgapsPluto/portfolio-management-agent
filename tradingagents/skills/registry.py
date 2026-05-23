@@ -14,6 +14,7 @@ _SKILL_MODULES: list[str] = [
     "tradingagents.skills.macro.calendar",
     "tradingagents.skills.macro.regime_classifier",
     "tradingagents.skills.risk.volatility",
+    "tradingagents.skills.risk.realized_volatility",
     "tradingagents.skills.risk.credit_spread",
     "tradingagents.skills.risk.fear_greed",
     "tradingagents.skills.risk.breadth",
