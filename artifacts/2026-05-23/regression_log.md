@@ -143,5 +143,71 @@ plan §C2 의 liquidity_regime threshold 0.50 은 실측 0.47 보다 높아 0.30
   C8 에서 normalization 필요 (현재 baseline 0 으로 perturbation 없으면 z=0).
 - 본 test 가 *MagicMock 으로 가려진 silent fail 재발 방지* 의 영구 gate.
 
-## Post-C3, ..., Post-C11
-(각 commit 후 갱신)
+## Post-C3
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -5
+FAILED tests/unit/agents/test_macro_quant_analyst.py::test_macro_analyst_orchestration
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 675 passed, 5 warnings in 120.06s (0:02:00)
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -5
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2014-12 mild disinflation (calm)-inputs5-3.0-5.0-neutral]
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2024-06 AI rally with narrow breadth-inputs6-4.0-6.5-neutral]
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 21 passed, 1 warning in 15.11s
+```
+
+### Δ from Post-C2
+- Unit: 668 → 675 pass (+7: 2 schema + 5 skill), 3 pre-existing fail 동일
+- Integration: 변경 0 (18 fail pre-existing 동일, 21 pass 동일)
+- 0 *new* regression
+
+### 변경 사항
+- tradingagents/schemas/macro.py: FinancialConditionsSnapshot 에 cfnai +
+  cfnai_3m_avg field (default 0.0) 추가. C8 의 factor_estimators F1
+  growth_surprise component 에서 활성화 예정.
+- tradingagents/skills/macro/real_activity.py (NEW): compute_cfnai_metrics
+  skill. D7/D8/D9 patterns 의 첫 사례 (5 indicator pattern 확립).
+  - D7: scalar tuple (latest, 3m_avg) return → analyst applies model_copy
+  - D8: empty/None/exception → None + logger.warning (no default fill, no raise)
+  - D9: no retry, no cache inside skill (fetcher 의 TieredCache 와 별개)
+- tradingagents/skills/registry.py: real_activity 모듈 등록
+- tradingagents/agents/analysts/macro_quant_analyst.py: fci block 직후
+  CFNAI fold-in. fred fetcher API 는 `fetch_fred_series_skill("us_cfnai",
+  start_macro, as_of, as_of_date=as_of)` (기존 패턴). FRED series ID
+  resolution 은 fred.py 의 FRED_SERIES dict 에서 us_cfnai → "CFNAI".
+- tests/unit/schemas/test_factor_model_schemas.py (NEW): 2 tests
+  - cfnai field default 0.0
+  - cfnai value acceptance
+- tests/unit/skills/macro/__init__.py (NEW)
+- tests/unit/skills/macro/test_real_activity.py (NEW): 5 tests
+  - latest returned, 3m average, short series best-effort,
+    empty → None, None series → None
+
+### IMPLEMENTER verify 결과
+- StalenessAware required field name: `source_date` (Optional[date], default=None);
+  `staleness_days` (int, default=0). 기존 fci snapshot 패턴 (`source_date=as_of`)
+  와 동일하게 적용.
+- FRED CFNAI series ID: spec 의 `CFNAINMNI` 는 FRED 에 존재 *안* 함. 정확한 ID
+  는 `CFNAI` (single-month value) + `CFNAIMA3` (3-month MA). 본 PR 은 단일
+  series 만 fetch 하여 skill 내부에서 .tail(3).mean() 으로 MA 계산 (analyst
+  의 us_leading block 은 두 series 다 fetch 하는 별개 path 유지).
+- macro_quant_analyst 의 fred fetcher API 패턴:
+  `fetch_fred_series_skill(<friendly_key>, start, end, as_of_date=as_of)` —
+  default 로 caching + point-in-time cutoff 적용. friendly key 는 fred.py 의
+  FRED_SERIES dict 에서 resolution (예: "us_cfnai" → "CFNAI").
+
+### 5 indicator pattern (C3-C7) 의 첫 사례 — 후속 작업 reference
+- D7 (skill return): scalar/tuple, analyst .model_copy(update={...})
+- D8 (error): None + logger.warning, no raise, no default fill
+- D9 (fetch): no retry, no skill-internal cache (fetcher cache 와 분리)
+- 분기 (try/except): outer analyst try wraps fetch + skill; inner skill
+  also wraps with try (defense-in-depth — fetcher exception 도 graceful).
+

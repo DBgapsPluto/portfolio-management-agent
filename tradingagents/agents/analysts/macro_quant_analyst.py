@@ -10,6 +10,7 @@ Tier-1 확장 (KR cycle + US 선행/실시간 성장):
 - us_leading: CFNAI 85개 지표 합성 (MA3 < -0.7 → recession)
 - gdp_nowcast: Atlanta Fed 실시간 분기 GDP nowcast
 """
+import logging
 from datetime import date, timedelta
 
 from tradingagents.dataflows.commodities import fetch_commodity_close
@@ -33,6 +34,7 @@ from tradingagents.skills.macro.financial_conditions import compute_financial_co
 from tradingagents.skills.macro.foreign_flow import compute_foreign_flow
 from tradingagents.skills.macro.fred_fetcher import fetch_fred_series_skill
 from tradingagents.skills.macro.fx import compute_fx_overlay
+from tradingagents.skills.macro.real_activity import compute_cfnai_metrics
 from tradingagents.skills.macro.gdp_nowcast import compute_gdp_nowcast
 from tradingagents.skills.macro.inflation import compute_inflation_trend
 from tradingagents.skills.macro.inflation_expectations import compute_inflation_expectations
@@ -45,6 +47,9 @@ from tradingagents.skills.macro.risk_appetite import compute_risk_appetite
 from tradingagents.skills.macro.tail_risk import compute_tail_risk
 from tradingagents.skills.macro.us_leading import compute_us_leading_index
 from tradingagents.skills.macro.yield_curve import compute_yield_curve
+
+
+logger = logging.getLogger(__name__)
 
 
 NARRATIVE_PROMPT = """\
@@ -280,6 +285,25 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             fci = compute_financial_conditions(nfci, anfci, as_of=as_of)
         except Exception:
             fci = _sentinel_fci(as_of)
+
+        # 2026-05-23 C3 — CFNAI fold-in for factor model F1 growth_surprise.
+        # D7: scalar tuple return + fci.model_copy(update=...).
+        # D8: skill returns None on data 부재 → fci default 0.0 유지.
+        # D9: no retry / no cache (fetcher 의 TieredCache 와 별개로 skill 매번 fresh).
+        try:
+            cfnai_series = fetch_fred_series_skill(
+                "us_cfnai", start_macro, as_of, as_of_date=as_of,
+            )
+            cfnai_result = compute_cfnai_metrics(cfnai_series, as_of)
+            if cfnai_result is not None:
+                cfnai_latest, cfnai_3m_avg = cfnai_result
+                fci = fci.model_copy(update={
+                    "cfnai": cfnai_latest,
+                    "cfnai_3m_avg": cfnai_3m_avg,
+                })
+            # else: skill already logged warning; fci default 0.0 유지 (factor F1 영향).
+        except Exception as e:
+            logger.warning("CFNAI fetch failed (factor F1 affected): %s", e)
 
         # Tier-2: Inflation expectations (5Y5Y breakeven + Michigan 1y survey)
         try:

@@ -138,6 +138,19 @@ class FinancialConditionsSnapshot(StalenessAware):
     )
     tightening: bool = Field(description="True if NFCI 4-week change > +0.2 (긴축 가속)")
 
+    # 2026-05-23 C3 — factor model F1 growth_surprise component.
+    # CFNAI 는 FinancialConditions 와는 별개 series (real activity composite) 지만,
+    # macro_quant_analyst 가 fci snapshot 을 단일 점에서 확장하는 패턴 (D7) 이라
+    # 같은 schema 에 fold-in. C8 의 factor_estimators 에서 active 화.
+    cfnai: float = Field(
+        default=0.0,
+        description="CFNAI (Chicago Fed National Activity Index). 0=trend, +1=above, -1=below.",
+    )
+    cfnai_3m_avg: float = Field(
+        default=0.0,
+        description="CFNAI 3-month moving average — NBER recession signal.",
+    )
+
 
 class InflationExpectationsSnapshot(StalenessAware):
     """5Y5Y Forward Breakeven (T5YIFR) + Michigan 1y survey (MICH). Forward-looking."""

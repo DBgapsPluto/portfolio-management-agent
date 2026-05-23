@@ -8,6 +8,7 @@ _SKILL_MODULES: list[str] = [
     "tradingagents.skills.macro.employment",
     "tradingagents.skills.macro.fred_fetcher",
     "tradingagents.skills.macro.ecos_fetcher",
+    "tradingagents.skills.macro.real_activity",
     "tradingagents.skills.macro.divergence",
     "tradingagents.skills.macro.calendar",
     "tradingagents.skills.macro.regime_classifier",
