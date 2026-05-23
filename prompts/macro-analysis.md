@@ -33,11 +33,9 @@ Quadrants:
 - 외국인 KOSPI 20일 누적 = {foreign_flow_20d_krw} KRW, signal = {foreign_flow_signal}
   (>+1조 = net_buying, <-1조 = net_selling. 단기 KOSPI 방향성과 corr 매우 높음)
 
-==== Policy + Tail risk (Tier-4) ====
-- US EPU = {us_epu} ({us_epu_regime}, 5y percentile {us_epu_percentile})
-  (Baker-Bloom-Davis. 100=평균, >150=elevated, >200=extreme. elevated 구간 risk asset 평균 return 유의하게 낮음)
+==== Tail risk (Tier-4) ====
 - VVIX = {vvix}, MOVE = {move}, tail signal = {tail_risk_signal}
-  (둘 다 90th percentile = extreme tail event. equity vol + Treasury vol 동시 급등은 옵션 시장이 인지하는 systemic 위험)
+  (둘 다 90th percentile = extreme tail event. equity vol + Treasury vol 동시 급등은 옵션 시장이 인지하는 systemic 위험. 2026-05 이후 EPU는 VIX/credit/SKEW 등 다른 신호로 대체됨.)
 
 ==== Korea-specific signals (대회 대상 시장) ====
 - KR exports YoY = {kr_export_yoy}%, accelerating = {kr_export_accelerating}
@@ -77,9 +75,10 @@ KR ETF 결정에는 China CLI(contraction/trough) + 외국인 net_selling + USD/
 방어로 회전. 반대로 China expansion + 외국인 net_buying + Copper/Gold risk_on이면
 recession quadrant라도 confidence 하향 검토 (KR 단기 outperformance 가능).
 
-US EPU extreme 또는 tail risk extreme이면 quadrant와 무관하게 confidence를 낮추고
-방어적 stance 권고. 두 신호는 quadrant 분류를 바꾸지는 않지만 "regime 분류 자체의 불확실성"을
-높이는 신호다. EPU extreme + tail extreme 동시 발생 = 시스템 리스크 위기 (e.g. 2008, 2020).
+Tail risk extreme (VVIX + MOVE 동시 90th percentile 초과)이면 quadrant와 무관하게
+confidence를 낮추고 방어적 stance 권고. 이 신호는 quadrant 분류를 바꾸지는 않지만
+"regime 분류 자체의 불확실성"을 높이는 신호다. tail extreme + 다른 stress 신호 동시
+발생 = 시스템 리스크 위기 (e.g. 2008 리먼, 2020 코로나).
 
 Output a single RegimeClassification JSON object with:
 - quadrant (one of the four enum values)
