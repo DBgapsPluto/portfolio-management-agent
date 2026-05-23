@@ -39,6 +39,11 @@ class BreadthSnapshot(StalenessAware):
     advancing_pct: float = Field(ge=0, le=1)
     declining_pct: float = Field(ge=0, le=1)
     new_highs_minus_lows: int
+    sector_return_dispersion: float = Field(
+        default=0.0,
+        description="Cross-sectional std of sector ETF 60d returns "
+                    "(decimal scale, e.g., 0.05 = 5pp). F9 liquidity component.",
+    )
 
 
 class PCASnapshot(StalenessAware):

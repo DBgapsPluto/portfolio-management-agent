@@ -1,4 +1,4 @@
-"""Stage 1 enhance 의 신규 schema fields 검증 (C3-C6 — factor model F1 / F4 / F7 / F8 / F9 components)."""
+"""Stage 1 enhance 의 신규 schema fields 검증 (C3-C7 — factor model F1 / F4 / F7 / F8 / F9 components)."""
 from datetime import date, datetime
 
 import pytest
@@ -7,7 +7,7 @@ from tradingagents.schemas.macro import (
     FinancialConditionsSnapshot, KRValuationSnapshot, YieldCurveSnapshot,
 )
 from tradingagents.schemas.reports import MacroReport, RiskReport
-from tradingagents.schemas.risk import RealVolSnapshot
+from tradingagents.schemas.risk import BreadthSnapshot, RealVolSnapshot
 
 
 def test_financial_conditions_has_cfnai_field():
@@ -212,6 +212,33 @@ def test_risk_report_real_vol_accepted():
     risk = _build_minimal_risk_report(real_vol=rv)
     assert risk.real_vol is not None
     assert risk.real_vol.realized_vol_60d == pytest.approx(0.15)
+
+
+# ---------- C7 — sector dispersion + BreadthSnapshot 확장 (F9 liquidity component) ----------
+
+
+def test_breadth_has_sector_dispersion_default():
+    """sector_return_dispersion field default 0.0 (C7 — F9 liquidity component)."""
+    breadth = BreadthSnapshot(
+        market="SP500",
+        advancing_pct=0.55,
+        declining_pct=0.45,
+        new_highs_minus_lows=0,
+        source_date=datetime.now().date(),
+    )
+    assert breadth.sector_return_dispersion == 0.0
+
+
+def test_breadth_accepts_sector_dispersion():
+    breadth = BreadthSnapshot(
+        market="SP500",
+        advancing_pct=0.55,
+        declining_pct=0.45,
+        new_highs_minus_lows=0,
+        source_date=datetime.now().date(),
+        sector_return_dispersion=2.5,
+    )
+    assert breadth.sector_return_dispersion == pytest.approx(2.5)
 
 
 def _build_minimal_risk_report(**override) -> RiskReport:

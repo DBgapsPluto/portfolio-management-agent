@@ -141,6 +141,40 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         breadth_kr = compute_market_breadth("KOSPI200", as_of)
         breadth_us = compute_market_breadth("SP500", as_of)
 
+        # ★ NEW (2026-05-23 C7 — sector dispersion for F9 liquidity_regime)
+        # 11 SPDR sector ETF 60d return → cross-sectional std → BreadthSnapshot 확장.
+        # D7 pattern: scalar return + breadth_us.model_copy.
+        # D8 pattern: insufficient sectors / network fail → None + logger.warning.
+        # D9: no skill-internal cache (yfinance fetch fresh each call).
+        try:
+            import yfinance as yf
+
+            from tradingagents.skills.risk.sector_dispersion import (
+                compute_sector_dispersion,
+            )
+
+            SECTOR_ETFS = [
+                "XLF", "XLE", "XLI", "XLY", "XLV", "XLK",
+                "XLU", "XLP", "XLB", "XLRE", "XLC",
+            ]
+            sector_returns_60d: dict[str, float] = {}
+            for ticker in SECTOR_ETFS:
+                try:
+                    h = yf.Ticker(ticker).history(period="65d", interval="1d")
+                    if h.empty or len(h) < 60:
+                        continue
+                    ret_60d = (h["Close"].iloc[-1] / h["Close"].iloc[-60]) - 1.0
+                    sector_returns_60d[ticker] = float(ret_60d)
+                except Exception:
+                    continue
+            sector_disp = compute_sector_dispersion(sector_returns_60d)
+            if sector_disp is not None and breadth_us is not None:
+                breadth_us = breadth_us.model_copy(update={
+                    "sector_return_dispersion": sector_disp,
+                })
+        except Exception as e:
+            logger.warning("Sector dispersion fetch failed (F9 affected): %s", e)
+
         # Tier-4: Real cross-asset PCA (SPY/QQQ/TLT/GLD/EWY via yfinance)
         try:
             returns_matrix = fetch_cross_asset_returns(

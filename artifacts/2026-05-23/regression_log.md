@@ -409,3 +409,82 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
   환경 (CI airgap) 시 try/except 의 outer logger.warning + real_vol=None path 로 fallback.
   기존 yfinance 의존 skill (breadth, equity_indices, cross_asset_returns) 와 동일 위험 프로필.
 
+## Post-C7 (sector dispersion + BreadthSnapshot 확장 — F9 liquidity_regime)
+
+### Unit
+```
+$ uv run pytest tests/unit/ 2>&1 | tail -3
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 703 passed, 5 warnings in 115.30s (0:01:55)
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ 2>&1 | tail -3
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2024-06 AI rally with narrow breadth-inputs6-4.0-6.5-neutral]
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 21 passed, 1 warning in 15.41s
+```
+
+### Δ from Post-C6
+- Unit: 697 → 703 pass (+6: 2 schema + 4 skill), 3 pre-existing fail 동일
+- Integration: 변경 0 (18 fail pre-existing 동일, 21 pass 동일)
+- 0 *new* regression
+
+### 변경 사항
+- tradingagents/schemas/risk.py: BreadthSnapshot.sector_return_dispersion 확장
+  (default 0.0, decimal scale e.g. 0.05 = 5pp). C8 의 factor_estimators F9
+  liquidity_regime component 에서 활성화 예정.
+- tradingagents/skills/risk/sector_dispersion.py (NEW): compute_sector_dispersion
+  skill. 5 indicator pattern 의 마지막 *기존 schema 확장 indicator* 사례 (C3/C4 와
+  동일 D7 path).
+  - D7 (기존 schema 확장): scalar return — analyst 가 BreadthSnapshot.model_copy
+    로 sector_return_dispersion field 에 채움.
+  - D8: empty / single sector (<2) / exception → None + logger.warning.
+  - D9: no retry, no cache inside skill.
+  - 계산: np.std(returns, ddof=1) — sample stddev cross-sectional.
+- tradingagents/skills/registry.py: sector_dispersion 모듈 등록 (breadth 다음 줄).
+- tradingagents/agents/analysts/market_risk_analyst.py:
+  - breadth_us 생성 직후 sector dispersion block 추가 (D7 path).
+  - yfinance 11 SPDR sector ETF (XLF, XLE, XLI, XLY, XLV, XLK, XLU, XLP, XLB,
+    XLRE, XLC) 65d history fetch → 60d return = Close[-1] / Close[-60] - 1.
+  - 개별 ticker fail 시 continue (graceful), insufficient sectors 시 None.
+  - breadth_us = breadth_us.model_copy(update={"sector_return_dispersion": ...}).
+  - outer try/except: 전체 fetch fail 시 logger.warning + breadth_us 원본 유지.
+- tests/unit/schemas/test_factor_model_schemas.py: 2 new tests
+  - default 0.0 확인
+  - explicit value (2.5) accept
+  - C7 section header + BreadthSnapshot import 추가.
+- tests/unit/skills/risk/test_sector_dispersion.py (NEW): 4 tests
+  - equal returns → 0 (perfect concentration)
+  - wide spread (-0.15~+0.20) → > 0.05 (high dispersion)
+  - empty dict → None
+  - single sector → None
+
+### IMPLEMENTER verify 결과
+- BreadthSnapshot required fields 확인: `market` (Literal KOSPI200/SP500),
+  `advancing_pct` (ge=0,le=1), `declining_pct` (ge=0,le=1),
+  `new_highs_minus_lows` (int). 본 C7 에서 sector_return_dispersion 추가 (optional
+  default 0.0).
+- market_risk_analyst 의 breadth_us variable 확인: line 142
+  `breadth_us = compute_market_breadth("SP500", as_of)` → BreadthSnapshot return.
+  본 C7 의 dispersion block 은 line 143 직후 삽입 (model_copy reassign 으로
+  variable rebind; RiskReport(breadth_us=breadth_us, ...) 변경 불필요).
+- 11 SPDR sector ETF: XLF/XLE/XLI/XLY/XLV/XLK/XLU/XLP/XLB/XLRE/XLC. XLRE 가
+  2015-10 상장, XLC 가 2018-6 상장 — 모두 60d history 충분 (현재 2026-05-23).
+- yfinance API: `yf.Ticker(ticker).history(period="65d", interval="1d")` → DataFrame.
+  60d return = Close.iloc[-1] / Close.iloc[-60] - 1 (5d buffer for weekends).
+- ddof=1 사용 (sample std, n-1) — 11 ETF 라는 *유한 sample* 이므로 unbiased
+  estimator 가 적절. population std (ddof=0) 도 가능하나 statistical convention
+  은 sample std.
+- 의문점: yfinance fetch 는 *11x network call* 으로 C6 (1 SPY 호출) 대비
+  10x latency. 그러나 try/except per-ticker + outer try/except 로 partial /
+  total fail graceful. 기존 yfinance 의존 skill (breadth, equity_indices,
+  cross_asset_returns, C6 realized_vol) 와 동일 위험 프로필.
+- 5 indicator pattern 완료: C3 (yield_curve scalar 확장), C4 (yield_curve scalar
+  확장), C5 (kr_valuation 신규 class), C6 (real_vol 신규 class), C7 (sector_dispersion
+  scalar 확장). 기존 schema 확장 3건 + 신규 class 2건. C8 factor_estimators 활성화
+  ready.
+

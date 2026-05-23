@@ -18,6 +18,7 @@ _SKILL_MODULES: list[str] = [
     "tradingagents.skills.risk.credit_spread",
     "tradingagents.skills.risk.fear_greed",
     "tradingagents.skills.risk.breadth",
+    "tradingagents.skills.risk.sector_dispersion",
     "tradingagents.skills.risk.correlation_pca",
     "tradingagents.skills.risk.systemic_score",
     "tradingagents.skills.technical.price_batch",
