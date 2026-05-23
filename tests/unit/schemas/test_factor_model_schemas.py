@@ -241,6 +241,33 @@ def test_breadth_accepts_sector_dispersion():
     assert breadth.sector_return_dispersion == pytest.approx(2.5)
 
 
+# ---------- C7.5 — SkewSnapshot.change_1m_z field (F7 skew_change placeholder 해소) ----------
+
+
+def test_skew_has_change_1m_z_default():
+    """change_1m_z default 0.0 — F7 equity_vol_regime component."""
+    from tradingagents.schemas.risk import SkewSnapshot
+    skew = SkewSnapshot(
+        skew_value=118.0,
+        percentile_1y=0.5,
+        tail_hedge_signal="normal",
+        source_date=datetime.now().date(),
+    )
+    assert skew.change_1m_z == 0.0
+
+
+def test_skew_accepts_change_1m_z():
+    from tradingagents.schemas.risk import SkewSnapshot
+    skew = SkewSnapshot(
+        skew_value=130.0,
+        percentile_1y=0.7,
+        tail_hedge_signal="elevated",
+        source_date=datetime.now().date(),
+        change_1m_z=+1.5,
+    )
+    assert skew.change_1m_z == pytest.approx(1.5)
+
+
 def _build_minimal_risk_report(**override) -> RiskReport:
     """Minimal RiskReport — integration test 의 _build_baseline_risk_report 와 동일
     schema 를 직접 빌드 (unit test 가 integration test 모듈에 의존하지 않도록).

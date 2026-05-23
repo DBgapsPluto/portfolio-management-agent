@@ -84,6 +84,13 @@ class SkewSnapshot(StalenessAware):
     tail_hedge_signal: Literal["low", "normal", "elevated", "extreme"] = Field(
         description="<120 low, 120~130 normal, 130~145 elevated, >145 extreme"
     )
+    change_1m_z: float = Field(
+        default=0.0,
+        description="1-month change in skew_value, normalized by long-run sd. "
+                    "F7 equity_vol_regime component (C8 활성화 예정). "
+                    "Level is post-2018 structurally elevated; 1m change z is "
+                    "cleaner signal for vol regime detection.",
+    )
 
 
 class VxnSnapshot(StalenessAware):

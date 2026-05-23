@@ -235,7 +235,23 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             skew_series = fetch_equity_index_close("skew", as_of - timedelta(days=400), as_of)
             skew = compute_skew_index(skew_series, as_of=as_of)
         except Exception:
+            skew_series = None
             skew = _sentinel_skew(as_of)
+
+        # ★ NEW (2026-05-24 C7.5 — skew change z for F7 equity_vol_regime)
+        # 위 skew_series 를 reuse (D9: no extra fetch). D7 pattern: scalar return
+        # + skew.model_copy. D8: insufficient series / exception → None +
+        # logger.warning (change_1m_z stays 0.0 default).
+        try:
+            from tradingagents.skills.risk.skew_metrics import (
+                compute_skew_change_z,
+            )
+            if skew_series is not None:
+                skew_change_z = compute_skew_change_z(skew_series, as_of)
+                if skew_change_z is not None:
+                    skew = skew.model_copy(update={"change_1m_z": skew_change_z})
+        except Exception as e:
+            logger.warning("SKEW change z compute failed (F7 affected): %s", e)
 
         # Tier-1: VXN (FRED VXNCLS)
         try:

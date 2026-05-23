@@ -488,3 +488,79 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
   scalar 확장). 기존 schema 확장 3건 + 신규 class 2건. C8 factor_estimators 활성화
   ready.
 
+## Post-C7.5 (SkewSnapshot.change_1m_z — F7 skew_change placeholder 해소)
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -5
+FAILED tests/unit/agents/test_macro_quant_analyst.py::test_macro_analyst_orchestration
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 710 passed, 5 warnings in 124.08s (0:02:04)
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -5
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2014-12 mild disinflation (calm)-inputs5-3.0-5.0-neutral]
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2024-06 AI rally with narrow breadth-inputs6-4.0-6.5-neutral]
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 21 passed, 1 warning in 17.64s
+```
+
+### Δ from Post-C7
+- Unit: 703 → 710 pass (+7: 2 schema + 5 skill), 3 pre-existing fail 동일
+- Integration: 변경 0 (18 fail pre-existing 동일, 21 pass 동일)
+- 0 *new* regression
+- macro_quant_analyst fail 은 baseline list 에 있음 (test_macro_analyst_orchestration —
+  yfinance/외부 network 의존, 의도된 known-fail; 본 C7.5 와 무관).
+
+### 변경 사항
+- tradingagents/schemas/risk.py: SkewSnapshot.change_1m_z 확장 (default 0.0).
+  - description: "1-month change in skew_value, normalized by long-run sd. F7
+    equity_vol_regime component (C8 활성화 예정)."
+  - Level 은 post-2018 structurally elevated 라 reliability medium-low; 1m change z
+    가 cleaner momentum signal.
+- tradingagents/skills/risk/skew_metrics.py (NEW): compute_skew_change_z skill.
+  - input: skew_series (pd.Series ≥21 obs), as_of.
+  - output: float z | None.
+  - Hand-coded long-run sd = 5.0 (typical historical 1m SKEW change std ≈ 5-7).
+  - 21 trading days lookback (1 month). `latest - iloc[-21]` / sd.
+  - D7: scalar return + skew.model_copy by analyst.
+  - D8: <21 obs / empty / exception → None + logger.warning.
+  - D9: no retry, no internal cache (D9 confirmed — fetcher cache 와 분리).
+- tradingagents/agents/analysts/market_risk_analyst.py:
+  - 기존 skew block (line 233-238) 의 outer except 에 skew_series=None 추가
+    (downstream NameError 방지).
+  - skew block 직후 새 try/except 추가: compute_skew_change_z(skew_series, as_of)
+    호출 → skew.model_copy(update={"change_1m_z": ...}).
+  - skew_series 는 *fetch reuse* (D9 위배 X — 동일 caller 가 단일 fetch 후 두 skill
+    공유; cache 가 아니라 local variable reuse).
+- tests/unit/schemas/test_factor_model_schemas.py: 2 new tests
+  - test_skew_has_change_1m_z_default: default 0.0
+  - test_skew_accepts_change_1m_z: explicit +1.5
+  - C7.5 section header.
+- tests/unit/skills/risk/test_skew_metrics.py (NEW): 5 tests
+  - test_skew_change_z_basic_positive: +10/5 = +2
+  - test_skew_change_z_negative: -10/5 = -2
+  - test_skew_change_z_no_change: flat → 0
+  - test_skew_change_z_short_series_returns_none: 10 obs <21 → None
+  - test_skew_change_z_empty_returns_none: empty → None
+
+### IMPLEMENTER verify 결과
+- SkewSnapshot required fields (Step 5 spec 확인용): `skew_value` (float),
+  `percentile_1y` (ge=0,le=1), `tail_hedge_signal` (Literal low/normal/elevated/extreme).
+  본 C7.5 에서 change_1m_z 추가 (optional default 0.0).
+- market_risk_analyst 의 skew fetch 패턴: line 235
+  `skew_series = fetch_equity_index_close("skew", as_of - timedelta(days=400), as_of)`.
+  400 day window → ≥21 trading days 충분히 보장. 본 C7.5 block 은 line 238 직후
+  삽입 — skew_series 동일 변수 reuse (D9 위배 아님: fetcher cache 가 아니라 caller
+  scope 의 local variable; 단일 호출 내 분기 sharing).
+- yfinance ^SKEW: 기존 skew_index skill 에서 이미 fetch. 본 C7.5 는 *동일 series*
+  를 두 번째 skill 에 pass — 추가 network call 없음.
+- 환산 검증: iloc[-21] from 22-obs series = 첫 sample = 21 positions back from latest.
+  Spec 의 산술 (latest=110, ago=100, sd=5 → z=2.0) 과 정확히 일치.
+- C8 factor_estimators 에서 F7 skew_change component 활성화 시 직접
+  `risk.skew.change_1m_z` 참조하면 됨 — placeholder 해소 완료.
+
