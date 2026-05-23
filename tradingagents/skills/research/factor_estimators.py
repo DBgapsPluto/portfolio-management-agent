@@ -29,6 +29,12 @@ Sign convention (positive z = …):
 - F7 equity_vol_regime: higher vol
 - F8 valuation: more expensive
 - F9 liquidity_regime: liquidity stress
+
+PR0 hotfix (2026-05-23 C1): _safe_get paths corrected to match actual
+MacroReport/RiskReport schema. 5 placeholder components (cfnai,
+spread_30y_5y_bps, realized_vol_60d, kospi_pbr, sector_dispersion) are
+left as ``None`` with weight=0 and TODO comments, to be activated in C8
+after PR1 Stage 1 enhance adds the upstream schema + skill modules.
 """
 from __future__ import annotations
 
@@ -222,16 +228,35 @@ def _interpretation(factor_name: str, z: float) -> str:
 
 
 def compute_growth_surprise(stage1: Any) -> FactorScore:
-    nfci_raw = _safe_get(stage1, "macro_report", "growth", "nfci")
-    sahm_trigger = _safe_get(stage1, "macro_report", "employment", "sahm_trigger")
+    """F1 growth_surprise — +z = stronger growth, -z = recession.
+
+    PR0 hotfix (2026-05-23 C1): paths fixed to real MacroReport schema.
+    - gdp_nowcast: macro_report.gdp_nowcast.nowcast_pct (GDPNowSnapshot)
+    - nfci: macro_report.financial_conditions.nfci (FinancialConditionsSnapshot)
+    - sahm: macro_report.employment.sahm_rule_triggered (EmploymentSnapshot)
+    - curve: macro_report.yield_curve.spread_10y_2y_bps (YieldCurveSnapshot)
+    - cfnai: PLACEHOLDER (weight=0) — C8 activation after PR1 adds field
+    """
+    gdpnow = _safe_get(stage1, "macro_report", "gdp_nowcast", "nowcast_pct")
+
+    nfci_raw = _safe_get(stage1, "macro_report", "financial_conditions", "nfci")
+    nfci = -float(nfci_raw) if nfci_raw is not None else None
+
+    sahm_trigger = _safe_get(stage1, "macro_report", "employment", "sahm_rule_triggered")
     sahm_signal = None if sahm_trigger is None else (-1.0 if sahm_trigger else 0.5)
 
+    curve = _safe_get(stage1, "macro_report", "yield_curve", "spread_10y_2y_bps")
+
+    # TODO (C8 activation — PR1 의 FinancialConditionsSnapshot.cfnai 추가 후)
+    # cfnai = _safe_get(stage1, "macro_report", "financial_conditions", "cfnai")
+    cfnai = None  # placeholder
+
     components_raw: dict[str, float | None] = {
-        "gdpnow": _safe_get(stage1, "macro_report", "growth", "gdp_nowcast"),
-        "cfnai":  _safe_get(stage1, "macro_report", "growth", "cfnai"),
-        "nfci":   (None if nfci_raw is None else -float(nfci_raw)),
+        "gdpnow": gdpnow,
+        "cfnai":  cfnai,  # placeholder until C8
+        "nfci":   nfci,
         "sahm":   sahm_signal,
-        "curve":  _safe_get(stage1, "macro_report", "yield_curve", "slope_2_10y_bps"),
+        "curve":  curve,
 
         # News-derived (Option Z)
         "release_surprise": _safe_get(
@@ -249,7 +274,9 @@ def compute_growth_surprise(stage1: Any) -> FactorScore:
     }
 
     weights: dict[str, float] = {
-        "gdpnow": 0.20, "cfnai": 0.15, "nfci": 0.12, "sahm": 0.08, "curve": 0.12,
+        "gdpnow": 0.20,
+        "cfnai": 0.0,  # weight 0 until C8 (PR1: FinancialConditionsSnapshot.cfnai)
+        "nfci": 0.12, "sahm": 0.08, "curve": 0.12,
         "release_surprise": 0.18, "hawkish_bias": 0.05,
         "macro_sent": 0.05, "risk_regime_overnight": 0.05,
     }
@@ -260,17 +287,40 @@ def compute_growth_surprise(stage1: Any) -> FactorScore:
 
 
 def compute_inflation_surprise(stage1: Any) -> FactorScore:
-    real_yield = _safe_get(stage1, "macro_report", "real_yields", "ten_y_pct")
-    real_yield_inverted = None if real_yield is None else -float(real_yield)
+    """F2 inflation_surprise — +z = higher inflation, -z = disinflation.
+
+    PR0 hotfix (C1): cpi.* → inflation.*; inflation_exp.* →
+    inflation_expectations.*; fed_path.implied_change_6m_bps → path_bps;
+    real_yields는 risk_report 에 있으며 field 명은 tips_10y.
+    """
+    # macro_report.inflation (InflationSnapshot)
+    cpi_yoy = _safe_get(stage1, "macro_report", "inflation", "cpi_yoy")
+    cpi_3m = _safe_get(stage1, "macro_report", "inflation", "momentum_3mo")
+    core_pce = _safe_get(stage1, "macro_report", "inflation", "core_pce_yoy")
+
+    # macro_report.inflation_expectations (InflationExpectationsSnapshot)
+    five_y_five_y = _safe_get(
+        stage1, "macro_report", "inflation_expectations", "breakeven_5y5y"
+    )
+    michigan_1y = _safe_get(
+        stage1, "macro_report", "inflation_expectations", "michigan_1y"
+    )
+
+    # macro_report.fed_path (FedPathSnapshot)
+    fed_path_bps = _safe_get(stage1, "macro_report", "fed_path", "path_bps")
+
+    # ★ real_yields는 risk_report 에 있음. Field 명은 tips_10y (RealYieldsSnapshot).
+    real_yield = _safe_get(stage1, "risk_report", "real_yields", "tips_10y")
+    real_yield_inverted = -float(real_yield) if real_yield is not None else None
 
     components_raw: dict[str, float | None] = {
-        "cpi_yoy":        _safe_get(stage1, "macro_report", "cpi", "yoy_pct"),
-        "cpi_3m":         _safe_get(stage1, "macro_report", "cpi", "three_month_annualized_pct"),
-        "core_pce":       _safe_get(stage1, "macro_report", "cpi", "core_pce_yoy"),
-        "five_y_five_y":  _safe_get(stage1, "macro_report", "inflation_exp", "five_y_five_y_pct"),
-        "michigan_1y":    _safe_get(stage1, "macro_report", "inflation_exp", "michigan_1y_pct"),
+        "cpi_yoy":        cpi_yoy,
+        "cpi_3m":         cpi_3m,
+        "core_pce":       core_pce,
+        "five_y_five_y":  five_y_five_y,
+        "michigan_1y":    michigan_1y,
         "real_yield_inv": real_yield_inverted,
-        "fed_path_bps":   _safe_get(stage1, "macro_report", "fed_path", "implied_change_6m_bps"),
+        "fed_path_bps":   fed_path_bps,
 
         # News-derived: hawkish bias = +inflation, dovish = -inflation
         "release_hawkish": _BIAS_MAP.get(
@@ -294,13 +344,18 @@ def compute_inflation_surprise(stage1: Any) -> FactorScore:
 
 
 def compute_real_rate(stage1: Any) -> FactorScore:
+    """F3 real_rate — +z = high real rate (tight policy).
+
+    PR0 hotfix (C1): tips_yield는 risk_report.real_yields.tips_10y;
+    fed_path.implied_change_6m_bps → path_bps.
+    """
     components_raw: dict[str, float | None] = {
-        "tips_yield": _safe_get(stage1, "macro_report", "real_yields", "ten_y_pct"),
+        "tips_yield": _safe_get(stage1, "risk_report", "real_yields", "tips_10y"),
         "fed_voting_balance": _safe_get(
             stage1, "news_report", "cb_speakers", "fed_voting_balance"
         ),
         "fed_path_implied": _safe_get(
-            stage1, "macro_report", "fed_path", "implied_change_6m_bps"
+            stage1, "macro_report", "fed_path", "path_bps"
         ),
     }
     weights: dict[str, float] = {
@@ -313,9 +368,23 @@ def compute_real_rate(stage1: Any) -> FactorScore:
 
 
 def compute_term_premium(stage1: Any) -> FactorScore:
+    """F4 term_premium — +z = steeper curve.
+
+    PR0 hotfix (C1): slope_2_10y_bps → spread_10y_2y_bps.
+    slope_5_30y: PLACEHOLDER (weight=0) — C8 activation after PR1 adds
+    YieldCurveSnapshot.spread_30y_5y_bps.
+    """
+    slope_2_10 = _safe_get(
+        stage1, "macro_report", "yield_curve", "spread_10y_2y_bps"
+    )
+
+    # TODO (C8 activation — PR1 의 YieldCurveSnapshot.spread_30y_5y_bps 추가 후)
+    # slope_5_30 = _safe_get(stage1, "macro_report", "yield_curve", "spread_30y_5y_bps")
+    slope_5_30 = None  # placeholder
+
     components_raw: dict[str, float | None] = {
-        "slope_2_10y": _safe_get(stage1, "macro_report", "yield_curve", "slope_2_10y_bps"),
-        "slope_5_30y": _safe_get(stage1, "macro_report", "yield_curve", "slope_5_30y_bps"),
+        "slope_2_10y": slope_2_10,
+        "slope_5_30y": slope_5_30,  # placeholder
         "fed_tone_balance": _safe_get(
             stage1, "news_report", "cb_speakers", "fed_tone_balance"
         ),
@@ -324,7 +393,8 @@ def compute_term_premium(stage1: Any) -> FactorScore:
         ),
     }
     weights: dict[str, float] = {
-        "slope_2_10y": 0.30, "slope_5_30y": 0.25,
+        "slope_2_10y": 0.30,
+        "slope_5_30y": 0.0,  # weight 0 until C8
         "fed_tone_balance": 0.30, "fed_voting_balance": 0.15,
     }
     return _aggregate("F4_term_premium", components_raw, weights)
@@ -334,6 +404,11 @@ def compute_term_premium(stage1: Any) -> FactorScore:
 
 
 def compute_credit_cycle(stage1: Any) -> FactorScore:
+    """F5 credit_cycle — +z = credit stress.
+
+    PR0 hotfix (C1): hy_oas momentum field 명은 momentum_zscore
+    (SpreadSnapshot), 기존 momentum_z 는 잘못된 이름.
+    """
     # corporate_distress: derive from news sentiment (acceleration × negativity)
     corp_count_delta = _safe_get(
         stage1, "news_report", "news_sentiment", "count_change_vs_7d", "corporate"
@@ -362,10 +437,18 @@ def compute_credit_cycle(stage1: Any) -> FactorScore:
         dovish_bias = None
 
     components_raw: dict[str, float | None] = {
-        "hy_oas_bps": _safe_get(stage1, "risk_report", "credit_spread_us_hy", "current_bps"),
-        "hy_oas_momentum": _safe_get(stage1, "risk_report", "credit_spread_us_hy", "momentum_z"),
-        "credit_quality_bps": _safe_get(stage1, "risk_report", "credit_quality", "quality_spread_bps"),
-        "funding_bps": _safe_get(stage1, "risk_report", "funding_stress", "spread_bps"),
+        "hy_oas_bps": _safe_get(
+            stage1, "risk_report", "credit_spread_us_hy", "current_bps"
+        ),
+        "hy_oas_momentum": _safe_get(
+            stage1, "risk_report", "credit_spread_us_hy", "momentum_zscore"
+        ),
+        "credit_quality_bps": _safe_get(
+            stage1, "risk_report", "credit_quality", "quality_spread_bps"
+        ),
+        "funding_bps": _safe_get(
+            stage1, "risk_report", "funding_stress", "spread_bps"
+        ),
         "corporate_distress": corporate_distress,
         "dovish_bias": dovish_bias,
     }
@@ -381,19 +464,33 @@ def compute_credit_cycle(stage1: Any) -> FactorScore:
 
 
 def compute_krw_regime(stage1: Any) -> FactorScore:
+    """F6 krw_regime — +z = weaker KRW.
+
+    PR0 hotfix (C1):
+    - kr_macro.bok_us_rate_diff_bps → kr_divergence.us_kr_rate_gap_bps
+    - kr_macro.exports_yoy_pct → kr_export.yoy_pct (KRExportSnapshot)
+    - foreign_flow.net_flow_z → foreign_flow.net_20d_krw (ForeignFlowSnapshot
+      에 net_flow_z 없음, 20d 누적 순매수액을 proxy 로 사용)
+    - krw_level: macro_report.fx.usd_krw 우선 사용, 없으면 external fetch.
+    """
+    # macro_report.fx (FXSnapshot) 의 usd_krw 우선
+    krw_level = _safe_get(stage1, "macro_report", "fx", "usd_krw")
+    if krw_level is None:
+        krw_level = fetch_krw_usd_level()  # external fallback
+
     components_raw: dict[str, float | None] = {
         "krw_overnight_pct": _safe_get(
             stage1, "news_report", "global_overnight", "krw", "change_pct"
         ),
-        "krw_level": fetch_krw_usd_level(),  # external fetch
+        "krw_level": krw_level,
         "kr_us_rate_diff": _safe_get(
-            stage1, "macro_report", "kr_macro", "bok_us_rate_diff_bps"
+            stage1, "macro_report", "kr_divergence", "us_kr_rate_gap_bps"
         ),
         "foreign_flow_z": _safe_get(
-            stage1, "macro_report", "foreign_flow", "net_flow_z"
+            stage1, "macro_report", "foreign_flow", "net_20d_krw"
         ),
         "kr_exports_yoy": _safe_get(
-            stage1, "macro_report", "kr_macro", "exports_yoy_pct"
+            stage1, "macro_report", "kr_export", "yoy_pct"
         ),
         "bok_tone_balance": _safe_get(
             stage1, "news_report", "cb_speakers", "bok_tone_balance"
@@ -411,18 +508,41 @@ def compute_krw_regime(stage1: Any) -> FactorScore:
 
 
 def compute_equity_vol_regime(stage1: Any) -> FactorScore:
+    """F7 equity_vol_regime — +z = high vol.
+
+    PR0 hotfix (C1):
+    - vix.z_score → vix.zscore_30d (VolatilitySnapshot)
+    - vix.term_ratio → vix_term.ratio (VIXTermStructureSnapshot, 별도 snapshot)
+    - move.current_value → macro_report.tail_risk.move (TailRiskSnapshot;
+      MOVE 가 risk_report 가 아니라 macro_report.tail_risk 에 위치)
+    - skew_change: PLACEHOLDER (weight=0) — SkewSnapshot has only absolute
+      `skew_value` (no change/delta field), but factor_baselines assumes
+      *change* semantic (mean=0, sd=5). Activated in C8 after SkewSnapshot
+      gains a change/delta field (or baseline retuned for absolute level).
+    - realized_vol_60d: PLACEHOLDER (weight=0) — C8 activation after PR1
+      adds RealVolSnapshot.
+    """
     geo = _safe_get(
         stage1, "news_report", "news_sentiment", "count_change_vs_7d", "geopolitical"
     )
     geopolitical_surge = None if geo is None else max(0.0, float(geo))
 
+    # TODO (C8 activation — PR1 의 RealVolSnapshot.realized_vol_60d 추가 후)
+    # realized_vol_60d = _safe_get(stage1, "risk_report", "real_vol", "realized_vol_60d")
+    realized_vol_60d = None  # placeholder
+
+    # TODO (C8 activation — SkewSnapshot 의 change 필드 추가 또는 baseline 재조정 후)
+    # skew_change = _safe_get(stage1, "risk_report", "skew", "<change_field>")
+    skew_change = None  # placeholder (semantic mismatch: schema has absolute level only)
+
     components_raw: dict[str, float | None] = {
         "vix_level":   _safe_get(stage1, "risk_report", "vix", "current_value"),
-        "vix_z_score": _safe_get(stage1, "risk_report", "vix", "z_score"),
-        "vix_term_ratio": _safe_get(stage1, "risk_report", "vix", "term_ratio"),
-        "move":        _safe_get(stage1, "risk_report", "move", "current_value"),
-        "realized_vol_60d": _safe_get(stage1, "risk_report", "realized_vol", "sixty_d"),
-        "skew_change": _safe_get(stage1, "risk_report", "skew", "change_1m"),
+        "vix_z_score": _safe_get(stage1, "risk_report", "vix", "zscore_30d"),
+        "vix_term_ratio": _safe_get(stage1, "risk_report", "vix_term", "ratio"),
+        # ★ MOVE 는 macro_report.tail_risk 에 위치
+        "move":        _safe_get(stage1, "macro_report", "tail_risk", "move"),
+        "realized_vol_60d": realized_vol_60d,  # placeholder
+        "skew_change": skew_change,  # placeholder
         "sentiment_dispersion": _safe_get(
             stage1, "news_report", "news_sentiment", "sentiment_dispersion"
         ),
@@ -430,7 +550,9 @@ def compute_equity_vol_regime(stage1: Any) -> FactorScore:
     }
     weights: dict[str, float] = {
         "vix_level": 0.22, "vix_z_score": 0.12, "vix_term_ratio": 0.12,
-        "move": 0.18, "realized_vol_60d": 0.13, "skew_change": 0.08,
+        "move": 0.18,
+        "realized_vol_60d": 0.0,  # weight 0 until C8
+        "skew_change": 0.0,  # weight 0 until C8 (semantic mismatch)
         "sentiment_dispersion": 0.08, "geopolitical_surge": 0.07,
     }
     return _aggregate("F7_equity_vol", components_raw, weights)
@@ -440,28 +562,38 @@ def compute_equity_vol_regime(stage1: Any) -> FactorScore:
 
 
 def compute_valuation(stage1: Any) -> FactorScore:
+    """F8 valuation — +z = more expensive.
+
+    PR0 hotfix (C1):
+    - tips_yield: macro_report.real_yields → risk_report.real_yields.tips_10y
+    - kospi_pbr: PLACEHOLDER (weight=0) — C8 activation after PR1 adds
+      KRValuationSnapshot to macro_report.kr_valuation.
+    """
     sp_pe = fetch_sp_trailing_pe()
     if sp_pe is not None and sp_pe > 0:
         earnings_yield: float | None = 100.0 / sp_pe
     else:
         earnings_yield = None
 
-    tips_yield = _safe_get(stage1, "macro_report", "real_yields", "ten_y_pct")
+    tips_yield = _safe_get(stage1, "risk_report", "real_yields", "tips_10y")
     if earnings_yield is not None and tips_yield is not None:
         erp: float | None = earnings_yield - float(tips_yield)
     else:
         erp = None
 
-    kospi_pbr = _safe_get(stage1, "technical_report", "kospi_pbr")
+    # TODO (C8 activation — PR1 의 macro_report.kr_valuation.kospi_pbr 추가 후)
+    # kospi_pbr = _safe_get(stage1, "macro_report", "kr_valuation", "kospi_pbr")
+    kospi_pbr = None  # placeholder
 
     components_raw: dict[str, float | None] = {
         "sp_pe":          sp_pe,
         "earnings_yield": earnings_yield,
         "erp":            erp,
-        "kospi_pbr":      kospi_pbr,
+        "kospi_pbr":      kospi_pbr,  # placeholder
     }
     weights: dict[str, float] = {
-        "sp_pe": 0.20, "earnings_yield": 0.30, "erp": 0.30, "kospi_pbr": 0.20,
+        "sp_pe": 0.20, "earnings_yield": 0.30, "erp": 0.30,
+        "kospi_pbr": 0.0,  # weight 0 until C8
     }
     return _aggregate("F8_valuation", components_raw, weights)
 
@@ -470,13 +602,24 @@ def compute_valuation(stage1: Any) -> FactorScore:
 
 
 def compute_liquidity_regime(stage1: Any) -> FactorScore:
-    vix = _safe_get(stage1, "risk_report", "vix", "current_value")
-    rv = _safe_get(stage1, "risk_report", "realized_vol", "sixty_d")
-    if vix is not None and rv is not None:
-        # bps²-like normalization
-        vrp: float | None = ((float(vix) / 100.0) ** 2 - float(rv) ** 2) * 10000.0
-    else:
-        vrp = None
+    """F9 liquidity_regime — +z = liquidity stress.
+
+    PR0 hotfix (C1):
+    - breadth: technical_report.breadth → risk_report.breadth_kr.advancing_pct
+      (BreadthSnapshot 는 advancing_pct/declining_pct/new_highs_minus_lows 만 보유)
+    - vrp: realized_vol 의존이라 weight=0 placeholder (C8)
+    - sector_dispersion: technical_report.sector_dispersion 는 미존재 —
+      PLACEHOLDER weight=0 (C8 activation after PR1 adds BreadthSnapshot 확장
+      또는 sector_dispersion 별도 snapshot).
+    """
+    # TODO (C8 activation — PR1 의 RealVolSnapshot.realized_vol_60d 추가 후)
+    # realized_vol = _safe_get(stage1, "risk_report", "real_vol", "realized_vol_60d")
+    # vix = _safe_get(stage1, "risk_report", "vix", "current_value")
+    # if vix is not None and realized_vol is not None:
+    #     vrp = ((float(vix) / 100.0) ** 2 - float(realized_vol) ** 2) * 10000.0
+    # else:
+    #     vrp = None
+    vrp = None  # placeholder (vrp = vix² - realized_vol²; realized_vol 미존재)
 
     event_cluster = _safe_get(
         stage1, "news_report", "release_surprise", "high_importance_today"
@@ -493,17 +636,28 @@ def compute_liquidity_regime(stage1: Any) -> FactorScore:
     else:
         rising_signal = 1.0
 
+    # TODO (C8 activation — PR1 의 sector_dispersion snapshot 추가 후)
+    # sector_dispersion = _safe_get(stage1, "risk_report", "sector_dispersion", "...")
+    sector_dispersion = None  # placeholder
+
     components_raw: dict[str, float | None] = {
-        "vrp": vrp,
-        "eq_bond_corr": _safe_get(stage1, "risk_report", "equity_bond_corr", "correlation_60d"),
-        "sector_dispersion": _safe_get(stage1, "technical_report", "sector_dispersion"),
-        "breadth": _safe_get(stage1, "technical_report", "breadth"),
+        "vrp": vrp,  # placeholder (depends on realized_vol from C8)
+        "eq_bond_corr": _safe_get(
+            stage1, "risk_report", "equity_bond_corr", "correlation_60d"
+        ),
+        "sector_dispersion": sector_dispersion,  # placeholder
+        # ★ breadth 는 risk_report.breadth_kr (BreadthSnapshot.advancing_pct 사용)
+        "breadth": _safe_get(stage1, "risk_report", "breadth_kr", "advancing_pct"),
         "event_cluster": event_cluster,
         "rising_signal": rising_signal,
     }
     weights: dict[str, float] = {
-        "vrp": 0.35, "eq_bond_corr": 0.18, "sector_dispersion": 0.18,
-        "breadth": 0.08, "event_cluster": 0.12, "rising_signal": 0.09,
+        "vrp": 0.0,  # weight 0 until C8 (depends on realized_vol)
+        "eq_bond_corr": 0.18,
+        "sector_dispersion": 0.0,  # weight 0 until C8
+        "breadth": 0.08,
+        "event_cluster": 0.12,
+        "rising_signal": 0.09,
     }
     return _aggregate("F9_liquidity", components_raw, weights)
 

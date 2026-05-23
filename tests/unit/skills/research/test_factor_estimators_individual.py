@@ -115,42 +115,84 @@ def test_risk_regime_map_values() -> None:
 # ---------- per-factor smoke tests with baseline mock stage1 ----------
 
 def _full_stage1_baseline():
-    """All factors get baseline values → every component z = 0."""
-    # macro_report
-    macro_growth = SimpleNamespace(gdp_nowcast=2.0, cfnai=0.0, nfci=0.0)
-    macro_employment = SimpleNamespace(sahm_trigger=False)
-    macro_yc = SimpleNamespace(slope_2_10y_bps=80.0, slope_5_30y_bps=120.0)
-    macro_cpi = SimpleNamespace(yoy_pct=2.5, three_month_annualized_pct=2.5, core_pce_yoy=2.0)
-    macro_infexp = SimpleNamespace(five_y_five_y_pct=2.3, michigan_1y_pct=3.0)
-    macro_real = SimpleNamespace(ten_y_pct=0.5)
-    macro_fedpath = SimpleNamespace(implied_change_6m_bps=0.0)
-    macro_kr = SimpleNamespace(bok_us_rate_diff_bps=-100.0, exports_yoy_pct=5.0)
-    macro_ff = SimpleNamespace(net_flow_z=0.0)
+    """All factors get baseline values → every component z = 0.
+
+    2026-05-23 (C1, PR0 hotfix): schema 명세에 맞게 path 정정. 이전 fixture 는
+    *이미 broken 한 path* 를 reflect 한 것이라 silent pass 되었음.
+
+    Note: 5 placeholder components (cfnai, slope_5_30y, realized_vol_60d,
+    kospi_pbr, sector_dispersion / vrp) 는 weight=0 이라 본 fixture 에 해당 attribute
+    없어도 confidence 계산에서 빠짐. C8 후 활성화.
+    """
+    # macro_report — corrected paths matching MacroReport schema
+    macro_gdp = SimpleNamespace(nowcast_pct=2.0, change_from_prior=0.0)
+    macro_fci = SimpleNamespace(nfci=0.0, anfci=0.0, regime="neutral", tightening=False)
+    macro_employment = SimpleNamespace(sahm_rule_triggered=False)
+    macro_yc = SimpleNamespace(spread_10y_2y_bps=80.0, spread_10y_3m_bps=120.0)
+    # InflationSnapshot uses cpi_yoy/momentum_3mo/core_pce_yoy (not cpi.*)
+    macro_inflation = SimpleNamespace(
+        cpi_yoy=2.5, momentum_3mo=2.5, core_pce_yoy=2.0,
+    )
+    # InflationExpectationsSnapshot
+    macro_infexp = SimpleNamespace(breakeven_5y5y=2.3, michigan_1y=3.0)
+    # FedPathSnapshot uses path_bps
+    macro_fedpath = SimpleNamespace(path_bps=0.0)
+    # DivergenceScore (was kr_macro)
+    macro_kr_div = SimpleNamespace(us_kr_rate_gap_bps=-100.0)
+    # KRExportSnapshot uses yoy_pct
+    macro_kr_export = SimpleNamespace(yoy_pct=5.0)
+    # ForeignFlowSnapshot uses net_20d_krw
+    macro_ff = SimpleNamespace(net_20d_krw=0.0)
+    # FXSnapshot for krw_level
+    macro_fx = SimpleNamespace(usd_krw=1250.0)
+    # TailRiskSnapshot — MOVE is here, not in risk_report
+    macro_tail = SimpleNamespace(move=90.0, vvix=90.0)
     macro_report = SimpleNamespace(
-        growth=macro_growth, employment=macro_employment, yield_curve=macro_yc,
-        cpi=macro_cpi, inflation_exp=macro_infexp, real_yields=macro_real,
-        fed_path=macro_fedpath, kr_macro=macro_kr, foreign_flow=macro_ff,
+        gdp_nowcast=macro_gdp,
+        financial_conditions=macro_fci,
+        employment=macro_employment,
+        yield_curve=macro_yc,
+        inflation=macro_inflation,
+        inflation_expectations=macro_infexp,
+        fed_path=macro_fedpath,
+        kr_divergence=macro_kr_div,
+        kr_export=macro_kr_export,
+        foreign_flow=macro_ff,
+        fx=macro_fx,
+        tail_risk=macro_tail,
     )
 
-    # risk_report
-    risk_vix = SimpleNamespace(current_value=20.0, z_score=0.0, term_ratio=1.0)
-    risk_move = SimpleNamespace(current_value=90.0)
-    risk_rv = SimpleNamespace(sixty_d=0.012)
-    risk_skew = SimpleNamespace(change_1m=0.0)
-    risk_hy = SimpleNamespace(current_bps=400.0, momentum_z=0.0)
+    # risk_report — corrected paths matching RiskReport schema
+    # VolatilitySnapshot uses zscore_30d (not z_score)
+    risk_vix = SimpleNamespace(current_value=20.0, zscore_30d=0.0)
+    # VIXTermStructureSnapshot — separate snapshot using ratio field
+    risk_vix_term = SimpleNamespace(ratio=1.0)
+    # SkewSnapshot — C1 placeholder (semantic mismatch), included for shape only
+    risk_skew = SimpleNamespace(skew_value=118.0)  # not read (weight=0)
+    # SpreadSnapshot uses momentum_zscore (not momentum_z)
+    risk_hy = SimpleNamespace(current_bps=400.0, momentum_zscore=0.0)
     risk_quality = SimpleNamespace(quality_spread_bps=90.0)
     risk_funding = SimpleNamespace(spread_bps=10.0)
     risk_corr = SimpleNamespace(correlation_60d=-0.2)
+    # RealYieldsSnapshot uses tips_10y (not ten_y_pct)
+    risk_real_yields = SimpleNamespace(tips_10y=0.5)
+    # BreadthSnapshot uses advancing_pct
+    risk_breadth_kr = SimpleNamespace(advancing_pct=0.55)
     risk_report = SimpleNamespace(
-        vix=risk_vix, move=risk_move, realized_vol=risk_rv, skew=risk_skew,
-        credit_spread_us_hy=risk_hy, credit_quality=risk_quality,
-        funding_stress=risk_funding, equity_bond_corr=risk_corr,
+        vix=risk_vix,
+        vix_term=risk_vix_term,
+        skew=risk_skew,
+        credit_spread_us_hy=risk_hy,
+        credit_quality=risk_quality,
+        funding_stress=risk_funding,
+        equity_bond_corr=risk_corr,
+        real_yields=risk_real_yields,
+        breadth_kr=risk_breadth_kr,
     )
 
-    # technical_report
-    technical_report = SimpleNamespace(
-        sector_dispersion=1.0, breadth=0.55, kospi_pbr=1.0,
-    )
+    # technical_report — sector_dispersion/breadth/kospi_pbr 는 C8 placeholder
+    # 이라 더 이상 factor_estimators 에서 read 안 함. 빈 namespace 유지.
+    technical_report = SimpleNamespace()
 
     # news_report
     krw = SimpleNamespace(change_pct=0.0)
