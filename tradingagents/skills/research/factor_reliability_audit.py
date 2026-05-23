@@ -24,13 +24,14 @@ Reliability = Literal[
 ]
 
 
-AUDIT_DATE: Final[str] = "2026-05-22"
+AUDIT_DATE: Final[str] = "2026-05-24"
 
 
 COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     # ----- F1 growth_surprise -----
     "gdpnow":                "high",
     "cfnai":                 "high",
+    "cfnai_3m":              "high",   # C8 (2026-05-24): 3m avg, NBER recession signal
     "nfci":                  "high",
     "sahm":                  "medium-low",   # post-COVID distortion
     "curve":                 "medium-low",   # post-COVID de-anchored
@@ -96,7 +97,7 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     # ----- F9 liquidity -----
     "vrp":                "high",
     "eq_bond_corr":       "high",
-    "sector_dispersion":  "high",
+    "sector_dispersion":  "medium",   # C8: narrow rally regime degrades reliability
     "breadth":            "medium",   # narrow AI rally distortion
     "event_cluster":      "high",
     "rising_signal":      "medium",

@@ -31,10 +31,16 @@ Sign convention (positive z = …):
 - F9 liquidity_regime: liquidity stress
 
 PR0 hotfix (2026-05-23 C1): _safe_get paths corrected to match actual
-MacroReport/RiskReport schema. 5 placeholder components (cfnai,
-spread_30y_5y_bps, realized_vol_60d, kospi_pbr, sector_dispersion) are
-left as ``None`` with weight=0 and TODO comments, to be activated in C8
-after PR1 Stage 1 enhance adds the upstream schema + skill modules.
+MacroReport/RiskReport schema.
+
+C8 activation (2026-05-24): 6 placeholders activated after PR1 C3-C7.5
+added upstream schema + skill modules:
+- F1: cfnai + cfnai_3m (FinancialConditionsSnapshot extension; C3)
+- F4: slope_5_30y (YieldCurveSnapshot.spread_30y_5y_bps; C4)
+- F7: realized_vol_60d (RealVolSnapshot; C6) + skew_change (SkewSnapshot.change_1m_z; C7.5)
+- F8: kospi_pbr (KRValuationSnapshot; C5)
+- F9: vrp (RealVolSnapshot.vrp_60d; C6) + sector_dispersion (BreadthSnapshot extension; C7)
+Each factor weight dict re-normalized to sum=1.0 (D11 plan default).
 """
 from __future__ import annotations
 
@@ -247,16 +253,18 @@ def compute_growth_surprise(stage1: Any) -> FactorScore:
 
     curve = _safe_get(stage1, "macro_report", "yield_curve", "spread_10y_2y_bps")
 
-    # TODO (C8 activation — PR1 의 FinancialConditionsSnapshot.cfnai 추가 후)
-    # cfnai = _safe_get(stage1, "macro_report", "financial_conditions", "cfnai")
-    cfnai = None  # placeholder
+    # C8 activation (2026-05-24): PR1 C3 added FinancialConditionsSnapshot.cfnai
+    # + cfnai_3m_avg. CFNAI 3m avg < -0.7 is NBER recession signal.
+    cfnai = _safe_get(stage1, "macro_report", "financial_conditions", "cfnai")
+    cfnai_3m = _safe_get(stage1, "macro_report", "financial_conditions", "cfnai_3m_avg")
 
     components_raw: dict[str, float | None] = {
-        "gdpnow": gdpnow,
-        "cfnai":  cfnai,  # placeholder until C8
-        "nfci":   nfci,
-        "sahm":   sahm_signal,
-        "curve":  curve,
+        "gdpnow":   gdpnow,
+        "cfnai":    cfnai,     # C8 activated
+        "cfnai_3m": cfnai_3m,  # C8 NEW component
+        "nfci":     nfci,
+        "sahm":     sahm_signal,
+        "curve":    curve,
 
         # News-derived (Option Z)
         "release_surprise": _safe_get(
@@ -273,12 +281,13 @@ def compute_growth_surprise(stage1: Any) -> FactorScore:
         ),
     }
 
+    # C8 weight rebalance (D11 plan default; sum=1.00):
     weights: dict[str, float] = {
-        "gdpnow": 0.20,
-        "cfnai": 0.0,  # weight 0 until C8 (PR1: FinancialConditionsSnapshot.cfnai)
-        "nfci": 0.12, "sahm": 0.08, "curve": 0.12,
+        "gdpnow": 0.18,
+        "cfnai": 0.10, "cfnai_3m": 0.08,    # C8 activated
+        "nfci": 0.12, "sahm": 0.07, "curve": 0.10,
         "release_surprise": 0.18, "hawkish_bias": 0.05,
-        "macro_sent": 0.05, "risk_regime_overnight": 0.05,
+        "macro_sent": 0.05, "risk_regime_overnight": 0.07,
     }
     return _aggregate("F1_growth", components_raw, weights)
 
@@ -378,13 +387,14 @@ def compute_term_premium(stage1: Any) -> FactorScore:
         stage1, "macro_report", "yield_curve", "spread_10y_2y_bps"
     )
 
-    # TODO (C8 activation — PR1 의 YieldCurveSnapshot.spread_30y_5y_bps 추가 후)
-    # slope_5_30 = _safe_get(stage1, "macro_report", "yield_curve", "spread_30y_5y_bps")
-    slope_5_30 = None  # placeholder
+    # C8 activation (2026-05-24): PR1 C4 added YieldCurveSnapshot.spread_30y_5y_bps.
+    slope_5_30 = _safe_get(
+        stage1, "macro_report", "yield_curve", "spread_30y_5y_bps"
+    )
 
     components_raw: dict[str, float | None] = {
         "slope_2_10y": slope_2_10,
-        "slope_5_30y": slope_5_30,  # placeholder
+        "slope_5_30y": slope_5_30,  # C8 activated
         "fed_tone_balance": _safe_get(
             stage1, "news_report", "cb_speakers", "fed_tone_balance"
         ),
@@ -392,10 +402,11 @@ def compute_term_premium(stage1: Any) -> FactorScore:
             stage1, "news_report", "cb_speakers", "fed_voting_balance"
         ),
     }
+    # C8 weight rebalance (D11 plan default; sum=1.00):
     weights: dict[str, float] = {
-        "slope_2_10y": 0.30,
-        "slope_5_30y": 0.0,  # weight 0 until C8
-        "fed_tone_balance": 0.30, "fed_voting_balance": 0.15,
+        "slope_2_10y": 0.25,
+        "slope_5_30y": 0.20,   # C8 activated
+        "fed_tone_balance": 0.30, "fed_voting_balance": 0.25,
     }
     return _aggregate("F4_term_premium", components_raw, weights)
 
@@ -527,33 +538,36 @@ def compute_equity_vol_regime(stage1: Any) -> FactorScore:
     )
     geopolitical_surge = None if geo is None else max(0.0, float(geo))
 
-    # TODO (C8 activation — PR1 의 RealVolSnapshot.realized_vol_60d 추가 후)
-    # realized_vol_60d = _safe_get(stage1, "risk_report", "real_vol", "realized_vol_60d")
-    realized_vol_60d = None  # placeholder
+    # C8 activation (2026-05-24): PR1 C6 added RealVolSnapshot.realized_vol_60d
+    # (SPY annualized 60d stddev).
+    realized_vol_60d = _safe_get(
+        stage1, "risk_report", "real_vol", "realized_vol_60d"
+    )
 
-    # TODO (C8 activation — SkewSnapshot 의 change 필드 추가 또는 baseline 재조정 후)
-    # skew_change = _safe_get(stage1, "risk_report", "skew", "<change_field>")
-    skew_change = None  # placeholder (semantic mismatch: schema has absolute level only)
+    # C8 activation (2026-05-24): PR1 C7.5 added SkewSnapshot.change_1m_z
+    # (1-month change normalized by long-run sd — cleaner signal than level).
+    skew_change = _safe_get(stage1, "risk_report", "skew", "change_1m_z")
 
     components_raw: dict[str, float | None] = {
         "vix_level":   _safe_get(stage1, "risk_report", "vix", "current_value"),
         "vix_z_score": _safe_get(stage1, "risk_report", "vix", "zscore_30d"),
         "vix_term_ratio": _safe_get(stage1, "risk_report", "vix_term", "ratio"),
-        # ★ MOVE 는 macro_report.tail_risk 에 위치
+        # MOVE 는 macro_report.tail_risk 에 위치
         "move":        _safe_get(stage1, "macro_report", "tail_risk", "move"),
-        "realized_vol_60d": realized_vol_60d,  # placeholder
-        "skew_change": skew_change,  # placeholder
+        "realized_vol_60d": realized_vol_60d,  # C8 activated
+        "skew_change": skew_change,            # C8 activated (C7.5)
         "sentiment_dispersion": _safe_get(
             stage1, "news_report", "news_sentiment", "sentiment_dispersion"
         ),
         "geopolitical_surge": geopolitical_surge,
     }
+    # C8 weight rebalance (D11 plan default; sum=1.00):
     weights: dict[str, float] = {
-        "vix_level": 0.22, "vix_z_score": 0.12, "vix_term_ratio": 0.12,
-        "move": 0.18,
-        "realized_vol_60d": 0.0,  # weight 0 until C8
-        "skew_change": 0.0,  # weight 0 until C8 (semantic mismatch)
-        "sentiment_dispersion": 0.08, "geopolitical_surge": 0.07,
+        "vix_level": 0.20, "vix_z_score": 0.10, "vix_term_ratio": 0.10,
+        "move": 0.15,
+        "realized_vol_60d": 0.13,   # C8 activated
+        "skew_change": 0.07,        # C8 activated (C7.5)
+        "sentiment_dispersion": 0.10, "geopolitical_surge": 0.15,
     }
     return _aggregate("F7_equity_vol", components_raw, weights)
 
@@ -581,19 +595,20 @@ def compute_valuation(stage1: Any) -> FactorScore:
     else:
         erp = None
 
-    # TODO (C8 activation — PR1 의 macro_report.kr_valuation.kospi_pbr 추가 후)
-    # kospi_pbr = _safe_get(stage1, "macro_report", "kr_valuation", "kospi_pbr")
-    kospi_pbr = None  # placeholder
+    # C8 activation (2026-05-24): PR1 C5 added macro_report.kr_valuation
+    # (KRValuationSnapshot, Optional). _safe_get → None safe.
+    kospi_pbr = _safe_get(stage1, "macro_report", "kr_valuation", "kospi_pbr")
 
     components_raw: dict[str, float | None] = {
         "sp_pe":          sp_pe,
         "earnings_yield": earnings_yield,
         "erp":            erp,
-        "kospi_pbr":      kospi_pbr,  # placeholder
+        "kospi_pbr":      kospi_pbr,  # C8 activated
     }
+    # C8 weight rebalance (D11 plan default; sum=1.00):
     weights: dict[str, float] = {
-        "sp_pe": 0.20, "earnings_yield": 0.30, "erp": 0.30,
-        "kospi_pbr": 0.0,  # weight 0 until C8
+        "sp_pe": 0.20, "earnings_yield": 0.25, "erp": 0.30,
+        "kospi_pbr": 0.25,   # C8 activated
     }
     return _aggregate("F8_valuation", components_raw, weights)
 
@@ -612,14 +627,9 @@ def compute_liquidity_regime(stage1: Any) -> FactorScore:
       PLACEHOLDER weight=0 (C8 activation after PR1 adds BreadthSnapshot 확장
       또는 sector_dispersion 별도 snapshot).
     """
-    # TODO (C8 activation — PR1 의 RealVolSnapshot.realized_vol_60d 추가 후)
-    # realized_vol = _safe_get(stage1, "risk_report", "real_vol", "realized_vol_60d")
-    # vix = _safe_get(stage1, "risk_report", "vix", "current_value")
-    # if vix is not None and realized_vol is not None:
-    #     vrp = ((float(vix) / 100.0) ** 2 - float(realized_vol) ** 2) * 10000.0
-    # else:
-    #     vrp = None
-    vrp = None  # placeholder (vrp = vix² - realized_vol²; realized_vol 미존재)
+    # C8 activation (2026-05-24): PR1 C6 added RealVolSnapshot.vrp_60d
+    # (pre-computed VIX²−realized² in bps²-like). Use directly (no re-derive).
+    vrp = _safe_get(stage1, "risk_report", "real_vol", "vrp_60d")
 
     event_cluster = _safe_get(
         stage1, "news_report", "release_surprise", "high_importance_today"
@@ -636,28 +646,31 @@ def compute_liquidity_regime(stage1: Any) -> FactorScore:
     else:
         rising_signal = 1.0
 
-    # TODO (C8 activation — PR1 의 sector_dispersion snapshot 추가 후)
-    # sector_dispersion = _safe_get(stage1, "risk_report", "sector_dispersion", "...")
-    sector_dispersion = None  # placeholder
+    # C8 activation (2026-05-24): PR1 C7 added BreadthSnapshot.sector_return_dispersion.
+    # US breadth (S&P 500) — cross-sectional dispersion of sector ETF 60d returns.
+    sector_dispersion = _safe_get(
+        stage1, "risk_report", "breadth_us", "sector_return_dispersion"
+    )
 
     components_raw: dict[str, float | None] = {
-        "vrp": vrp,  # placeholder (depends on realized_vol from C8)
+        "vrp": vrp,  # C8 activated
         "eq_bond_corr": _safe_get(
             stage1, "risk_report", "equity_bond_corr", "correlation_60d"
         ),
-        "sector_dispersion": sector_dispersion,  # placeholder
-        # ★ breadth 는 risk_report.breadth_kr (BreadthSnapshot.advancing_pct 사용)
+        "sector_dispersion": sector_dispersion,  # C8 activated
+        # breadth 는 risk_report.breadth_kr (BreadthSnapshot.advancing_pct 사용)
         "breadth": _safe_get(stage1, "risk_report", "breadth_kr", "advancing_pct"),
         "event_cluster": event_cluster,
         "rising_signal": rising_signal,
     }
+    # C8 weight rebalance (D11 plan default; sum=1.00):
     weights: dict[str, float] = {
-        "vrp": 0.0,  # weight 0 until C8 (depends on realized_vol)
-        "eq_bond_corr": 0.18,
-        "sector_dispersion": 0.0,  # weight 0 until C8
-        "breadth": 0.08,
-        "event_cluster": 0.12,
-        "rising_signal": 0.09,
+        "vrp": 0.30,                # C8 activated
+        "eq_bond_corr": 0.15,
+        "sector_dispersion": 0.15,  # C8 activated
+        "breadth": 0.10,
+        "event_cluster": 0.15,
+        "rising_signal": 0.15,
     }
     return _aggregate("F9_liquidity", components_raw, weights)
 

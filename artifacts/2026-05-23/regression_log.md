@@ -564,3 +564,87 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 - C8 factor_estimators 에서 F7 skew_change component 활성화 시 직접
   `risk.skew.change_1m_z` 참조하면 됨 — placeholder 해소 완료.
 
+## Post-C8 (factor_estimators 6 placeholder 활성화 + weight 재조정 + audit table 확장)
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -5
+FAILED tests/unit/agents/test_macro_quant_analyst.py::test_macro_analyst_orchestration
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 710 passed, 5 warnings in 199.91s (0:03:19)
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -5
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2014-12 mild disinflation (calm)-inputs5-3.0-5.0-neutral]
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2024-06 AI rally with narrow breadth-inputs6-4.0-6.5-neutral]
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 21 passed, 1 warning in 21.74s
+```
+
+### Δ from Post-C7.5
+- Unit: 710 → 710 pass (변동 0), 3 pre-existing fail 동일
+- Integration: 변동 0 (18 fail pre-existing 동일, 21 pass 동일)
+- 0 *new* regression
+- test_factor_indicator_validity: 5/5 PASS (audit table + EXPECTED_COMPONENTS 일치 확인)
+
+### 변경 사항
+- tradingagents/skills/research/factor_estimators.py: 6 placeholder 활성화 + weight 재조정
+  - F1 compute_growth_surprise: cfnai + cfnai_3m_avg 활성화. Weight dict re-balance
+    (gdpnow 0.20→0.18, cfnai 0.0→0.10, cfnai_3m NEW 0.08, sahm 0.08→0.07, curve 0.12→0.10,
+    risk_regime_overnight 0.05→0.07). sum=1.00 보존.
+  - F4 compute_term_premium: slope_5_30y 활성화. Weight dict re-balance
+    (slope_2_10y 0.30→0.25, slope_5_30y 0.0→0.20, fed_voting_balance 0.15→0.25). sum=1.00.
+  - F7 compute_equity_vol_regime: realized_vol_60d + skew_change 활성화. Weight dict
+    re-balance (vix_level 0.22→0.20, vix_z_score 0.12→0.10, vix_term_ratio 0.12→0.10,
+    move 0.18→0.15, realized_vol_60d 0.0→0.13, skew_change 0.0→0.07,
+    sentiment_dispersion 0.08→0.10, geopolitical_surge 0.07→0.15). sum=1.00.
+  - F8 compute_valuation: kospi_pbr 활성화. Weight dict re-balance
+    (earnings_yield 0.30→0.25, kospi_pbr 0.0→0.25). sum=1.00.
+  - F9 compute_liquidity_regime: vrp + sector_dispersion 활성화 (vrp 은 RealVolSnapshot 의
+    pre-computed vrp_60d 직접 사용 — re-derive 안 함; sector_dispersion 은 breadth_us 의
+    BreadthSnapshot.sector_return_dispersion 사용). Weight dict re-balance
+    (vrp 0.0→0.30, eq_bond_corr 0.18→0.15, sector_dispersion 0.0→0.15, breadth 0.08→0.10,
+    event_cluster 0.12→0.15, rising_signal 0.09→0.15). sum=1.00.
+  - 모듈 docstring 의 PR0 hotfix 절 + C8 activation 절 추가.
+
+- tradingagents/skills/research/factor_baselines.py: 8 baseline entry 추가/재교정
+  - F1: cfnai_3m (0.0, 0.5) — CFNAI scale (smoothed).
+  - F4: slope_5_30y (120.0, 80.0) → (80.0, 50.0) — D11 spec 수치 (post-2010 sample).
+  - F6 D11a fix: foreign_flow_z (0.0, 1.0) → (0.0, 1e12) — raw net_20d_krw 의 KRW
+    magnitude (~수조) z 정상화. Prior 는 raw KRW 를 z=1e12 로 변환하던 broken state.
+  - F7: realized_vol_60d (0.012, 0.005) → (0.15, 0.08) — RealVolSnapshot 의 annualized
+    stddev 단위와 일치 (prior 는 daily-scale broken).
+  - F7: skew_change (0.0, 5.0) → (0.0, 1.0) — change_1m_z 가 이미 normalized z
+    (skew_metrics.py 가 hand-coded sd=5 로 divide). Pass-through.
+  - F8: kospi_pbr (1.0, 0.25) → (1.0, 0.3) — D11 spec.
+  - F9: vrp (50.0, 30.0) → (0.0, 200.0) — VRP 의 bps²-like scale (VIX/100)²-rv²×10000
+    의 typical -200~+200 range.
+  - F9: sector_dispersion (1.0, 0.3) → (0.05, 0.03) — BreadthSnapshot 의 decimal-scale
+    cross-sectional stddev (mean ~5pp, sd ~3pp).
+
+- tradingagents/skills/research/factor_reliability_audit.py:
+  - AUDIT_DATE 2026-05-22 → 2026-05-24 (C8 component 확장과 동시 refresh).
+  - F1 COMPONENT_RELIABILITY: "cfnai_3m": "high" 신규 entry.
+  - F9 COMPONENT_RELIABILITY: "sector_dispersion": "high" → "medium" (D11 spec —
+    narrow rally 환경 reliability ↓).
+
+- tests/unit/skills/research/test_factor_indicator_validity.py:
+  - EXPECTED_COMPONENTS frozenset 에 "cfnai_3m" 추가 (기존 8 신규 entry 는 이미 포함됨:
+    slope_5_30y, realized_vol_60d, skew_change, kospi_pbr, vrp, sector_dispersion 등).
+
+### IMPLEMENTER verify 결과
+- 각 factor weight sum = 1.0 OK (F1-F9 모두 1.0000 확인).
+- 모든 schema field 존재 확인 (uv run python -c "..." inspect):
+  - FinancialConditionsSnapshot: cfnai, cfnai_3m_avg ✓
+  - YieldCurveSnapshot: spread_30y_5y_bps ✓
+  - RealVolSnapshot: realized_vol_60d, vrp_60d ✓
+  - SkewSnapshot: change_1m_z ✓
+  - KRValuationSnapshot: kospi_pbr ✓
+  - BreadthSnapshot: sector_return_dispersion ✓
+- All-None stage1 sanity: 6 활성화 factor 모두 confidence=0 / "no data" — crash 없음.
+- 0 new regression — pre-existing fail list (3 unit + 18 integ) 와 정확히 일치.
+
