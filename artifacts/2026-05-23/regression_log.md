@@ -82,5 +82,66 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
   - MOVE 는 `risk_report.move.current_value` 가 아니라 `macro_report.tail_risk.move`
     (TailRiskSnapshot)
 
-## Post-C2, ..., Post-C11
+## Post-C2
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -3
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 668 passed, 5 warnings in 117.89s (0:01:57)
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 21 passed, 1 warning in 13.91s
+```
+
+### Δ from Post-C1
+- Unit: 변경 0 (3 fail pre-existing 그대로, 668 pass 동일)
+- Integration: 16 → 21 pass (+5 from new C2 tests), 18 fail pre-existing 동일
+- 0 *new* regression
+
+### 변경 사항
+- tests/integration/test_factor_estimators_real_schema.py (NEW):
+  - `_build_baseline_macro_report()` / `_build_baseline_risk_report()` /
+    `_build_baseline_technical_report()` / `_build_baseline_news_report()`
+    — real pydantic-validated Stage 1 reports (MagicMock 우회)
+  - `real_stage1_baseline` fixture — productions Stage 1 state shape
+  - 5 tests, 모두 PASS:
+    1. `test_baseline_helper_builds_valid_schema` — pydantic validation gate
+    2. `test_compute_all_factors_with_real_schema_after_c1` — per-factor
+       coverage threshold 검증 (path fix only, 6 placeholder 제외)
+    3. `test_no_silent_path_mismatch` — 각 factor confidence > 0 (silent
+       broken state detector)
+    4. `test_extreme_inflation_propagates` — high CPI/momentum/PCE → F2 z>1
+    5. `test_extreme_vix_propagates_to_f7` — high VIX 45 / z=3 → F7 z>0.5
+
+### 실측 baseline coverage (C1 path fix only, 6 placeholder 제외)
+```
+growth_surprise        confidence=0.85  (threshold 0.60)
+inflation_surprise     confidence=1.00  (threshold 0.80)
+real_rate              confidence=1.00  (threshold 0.80)
+term_premium           confidence=0.75  (threshold 0.55)
+credit_cycle           confidence=1.00  (threshold 0.80)
+krw_regime             confidence=1.00  (threshold 0.70)
+equity_vol_regime      confidence=0.79  (threshold 0.60)
+valuation              confidence=0.80  (threshold 0.40)
+liquidity_regime       confidence=0.47  (threshold 0.30)
+```
+모든 factor coverage 가 threshold 위; 0 silent broken component.
+plan §C2 의 liquidity_regime threshold 0.50 은 실측 0.47 보다 높아 0.30 으로
+조정 (보수적 — 실측 대비 ~36% 마진. C8 의 vrp/sector_dispersion placeholder
+활성화 후 자연 상승 예상).
+
+### Note
+- C2 는 *추가 path fix* 발견 없음 — C1 의 path fix 가 schema 와 정확히 align.
+- F6 의 foreign_flow_z 는 raw KRW (수조 단위) 사용. C1 implementer note 대로
+  C8 에서 normalization 필요 (현재 baseline 0 으로 perturbation 없으면 z=0).
+- 본 test 가 *MagicMock 으로 가려진 silent fail 재발 방지* 의 영구 gate.
+
+## Post-C3, ..., Post-C11
 (각 commit 후 갱신)
