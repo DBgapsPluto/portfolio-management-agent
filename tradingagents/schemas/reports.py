@@ -7,7 +7,7 @@ from tradingagents.schemas.macro import (
     USLeadingIndexSnapshot, GDPNowSnapshot,
     FinancialConditionsSnapshot, InflationExpectationsSnapshot, FedPathSnapshot,
     FXSnapshot, RiskAppetiteSnapshot, ChinaLeadingSnapshot, ForeignFlowSnapshot,
-    PolicyUncertaintySnapshot, TailRiskSnapshot,
+    PolicyUncertaintySnapshot, TailRiskSnapshot, KRValuationSnapshot,
 )
 from tradingagents.schemas.risk import (
     VolatilitySnapshot, SpreadSnapshot, SentimentSnapshot,
@@ -69,6 +69,9 @@ class MacroReport(_AnalystReport):
     # Tier-4 확장 (Policy uncertainty + Tail risk)
     policy_uncertainty: PolicyUncertaintySnapshot
     tail_risk: TailRiskSnapshot
+    # 2026-05-23 C5 — KR equity valuation for factor model F8 valuation.
+    # Optional / default None — backward compat (기존 archive 호환).
+    kr_valuation: KRValuationSnapshot | None = None
 
 
 class RiskReport(_AnalystReport):

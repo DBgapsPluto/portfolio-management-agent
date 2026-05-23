@@ -283,3 +283,17 @@ class TailRiskSnapshot(StalenessAware):
     signal: Literal["calm", "elevated", "extreme"] = Field(
         description="extreme if both percentiles >0.9; elevated if any >0.75"
     )
+
+
+# 2026-05-23 C5 — KR equity valuation snapshot, factor model F8 valuation component.
+# pykrx 의 KOSPI200 fundamental (PBR/PER/DIV) 평균. KOSPI 200 underlying.
+# 첫 *신규 class indicator* — D7 의 신규 class path (analyst 가 MacroReport 의
+# Optional field 에 직접 채움; model_copy 아님).
+class KRValuationSnapshot(StalenessAware):
+    """KOSPI valuation indicators — for factor model F8 valuation.
+
+    PBR < 1.0 = below book value (deep value). Historical avg ~1.0.
+    """
+    kospi_pbr: float = Field(description="KOSPI 200 PBR")
+    kospi_per: float = Field(description="KOSPI 200 forward PER")
+    kospi_div_yield: float = Field(description="KOSPI 200 dividend yield %")

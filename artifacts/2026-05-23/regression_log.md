@@ -267,3 +267,69 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 - C3 pattern 일관성 확인 완료 (D7 scalar, D8 None+warning, D9 no cache,
   outer+inner try/except defense-in-depth).
 
+## Post-C5
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -5
+FAILED tests/unit/agents/test_macro_quant_analyst.py::test_macro_analyst_orchestration
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 688 passed, 5 warnings in 114.10s (0:01:54)
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -3
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 21 passed, 1 warning in 13.25s
+```
+
+### Δ from Post-C4
+- Unit: 681 → 688 pass (+7: 3 schema + 4 skill), 3 pre-existing fail 동일
+- Integration: 변경 0 (18 fail pre-existing 동일, 21 pass 동일)
+- 0 *new* regression
+
+### 변경 사항
+- tradingagents/schemas/macro.py: KRValuationSnapshot 신규 class (kospi_pbr,
+  kospi_per, kospi_div_yield). C8 의 factor_estimators F8 valuation component
+  에서 활성화 예정 (KR equity valuation).
+- tradingagents/schemas/reports.py: MacroReport.kr_valuation Optional field
+  (default None — backward compat).
+- tradingagents/skills/macro/kr_valuation.py (NEW): compute_kospi_valuation
+  skill. 5 indicator pattern 의 첫 *신규 class indicator* 사례.
+  - D7 (신규 class): full Snapshot 반환 — analyst 가 MacroReport 의 Optional
+    field 에 직접 채움 (model_copy 아님; cfnai/slope_5_30y 의 scalar+model_copy
+    와 다른 path).
+  - D8: empty/missing column/exception → None + logger.warning (no default fill).
+  - D9: no retry, no cache inside skill.
+- tradingagents/skills/registry.py: kr_valuation 모듈 등록.
+- tradingagents/agents/analysts/macro_quant_analyst.py: events fetch 직전
+  KOSPI valuation block. try/except 로 skill 호출 wrap (defense-in-depth).
+  MacroReport 생성자에 kr_valuation=kr_valuation_snapshot 추가.
+- tests/unit/schemas/test_factor_model_schemas.py: 3 new tests
+  - snapshot basic instantiation
+  - Optional in MacroReport (default None — backward compat)
+  - 채움 시 정상 acceptance + readback
+  - _build_minimal_macro_report local helper (integration 의 baseline 과 분리,
+    unit ↛ integration 의존성 방지)
+- tests/unit/skills/macro/test_kr_valuation.py (NEW): 4 tests
+  - single row → Snapshot, multi-row averaged, empty df → None,
+    pykrx exception → None
+
+### IMPLEMENTER verify 결과
+- pykrx 의 KOSPI200 fundamental 컬럼 검증: BPS/PER/PBR/EPS/DIV/DPS
+  (실제 KeyError stack trace 에서 컬럼명 추출). plan spec 의 PBR/PER/DIV 일치.
+  본 skill 은 PBR/PER/DIV 3개만 사용 (다른 컬럼 무시).
+- _build_minimal_macro_report helper 의 reuse 방식: integration test 의
+  `_build_baseline_macro_report` 와 동일 schema 를 unit test 내부에 *local*
+  로 빌드 (integration 모듈 import 회피). 이유: unit → integration 의존
+  방향 차단 (test pyramid 원칙).
+- D7 신규 class indicator path 확립 (cfnai/slope_5_30y 의 scalar+model_copy 대비):
+  - 신규 class field 가 *Optional/default None* 인 MacroReport field 에 직접
+    삽입. model_copy 불필요 — MacroReport 생성 시점에 None 또는 Snapshot 둘 중
+    하나로 결정.
+  - 후속 C6/C7 의 sector_dispersion / vrp 가 동일 패턴 (신규 class 라면) 또는
+    scalar+model_copy (기존 schema extend) 인지 plan 에서 확인 필요.
+

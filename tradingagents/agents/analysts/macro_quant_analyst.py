@@ -34,6 +34,7 @@ from tradingagents.skills.macro.financial_conditions import compute_financial_co
 from tradingagents.skills.macro.foreign_flow import compute_foreign_flow
 from tradingagents.skills.macro.fred_fetcher import fetch_fred_series_skill
 from tradingagents.skills.macro.fx import compute_fx_overlay
+from tradingagents.skills.macro.kr_valuation import compute_kospi_valuation
 from tradingagents.skills.macro.real_activity import compute_cfnai_metrics
 from tradingagents.skills.macro.gdp_nowcast import compute_gdp_nowcast
 from tradingagents.skills.macro.inflation import compute_inflation_trend
@@ -420,6 +421,19 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         except Exception:
             tail_risk = _sentinel_tail_risk(as_of)
 
+        # 2026-05-23 C5 — KR equity valuation (KOSPI PBR/PER/DivYield) for F8.
+        # D7 (신규 class indicator): full Snapshot return → MacroReport 의 Optional
+        # kr_valuation field 에 직접 채움 (model_copy 아님; 기존 cfnai/slope_5_30y 의
+        # scalar+model_copy 와 다른 path).
+        # D8: skill 이 None 반환 시 그대로 — kr_valuation = None (Optional, backward compat).
+        # D9: no retry / no cache (skill internal).
+        try:
+            kr_valuation_snapshot = compute_kospi_valuation(as_of)
+            # None 이면 그대로 (skill already logged warning).
+        except Exception as e:
+            logger.warning("KR valuation skill failed (factor F8 affected): %s", e)
+            kr_valuation_snapshot = None
+
         events = fetch_central_bank_calendar_skill(as_of, days=90)
 
         regime: RegimeClassification = classify_regime(
@@ -545,6 +559,7 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             fx=fx, risk_appetite=risk_appetite,
             china_leading=china_leading, foreign_flow=foreign_flow,
             policy_uncertainty=policy_uncertainty, tail_risk=tail_risk,
+            kr_valuation=kr_valuation_snapshot,  # ★ NEW C5 (Optional, None on fail)
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"macro_report": report, "macro_summary": summary}
