@@ -648,3 +648,75 @@ FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces
 - All-None stage1 sanity: 6 활성화 factor 모두 confidence=0 / "no data" — crash 없음.
 - 0 new regression — pre-existing fail list (3 unit + 18 integ) 와 정확히 일치.
 
+## Post-C9 (real schema integration test 확장 — post-C8 coverage 검증)
+
+### Unit
+```
+$ uv run pytest tests/unit/ -q 2>&1 | tail -5
+FAILED tests/unit/agents/test_macro_quant_analyst.py::test_macro_analyst_orchestration
+FAILED tests/unit/agents/test_technical_analyst.py::test_technical_analyst_returns_report
+FAILED tests/unit/monitor/test_monitor.py::test_turnover_initial_below_floor
+3 failed, 710 passed, 5 warnings in 194.17s (0:03:14)
+```
+
+### Integration
+```
+$ uv run pytest tests/integration/ -q 2>&1 | tail -5
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2024-06 AI rally with narrow breadth-inputs6-4.0-6.5-neutral]
+FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accuracy[2026-05 current (KR ETF context)-inputs7-6.0-8.5-risk_off]
+FAILED tests/integration/test_plan_pipeline_mock.py::test_plan_pipeline_produces_artifacts
+18 failed, 26 passed, 1 warning in 20.76s
+```
+
+### Δ from Post-C8
+- Unit: 710 → 710 pass (변동 0), 3 pre-existing fail 동일
+- Integration: 21 → 26 pass (+5 new C9 tests), 18 fail pre-existing 동일
+- 0 *new* regression
+
+### 변경 사항
+- tests/integration/test_factor_estimators_real_schema.py:
+  - import 에 KRValuationSnapshot, RealVolSnapshot 추가.
+  - `_build_baseline_macro_report` 에 신규 schema field 채움:
+    - YieldCurveSnapshot.spread_30y_5y_bps = 80.0 (F4 mean)
+    - FinancialConditionsSnapshot.cfnai + cfnai_3m_avg = 0.0 (F1 mean)
+    - kr_valuation = KRValuationSnapshot(kospi_pbr=1.0, ...) (F8 mean)
+  - `_build_baseline_risk_report` 에 신규 schema field 채움:
+    - BreadthSnapshot.sector_return_dispersion = 0.05 (F9 mean)
+    - SkewSnapshot.change_1m_z = 0.0 (F7 mean)
+    - real_vol = RealVolSnapshot(realized_vol_60d=0.15, vrp_60d=0.0, ...) (F7/F9 mean)
+  - 5 new tests (all PASS):
+    1. `test_compute_all_factors_with_real_schema_after_c8` — 9 factor coverage
+       ≥ 0.85 (krw=0.80). 실측 모두 1.000 — strong margin.
+    2. `test_cfnai_affects_growth_factor` — CFNAI +1.5/+1.0 → F1 z 0.035→0.495
+       (diff 0.46 ≫ threshold 0.05).
+    3. `test_realized_vol_affects_vol_and_liquidity` — realized_vol=0.40 + vrp=-800
+       → F7 z 0.00→0.41 (rises), F9 z -0.10→-1.30 (changes).
+    4. `test_kospi_pbr_affects_valuation` — kospi_pbr=0.5 → F8 z 0.00→-1.67
+       (changes; sign convention 검증 안 함).
+    5. `test_sector_dispersion_affects_liquidity` — sector_disp=0.20 → F9 z
+       -0.10→0.65 (changes).
+
+### 실측 coverage after-C8 (post-helper update, 모두 active component)
+```
+growth_surprise        confidence=1.000  (threshold 0.85, margin +15pp)
+inflation_surprise     confidence=1.000  (threshold 0.85, margin +15pp)
+real_rate              confidence=1.000  (threshold 0.85, margin +15pp)
+term_premium           confidence=1.000  (threshold 0.85, margin +15pp)
+credit_cycle           confidence=1.000  (threshold 0.85, margin +15pp)
+krw_regime             confidence=1.000  (threshold 0.80, margin +20pp)
+equity_vol_regime      confidence=1.000  (threshold 0.85, margin +15pp)
+valuation              confidence=1.000  (threshold 0.85, margin +15pp)
+liquidity_regime       confidence=1.000  (threshold 0.85, margin +15pp)
+```
+C1 baseline (path fix only, 6 placeholder 제외) 의 0.47-1.00 range 에서 C8 활성화 +
+C9 helper update 로 *모든 factor* confidence=1.000 달성. 6 placeholder 활성화의
+직접 검증 (placeholder 가 실제 effective component 로 전환됨).
+
+### Note
+- coverage threshold 보수적 사양 (≥0.85 / krw ≥0.80) 은 실측 1.000 대비 충분히
+  margin 확보. 향후 staleness/missing data 시나리오에서도 견고.
+- perturbation test 5건 모두 PASS — 6 C8 placeholder 가 *실제로* factor z-score
+  에 전파됨 (silent broken state 의 영구 detector).
+- 본 test 가 PR 의 최종 acceptance gate: schema field → estimator path → baseline
+  z-score → factor confidence 의 end-to-end 검증.
+

@@ -32,6 +32,7 @@ from tradingagents.schemas.macro import (
     KRBusinessSurveySnapshot,
     KRExportSnapshot,
     KRLeadingIndexSnapshot,
+    KRValuationSnapshot,
     PolicyUncertaintySnapshot,
     RegimeClassification,
     RiskAppetiteSnapshot,
@@ -55,6 +56,7 @@ from tradingagents.schemas.risk import (
     KRMarketTierSnapshot,
     KRYieldCurveSnapshot,
     PCASnapshot,
+    RealVolSnapshot,
     RealYieldsSnapshot,
     SentimentSnapshot,
     SkewSnapshot,
@@ -83,6 +85,7 @@ def _build_baseline_macro_report() -> MacroReport:
             spread_10y_3m_bps=120.0,
             inverted_days_count=0,
             percentile_5y=0.5,
+            spread_30y_5y_bps=80.0,     # ★ NEW (C4) — F4.slope_5_30y baseline mean = 80.0
         ),
         inflation=InflationSnapshot(
             cpi_yoy=2.5,                # F2.cpi_yoy mean = 2.5
@@ -147,6 +150,8 @@ def _build_baseline_macro_report() -> MacroReport:
             anfci=0.0,
             regime="neutral",
             tightening=False,
+            cfnai=0.0,                  # ★ NEW (C3) — F1.cfnai baseline mean = 0.0
+            cfnai_3m_avg=0.0,           # ★ NEW (C3) — F1.cfnai_3m baseline mean = 0.0
         ),
         inflation_expectations=InflationExpectationsSnapshot(
             breakeven_5y5y=2.3,         # F2.five_y_five_y mean = 2.3
@@ -196,6 +201,12 @@ def _build_baseline_macro_report() -> MacroReport:
             vvix_percentile_1y=0.5,
             move_percentile_1y=0.5,
             signal="calm",
+        ),
+        # ★ NEW (C5) — F8.kospi_pbr baseline mean = 1.0
+        kr_valuation=KRValuationSnapshot(
+            kospi_pbr=1.0,
+            kospi_per=12.0,
+            kospi_div_yield=2.0,
         ),
     )
 
@@ -250,6 +261,7 @@ def _build_baseline_risk_report() -> RiskReport:
             advancing_pct=0.55,
             declining_pct=0.45,
             new_highs_minus_lows=0,
+            sector_return_dispersion=0.05,  # ★ NEW (C7) — F9 baseline mean = 0.05
         ),
         correlation_concentration=PCASnapshot(
             first_eigenvalue_share=0.4,
@@ -272,6 +284,7 @@ def _build_baseline_risk_report() -> RiskReport:
             skew_value=118.0,
             percentile_1y=0.5,
             tail_hedge_signal="normal",
+            change_1m_z=0.0,            # ★ NEW (C7.5) — F7.skew_change baseline mean = 0.0
         ),
         vxn=VxnSnapshot(
             current_value=22.0,
@@ -330,6 +343,12 @@ def _build_baseline_risk_report() -> RiskReport:
             correlation_60d=-0.2,       # F9.eq_bond_corr mean = -0.2
             change_3m=0.0,
             regime="normal_hedge",
+        ),
+        # ★ NEW (C6) — F7.realized_vol_60d mean = 0.15, F9.vrp mean = 0.0
+        real_vol=RealVolSnapshot(
+            realized_vol_60d=0.15,
+            realized_vol_20d=0.13,
+            vrp_60d=0.0,
         ),
     )
 
@@ -569,4 +588,143 @@ def test_extreme_vix_propagates_to_f7(
     assert scores.equity_vol_regime.z_score > 0.5, (
         f"F7 should respond to high VIX, "
         f"got {scores.equity_vol_regime.z_score:.2f}"
+    )
+
+
+# ---------------------------- C9 post-C8 coverage tests ----------------------------
+
+
+@patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
+@patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
+def test_compute_all_factors_with_real_schema_after_c8(
+    _pe: Any, _krw: Any, real_stage1_baseline: dict[str, Any]
+) -> None:
+    """C8 후 — 6 placeholder 활성화 후의 per-factor coverage 검증.
+
+    Helper 가 6 신규 schema field (cfnai, spread_30y_5y_bps, kospi_pbr,
+    realized_vol_60d/vrp_60d, sector_return_dispersion, skew change_1m_z) 를
+    채우므로 모든 factor confidence 가 C1 보다 상승. krw=0.80 외 모두 ≥0.85.
+    """
+    scores = compute_all_factors(real_stage1_baseline)
+
+    expected_min = {
+        "growth_surprise":    0.85,
+        "inflation_surprise": 0.85,
+        "real_rate":          0.85,
+        "term_premium":       0.85,
+        "credit_cycle":       0.85,
+        "krw_regime":         0.80,
+        "equity_vol_regime":  0.85,
+        "valuation":          0.85,
+        "liquidity_regime":   0.85,
+    }
+    for factor_name, min_cov in expected_min.items():
+        score = getattr(scores, factor_name)
+        assert score.confidence >= min_cov, (
+            f"{factor_name} confidence {score.confidence:.2f} < {min_cov} "
+            f"(components: {list(score.components.keys())})"
+        )
+
+
+@patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
+@patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
+def test_cfnai_affects_growth_factor(
+    _pe: Any, _krw: Any, real_stage1_baseline: dict[str, Any]
+) -> None:
+    """CFNAI = +1.5 perturbation → F1 z 증가 (C8 활성화 검증).
+
+    cfnai (weight=0.10) + cfnai_3m (weight=0.08), baseline (0, sd=0.5) 이므로
+    +1.5 → z=+3.0, +1.0 → z=+2.0. 가중합 contribution ≈ 0.10*3 + 0.08*2 = 0.46.
+    """
+    state = dict(real_stage1_baseline)
+    baseline_scores = compute_all_factors(state)
+    baseline_f1 = baseline_scores.growth_surprise.z_score
+
+    macro = state["macro_report"]
+    macro.financial_conditions.cfnai = +1.5
+    macro.financial_conditions.cfnai_3m_avg = +1.0
+    state["macro_report"] = macro
+
+    new_scores = compute_all_factors(state)
+    assert new_scores.growth_surprise.z_score > baseline_f1 + 0.05, (
+        f"F1 should respond to CFNAI perturbation, "
+        f"baseline {baseline_f1:.2f} → new {new_scores.growth_surprise.z_score:.2f}"
+    )
+
+
+@patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
+@patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
+def test_realized_vol_affects_vol_and_liquidity(
+    _pe: Any, _krw: Any, real_stage1_baseline: dict[str, Any]
+) -> None:
+    """High realized_vol → F7 + F9 (VRP) 영향 (C8 활성화 검증)."""
+    state = dict(real_stage1_baseline)
+    baseline_scores = compute_all_factors(state)
+
+    risk = state["risk_report"]
+    risk.real_vol.realized_vol_60d = 0.40   # very high realized vol
+    risk.real_vol.vrp_60d = -800            # negative VRP (rare — realized > implied)
+    state["risk_report"] = risk
+
+    new_scores = compute_all_factors(state)
+    # F7 should respond (high realized_vol → +z)
+    assert new_scores.equity_vol_regime.z_score > baseline_scores.equity_vol_regime.z_score, (
+        f"F7 should respond to high realized_vol, "
+        f"baseline {baseline_scores.equity_vol_regime.z_score:.2f} → "
+        f"new {new_scores.equity_vol_regime.z_score:.2f}"
+    )
+    # F9 VRP component should respond — sign convention 의존 — *값 자체 의 변화* 검증.
+    assert (new_scores.liquidity_regime.z_score
+            != baseline_scores.liquidity_regime.z_score), (
+        f"F9 should respond to VRP change, "
+        f"baseline={baseline_scores.liquidity_regime.z_score:.2f} "
+        f"new={new_scores.liquidity_regime.z_score:.2f}"
+    )
+
+
+@patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
+@patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
+def test_kospi_pbr_affects_valuation(
+    _pe: Any, _krw: Any, real_stage1_baseline: dict[str, Any]
+) -> None:
+    """Low KOSPI PBR (deep value) perturbation → F8 z 변화 (C8 활성화 검증)."""
+    state = dict(real_stage1_baseline)
+    baseline_scores = compute_all_factors(state)
+
+    macro = state["macro_report"]
+    # KOSPI PBR 0.5 (extreme deep value) — sign convention 따라 영향
+    macro.kr_valuation.kospi_pbr = 0.5
+    state["macro_report"] = macro
+
+    new_scores = compute_all_factors(state)
+    # 값 변화 만 검증 (sign 은 design 의존)
+    assert (
+        new_scores.valuation.z_score != baseline_scores.valuation.z_score
+    ), (
+        f"F8 should respond to kospi_pbr perturbation, "
+        f"baseline={baseline_scores.valuation.z_score:.2f} "
+        f"new={new_scores.valuation.z_score:.2f}"
+    )
+
+
+@patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
+@patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
+def test_sector_dispersion_affects_liquidity(
+    _pe: Any, _krw: Any, real_stage1_baseline: dict[str, Any]
+) -> None:
+    """High sector dispersion (broad market) perturbation → F9 z 변화 (C8 활성화 검증)."""
+    state = dict(real_stage1_baseline)
+    baseline_scores = compute_all_factors(state)
+
+    risk = state["risk_report"]
+    risk.breadth_us.sector_return_dispersion = 0.20  # very wide spread
+    state["risk_report"] = risk
+
+    new_scores = compute_all_factors(state)
+    assert (
+        new_scores.liquidity_regime.z_score != baseline_scores.liquidity_regime.z_score
+    ), (
+        f"F9 should respond to sector_dispersion perturbation, "
+        f"baseline={baseline_scores.liquidity_regime.z_score:.2f} "
+        f"new={new_scores.liquidity_regime.z_score:.2f}"
     )
