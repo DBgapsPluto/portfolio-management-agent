@@ -1,0 +1,71 @@
+{
+  "anchor_id": "2025-04_tariff_shock",
+  "as_of_date": "2025-04-09",
+  "title": "Trump reciprocal tariff 발표 / global stagflation 시나리오 부상",
+  "description": "2025-04-02 Trump 'Liberation Day' reciprocal tariffs (60%+ on China, 25% Korea/Japan). SPY -12% in 4 days, VIX 50+ spike, USD/KRW 1470 돌파, gold $3300 신고가. 인플레 재가속 우려 + 성장 약화 우려 동시 = stagflation 공포.",
+
+  "consensus_reasoning": "stagflation 시나리오 격발 (실제로 4월 9일 90일 pause 발표로 일부 회복했지만 그 시점 매크로 컨센서스는 stagflation). 자산배분 합의:\n- gold/commodity overweight (stagflation 헷지)\n- inflation_linked (TIPS) 강하게 매수\n- duration neutral (인플레↑ vs 성장↓ trade-off)\n- equity 큰 폭 축소 (특히 cyclical, EM)\n- USD 강세 → KRW 자산 위험 (kr_corporate 회피)\n- 단기채/MMF 비중 확대\n핵심: 'stagflation playbook' 가동 — 1970s 패턴 회귀 우려.",
+
+  "sources": [
+    "El-Erian (Bloomberg, 2025-04-04): 'stagflation regime re-emerged'",
+    "Howard Marks 메모 2025-Q1: 'inflation regime change confirmed'",
+    "BlackRock IM 2025-04: 'tariff shock = supply-side inflation + demand destruction'",
+    "Bridgewater All-Weather 2025-Q1 commentary: 'commodity overweight necessary'",
+    "BoFA FMS Apr 2025: cash overweight extreme, equity exit accelerating"
+  ],
+
+  "stage1": {
+    "regime": {
+      "quadrant": "recession_inflation",
+      "confidence": 0.70
+    },
+    "systemic": {
+      "score": 7.0,
+      "regime": "risk_off"
+    }
+  },
+
+  "stage2": {
+    "dominant_cell": "D_N_F",
+    "dominant_scenario_legacy": "stagflation",
+    "conviction": "high",
+    "bucket_target": {
+      "kr_equity":       0.07,
+      "global_equity":   0.13,
+      "fx_commodity":    0.30,
+      "bond":            0.25,
+      "cash_mmf":        0.25,
+      "bond_tips_share": 0.70
+    }
+  },
+
+  "expected_stage3": {
+    "acceptable_methods": ["risk_parity", "min_variance"],
+    "min_sub_category_weights": {
+      "mmf_kr":           0.08
+    },
+    "max_sub_category_weights": {
+      "us_high_yield": 0.0,
+      "em_bond":       0.02,
+      "kr_corporate":  0.08
+    },
+    "required_sub_categories": [],
+    "required_substitute_groups": [
+      {
+        "name": "inflation_hedge",
+        "description": "Stagflation hedge — gold, commodity, oil, TIPS 중 어떤 형태로든 충분히 확보. gold 단일 라벨 강제 X.",
+        "any_of": ["gold", "broad_commodity", "oil_energy", "inflation_linked", "silver_precious"],
+        "min_total_weight": 0.15
+      },
+      {
+        "name": "safe_haven_treasury",
+        "description": "Risk-off 환경의 quality bond exposure (US 또는 KR treasury).",
+        "any_of": ["us_treasury", "kr_treasury", "short_duration", "us_aggregate"],
+        "min_total_weight": 0.05
+      }
+    ],
+    "forbidden_sub_categories": ["us_high_yield"],
+    "min_unique_sub_categories": 8,
+    "risk_asset_max": 0.50
+  }
+}

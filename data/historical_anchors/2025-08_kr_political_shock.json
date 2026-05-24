@@ -1,0 +1,59 @@
+{
+  "anchor_id": "2025-08_kr_political_shock",
+  "as_of_date": "2025-08-15",
+  "title": "KR 정치적 불확실성 / KOSPI 하락 / KR-specific stress",
+  "description": "2025년 KR 정치 위기 (대선 후 정책 불확실성). KRW 1380→1430 절하, KOSPI 200 -8% (글로벌 SPY는 +2%). KR 외국인 매도 9000억원 일주일, kr_corporate 신용 spread 확대. 글로벌 macro는 안정 (US growth+disinflation 지속).",
+
+  "consensus_reasoning": "Idiosyncratic KR stress — 글로벌 risk asset은 OK이지만 KR 자산만 stress. 자산배분 합의:\n- KR equity underweight (factor + 정치 risk)\n- US/global equity overweight (relative 매력)\n- USD 강세 → KR 자산 회피 → US 자산 비중↑\n- KR 채권은 신용 spread 확대로 일시 underweight\n- gold/USD 헷지 약간\n- 글로벌 systemic은 아님 → 글로벌 자산은 정상 비중",
+
+  "sources": [
+    "KR 한국은행 통화신용정책보고서 2025-Q3 (가정 시나리오)",
+    "Morgan Stanley KR strategy update Aug 2025 (가정)",
+    "Bridgewater KR weight reduction note (가정)"
+  ],
+
+  "stage1": {
+    "regime": {
+      "quadrant": "growth_disinflation",
+      "confidence": 0.55
+    },
+    "systemic": {
+      "score": 4.5,
+      "regime": "neutral"
+    }
+  },
+
+  "stage2": {
+    "dominant_cell": "A_N_stress",
+    "dominant_scenario_legacy": "kr_stress",
+    "conviction": "medium",
+    "bucket_target": {
+      "kr_equity":       0.05,
+      "global_equity":   0.32,
+      "fx_commodity":    0.15,
+      "bond":            0.23,
+      "cash_mmf":        0.25,
+      "bond_tips_share": 0.20
+    }
+  },
+
+  "expected_stage3": {
+    "acceptable_methods": ["min_variance", "risk_parity", "hrp"],
+    "min_sub_category_weights": {},
+    "max_sub_category_weights": {
+      "kr_corporate": 0.05
+    },
+    "required_sub_categories": [],
+    "required_substitute_groups": [
+      {
+        "name": "us_safe_or_growth",
+        "description": "KR stress 시 US 자산으로 대피 (broad equity OR treasury).",
+        "any_of": ["us_broad", "us_tech_nasdaq", "us_treasury", "us_aggregate"],
+        "min_total_weight": 0.15
+      }
+    ],
+    "forbidden_sub_categories": [],
+    "min_unique_sub_categories": 7,
+    "risk_asset_max": 0.60
+  }
+}

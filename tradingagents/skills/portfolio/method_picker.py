@@ -22,6 +22,11 @@ class MethodChoice(BaseModel):
     method: OptimizationMethod
     params: dict[str, Any] = Field(default_factory=dict)
     reasoning: str = Field(max_length=300)
+    # Attribution fields — which deterministic rule fired and what inputs it saw.
+    # Backward-compat: existing archives lacking these fields rehydrate cleanly.
+    rule_fired: str | None = None
+    rule_index: int | None = None
+    inputs: dict[str, Any] = Field(default_factory=dict)
 
 
 # 시나리오별 우선 method 룰. dominant_scenario 매칭 시 즉시 결정.
@@ -60,9 +65,23 @@ def pick_optimization_method(
     research_decision: Stage 2 ResearchDecision (있으면 scenario·conviction 활용).
     feedback: D4 retry feedback string (logging만, decision에 영향 없음).
     """
-    notes: list[str] = []
-    if feedback:
-        notes.append(f"retry context: {feedback[:80]}")
+    scenario_in = (
+        getattr(research_decision, "dominant_scenario", None)
+        if research_decision is not None else None
+    )
+    conviction_in = (
+        getattr(research_decision, "conviction", "medium")
+        if research_decision is not None else None
+    )
+    inputs_trace: dict[str, Any] = {
+        "regime_quadrant":   regime_quadrant,
+        "regime_confidence": regime_confidence,
+        "systemic_score":    systemic_score,
+        "systemic_regime":   systemic_regime,
+        "dominant_scenario": scenario_in,
+        "conviction":        conviction_in,
+        "feedback_present":  bool(feedback),
+    }
 
     # 1. 극단 systemic — 무조건 defensive
     if systemic_score >= 8.0:
@@ -72,30 +91,35 @@ def pick_optimization_method(
                 f"systemic_score {systemic_score:.1f} ≥ 8 → "
                 "extreme risk-off, MIN_VARIANCE 강제."
             )[:300],
+            rule_fired="systemic_extreme",
+            rule_index=1,
+            inputs=inputs_trace,
         )
 
     # 2. Stage 2 dominant scenario 우선
-    if research_decision is not None:
-        scenario = getattr(research_decision, "dominant_scenario", None)
-        conviction = getattr(research_decision, "conviction", "medium")
-        if scenario and scenario in _SCENARIO_METHOD:
-            method, reason = _SCENARIO_METHOD[scenario]
-            # conviction=low이고 risk-on 시나리오면 보수형으로 격하
-            if conviction == "low" and method == OptimizationMethod.HRP:
-                method = OptimizationMethod.RISK_PARITY
-                reason = f"{scenario} but low conviction → risk_parity"
-            return MethodChoice(
-                method=method,
-                reasoning=(
-                    f"scenario={scenario}, conviction={conviction}: {reason}"
-                )[:300],
-            )
+    if scenario_in and scenario_in in _SCENARIO_METHOD:
+        method, reason = _SCENARIO_METHOD[scenario_in]
+        if conviction_in == "low" and method == OptimizationMethod.HRP:
+            method = OptimizationMethod.RISK_PARITY
+            reason = f"{scenario_in} but low conviction → risk_parity"
+        return MethodChoice(
+            method=method,
+            reasoning=(
+                f"scenario={scenario_in}, conviction={conviction_in}: {reason}"
+            )[:300],
+            rule_fired="scenario_mapping",
+            rule_index=2,
+            inputs=inputs_trace,
+        )
 
-    # 3. macro regime quadrant
+    # 3. macro regime quadrant (recession)
     if regime_quadrant in ("recession_disinflation", "recession_inflation"):
         return MethodChoice(
             method=OptimizationMethod.MIN_VARIANCE,
             reasoning=f"regime={regime_quadrant} → defensive MV.",
+            rule_fired="regime_recession",
+            rule_index=3,
+            inputs=inputs_trace,
         )
 
     # 4. systemic risk regime
@@ -103,12 +127,18 @@ def pick_optimization_method(
         return MethodChoice(
             method=OptimizationMethod.MIN_VARIANCE,
             reasoning=f"systemic_regime=risk_off (score={systemic_score:.1f}) → MV.",
+            rule_fired="systemic_risk_off",
+            rule_index=4,
+            inputs=inputs_trace,
         )
 
     if regime_quadrant == "growth_inflation":
         return MethodChoice(
             method=OptimizationMethod.RISK_PARITY,
             reasoning="growth_inflation → balanced risk_parity.",
+            rule_fired="regime_growth_inflation",
+            rule_index=5,
+            inputs=inputs_trace,
         )
 
     # 5. Default — 분산 친화
@@ -118,4 +148,7 @@ def pick_optimization_method(
             f"default HRP (regime={regime_quadrant}, "
             f"systemic={systemic_score:.1f}/{systemic_regime})"
         )[:300],
+        rule_fired="default",
+        rule_index=6,
+        inputs=inputs_trace,
     )

@@ -59,6 +59,10 @@ class AgentState(MessagesState):
     candidate_set: Annotated[Optional[CandidateSet], "Filtered ETF candidates"]
     weight_vector: Annotated[Optional[WeightVector], "Allocator output weights"]
     method_choice: Annotated[Optional[dict], "Deterministic MethodChoice (Phase A)"]
+    allocation_attribution: Annotated[
+        Optional[dict],
+        "Per-ticker factor/boost decomposition + method picker trace (debugging)",
+    ]
     correlation_clusters: Annotated[list[Cluster], "From technical analyst, used for validation"]
 
     # === Stage 4: Risk Judge (RiskOverlay + PortfolioNumerics) ===
@@ -119,6 +123,7 @@ def _create_empty_state(
         research_decision=None,
         bucket_target=None,
         candidate_set=None, weight_vector=None, method_choice=None,
+        allocation_attribution=None,
         correlation_clusters=[],
         risk_debate_summary="",
         risk_overlay=None,

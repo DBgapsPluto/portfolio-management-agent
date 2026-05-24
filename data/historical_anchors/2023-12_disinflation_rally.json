@@ -1,0 +1,67 @@
+{
+  "anchor_id": "2023-12_disinflation_rally",
+  "as_of_date": "2023-12-15",
+  "title": "Fed dovish pivot / Santa rally / disinflation 가속",
+  "description": "2023-12 FOMC dot plot이 2024 -75bps 신호 → 'higher-for-longer' 종료 컨센서스. SPY +5% in 2 weeks, 10Y UST yield 5% → 3.9% 급락. KOSPI 200 +5%, KRW 강세. Risk-on 분위기 명백.",
+
+  "consensus_reasoning": "Fed의 dovish 신호 + disinflation 가속으로 'soft landing' 시나리오에 강한 베팅. Howard Marks 'recession은 시장 컨센서스가 부정한 만큼 가능성 낮음'. 자산배분 합의:\n- duration 적극 매수 (rate cut 기대)\n- equity 광범위 overweight (risk-on)\n- gold/commodity 비중 축소 (inflation hedge 불필요)\n- credit spread tighten → HY 매수 가능\n- KR 비중도 정상~약간 늘림 (글로벌 risk-on 동조)",
+
+  "sources": [
+    "Howard Marks Q4 2023 memo 'It's All About Where You Look'",
+    "BoFA FMS Dec 2023: equity overweight 27%, bonds neutral, cash exit",
+    "Goldman 2024 outlook: 'soft landing base case, 1-2 cuts plausible'",
+    "JPM YE 2023: 'duration extension warranted with sticky disinflation'"
+  ],
+
+  "stage1": {
+    "regime": {
+      "quadrant": "growth_disinflation",
+      "confidence": 0.80
+    },
+    "systemic": {
+      "score": 2.5,
+      "regime": "risk_on"
+    }
+  },
+
+  "stage2": {
+    "dominant_cell": "A_N_F",
+    "dominant_scenario_legacy": "goldilocks",
+    "conviction": "high",
+    "bucket_target": {
+      "kr_equity":       0.15,
+      "global_equity":   0.32,
+      "fx_commodity":    0.08,
+      "bond":            0.30,
+      "cash_mmf":        0.15,
+      "bond_tips_share": 0.15
+    }
+  },
+
+  "expected_stage3": {
+    "acceptable_methods": ["hrp", "risk_parity"],
+    "min_sub_category_weights": {},
+    "max_sub_category_weights": {
+      "gold":           0.05,
+      "us_high_yield":  0.10
+    },
+    "required_sub_categories": [],
+    "required_substitute_groups": [
+      {
+        "name": "broad_equity_risk_on",
+        "description": "risk-on 환경 — 광범위 equity (KR/US 모두 가능). us_sector도 인정 (배당주/sector 같은 US 주식 노출).",
+        "any_of": ["us_broad", "us_tech_nasdaq", "index_broad", "us_sector", "ai_theme_global"],
+        "min_total_weight": 0.15
+      },
+      {
+        "name": "duration_extension",
+        "description": "rate cut 기대 — 듀레이션 자산 (treasury OR aggregate OR long bond).",
+        "any_of": ["us_treasury", "kr_treasury", "us_aggregate", "kr_corporate"],
+        "min_total_weight": 0.08
+      }
+    ],
+    "forbidden_sub_categories": [],
+    "min_unique_sub_categories": 7,
+    "risk_asset_max": 0.65
+  }
+}

@@ -83,7 +83,8 @@ class TradingAgentsGraph:
 
         allocator = archive_wrap_node(
             create_portfolio_allocator(quick, deep, cache_path=cache_path),
-            ["candidate_set", "weight_vector", "method_choice"],
+            ["candidate_set", "weight_vector", "method_choice",
+             "allocation_attribution"],
         )
         validator = create_mandate_validator()
         fallback = create_fallback_normalizer(cache_path=cache_path)

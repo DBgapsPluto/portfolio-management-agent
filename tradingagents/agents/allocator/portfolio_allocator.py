@@ -77,6 +77,7 @@ def create_portfolio_allocator(
         # Factor model PR (2026-05-22): dominant_cell 제거. 항상 legacy scenario name string 사용.
         # log_boost 가 cell key 받던 path 도 해당 path 제거됨 (sub_category.py).
         dominant_scenario = None
+        legacy_scenario_label = None
         if research_decision is not None:
             dominant_scenario = getattr(research_decision, "dominant_scenario", None)
         candidates = select_etf_candidates(
@@ -90,6 +91,7 @@ def create_portfolio_allocator(
             regime_confidence=regime.confidence if regime else 0.5,
             correlation_threshold=0.85,
             dominant_scenario=dominant_scenario,
+            attribution=attribution,
         )
 
         all_candidates = [
@@ -130,10 +132,25 @@ def create_portfolio_allocator(
             sub_category_lookup=sub_category_lookup,
         )
 
+        attribution["method_picker"] = {
+            "method":       method_choice.method.value,
+            "rule_fired":   method_choice.rule_fired,
+            "rule_index":   method_choice.rule_index,
+            "reasoning":    method_choice.reasoning,
+            "inputs":       method_choice.inputs,
+        }
+        attribution["weight_vector_summary"] = {
+            "n_positions":       len(wv.weights),
+            "max_single_weight": max(wv.weights.values()) if wv.weights else 0.0,
+            "expected_vol":      wv.expected_volatility,
+            "expected_sharpe":   wv.expected_sharpe,
+        }
+
         return {
             "candidate_set": candidates,
             "weight_vector": wv,
             "method_choice": method_choice,
+            "allocation_attribution": attribution,
             "allocation_attempts": attempts + 1,
         }
 
@@ -219,7 +236,31 @@ def _optimize_with_bucket_constraints(
     )
 
     valid = [t for t in returns.columns if t in sector_mapper]
-    returns = returns[valid].dropna(axis=0, how="any")
+    returns_raw = returns[valid]
+    returns = returns_raw.dropna(axis=0, how="any")
+
+    # 표본 부족 (cov가 비양정부호 → eigenvalue 수렴 실패) 방지.
+    # 늦게 상장된 ETF가 적은 수의 NaN-free row만 남기는 경우 데이터 적은 ticker
+    # 부터 제거해서 표본 회복. _hrp_per_bucket은 sub-pool 단위라 영향 적어 skip.
+    MIN_COV_OBS = 60
+    if method != OptimizationMethod.HRP and len(returns) < MIN_COV_OBS:
+        valid = list(valid)
+        days_per_ticker = {
+            t: int(returns_raw[t].dropna().shape[0]) for t in valid
+        }
+        # 짧은 데이터 ticker부터 제거 (sector_mapper에 남기되 cov 계산에서만 제외)
+        order = sorted(days_per_ticker, key=lambda t: days_per_ticker[t])
+        excluded: list[str] = []
+        while len(returns) < MIN_COV_OBS and len(valid) > 5:
+            drop = order.pop(0)
+            valid.remove(drop)
+            excluded.append(drop)
+            returns = returns_raw[valid].dropna(axis=0, how="any")
+        if excluded:
+            logger.warning(
+                "cov 표본 부족 — %d ETF를 cov 계산에서 제외: %s (남은 표본 %d row)",
+                len(excluded), excluded, len(returns),
+            )
 
     if method == OptimizationMethod.HRP:
         return _hrp_per_bucket(returns, candidates, bucket_target, sub_category_lookup)

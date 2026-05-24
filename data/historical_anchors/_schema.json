@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Historical Anchor",
+  "description": "Stage 3 (allocator) 평가용 사후 합의 기준점",
+  "type": "object",
+  "required": [
+    "anchor_id", "as_of_date", "title", "description",
+    "consensus_reasoning", "stage1", "stage2", "expected_stage3"
+  ],
+  "properties": {
+    "anchor_id":            { "type": "string", "pattern": "^[a-z0-9_-]+$" },
+    "as_of_date":           { "type": "string", "format": "date" },
+    "title":                { "type": "string" },
+    "description":          { "type": "string" },
+    "consensus_reasoning":  { "type": "string" },
+    "sources":              { "type": "array", "items": {"type": "string"} },
+
+    "stage1": {
+      "type": "object",
+      "required": ["regime", "systemic"],
+      "properties": {
+        "regime": {
+          "type": "object",
+          "required": ["quadrant", "confidence"],
+          "properties": {
+            "quadrant":   {
+              "type": "string",
+              "enum": [
+                "growth_disinflation", "growth_inflation",
+                "recession_disinflation", "recession_inflation"
+              ]
+            },
+            "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "systemic": {
+          "type": "object",
+          "required": ["score", "regime"],
+          "properties": {
+            "score":  { "type": "number", "minimum": 0, "maximum": 10 },
+            "regime": { "type": "string", "enum": ["risk_on", "neutral", "risk_off"] }
+          }
+        }
+      }
+    },
+
+    "stage2": {
+      "type": "object",
+      "required": ["dominant_cell", "conviction", "bucket_target"],
+      "properties": {
+        "dominant_cell": {
+          "type": "string",
+          "pattern": "^[ABCD]_[NT]_(F|boom|stress)$"
+        },
+        "dominant_scenario_legacy": {
+          "type": ["string", "null"],
+          "description": "Optional: legacy 7-scenario label for method_picker (uses this if set)"
+        },
+        "conviction": { "type": "string", "enum": ["low", "medium", "high"] },
+        "bucket_target": {
+          "type": "object",
+          "required": ["kr_equity", "global_equity", "fx_commodity", "bond", "cash_mmf"],
+          "properties": {
+            "kr_equity":       { "type": "number", "minimum": 0, "maximum": 1 },
+            "global_equity":   { "type": "number", "minimum": 0, "maximum": 1 },
+            "fx_commodity":    { "type": "number", "minimum": 0, "maximum": 1 },
+            "bond":            { "type": "number", "minimum": 0, "maximum": 1 },
+            "cash_mmf":        { "type": "number", "minimum": 0, "maximum": 1 },
+            "bond_tips_share": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.0 }
+          }
+        }
+      }
+    },
+
+    "expected_stage3": {
+      "type": "object",
+      "properties": {
+        "acceptable_methods": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["hrp", "risk_parity", "min_variance", "black_litterman"] }
+        },
+        "min_sub_category_weights": {
+          "type": "object",
+          "description": "sub_category → 총합 최소 비중 (예: gold ≥ 0.05)",
+          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "max_sub_category_weights": {
+          "type": "object",
+          "description": "sub_category → 총합 최대 비중",
+          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "required_sub_categories": {
+          "type": "array",
+          "description": "이 sub_category에 해당하는 ETF가 1개 이상 비중 > 0이어야. (strict label check — substitute 허용 안 함)",
+          "items": { "type": "string" }
+        },
+        "required_substitute_groups": {
+          "type": "array",
+          "description": "outcome-based 익스포저 검사 — any_of 라벨 중 어떤 것이라도 합산 weight ≥ min이면 OK. KOSPI200(index_broad) 같이 다른 라벨로 같은 theme exposure 잡는 케이스 대응.",
+          "items": {
+            "type": "object",
+            "required": ["name", "any_of", "min_total_weight"],
+            "properties": {
+              "name":              { "type": "string" },
+              "description":       { "type": "string" },
+              "any_of":            {
+                "type": "array",
+                "items": { "type": "string" },
+                "minItems": 1
+              },
+              "min_total_weight":  { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        },
+        "forbidden_sub_categories": {
+          "type": "array",
+          "description": "이 sub_category 총합이 0이어야",
+          "items": { "type": "string" }
+        },
+        "min_unique_sub_categories": {
+          "type": "integer", "minimum": 1,
+          "description": "선정된 ETF의 distinct sub_category 수 최소치 (분산성)"
+        },
+        "risk_asset_max": {
+          "type": "number", "minimum": 0, "maximum": 1,
+          "description": "kr_equity + global_equity + fx_commodity 합 최대치"
+        }
+      }
+    }
+  }
+}
