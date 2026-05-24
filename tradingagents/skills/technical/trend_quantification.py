@@ -7,6 +7,7 @@ import pandas_ta as ta
 
 from tradingagents.schemas.technical import TrendQuantification
 from tradingagents.skills.registry import register_skill
+from tradingagents.skills.technical.extended_indicators import _clamp_bounded
 
 
 BenchmarkLabel = Literal["KOSPI200", "SPY", "none"]
@@ -68,8 +69,10 @@ def quantify_trend(
 
     ma200_series = ta.sma(close, length=200)
     ma50_series = ta.sma(close, length=50)
-    rsi = float(ta.rsi(close, length=14).iloc[-1])
-    adx = float(ta.adx(high, low, close, length=14).iloc[-1, 0])
+    # Apply same IEEE ε clamp as extended_indicators/ta_indicators so the same
+    # ticker yields identical RSI/ADX values across all skill outputs.
+    rsi = _clamp_bounded(float(ta.rsi(close, length=14).iloc[-1]), "rsi_14")
+    adx = _clamp_bounded(float(ta.adx(high, low, close, length=14).iloc[-1, 0]), "adx_14")
 
     last = float(close.iloc[-1])
     ma200 = float(ma200_series.iloc[-1])

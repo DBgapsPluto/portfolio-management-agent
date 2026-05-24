@@ -80,13 +80,13 @@ class TestComputeFactorPanel:
 
     def test_skip_1m_excludes_recent_data(self):
         # Construct a series where the LAST 21 days have a huge spike,
-        # but t-21 back to t-63 is flat zero. skip-1m m3 should be near zero,
-        # confirming the spike is excluded.
-        flat = [0.0] * 250
+        # but the prior 63 days (= 3m window) are flat zero. skip-1m m3 should
+        # be near zero, confirming the spike is excluded.
+        flat = [0.0] * 273  # 3m skip-1m needs window+21 = 63+21 = 84 returns
         spike = [0.10] * 21
         r = self._series(flat + spike)
         p = compute_factor_panel(r, aum_krw=1e12)
-        # skip-1m 3m: cumulative return from t-63 to t-21, all zeros
+        # skip-1m 3m: cumulative return over 63 days ending at t-21, all zeros
         assert p.skip1m_mom_3m is not None
         assert abs(p.skip1m_mom_3m) < 1e-9
 

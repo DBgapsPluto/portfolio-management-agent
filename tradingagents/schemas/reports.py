@@ -111,6 +111,11 @@ class TechnicalReport(_AnalystReport):
         description="Category name → top-N ETFs"
     )
     individual_etf_states: dict[str, TrendState]
+    # SCOPE: top-tier ETF subset only (analyst filters before calling
+    # find_correlation_clusters), 252d window, threshold ≥ 0.7. Used by
+    # mandate_validator + risk_judge for concentration checks.
+    # Distinct from `sector_rotation.correlation_*` which spans the full
+    # universe (188 ETF, 60d/252d median) — different scope, different question.
     correlation_clusters: list[Cluster]
     factor_panel: dict[str, FactorPanel] = Field(
         default_factory=dict,

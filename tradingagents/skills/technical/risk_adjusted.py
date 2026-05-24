@@ -8,6 +8,7 @@ from tradingagents.schemas.technical import (
     ExtendedIndicatorPanel, RiskAdjustedMetrics,
 )
 from tradingagents.skills.registry import register_skill
+from tradingagents.skills.technical.extended_indicators import _clamp_bounded
 
 
 @register_skill(name="compute_risk_adjusted", category="technical")
@@ -70,7 +71,7 @@ def compute_risk_adjusted(
         bb = ta.bbands(close, length=20, std=2.0)
         bb_pb = float(bb.iloc[-1, 4])
 
-    rsi = float(ta.rsi(close, length=14).iloc[-1])
+    rsi = _clamp_bounded(float(ta.rsi(close, length=14).iloc[-1]), "rsi_14")
     is_rev = bool((bb_pb < 0.0) and (rsi < 35.0) and (z_30 < -1.5))
 
     last_date = sub["date"].iloc[-1]
