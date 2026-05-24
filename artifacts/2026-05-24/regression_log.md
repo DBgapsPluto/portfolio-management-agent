@@ -302,3 +302,24 @@ $ uv run pytest tests/integration/ -q
 0 new failure (baseline 2 unit + 18 integ 유지).
 
 Status: PASS. **PR2a 완료** — INITIAL_BETA = data-driven (+34% Sharpe gain).
+
+## Post-C10 (docs final — PR2a sign-off)
+
+```
+$ uv run pytest tests/unit/ -q
+2 failed, 786 passed, 7 warnings in 83.99s
+
+$ uv run pytest tests/integration/ -q
+18 failed, 28 passed, 1 warning in 46.08s
+```
+
+Δ from C9: 변동 없음.
+Total new unit pass since baseline: +45 (786 - 741).
+Total new integ pass since baseline: +2 (28 - 26).
+**0 new failure** through PR2a entire C0-C10.
+
+PR2a status: **PASS**. INITIAL_BETA: data-driven. Improvement: +0.342 OOS
+Sharpe (+41%) over hand-coded prior.
+
+Spec sign-off (docs/superpowers/specs/2026-05-23-stage2a-calibration-
+design.md section 11): 모든 condition checked. Issue #18: RESOLVED.
