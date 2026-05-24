@@ -1,12 +1,12 @@
 """Unit tests for fetcher_alfred — vintage-aware FRED fetch (Critical 1)."""
 from datetime import date
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
 from tradingagents.backtest.historical.fetcher_alfred import (
-    fetch_alfred_vintage_quarterly, ALFRED_SERIES,
+    _call_alfred, fetch_alfred_vintage_quarterly, ALFRED_SERIES,
 )
 
 
@@ -55,3 +55,18 @@ def test_fetch_alfred_vintage_fetches_per_quarter(tmp_path: Path) -> None:
         assert m.call_count == 3  # 3 quarters: 1991-Q1, Q2, Q3
     assert (tmp_path / "raw" / "fred_alfred" / "CFNAI.parquet").exists()
     assert list(result["vintage_value"]) == [-0.5, -0.5, -0.3]
+
+
+def test_call_alfred_400_returns_none() -> None:
+    """ALFRED API 의 HTTP 400 (series not published at realtime_start) → None.
+
+    CFNAI/NFCI/ANFCI/GDPNOW/PCEPILFE 같은 series 는 1991-Q1 시점에는 아직
+    발행되지 않아 ALFRED 가 400 을 리턴. 이를 raise 가 아닌 graceful None
+    으로 처리.
+    """
+    mock_resp = MagicMock()
+    mock_resp.status_code = 400
+    with patch("requests.get", return_value=mock_resp), \
+         patch.dict("os.environ", {"FRED_API_KEY": "fake"}):
+        result = _call_alfred("CFNAI", date(1991, 3, 31))
+    assert result is None

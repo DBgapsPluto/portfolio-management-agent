@@ -58,13 +58,16 @@ def _quarter_ends(start: date, end: date) -> list[date]:
 def _call_alfred(series_id: str, realtime_date: date) -> float | None:
     """ALFRED API: 특정 realtime_date 시점의 series 의 최신 vintage value.
 
-    Returns None if no observation available at realtime_date (pre-publish).
+    Returns None if:
+    - no observation available at realtime_date (pre-publish), OR
+    - HTTP 400 ("Bad Request — series not yet published at realtime_start").
+      이는 CFNAI/NFCI/ANFCI/GDPNOW/PCEPILFE 같은 series 가 일찍 발행되지
+      않아서 1991-Q1 같은 옛 quarter end 에 vintage 가 부재한 경우 발생.
     """
     import requests
     api_key = os.environ.get("FRED_API_KEY")
     if not api_key:
         raise RuntimeError("FRED_API_KEY not set")
-    # ALFRED API: get all observations as of realtime_date, take latest
     url = "https://api.stlouisfed.org/fred/series/observations"
     params = {
         "series_id": series_id,
@@ -76,6 +79,9 @@ def _call_alfred(series_id: str, realtime_date: date) -> float | None:
         "limit": 1,
     }
     resp = requests.get(url, params=params, timeout=15)
+    # 400 = series not yet published at this realtime_start → graceful None.
+    if resp.status_code == 400:
+        return None
     resp.raise_for_status()
     obs = resp.json().get("observations", [])
     if not obs:

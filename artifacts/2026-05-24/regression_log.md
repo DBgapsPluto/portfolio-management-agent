@@ -132,3 +132,39 @@ Integration: unchanged.
   default_matches_explicit).
 
 Status: PASS. C5 (135Q sample 생성) 진행 가능.
+
+## Post-C5 (data: historical factor z + bucket returns 1991-2024)
+
+```
+$ uv run pytest tests/unit/ -q
+2 failed, 774 passed, 6 warnings in 77.69s
+
+$ uv run pytest tests/integration/ -q
+18 failed, 26 passed, 2 warnings in 17.54s
+```
+
+Δ from C4: Unit +1 new pass (test_call_alfred_400_returns_none).
+Integration: unchanged.
+
+**Generation run (2026-05-24, 2 attempts)**:
+- 1차 시도: 5/7 ALFRED series 가 첫 quarter (1991-03-31) 의 400 에러로
+  전체 시리즈 fetch 중단. 해당 series 는 1991 년에 아직 발행 안 됨
+  (CFNAI, NFCI, ANFCI, GDPNOW, PCEPILFE).
+- Fix: `_call_alfred` 가 HTTP 400 을 None 으로 graceful 처리.
+- 2차 시도: 7 ALFRED series 모두 성공 fetch. 각 시리즈 의 vintage 시작점
+  자동 detect (CFNAI: 2011-06-30+, GDPNow: 2016-06-30+, UNRATE: 1991+).
+
+**산출물**:
+- backtest/historical/quarterly_indicators.parquet: 135Q × 37 col (49KB)
+- backtest/historical/factor_z.parquet: 135Q × 18 col (23KB)
+- backtest/historical/bucket_returns.parquet: 134Q × 5 col (11KB)
+- backtest/historical/samples.parquet: 133 row × 23 col (31KB)
+- raw cache: 3.9MB (gitignored)
+
+**Sanity (2008-Q4 GFC)**: factor z 가 합리적인 stress signature:
+- inflation_surprise = -2.21 (deflationary shock)
+- real_rate = +1.31 (real rate spike during deflation)
+- credit_cycle = +0.34 (credit stress)
+- equity_vol_regime = +1.83 (high vol)
+
+Status: PASS. **grill-me #2 marker (Task 5.4)** 도달.

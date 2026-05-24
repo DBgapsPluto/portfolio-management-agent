@@ -2,8 +2,20 @@
   "pr": "PR2a — Stage 2a β calibration",
   "branch": "feat/stage2a-beta-calibration",
   "started_at": "2026-05-24T07:26:27Z",
-  "current_commit": "C0",
-  "status": "scaffolding",
-  "long_running_jobs": {},
-  "notes": "PR1 후 / PR2b 전 — Issue #18 resolution. macOS arm64 환경 (Linux-first 가정 macOS 에서도 호환 확인됨)."
+  "current_commit": "C5 complete",
+  "status": "grill-me #2 marker reached (Task 5.4)",
+  "long_running_jobs": {
+    "c5_fetch_and_compute": {
+      "started_at": "2026-05-24T08:25:00Z",
+      "expected_duration_min": 15,
+      "phases": [
+        "FRED latest (20 series, ~30s)",
+        "ALFRED vintage (7 series × 135Q × 0.6s, ~9.5min)",
+        "yfinance (18 tickers, ~3min)",
+        "pykrx KOSPI200 valuation + foreign flow (~2min)",
+        "aggregate + bucket_returns + factor_z reconstruction (~1min)"
+      ]
+    }
+  },
+  "notes": "C0-C4 완료. C5 진행 중. macOS arm64."
 }
