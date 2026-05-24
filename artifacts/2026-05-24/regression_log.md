@@ -87,3 +87,27 @@ graceful skip 으로 C2 commit 영향 없음. C5 (135Q sample 생성) 전 까지
 보강 필요.
 
 Status: PASS. C3 진행 가능.
+
+## Post-C3 (feat: historical Stage 1 builder + KRW-basis bucket returns)
+
+```
+$ uv run pytest tests/unit/ -q
+2 failed, 769 passed, 6 warnings in 78.55s
+
+$ uv run pytest tests/integration/ -q
+18 failed, 26 passed, 2 warnings in 17.45s
+```
+
+Δ from C2: Unit +8 new pass (5 builder + 3 bucket_returns). 0 new fail.
+Integration: unchanged.
+
+**Plan template substantial divergence (production schema 기준 재작성)**:
+Plan 의 stage1_builder template 은 production PR1 schema 와 광범위하게 불일치
+(MoveSnapshot/BreadthKRSnapshot/FundingSnapshot 부재 + EmploymentSnapshot/
+KRExportSnapshot/RegimeClassification field 오류 + MacroReport 의 9+ required
+field 누락). 실제 production schema 와 tests/integration/
+test_factor_estimators_real_schema.py 의 `_build_baseline_*_report()` 패턴을
+참조하여 self-contained baseline builder 구성. quarterly panel 의 column
+값으로 일부 field overlay (model_copy with update).
+
+Status: PASS. **grill-me #1 marker (Task 3.4)** 도달.
