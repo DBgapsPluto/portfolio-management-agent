@@ -59,7 +59,7 @@ You are summarizing a macro snapshot for an asset-allocation team.
 Data:
 - Regime: {regime_quadrant} (confidence {confidence:.2f})
 - 10y-2y spread: {spread_2y_bps:.1f} bps (inverted {inverted_days} days)
-- CPI YoY: {cpi:.1f}% (accelerating: {accelerating}); Core PCE YoY: {core_pce:.1f}% (3m ann: {pce_m3:.1f}%) — Fed 타겟
+- CPI YoY: {cpi:.1f}% (accelerating: {accelerating}); Core PCE YoY: {core_pce}% (3m ann: {pce_m3}%) — Fed 타겟 ("n/a" = fetch 결측)
 - Unemployment: {ur:.1f}% (Sahm: {sahm}); JOLTS Openings 3m avg {jolts_open:.0f}k, Quits rate {jolts_quits:.1f}% (6m chg {jolts_quits_chg:+.2f})
 - KR export YoY: {kr_export_yoy:.1f}% (accelerating: {kr_export_acc})
 - KR leading index: {kr_cli:.1f} ({kr_phase})
@@ -146,7 +146,7 @@ def _sentinel_fx(as_of: date) -> FXSnapshot:
 def _sentinel_risk_appetite(as_of: date) -> RiskAppetiteSnapshot:
     return RiskAppetiteSnapshot(
         copper_price=0.0, gold_price=0.0, ratio=0.0,
-        ratio_percentile_1y=0.5, signal="neutral",
+        ratio_percentile_5y=0.5, signal="neutral",
         source_date=as_of, staleness_days=99,
     )
 
@@ -443,8 +443,9 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             cpi_yoy=infl.cpi_yoy,
             momentum_3mo=infl.momentum_3mo,
             accelerating=infl.accelerating,
-            core_pce_yoy=infl.core_pce_yoy,
-            core_pce_3mo_ann=infl.pce_momentum_3mo,
+            # PCE 는 결측 시 None — LLM 에 "n/a" 로 전달해 0.0 (디플레) 와 구분.
+            core_pce_yoy=infl.core_pce_yoy if infl.core_pce_yoy is not None else "n/a",
+            core_pce_3mo_ann=infl.pce_momentum_3mo if infl.pce_momentum_3mo is not None else "n/a",
             unemployment_rate=emp.unemployment_rate,
             sahm_rule_triggered=emp.sahm_rule_triggered,
             jolts_openings_3mo=emp.job_openings_3mo_avg,
@@ -474,7 +475,7 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             krw_change_1m=fx.krw_change_1m_pct,
             fx_regime=fx.regime,
             copper_gold_signal=risk_appetite.signal,
-            copper_gold_percentile=risk_appetite.ratio_percentile_1y,
+            copper_gold_percentile=risk_appetite.ratio_percentile_5y,
             china_cli_value=china_leading.cli_value,
             china_cli_phase=china_leading.phase,
             china_usdcnh=china_leading.usdcnh,
@@ -493,7 +494,8 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             regime_quadrant=regime.quadrant, confidence=regime.confidence,
             spread_2y_bps=yc.spread_10y_2y_bps, inverted_days=yc.inverted_days_count,
             cpi=infl.cpi_yoy, accelerating=infl.accelerating,
-            core_pce=infl.core_pce_yoy, pce_m3=infl.pce_momentum_3mo,
+            core_pce=f"{infl.core_pce_yoy:.1f}" if infl.core_pce_yoy is not None else "n/a",
+            pce_m3=f"{infl.pce_momentum_3mo:.1f}" if infl.pce_momentum_3mo is not None else "n/a",
             ur=emp.unemployment_rate, sahm=emp.sahm_rule_triggered,
             jolts_open=emp.job_openings_3mo_avg, jolts_quits=emp.quits_rate,
             jolts_quits_chg=emp.quits_rate_change_6mo,
@@ -507,7 +509,7 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             anchored=inflation_exp.anchored,
             fed_bps=fed_path.path_bps, fed_view=fed_path.market_view,
             usd_krw=fx.usd_krw, krw_chg=fx.krw_change_1m_pct, fx_regime=fx.regime,
-            cu_signal=risk_appetite.signal, cu_pct=risk_appetite.ratio_percentile_1y,
+            cu_signal=risk_appetite.signal, cu_pct=risk_appetite.ratio_percentile_5y,
             china_cli=china_leading.cli_value, china_phase=china_leading.phase,
             usdcnh=china_leading.usdcnh, usdcnh_chg=china_leading.usdcnh_change_1m_pct,
             iron=china_leading.iron_ore, iron_chg=china_leading.iron_ore_change_3m_pct,
@@ -524,7 +526,8 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             f"Regime: **{regime.quadrant}** ({regime.confidence:.2f})\n"
             f"YC 10y-2y: {yc.spread_10y_2y_bps:.0f}bps, inverted {yc.inverted_days_count}d\n"
             f"CPI: {infl.cpi_yoy:.1f}% YoY ({'↑' if infl.accelerating else '↓'})\n"
-            f"Core PCE: {infl.core_pce_yoy:.1f}% YoY (3m ann {infl.pce_momentum_3mo:.1f}%) — Fed 타겟\n"
+            f"Core PCE: {f'{infl.core_pce_yoy:.1f}%' if infl.core_pce_yoy is not None else 'n/a'} YoY "
+            f"(3m ann {f'{infl.pce_momentum_3mo:.1f}%' if infl.pce_momentum_3mo is not None else 'n/a'}) — Fed 타겟\n"
             f"UR: {emp.unemployment_rate:.1f}% (Sahm: {emp.sahm_rule_triggered}) "
             f"JOLTS: openings {emp.job_openings_3mo_avg/1000:.1f}M, quits {emp.quits_rate:.1f}% "
             f"({emp.quits_rate_change_6mo:+.2f}/6m)\n"
@@ -537,7 +540,7 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             f"Mich1y={inflation_exp.michigan_1y:.2f}% ({'anchored' if inflation_exp.anchored else inflation_exp.unanchored_direction})\n"
             f"Fed path: {fed_path.path_bps:+.0f}bps → {fed_path.market_view}\n"
             f"FX: USD/KRW {fx.usd_krw:.0f} ({fx.krw_change_1m_pct:+.1f}%/1m, {fx.regime})\n"
-            f"Cu/Au: {risk_appetite.signal} (pct {risk_appetite.ratio_percentile_1y:.0%})\n"
+            f"Cu/Au: {risk_appetite.signal} (5y pct {risk_appetite.ratio_percentile_5y:.0%})\n"
             f"China CLI: {china_leading.cli_value:.1f} ({china_leading.phase}) "
             f"| USDCNH {china_leading.usdcnh:.3f} ({china_leading.usdcnh_change_1m_pct:+.1f}%/1m), "
             f"iron {china_leading.iron_ore:.0f} ({china_leading.iron_ore_change_3m_pct:+.1f}%/3m) "

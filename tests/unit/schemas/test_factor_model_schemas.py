@@ -154,7 +154,7 @@ def _build_minimal_macro_report(**override) -> MacroReport:
         ),
         risk_appetite=RiskAppetiteSnapshot(
             copper_price=4.0, gold_price=2000.0, ratio=0.2,
-            ratio_percentile_1y=0.5, signal="neutral", source_date=today,
+            ratio_percentile_5y=0.5, signal="neutral", source_date=today,
         ),
         china_leading=ChinaLeadingSnapshot(
             cli_value=100.0, change_3mo=0.0, phase="expansion",
@@ -360,7 +360,7 @@ def _build_minimal_risk_report(**override) -> RiskReport:
             relative_perf_pct=0.0, signal="neutral", source_date=today,
         ),
         equity_bond_corr=EquityBondCorrelationSnapshot(
-            correlation_60d=-0.2, change_3m=0.0, regime="normal_hedge",
+            correlation_120d=-0.2, change_3m=0.0, regime="normal_hedge",
             source_date=today,
         ),
     )

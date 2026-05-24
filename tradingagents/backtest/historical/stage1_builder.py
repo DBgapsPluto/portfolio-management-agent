@@ -124,7 +124,7 @@ def _build_baseline_macro_report() -> MacroReport:
         ),
         risk_appetite=RiskAppetiteSnapshot(
             copper_price=4.0, gold_price=2000.0, ratio=0.2,
-            ratio_percentile_1y=0.5, signal="neutral",
+            ratio_percentile_5y=0.5, signal="neutral",
         ),
         china_leading=ChinaLeadingSnapshot(
             cli_value=100.0, change_3mo=0.0, phase="expansion",
@@ -225,7 +225,7 @@ def _build_baseline_risk_report() -> RiskReport:
             relative_perf_pct=0.0, signal="neutral",
         ),
         equity_bond_corr=EquityBondCorrelationSnapshot(
-            correlation_60d=-0.2, change_3m=0.0, regime="normal_hedge",
+            correlation_120d=-0.2, change_3m=0.0, regime="normal_hedge",
         ),
         real_vol=RealVolSnapshot(
             realized_vol_60d=0.15, realized_vol_20d=0.13, vrp_60d=0.0,

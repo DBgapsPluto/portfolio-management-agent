@@ -31,10 +31,11 @@ def compute_inflation_trend(
     m6 = _annualized(cpi, 6)
     accelerating = m3 > m6 > yoy
 
-    # PCE는 optional input (caller가 미제공 시 0)
-    pce_yoy = _annualized(pce, 12) if pce is not None and len(pce) > 0 else 0.0
-    core_pce_yoy = _annualized(core_pce, 12) if core_pce is not None and len(core_pce) > 0 else 0.0
-    pce_m3 = _annualized(core_pce, 3) if core_pce is not None and len(core_pce) > 0 else 0.0
+    # PCE는 optional input. 2026-05 fix: 결측 시 None (이전 0.0 → "PCE=0%" 와
+    # 데이터 부재 가 동일하게 LLM 에 들어가 디플레/결측 구분 불가능했음).
+    pce_yoy = _annualized(pce, 12) if pce is not None and len(pce) > 0 else None
+    core_pce_yoy = _annualized(core_pce, 12) if core_pce is not None and len(core_pce) > 0 else None
+    pce_m3 = _annualized(core_pce, 3) if core_pce is not None and len(core_pce) > 0 else None
 
     return InflationSnapshot(
         cpi_yoy=yoy,

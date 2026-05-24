@@ -23,6 +23,7 @@ def test_classifier_invokes_llm():
         fg_label="fear", fg_value=30,
         breadth_kr_adv=0.30, breadth_us_adv=0.35,
         pca_first_share=0.65, pca_concentrated=True,
+        mega_cap_concentration_pct=0.10,
         # Tier-1 신규 inputs
         vix_term_ratio=0.92, vix_term_regime="backwardation",
         skew_value=142.0, skew_signal="elevated",
@@ -32,11 +33,11 @@ def test_classifier_invokes_llm():
         funding_spread_bps=25.0, funding_regime="stress",
         credit_quality_spread_bps=130.0, credit_quality_regime="elevated",
         # Tier-3 신규 inputs (KR-specific)
-        kr_yc_spread_bps=-15.0, kr_yc_inverted=True, kr_yc_regime="inverted",
+        kr_yc_spread_bps=-15.0, kr_yc_pct=0.05, kr_yc_inverted=True, kr_yc_regime="inverted",
         kr_corp_spread_bps=120.0, kr_corp_regime="stress",
         kr_margin_change_20d=-20.0, kr_margin_signal="deleveraging",
         kr_tier_relative_perf=-4.5, kr_tier_signal="large_cap_risk_off",
         # Tier-4 신규 inputs
-        equity_bond_corr_60d=0.4, equity_bond_corr_regime="extreme_positive",
+        equity_bond_corr_120d=0.4, equity_bond_corr_regime="extreme_positive",
     )
     assert result.regime == "risk_off"

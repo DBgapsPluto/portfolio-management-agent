@@ -38,21 +38,21 @@ def compute_equity_bond_corr(
     """
     if equity_returns is None or equity_returns.empty or bond_returns.empty:
         return EquityBondCorrelationSnapshot(
-            correlation_60d=-0.3, change_3m=0.0, regime="normal_hedge",
+            correlation_120d=-0.3, change_3m=0.0, regime="normal_hedge",
             source_date=as_of, staleness_days=99,
         )
 
     aligned = pd.concat([equity_returns, bond_returns], axis=1, join="inner").dropna()
     if len(aligned) < 60:
         return EquityBondCorrelationSnapshot(
-            correlation_60d=-0.3, change_3m=0.0, regime="normal_hedge",
+            correlation_120d=-0.3, change_3m=0.0, regime="normal_hedge",
             source_date=as_of, staleness_days=99,
         )
 
     aligned.columns = ["eq", "bd"]
 
     # 120일 corr window (2026-05 fix from 60d — 60일은 단일 이벤트로 corr 흔들림,
-    # 학계 표준 90-120d). field name correlation_60d는 backward compat 위해 유지.
+    # 학계 표준 90-120d).
     WINDOW = 120
     if len(aligned) < WINDOW:
         # 120일 부족 시 60일로 graceful degrade
@@ -69,7 +69,7 @@ def compute_equity_bond_corr(
         change_3m = 0.0
 
     return EquityBondCorrelationSnapshot(
-        correlation_60d=current_corr,  # 필드명 유지, 실제는 120d
+        correlation_120d=current_corr,
         change_3m=change_3m,
         regime=_classify_regime(current_corr),
         source_date=as_of,

@@ -706,7 +706,7 @@ def compute_liquidity_regime(stage1: Any, mode: FactorMode = "production") -> Fa
     components_raw: dict[str, float | None] = {
         "vrp": vrp,  # C8 activated
         "eq_bond_corr": _safe_get(
-            stage1, "risk_report", "equity_bond_corr", "correlation_60d"
+            stage1, "risk_report", "equity_bond_corr", "correlation_120d"
         ),
         "sector_dispersion": sector_dispersion,  # C8 activated
         # breadth 는 risk_report.breadth_kr (BreadthSnapshot.advancing_pct 사용)

@@ -28,7 +28,7 @@ def compute_risk_appetite(
         # 데이터 없으면 sentinel
         return RiskAppetiteSnapshot(
             copper_price=0.0, gold_price=0.0, ratio=0.0,
-            ratio_percentile_1y=0.5, signal="neutral",
+            ratio_percentile_5y=0.5, signal="neutral",
             source_date=as_of, staleness_days=99,
         )
 
@@ -46,7 +46,7 @@ def compute_risk_appetite(
         copper_price=float(aligned["cu"].iloc[-1]),
         gold_price=float(aligned["au"].iloc[-1]),
         ratio=current_ratio,
-        ratio_percentile_1y=percentile,  # 필드명은 backward compat 위해 유지, 의미는 5y
+        ratio_percentile_5y=percentile,
         signal=_classify_signal(percentile),
         source_date=as_of,
     )

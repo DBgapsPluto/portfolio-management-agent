@@ -176,7 +176,7 @@ def _build_baseline_macro_report() -> MacroReport:
             copper_price=4.0,
             gold_price=2000.0,
             ratio=0.2,
-            ratio_percentile_1y=0.5,
+            ratio_percentile_5y=0.5,
             signal="neutral",
         ),
         china_leading=ChinaLeadingSnapshot(
@@ -340,7 +340,7 @@ def _build_baseline_risk_report() -> RiskReport:
             signal="neutral",
         ),
         equity_bond_corr=EquityBondCorrelationSnapshot(
-            correlation_60d=-0.2,       # F9.eq_bond_corr mean = -0.2
+            correlation_120d=-0.2,       # F9.eq_bond_corr mean = -0.2
             change_3m=0.0,
             regime="normal_hedge",
         ),

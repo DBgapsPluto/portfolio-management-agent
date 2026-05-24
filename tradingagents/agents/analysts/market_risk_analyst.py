@@ -122,7 +122,7 @@ def _sentinel_kr_tier(as_of: date) -> KRMarketTierSnapshot:
 
 def _sentinel_equity_bond_corr(as_of: date) -> EquityBondCorrelationSnapshot:
     return EquityBondCorrelationSnapshot(
-        correlation_60d=-0.3, change_3m=0.0, regime="normal_hedge",
+        correlation_120d=-0.3, change_3m=0.0, regime="normal_hedge",
         source_date=as_of, staleness_days=99,
     )
 
@@ -174,6 +174,31 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 })
         except Exception as e:
             logger.warning("Sector dispersion fetch failed (F9 affected): %s", e)
+
+        # ★ NEW (2026-05 mega-cap blindspot fix) — RSP/SPY ratio 1y percentile.
+        # SP500 sector breadth 가 mega-cap 분산 매수로 narrow rally invisible —
+        # equal-weight vs cap-weight 직접 비교로 보완.
+        # D7 fold-in + D8 (fetch 실패 → None) + D9 (no cache).
+        try:
+            import yfinance as yf
+
+            from tradingagents.skills.risk.mega_cap_concentration import (
+                compute_mega_cap_concentration,
+            )
+
+            rsp_hist = yf.Ticker("RSP").history(period="400d", interval="1d")
+            spy_hist = yf.Ticker("SPY").history(period="400d", interval="1d")
+            mega_cap_pct = compute_mega_cap_concentration(
+                rsp_hist["Close"] if not rsp_hist.empty else None,
+                spy_hist["Close"] if not spy_hist.empty else None,
+                as_of=as_of,
+            )
+            if mega_cap_pct is not None and breadth_us is not None:
+                breadth_us = breadth_us.model_copy(update={
+                    "mega_cap_concentration_pct": mega_cap_pct,
+                })
+        except Exception as e:
+            logger.warning("Mega-cap concentration fetch failed: %s", e)
 
         # Tier-4: Real cross-asset PCA (SPY/QQQ/TLT/GLD/EWY via yfinance)
         try:
@@ -374,6 +399,11 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             fg_label=fg.label, fg_value=fg.current_value,
             breadth_kr_adv=breadth_kr.advancing_pct,
             breadth_us_adv=breadth_us.advancing_pct,
+            mega_cap_concentration_pct=(
+                breadth_us.mega_cap_concentration_pct
+                if breadth_us.mega_cap_concentration_pct is not None
+                else "n/a"
+            ),
             pca_first_share=pca.first_eigenvalue_share,
             pca_concentrated=pca.is_concentrated,
             # Tier-1 신규 inputs
@@ -388,6 +418,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             credit_quality_regime=credit_quality.regime,
             # Tier-3 신규 inputs (KR-specific)
             kr_yc_spread_bps=kr_yield_curve.spread_10y_3y_bps,
+            kr_yc_pct=kr_yield_curve.percentile_5y,
             kr_yc_inverted=kr_yield_curve.inverted,
             kr_yc_regime=kr_yield_curve.regime,
             kr_corp_spread_bps=kr_corp_spread.spread_bps,
@@ -397,7 +428,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             kr_tier_relative_perf=kr_market_tier.relative_perf_pct,
             kr_tier_signal=kr_market_tier.signal,
             # Tier-4 신규 inputs (cross-asset positioning)
-            equity_bond_corr_60d=eq_bd_corr.correlation_60d,
+            equity_bond_corr_120d=eq_bd_corr.correlation_120d,
             equity_bond_corr_regime=eq_bd_corr.regime,
         )
 
@@ -416,16 +447,18 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             f"SKEW: {skew.skew_value:.0f} ({skew.tail_hedge_signal})\n"
             f"VXN: {vxn.current_value:.1f} (spread vs VIX {vxn.spread_vs_vix:+.1f})\n"
             f"HY OAS: {hy.current_bps:.0f}bps {'(widening)' if hy.widening else ''} (mom z {hy.momentum_zscore:+.2f})\n"
-            f"Breadth KR: {breadth_kr.advancing_pct:.0%}, US: {breadth_us.advancing_pct:.0%}\n"
+            f"Breadth KR: {breadth_kr.advancing_pct:.0%}, US: {breadth_us.advancing_pct:.0%}"
+            f"{f' (mega-cap pct {breadth_us.mega_cap_concentration_pct:.0%})' if breadth_us.mega_cap_concentration_pct is not None else ''}\n"
             f"PCA 1st: {pca.first_eigenvalue_share:.2f} {'(concentrated)' if pca.is_concentrated else ''}\n"
             f"TIPS 10y: {real_yields.tips_10y:.2f}% ({real_yields.regime})\n"
             f"Funding: SOFR-Tbill {funding_stress.spread_bps:+.0f}bps ({funding_stress.regime})\n"
             f"Credit quality: BBB-AAA {credit_quality.quality_spread_bps:.0f}bps ({credit_quality.regime})\n"
-            f"KR yield curve: 10y-3y {kr_yield_curve.spread_10y_3y_bps:+.0f}bps ({kr_yield_curve.regime})\n"
+            f"KR yield curve: 10y-3y {kr_yield_curve.spread_10y_3y_bps:+.0f}bps "
+            f"(5y pct {kr_yield_curve.percentile_5y:.0%}, {kr_yield_curve.regime})\n"
             f"KR corp spread: {kr_corp_spread.spread_bps:+.0f}bps ({kr_corp_spread.regime})\n"
             f"KR margin: 20d {kr_margin.change_20d_pct:+.1f}% ({kr_margin.signal})\n"
             f"KR tier: KOSDAQ-KOSPI {kr_market_tier.relative_perf_pct:+.1f}% ({kr_market_tier.signal})\n"
-            f"Equity-bond corr 60d: {eq_bd_corr.correlation_60d:+.2f} ({eq_bd_corr.regime})\n"
+            f"Equity-bond corr 120d: {eq_bd_corr.correlation_120d:+.2f} ({eq_bd_corr.regime})\n"
         )[:2000]
 
         report = RiskReport(
