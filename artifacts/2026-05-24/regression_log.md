@@ -203,3 +203,58 @@ Integration: +2 new pass (synthetic calibration). 0 new fail.
 - Diagnostic: vintage_sanity, learning_sensitivity, prior_stuck, saturated.
 
 Status: PASS. C8 (실제 samples.parquet 에 calibration 실행) 진행 가능.
+
+## Post-C8 (data: real calibration on 133 samples × 35 runs)
+
+```
+$ uv run python scripts/calibrate_factor_model.py \
+    --samples backtest/historical/samples.parquet \
+    --output-dir artifacts/2026-05-24/calibration_runs
+```
+
+**최초 1차 실행 (factor key bug)**: optimizer 가 전혀 안 움직임.
+- prior_stuck_fraction = 1.0 (45/45 β 가 prior 그대로)
+- mean_is_sharpe = NaN, paired_t_p = NaN
+- Root cause: samples.parquet 의 factor column 명 (`growth_surprise`) ≠
+  factor_to_bucket.FACTORS 의 key (`F1_growth`). load_samples 에서 factor_z
+  = {} 빈 dict 가 됨 + NaN bucket (pre-1996 kr_equity 등) 전파로 NaN Sharpe.
+- Fix: `_PARQUET_TO_FACTOR_KEY` mapping + NaN bucket → 0.0 변환.
+
+**2차 실행 (fix 후)**:
+```json
+{
+  "pass": false,
+  "conditions": {
+    "improvement": true,    // delta +0.34, paired-t p=0.08
+    "overfit_guard": true,  // |IS-OOS|=0.15 < 0.30
+    "sign_respect": false,  // 1 violation (marginal — see below)
+    "saturation": true,     // 1/45 |β|>0.195
+    "fold_positive": true   // 6/7 positive OOS
+  },
+  "best_shrinkage": 2.0,
+  "mean_is_sharpe": 1.017,
+  "mean_oos_sharpe": 1.171,
+  "prior_oos_sharpe": 0.829,
+  "equi_weight_oos_sharpe": 0.820,
+  "improvement_delta": +0.342,
+  "paired_t_p": 0.080,
+  "diagnostic": {
+    "learning_sensitivity": 0.063,
+    "prior_stuck_fraction": 0.044
+  }
+}
+```
+
+**Sign violation 분석**:
+- 단 1개 — F7_equity_vol_regime × kr_equity: β=**+0.0009** (expected negative).
+- 위반 magnitude 가 effectively zero (≈1/1000 scale of bound 0.20).
+- Strict default `value <= 1e-9` check 에 의해 numerical noise 가 violation 으로 분류됨.
+
+산출물 (artifacts/2026-05-24/calibration_runs/):
+- per_fold/shrinkage_{s}_fold_{i}.json: 35 files (5 shrinkage × 7 fold)
+- per_shrinkage_summary.json, best_shrinkage.json,
+  equi_weight_baseline.json, vintage_sanity.json, learning_sensitivity.json,
+  validation_report.json.
+
+Status: **FAIL (1/5 condition)**. grill-me #3 marker (Task 8.3) 도달 —
+sign violation 처리 (strict reject vs marginal accept) 결정 필요.

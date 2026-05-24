@@ -23,20 +23,32 @@ from tradingagents.skills.research.factor_to_bucket import (
 )
 
 
+_DATACLASS_FACTOR_NAMES = (
+    "growth_surprise", "inflation_surprise", "real_rate",
+    "term_premium", "credit_cycle", "krw_regime",
+    "equity_vol_regime", "valuation", "liquidity_regime",
+)
+
+
 def _build_synthetic_samples(n: int = 135, seed: int = 42) -> pd.DataFrame:
-    """Synthetic factor z + bucket returns with known underlying β."""
+    """Synthetic factor z + bucket returns with known underlying β.
+
+    Uses dataclass field names ("growth_surprise" 등) to match real
+    samples.parquet format (generate_historical_factor_z.py 출력).
+    """
     rng = np.random.default_rng(seed)
-    factor_z = rng.standard_normal((n, len(FACTORS)))
-    fz_df = pd.DataFrame(factor_z, columns=list(FACTORS))
+    factor_z = rng.standard_normal((n, len(_DATACLASS_FACTOR_NAMES)))
+    fz_df = pd.DataFrame(factor_z, columns=list(_DATACLASS_FACTOR_NAMES))
     conf_df = pd.DataFrame(
-        np.full((n, len(FACTORS)), 0.85),
-        columns=[f"{f}_conf" for f in FACTORS],
+        np.full((n, len(_DATACLASS_FACTOR_NAMES)), 0.85),
+        columns=[f"{f}_conf" for f in _DATACLASS_FACTOR_NAMES],
     )
 
     bucket_returns = np.zeros((n, len(BUCKETS)))
     for i in range(n):
         for j, b in enumerate(BUCKETS):
             for k, f in enumerate(FACTORS):
+                # factor_z columns are dataclass-named (k-indexed = aligned with FACTORS)
                 bucket_returns[i, j] += INITIAL_BETA.get((f, b), 0.0) * factor_z[i, k]
             if b in ("kr_equity", "global_equity"):
                 bucket_returns[i, j] += 0.015
@@ -64,6 +76,7 @@ def test_load_samples_from_parquet(tmp_path: Path) -> None:
     samples = load_samples_from_parquet(p)
     assert len(samples) == 10
     s0 = samples[0]
+    # factor_z keys are mapped from dataclass names → FACTORS constant.
     assert set(s0.factor_z.keys()) == set(FACTORS)
     assert set(s0.bucket_returns_next.keys()) == set(BUCKETS)
 

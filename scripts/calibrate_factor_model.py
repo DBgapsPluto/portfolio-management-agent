@@ -46,18 +46,45 @@ logger = logging.getLogger(__name__)
 
 SHRINKAGE_GRID: list[float] = [0.1, 0.3, 0.5, 1.0, 2.0]
 
+# samples.parquet 의 column 이름 (FactorScores dataclass field 명) →
+# factor_to_bucket.FACTORS constant 의 key 이름 mapping.
+# Stage 1 의 `compute_all_factors` 출력 dataclass field 는 `growth_surprise`,
+# `inflation_surprise`, ... 인데, `factor_to_bucket.apply_factor_model` 의
+# factor_z 는 `F1_growth`, `F2_inflation`, ... key 를 기대.
+_PARQUET_TO_FACTOR_KEY: dict[str, str] = {
+    "growth_surprise": "F1_growth",
+    "inflation_surprise": "F2_inflation",
+    "real_rate": "F3_real_rate",
+    "term_premium": "F4_term_premium",
+    "credit_cycle": "F5_credit_cycle",
+    "krw_regime": "F6_krw_regime",
+    "equity_vol_regime": "F7_equity_vol_regime",
+    "valuation": "F8_valuation",
+    "liquidity_regime": "F9_liquidity_regime",
+}
+
 
 def load_samples_from_parquet(path: Path) -> list[HistoricalSample]:
-    """samples.parquet → list[HistoricalSample]."""
+    """samples.parquet → list[HistoricalSample].
+
+    - parquet field name (growth_surprise 등) → FACTORS constant key (F1_growth 등) mapping
+    - NaN bucket return (pre-1996 kr_equity 등) → 0.0 (해당 quarter 에서 그 bucket 의
+      기여를 0 으로 처리). Plan 의 KRW basis design 에 따라 pre-1996 kr_equity
+      NaN, pre-2006 fx_commodity NaN 은 허용된 trade-off.
+    """
     df = pd.read_parquet(path)
     samples = []
     for idx, row in df.iterrows():
         date_str = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)
-        factor_z = {f: float(row[f]) for f in FACTORS if f in row}
-        bucket_returns_next = {
-            b: float(row.get(f"next_{b}", np.nan)) for b in BUCKETS
-        }
-        if all(pd.isna(v) for v in bucket_returns_next.values()):
+        factor_z: dict[str, float] = {}
+        for parquet_col, factor_key in _PARQUET_TO_FACTOR_KEY.items():
+            if parquet_col in row and not pd.isna(row[parquet_col]):
+                factor_z[factor_key] = float(row[parquet_col])
+        bucket_returns_next: dict[str, float] = {}
+        for b in BUCKETS:
+            v = row.get(f"next_{b}", np.nan)
+            bucket_returns_next[b] = 0.0 if pd.isna(v) else float(v)
+        if all(v == 0.0 for v in bucket_returns_next.values()):
             continue
         samples.append(HistoricalSample(
             date=date_str,
