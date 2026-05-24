@@ -91,22 +91,42 @@ def test_find_latest_mtime_fallback_when_no_date_in_name(tmp_path):
     assert result.name == "random_name.txt"
 
 
-def test_find_latest_uses_real_data_save_dir():
-    """실제 data/SAVE/ 폴더에서 매칭 검증 (project-relative default)."""
-    project_root = Path(__file__).parents[3]
-    real_save = project_root / "data" / "SAVE"
-    if not real_save.exists():
-        pytest.skip("data/SAVE not present in this environment")
-    files = [p for p in real_save.iterdir() if p.is_file()]
-    if not files:
-        pytest.skip("data/SAVE empty")
-    # 어떤 파일이라도 있으면 find_latest가 None 아닌 결과 반환해야
-    result = find_latest_save_brief(as_of=date(2099, 1, 1))
-    # 환경 변수 override 안 되어 있으면 기본 경로 사용
-    import os
-    if "SAVE_BRIEF_DIR" not in os.environ:
-        assert result is not None
-        assert result.parent == real_save
+def test_find_latest_github_fetch_picks_closest_date(monkeypatch):
+    """기본(search_dir=None) 동작은 GitHub fetch — requests를 mock."""
+    monkeypatch.setenv("GITHUB_TOKEN", "fake-token")
+
+    fake_listing = [
+        {"name": "2026-05-15.txt", "path": "data/SAVE/2026-05-15.txt", "type": "file"},
+        {"name": "2026-05-22.txt", "path": "data/SAVE/2026-05-22.txt", "type": "file"},
+        {"name": "README.md", "path": "data/SAVE/README.md", "type": "file"},
+    ]
+
+    list_resp = MagicMock()
+    list_resp.json.return_value = fake_listing
+    list_resp.raise_for_status.return_value = None
+
+    raw_resp = MagicMock()
+    raw_resp.text = "----- Page 1 -----\nfake brief"
+    raw_resp.raise_for_status.return_value = None
+
+    calls = {"n": 0}
+
+    def fake_get(url, **kwargs):
+        calls["n"] += 1
+        return list_resp if calls["n"] == 1 else raw_resp
+
+    monkeypatch.setattr("requests.get", fake_get)
+
+    result = find_latest_save_brief(as_of=date(2026, 5, 20))
+    assert result is not None
+    assert result.name == "save_brief_2026-05-15.txt"
+    assert result.read_text(encoding="utf-8").startswith("----- Page 1 -----")
+
+
+def test_find_latest_github_fetch_returns_none_without_token(monkeypatch):
+    """GITHUB_TOKEN 없으면 None (silent fail — macro_news가 SAVE 없이 동작 가능)."""
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    assert find_latest_save_brief(as_of=date(2026, 5, 20)) is None
 
 
 def test_parse_brief_date_from_fixture():
