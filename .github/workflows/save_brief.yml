@@ -1,0 +1,53 @@
+name: Fetch SAVE Brief
+
+on:
+  schedule:
+    # 평일 22:00 KST = 13:00 UTC (월-금)
+    - cron: '0 13 * * 1-5'
+  workflow_dispatch:  # 수동 실행
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Setup Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --extra save-brief
+
+      - name: Install Playwright browsers
+        run: uv run playwright install --with-deps chromium
+
+      - name: Run fetch_save_brief
+        env:
+          SAVE_EMAIL: ${{ secrets.SAVE_EMAIL }}
+          SAVE_PASSWORD: ${{ secrets.SAVE_PASSWORD }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TZ: Asia/Seoul
+        run: uv run python scripts/fetch_save_brief.py
+
+      - name: Commit and push
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/SAVE/
+          if git diff --cached --quiet; then
+            echo "변경사항 없음 — commit/push skip"
+          else
+            ADDED=$(git diff --cached --name-only | head -1)
+            git commit -m "chore(save): brief $(basename "$ADDED" .txt)"
+            git push
+          fi
