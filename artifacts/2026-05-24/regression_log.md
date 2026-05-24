@@ -68,3 +68,22 @@ $ uv run pytest tests/integration/ -q
   은 정확 — test 만 보정.
 
 Status: PASS. C2 진행 가능.
+
+## Post-C2 (feat: quarterly aggregation + derived computations)
+
+```
+$ uv run pytest tests/unit/ -q
+2 failed, 761 passed, 6 warnings in 76.02s
+
+$ uv run pytest tests/integration/ -q
+18 failed, 26 passed, 2 warnings in 16.60s
+```
+
+Δ from C1: Unit +9 new pass (8 derived + 1 panel structure). 0 new fail.
+Integration: unchanged.
+
+Deferred: Shiller CAPE CSV (Task 2.3) — `assemble_quarterly_panel` 의
+graceful skip 으로 C2 commit 영향 없음. C5 (135Q sample 생성) 전 까지
+보강 필요.
+
+Status: PASS. C3 진행 가능.
