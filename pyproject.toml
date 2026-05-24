@@ -52,6 +52,11 @@ test = [
     "pytest-mock>=3.12.0",
     "pytest-asyncio>=0.23.0",
 ]
+save-brief = [
+    "playwright>=1.48.0",
+    "pymupdf>=1.24.0",
+    "openai>=1.40.0",
+]
 
 [project.scripts]
 gaps = "cli.main:cli"
