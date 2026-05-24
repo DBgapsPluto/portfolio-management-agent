@@ -168,3 +168,38 @@ Integration: unchanged.
 - equity_vol_regime = +1.83 (high vol)
 
 Status: PASS. **grill-me #2 marker (Task 5.4)** 도달.
+
+## Post-C6+C7 (feat: walk-forward calibration runner + acceptance gate)
+
+C6 (script) + C7 (acceptance.py) 를 combined commit. 두 file 이 서로 import
+의존성이라 atomic 으로 묶음.
+
+```
+$ uv run pytest tests/unit/ -q
+2 failed, 785 passed, 7 warnings in 107.25s
+
+$ uv run pytest tests/integration/ -q
+18 failed, 28 passed, 1 warning in 45.43s
+```
+
+Δ from C5: Unit +11 new pass (5 acceptance + 6 from C4/C5 ALFRED-related).
+Integration: +2 new pass (synthetic calibration). 0 new fail.
+
+**환경 정비**:
+- `uv sync --extra test` 실행 → .venv 에 pytest/pluggy/iniconfig/pytest-mock/
+  pytest-asyncio 5 packages 설치. 이전엔 system Python 3.13 pytest 사용.
+- `tests/conftest.py` 에 PROJECT_ROOT 를 sys.path 에 prepend (PR2a scripts/
+  import 보조).
+- `scripts/__init__.py` 생성 (importlib.util 로 직접 load 하므로 실용적
+  필요는 없지만 namespace 명시).
+
+**C6 script 동작 검증 (synthetic)**:
+- 135 sample → walk_forward(initial_train=80, test=7) → 7 folds.
+- L-BFGS-B 최적화 5 shrinkage × 7 fold = 35 runs 가능.
+
+**C7 acceptance gate (Critical 3 strict default)**:
+- 5 conditions: improvement (margin 0.05 + paired-t p<0.20), overfit (Δ<0.30),
+  sign respect, saturation (<30% |β|>0.195), fold positive (≥6/7).
+- Diagnostic: vintage_sanity, learning_sensitivity, prior_stuck, saturated.
+
+Status: PASS. C8 (실제 samples.parquet 에 calibration 실행) 진행 가능.
