@@ -87,6 +87,8 @@ DEFAULT_CONFIG.update({
         "us_jolts_quits": 45,
         "us_jolts_hires": 45,
         "us_10y": 1, "us_2y": 1, "us_3m": 1,
+        # 2026-05-23 C4: Treasury 5y/30y (F4 term_premium long-end slope)
+        "us_5y": 1, "us_30y": 1,
         "us_policy_rate": 1,
         "us_ig_oas": 1, "us_hy_oas": 1,
         "vix_close": 1,

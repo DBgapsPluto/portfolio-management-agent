@@ -7,6 +7,7 @@ Tier-1 확장 (equity stress 깊이):
 - breadth real: pykrx KOSPI200 + SP500 11 섹터 ETF proxy (stub 교체)
 - volatility 강화: change_4w 추가
 """
+import logging
 from datetime import date, timedelta
 
 import pandas as pd
@@ -35,11 +36,14 @@ from tradingagents.skills.risk.kr_margin_debt import compute_kr_margin_debt
 from tradingagents.skills.risk.kr_market_tier import compute_kr_market_tier
 from tradingagents.skills.risk.kr_yield_curve import compute_kr_yield_curve
 from tradingagents.skills.risk.real_yields import compute_real_yields
+from tradingagents.skills.risk.realized_volatility import compute_realized_volatility
 from tradingagents.skills.risk.skew_index import compute_skew_index
 from tradingagents.skills.risk.systemic_score import score_systemic_risk
 from tradingagents.skills.risk.vix_term_structure import compute_vix_term_structure
 from tradingagents.skills.risk.volatility import fetch_volatility_index
 from tradingagents.skills.risk.vxn import compute_vxn
+
+logger = logging.getLogger(__name__)
 
 
 def _sentinel_vix_term(as_of: date) -> VIXTermStructureSnapshot:
@@ -137,6 +141,40 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         breadth_kr = compute_market_breadth("KOSPI200", as_of)
         breadth_us = compute_market_breadth("SP500", as_of)
 
+        # ★ NEW (2026-05-23 C7 — sector dispersion for F9 liquidity_regime)
+        # 11 SPDR sector ETF 60d return → cross-sectional std → BreadthSnapshot 확장.
+        # D7 pattern: scalar return + breadth_us.model_copy.
+        # D8 pattern: insufficient sectors / network fail → None + logger.warning.
+        # D9: no skill-internal cache (yfinance fetch fresh each call).
+        try:
+            import yfinance as yf
+
+            from tradingagents.skills.risk.sector_dispersion import (
+                compute_sector_dispersion,
+            )
+
+            SECTOR_ETFS = [
+                "XLF", "XLE", "XLI", "XLY", "XLV", "XLK",
+                "XLU", "XLP", "XLB", "XLRE", "XLC",
+            ]
+            sector_returns_60d: dict[str, float] = {}
+            for ticker in SECTOR_ETFS:
+                try:
+                    h = yf.Ticker(ticker).history(period="65d", interval="1d")
+                    if h.empty or len(h) < 60:
+                        continue
+                    ret_60d = (h["Close"].iloc[-1] / h["Close"].iloc[-60]) - 1.0
+                    sector_returns_60d[ticker] = float(ret_60d)
+                except Exception:
+                    continue
+            sector_disp = compute_sector_dispersion(sector_returns_60d)
+            if sector_disp is not None and breadth_us is not None:
+                breadth_us = breadth_us.model_copy(update={
+                    "sector_return_dispersion": sector_disp,
+                })
+        except Exception as e:
+            logger.warning("Sector dispersion fetch failed (F9 affected): %s", e)
+
         # Tier-4: Real cross-asset PCA (SPY/QQQ/TLT/GLD/EWY via yfinance)
         try:
             returns_matrix = fetch_cross_asset_returns(
@@ -197,7 +235,23 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             skew_series = fetch_equity_index_close("skew", as_of - timedelta(days=400), as_of)
             skew = compute_skew_index(skew_series, as_of=as_of)
         except Exception:
+            skew_series = None
             skew = _sentinel_skew(as_of)
+
+        # ★ NEW (2026-05-24 C7.5 — skew change z for F7 equity_vol_regime)
+        # 위 skew_series 를 reuse (D9: no extra fetch). D7 pattern: scalar return
+        # + skew.model_copy. D8: insufficient series / exception → None +
+        # logger.warning (change_1m_z stays 0.0 default).
+        try:
+            from tradingagents.skills.risk.skew_metrics import (
+                compute_skew_change_z,
+            )
+            if skew_series is not None:
+                skew_change_z = compute_skew_change_z(skew_series, as_of)
+                if skew_change_z is not None:
+                    skew = skew.model_copy(update={"change_1m_z": skew_change_z})
+        except Exception as e:
+            logger.warning("SKEW change z compute failed (F7 affected): %s", e)
 
         # Tier-1: VXN (FRED VXNCLS)
         try:
@@ -289,6 +343,25 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         except Exception:
             kr_market_tier = _sentinel_kr_tier(as_of)
 
+        # 2026-05-23 C6 — SPY realized vol (60d/20d) + VRP for factor model F7 + F9.
+        # D7 (신규 class indicator): full Snapshot return → RiskReport 의 Optional
+        # real_vol field 에 직접 채움 (model_copy 아님; C5 의 kr_valuation 과 동일 path).
+        # D8: skill 이 None 반환 시 real_vol = None (Optional, backward compat).
+        # D9: no retry / no skill-internal cache (yfinance 호출 자체는 fetcher cache 없음).
+        try:
+            import yfinance as yf
+            spy = yf.Ticker("SPY")
+            hist = spy.history(period="120d", interval="1d")
+            if not hist.empty:
+                daily_returns = hist["Close"].pct_change().dropna()
+            else:
+                daily_returns = pd.Series([], dtype=float)
+            vix_level = vix.current_value if vix is not None else None
+            real_vol = compute_realized_volatility(daily_returns, vix_level, as_of)
+        except Exception as e:
+            logger.warning("Realized vol fetch failed (factor F7/F9 affected): %s", e)
+            real_vol = None
+
         systemic = score_systemic_risk(
             quick_llm, deep_llm,
             vix=vix.current_value, vix_z=vix.zscore_30d, vix_pct=vix.percentile_5y,
@@ -365,6 +438,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             kr_yield_curve=kr_yield_curve, kr_corp_spread=kr_corp_spread,
             kr_margin_debt=kr_margin, kr_market_tier=kr_market_tier,
             equity_bond_corr=eq_bd_corr,
+            real_vol=real_vol,  # ★ NEW C6 (Optional, None on fail)
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"risk_report": report, "risk_summary": summary}

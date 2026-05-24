@@ -20,6 +20,15 @@ class YieldCurveSnapshot(StalenessAware):
     inverted_days_count: int = Field(ge=0, description="Days inverted in last 365")
     percentile_5y: float = Field(ge=0, le=1, description="5y historical percentile")
 
+    # 2026-05-23 C4 — factor model F4 term_premium component.
+    # 5-30y slope: long-end curve. spread_10y_2y 는 단기-중기 정책 기대 반영하지만,
+    # 5-30y 는 longer-horizon term premium (real economy 기대 / inflation risk premium)
+    # 의 signal. C8 의 factor_estimators 에서 active 화 예정.
+    spread_30y_5y_bps: float = Field(
+        default=0.0,
+        description="30Y - 5Y in basis points. Long-end curve — F4 term_premium component.",
+    )
+
 
 class InflationSnapshot(StalenessAware):
     cpi_yoy: float = Field(description="CPI YoY %")
@@ -137,6 +146,19 @@ class FinancialConditionsSnapshot(StalenessAware):
         description="<-0.5=easy, -0.5~0.5=neutral, 0.5~1.0=tight, >1.0=crisis"
     )
     tightening: bool = Field(description="True if NFCI 4-week change > +0.2 (긴축 가속)")
+
+    # 2026-05-23 C3 — factor model F1 growth_surprise component.
+    # CFNAI 는 FinancialConditions 와는 별개 series (real activity composite) 지만,
+    # macro_quant_analyst 가 fci snapshot 을 단일 점에서 확장하는 패턴 (D7) 이라
+    # 같은 schema 에 fold-in. C8 의 factor_estimators 에서 active 화.
+    cfnai: float = Field(
+        default=0.0,
+        description="CFNAI (Chicago Fed National Activity Index). 0=trend, +1=above, -1=below.",
+    )
+    cfnai_3m_avg: float = Field(
+        default=0.0,
+        description="CFNAI 3-month moving average — NBER recession signal.",
+    )
 
 
 class InflationExpectationsSnapshot(StalenessAware):
@@ -261,3 +283,17 @@ class TailRiskSnapshot(StalenessAware):
     signal: Literal["calm", "elevated", "extreme"] = Field(
         description="extreme if both percentiles >0.9; elevated if any >0.75"
     )
+
+
+# 2026-05-23 C5 — KR equity valuation snapshot, factor model F8 valuation component.
+# pykrx 의 KOSPI200 fundamental (PBR/PER/DIV) 평균. KOSPI 200 underlying.
+# 첫 *신규 class indicator* — D7 의 신규 class path (analyst 가 MacroReport 의
+# Optional field 에 직접 채움; model_copy 아님).
+class KRValuationSnapshot(StalenessAware):
+    """KOSPI valuation indicators — for factor model F8 valuation.
+
+    PBR < 1.0 = below book value (deep value). Historical avg ~1.0.
+    """
+    kospi_pbr: float = Field(description="KOSPI 200 PBR")
+    kospi_per: float = Field(description="KOSPI 200 forward PER")
+    kospi_div_yield: float = Field(description="KOSPI 200 dividend yield %")

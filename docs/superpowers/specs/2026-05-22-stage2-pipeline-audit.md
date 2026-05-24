@@ -1370,3 +1370,13 @@ dominant_scenario 자체 폐기. method_picker, risk_lens 등이 24-cell margina
 
 13 issue 모두 처리. **PARTIAL (E) + REPLACED (D, H) + OBSOLETE (J)** 는 architecture 변경
 의 결과 — 별도 후속 작업 불요.
+
+**Hotfix 추가 발견 (2026-05-23/24 PR `feat/stage1-enhance-for-factor-model`)**:
+factor_estimators.py 의 field path mismatch (silent broken state) 별도 발견 — PR1 의 C1-C2 에서 해결.
+real schema integration test (`tests/integration/test_factor_estimators_real_schema.py`) 가 재발 방지.
+
+상세:
+- 17 active path 수정 + 6 placeholder (C8 활성화 위해)
+- MagicMock 우회 차단 — real Stage 1 schema instance 으로 검증
+- 모든 9 factor confidence > 0 보장
+- 향후 path 변경 시 *real schema test* 가 silent fail 차단

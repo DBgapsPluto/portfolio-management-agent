@@ -9,6 +9,25 @@ def _mock_state_2026_05_15_like():
     """2026-05-15 같은 macro 환경 시뮬레이션 (B regime — overheating).
 
     Real 2026-05-15 archived state 가 macro_quant 의 cycle B 0.84 였음.
+
+    2026-05-23 (C1, PR0 hotfix): mock path 를 실제 schema 와 매칭.
+    - macro_report.growth.gdp_nowcast → macro_report.gdp_nowcast.nowcast_pct
+    - macro_report.growth.nfci → macro_report.financial_conditions.nfci
+    - macro_report.employment.sahm_trigger → .sahm_rule_triggered
+    - macro_report.yield_curve.slope_2_10y_bps → .spread_10y_2y_bps
+    - macro_report.cpi.* → macro_report.inflation.*
+    - macro_report.inflation_exp.* → macro_report.inflation_expectations.*
+    - macro_report.real_yields → risk_report.real_yields.tips_10y
+    - macro_report.fed_path.implied_change_6m_bps → .path_bps
+    - macro_report.kr_macro → macro_report.kr_divergence / kr_export
+    - macro_report.foreign_flow.net_flow_z → .net_20d_krw
+    - risk_report.vix.z_score → .zscore_30d
+    - risk_report.vix.term_ratio → risk_report.vix_term.ratio
+    - risk_report.move.current_value → macro_report.tail_risk.move
+    - risk_report.credit_spread_us_hy.momentum_z → .momentum_zscore
+    - technical_report.breadth → risk_report.breadth_kr.advancing_pct
+    - 5 C8 placeholder (cfnai, slope_5_30y, realized_vol, kospi_pbr, sector_dispersion,
+      skew_change) 은 weight=0 이라 read 되지 않음.
     """
     s = {}
     s["macro_summary"] = "B-cycle dominant"
@@ -17,40 +36,36 @@ def _mock_state_2026_05_15_like():
     s["news_summary"] = "macro acceleration"
 
     s["macro_report"] = MagicMock()
-    s["macro_report"].growth.gdp_nowcast = 4.0  # +z
-    s["macro_report"].growth.cfnai = 0.0
-    s["macro_report"].growth.nfci = -0.5
-    s["macro_report"].employment.sahm_trigger = False
-    s["macro_report"].yield_curve.slope_2_10y_bps = 50
-    s["macro_report"].yield_curve.slope_5_30y_bps = 100
-    s["macro_report"].cpi.yoy_pct = 3.9  # +inflation
-    s["macro_report"].cpi.three_month_annualized_pct = 7.3
-    s["macro_report"].cpi.core_pce_yoy = 3.5
-    s["macro_report"].inflation_exp.five_y_five_y_pct = 2.5
-    s["macro_report"].inflation_exp.michigan_1y_pct = 3.8
-    s["macro_report"].real_yields.ten_y_pct = 1.5
-    s["macro_report"].fed_path.implied_change_6m_bps = 25
-    s["macro_report"].kr_macro.bok_us_rate_diff_bps = -150
-    s["macro_report"].kr_macro.exports_yoy_pct = 50.2
-    s["macro_report"].foreign_flow.net_flow_z = -1.5
+    s["macro_report"].gdp_nowcast.nowcast_pct = 4.0  # +z growth
+    s["macro_report"].financial_conditions.nfci = -0.5  # easy = +growth
+    s["macro_report"].employment.sahm_rule_triggered = False
+    s["macro_report"].yield_curve.spread_10y_2y_bps = 50
+    s["macro_report"].inflation.cpi_yoy = 3.9  # +inflation
+    s["macro_report"].inflation.momentum_3mo = 7.3
+    s["macro_report"].inflation.core_pce_yoy = 3.5
+    s["macro_report"].inflation_expectations.breakeven_5y5y = 2.5
+    s["macro_report"].inflation_expectations.michigan_1y = 3.8
+    s["macro_report"].fed_path.path_bps = 25
+    s["macro_report"].kr_divergence.us_kr_rate_gap_bps = -150
+    s["macro_report"].kr_export.yoy_pct = 50.2
+    s["macro_report"].foreign_flow.net_20d_krw = -1.5e12  # 외국인 순매도 (KRW)
+    s["macro_report"].fx.usd_krw = 1350.0  # weak KRW (vs baseline ~1250)
+    s["macro_report"].tail_risk.move = 100  # MOVE in macro_report.tail_risk
 
     s["risk_report"] = MagicMock()
     s["risk_report"].credit_spread_us_hy.current_bps = 280
-    s["risk_report"].credit_spread_us_hy.momentum_z = -0.04
+    s["risk_report"].credit_spread_us_hy.momentum_zscore = -0.04
     s["risk_report"].credit_quality.quality_spread_bps = 60
     s["risk_report"].funding_stress.spread_bps = -4
     s["risk_report"].vix.current_value = 18.4
-    s["risk_report"].vix.z_score = -0.15
-    s["risk_report"].vix.term_ratio = 1.21
-    s["risk_report"].move.current_value = 100
-    s["risk_report"].realized_vol.sixty_d = 0.010
+    s["risk_report"].vix.zscore_30d = -0.15
+    s["risk_report"].vix_term.ratio = 1.21
     s["risk_report"].equity_bond_corr.correlation_60d = 0.20
-    s["risk_report"].skew.change_1m = 2.0
+    s["risk_report"].real_yields.tips_10y = 1.5  # real_yields moved here
+    s["risk_report"].breadth_kr.advancing_pct = 0.50
 
     s["technical_report"] = MagicMock()
-    s["technical_report"].sector_dispersion = 1.2
-    s["technical_report"].breadth = 0.50
-    s["technical_report"].kospi_pbr = 0.95
+    # sector_dispersion / breadth / kospi_pbr — C8 placeholder, weight=0
 
     s["news_report"] = MagicMock()
     s["news_report"].release_surprise.surprise_index_30d = +0.8

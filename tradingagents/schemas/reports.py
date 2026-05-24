@@ -7,7 +7,7 @@ from tradingagents.schemas.macro import (
     USLeadingIndexSnapshot, GDPNowSnapshot,
     FinancialConditionsSnapshot, InflationExpectationsSnapshot, FedPathSnapshot,
     FXSnapshot, RiskAppetiteSnapshot, ChinaLeadingSnapshot, ForeignFlowSnapshot,
-    PolicyUncertaintySnapshot, TailRiskSnapshot,
+    PolicyUncertaintySnapshot, TailRiskSnapshot, KRValuationSnapshot,
 )
 from tradingagents.schemas.risk import (
     VolatilitySnapshot, SpreadSnapshot, SentimentSnapshot,
@@ -16,6 +16,7 @@ from tradingagents.schemas.risk import (
     RealYieldsSnapshot, FundingStressSnapshot, CreditQualitySnapshot,
     KRYieldCurveSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
     KRMarketTierSnapshot, EquityBondCorrelationSnapshot,
+    RealVolSnapshot,
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
@@ -69,6 +70,9 @@ class MacroReport(_AnalystReport):
     # Tier-4 확장 (Policy uncertainty + Tail risk)
     policy_uncertainty: PolicyUncertaintySnapshot
     tail_risk: TailRiskSnapshot
+    # 2026-05-23 C5 — KR equity valuation for factor model F8 valuation.
+    # Optional / default None — backward compat (기존 archive 호환).
+    kr_valuation: KRValuationSnapshot | None = None
 
 
 class RiskReport(_AnalystReport):
@@ -97,6 +101,9 @@ class RiskReport(_AnalystReport):
     # Tier-4 확장 (Cross-asset positioning + 개선)
     equity_bond_corr: EquityBondCorrelationSnapshot
     # 주: PCA는 기존 correlation_concentration 필드 사용 (real returns로 wire만 변경)
+    # 2026-05-23 C6 — SPY realized vol for factor model F7 + F9 (via VRP).
+    # Optional / default None — backward compat (기존 archive 호환).
+    real_vol: RealVolSnapshot | None = None
 
 
 class TechnicalReport(_AnalystReport):

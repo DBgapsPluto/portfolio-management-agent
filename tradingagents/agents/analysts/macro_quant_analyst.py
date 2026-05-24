@@ -10,6 +10,7 @@ Tier-1 확장 (KR cycle + US 선행/실시간 성장):
 - us_leading: CFNAI 85개 지표 합성 (MA3 < -0.7 → recession)
 - gdp_nowcast: Atlanta Fed 실시간 분기 GDP nowcast
 """
+import logging
 from datetime import date, timedelta
 
 from tradingagents.dataflows.commodities import fetch_commodity_close
@@ -33,6 +34,8 @@ from tradingagents.skills.macro.financial_conditions import compute_financial_co
 from tradingagents.skills.macro.foreign_flow import compute_foreign_flow
 from tradingagents.skills.macro.fred_fetcher import fetch_fred_series_skill
 from tradingagents.skills.macro.fx import compute_fx_overlay
+from tradingagents.skills.macro.kr_valuation import compute_kospi_valuation
+from tradingagents.skills.macro.real_activity import compute_cfnai_metrics
 from tradingagents.skills.macro.gdp_nowcast import compute_gdp_nowcast
 from tradingagents.skills.macro.inflation import compute_inflation_trend
 from tradingagents.skills.macro.inflation_expectations import compute_inflation_expectations
@@ -44,7 +47,10 @@ from tradingagents.skills.macro.regime_classifier import classify_regime
 from tradingagents.skills.macro.risk_appetite import compute_risk_appetite
 from tradingagents.skills.macro.tail_risk import compute_tail_risk
 from tradingagents.skills.macro.us_leading import compute_us_leading_index
-from tradingagents.skills.macro.yield_curve import compute_yield_curve
+from tradingagents.skills.macro.yield_curve import compute_yield_curve, compute_yield_curve_extras
+
+
+logger = logging.getLogger(__name__)
 
 
 NARRATIVE_PROMPT = """\
@@ -184,6 +190,28 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         s_3m = fetch_fred_series_skill("us_3m", start_macro, as_of, as_of_date=as_of)
         yc = compute_yield_curve(s_10y, s_2y, s_3m, as_of=as_of)
 
+        # 2026-05-23 C4 — slope_5_30y fold-in for factor model F4 term_premium.
+        # D7: scalar return + yc.model_copy(update=...).
+        # D8: skill returns None on missing input → yc.spread_30y_5y_bps default 0.0 유지.
+        # D9: no retry / no cache (fetcher 의 TieredCache 와 별개로 skill 매번 fresh).
+        try:
+            s_5y = fetch_fred_series_skill("us_5y", start_macro, as_of, as_of_date=as_of)
+            s_30y = fetch_fred_series_skill("us_30y", start_macro, as_of, as_of_date=as_of)
+            dgs5_latest = (
+                float(s_5y.iloc[-1]) if s_5y is not None and not s_5y.empty else None
+            )
+            dgs30_latest = (
+                float(s_30y.iloc[-1]) if s_30y is not None and not s_30y.empty else None
+            )
+            spread_30y_5y_bps = compute_yield_curve_extras(
+                dgs5_pct=dgs5_latest, dgs30_pct=dgs30_latest, as_of=as_of,
+            )
+            if spread_30y_5y_bps is not None:
+                yc = yc.model_copy(update={"spread_30y_5y_bps": spread_30y_5y_bps})
+            # else: skill already logged warning; yc default 0.0 유지 (factor F4 영향).
+        except Exception as e:
+            logger.warning("slope_5_30y fetch failed (factor F4 affected): %s", e)
+
         cpi = fetch_fred_series_skill("us_cpi", start_macro, as_of, as_of_date=as_of)
         core_cpi = fetch_fred_series_skill("us_core_cpi", start_macro, as_of, as_of_date=as_of)
         # PCE — Fed 공식 inflation 타겟 (2026-05 추가). 두 series 다 best-effort.
@@ -281,6 +309,25 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         except Exception:
             fci = _sentinel_fci(as_of)
 
+        # 2026-05-23 C3 — CFNAI fold-in for factor model F1 growth_surprise.
+        # D7: scalar tuple return + fci.model_copy(update=...).
+        # D8: skill returns None on data 부재 → fci default 0.0 유지.
+        # D9: no retry / no cache (fetcher 의 TieredCache 와 별개로 skill 매번 fresh).
+        try:
+            cfnai_series = fetch_fred_series_skill(
+                "us_cfnai", start_macro, as_of, as_of_date=as_of,
+            )
+            cfnai_result = compute_cfnai_metrics(cfnai_series, as_of)
+            if cfnai_result is not None:
+                cfnai_latest, cfnai_3m_avg = cfnai_result
+                fci = fci.model_copy(update={
+                    "cfnai": cfnai_latest,
+                    "cfnai_3m_avg": cfnai_3m_avg,
+                })
+            # else: skill already logged warning; fci default 0.0 유지 (factor F1 영향).
+        except Exception as e:
+            logger.warning("CFNAI fetch failed (factor F1 affected): %s", e)
+
         # Tier-2: Inflation expectations (5Y5Y breakeven + Michigan 1y survey)
         try:
             breakeven = fetch_fred_series_skill(
@@ -373,6 +420,19 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             tail_risk = compute_tail_risk(vvix, move, as_of=as_of)
         except Exception:
             tail_risk = _sentinel_tail_risk(as_of)
+
+        # 2026-05-23 C5 — KR equity valuation (KOSPI PBR/PER/DivYield) for F8.
+        # D7 (신규 class indicator): full Snapshot return → MacroReport 의 Optional
+        # kr_valuation field 에 직접 채움 (model_copy 아님; 기존 cfnai/slope_5_30y 의
+        # scalar+model_copy 와 다른 path).
+        # D8: skill 이 None 반환 시 그대로 — kr_valuation = None (Optional, backward compat).
+        # D9: no retry / no cache (skill internal).
+        try:
+            kr_valuation_snapshot = compute_kospi_valuation(as_of)
+            # None 이면 그대로 (skill already logged warning).
+        except Exception as e:
+            logger.warning("KR valuation skill failed (factor F8 affected): %s", e)
+            kr_valuation_snapshot = None
 
         events = fetch_central_bank_calendar_skill(as_of, days=90)
 
@@ -499,6 +559,7 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             fx=fx, risk_appetite=risk_appetite,
             china_leading=china_leading, foreign_flow=foreign_flow,
             policy_uncertainty=policy_uncertainty, tail_risk=tail_risk,
+            kr_valuation=kr_valuation_snapshot,  # ★ NEW C5 (Optional, None on fail)
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"macro_report": report, "macro_summary": summary}

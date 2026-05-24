@@ -16,7 +16,7 @@ from tradingagents.skills.research.factor_reliability_audit import (
 
 EXPECTED_COMPONENTS: frozenset[str] = frozenset({
     # F1
-    "gdpnow", "cfnai", "nfci", "sahm", "curve",
+    "gdpnow", "cfnai", "cfnai_3m", "nfci", "sahm", "curve",  # ★ C8 (2026-05-24): cfnai_3m
     "release_surprise", "hawkish_bias", "macro_sent", "risk_regime_overnight",
     # F2
     "cpi_yoy", "cpi_3m", "core_pce", "five_y_five_y", "michigan_1y",

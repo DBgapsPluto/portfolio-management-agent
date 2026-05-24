@@ -20,6 +20,8 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     # === F1 growth_surprise ===
     ("F1_growth", "gdpnow"):                (2.0, 2.0),
     ("F1_growth", "cfnai"):                 (0.0, 0.5),
+    # C8 (2026-05-24): cfnai_3m_avg shares CFNAI scale (smoothing — slightly tighter sd).
+    ("F1_growth", "cfnai_3m"):              (0.0, 0.5),
     ("F1_growth", "nfci"):                  (0.0, 0.5),
     ("F1_growth", "sahm"):                  (0.0, 1.0),
     ("F1_growth", "curve"):                 (80.0, 80.0),
@@ -46,7 +48,8 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
 
     # === F4 term_premium ===
     ("F4_term_premium", "slope_2_10y"):         (80.0, 80.0),
-    ("F4_term_premium", "slope_5_30y"):         (120.0, 80.0),
+    # C8 (2026-05-24): 5y30y slope long-run mean ~80bps, sd ~50bps (post-2010 sample).
+    ("F4_term_premium", "slope_5_30y"):         (80.0, 50.0),
     ("F4_term_premium", "fed_tone_balance"):    (0.0, 0.5),
     ("F4_term_premium", "fed_voting_balance"):  (0.0, 0.5),
 
@@ -62,7 +65,10 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F6_krw_regime", "krw_overnight_pct"): (0.0, 0.5),
     ("F6_krw_regime", "krw_level"):         (1250.0, 100.0),
     ("F6_krw_regime", "kr_us_rate_diff"):   (-100.0, 100.0),
-    ("F6_krw_regime", "foreign_flow_z"):    (0.0, 1.0),
+    # C8 D11a (2026-05-24): foreign_flow_z 의 raw 는 net_20d_krw (KRW 단위 누적).
+    # 20d 누적 순매수 typical magnitude ~수조 (1e12 KRW). sd=1e12 으로 z ≈ -3~+3
+    # normal range. Prior was (0, 1.0) which made z = raw KRW (1e12-scale) — broken.
+    ("F6_krw_regime", "foreign_flow_z"):    (0.0, 1e12),
     ("F6_krw_regime", "kr_exports_yoy"):    (5.0, 15.0),
     ("F6_krw_regime", "bok_tone_balance"):  (0.0, 0.5),
 
@@ -71,8 +77,13 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F7_equity_vol", "vix_z_score"):          (0.0, 1.0),
     ("F7_equity_vol", "vix_term_ratio"):       (1.0, 0.15),
     ("F7_equity_vol", "move"):                 (90.0, 30.0),
-    ("F7_equity_vol", "realized_vol_60d"):     (0.012, 0.005),
-    ("F7_equity_vol", "skew_change"):          (0.0, 5.0),
+    # C8 (2026-05-24): RealVolSnapshot.realized_vol_60d is *annualized* stddev
+    # (SPY daily std × sqrt(252)). Long-run mean ~15% (0.15), sd ~8% (0.08).
+    # Prior (0.012, 0.005) was daily-scale — broken.
+    ("F7_equity_vol", "realized_vol_60d"):     (0.15, 0.08),
+    # C8 (2026-05-24): change_1m_z is already a *normalized z* from skew_metrics.py
+    # (delta / hand-coded sd=5.0). Use (0, 1) so factor-level z passes through.
+    ("F7_equity_vol", "skew_change"):          (0.0, 1.0),
     ("F7_equity_vol", "sentiment_dispersion"): (0.3, 0.15),
     ("F7_equity_vol", "geopolitical_surge"):   (0.0, 1.0),
 
@@ -80,12 +91,18 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F8_valuation", "sp_pe"):           (18.0, 6.0),
     ("F8_valuation", "earnings_yield"):  (5.5, 2.0),
     ("F8_valuation", "erp"):             (4.0, 2.0),
-    ("F8_valuation", "kospi_pbr"):       (1.0, 0.25),
+    # C8 (2026-05-24): KOSPI PBR long-run normal range ~0.7-1.3 (mean 1.0, sd 0.3).
+    ("F8_valuation", "kospi_pbr"):       (1.0, 0.3),
 
     # === F9 liquidity ===
-    ("F9_liquidity", "vrp"):                (50.0, 30.0),
+    # C8 (2026-05-24): vrp_60d = (VIX/100)² - realized² × 10000 (bps²-like). Range
+    # typically -200~+200 in normal regimes; mean ~0 (variance premium is small/null
+    # on average; large positive in stress regimes). Hand-coded sd 200.
+    ("F9_liquidity", "vrp"):                (0.0, 200.0),
     ("F9_liquidity", "eq_bond_corr"):       (-0.2, 0.2),
-    ("F9_liquidity", "sector_dispersion"):  (1.0, 0.3),
+    # C8 (2026-05-24): BreadthSnapshot.sector_return_dispersion is decimal-scale
+    # cross-sectional stddev of sector ETF 60d returns. Mean ~5% (0.05), sd ~3% (0.03).
+    ("F9_liquidity", "sector_dispersion"):  (0.05, 0.03),
     ("F9_liquidity", "breadth"):            (0.55, 0.15),
     ("F9_liquidity", "event_cluster"):      (1.5, 1.5),
     ("F9_liquidity", "rising_signal"):      (0.5, 0.5),

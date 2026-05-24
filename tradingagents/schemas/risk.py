@@ -39,6 +39,11 @@ class BreadthSnapshot(StalenessAware):
     advancing_pct: float = Field(ge=0, le=1)
     declining_pct: float = Field(ge=0, le=1)
     new_highs_minus_lows: int
+    sector_return_dispersion: float = Field(
+        default=0.0,
+        description="Cross-sectional std of sector ETF 60d returns "
+                    "(decimal scale, e.g., 0.05 = 5pp). F9 liquidity component.",
+    )
 
 
 class PCASnapshot(StalenessAware):
@@ -78,6 +83,13 @@ class SkewSnapshot(StalenessAware):
     percentile_1y: float = Field(ge=0, le=1)
     tail_hedge_signal: Literal["low", "normal", "elevated", "extreme"] = Field(
         description="<120 low, 120~130 normal, 130~145 elevated, >145 extreme"
+    )
+    change_1m_z: float = Field(
+        default=0.0,
+        description="1-month change in skew_value, normalized by long-run sd. "
+                    "F7 equity_vol_regime component (C8 활성화 예정). "
+                    "Level is post-2018 structurally elevated; 1m change z is "
+                    "cleaner signal for vol regime detection.",
     )
 
 
@@ -199,4 +211,18 @@ class EquityBondCorrelationSnapshot(StalenessAware):
     change_3m: float = Field(description="3개월 전 대비 상관계수 변화")
     regime: Literal["normal_hedge", "weakening_hedge", "positive_flip", "extreme_positive"] = Field(
         description="<-0.3 normal_hedge, -0.3~0 weakening, 0~+0.3 positive_flip, >+0.3 extreme"
+    )
+
+
+class RealVolSnapshot(StalenessAware):
+    """Realized volatility — SPY 60d/20d stddev (annualized).
+
+    For factor model F7 vol regime + F9 liquidity (VRP) components (C8 활성화 예정).
+    VRP (variance risk premium) = (VIX/100)² - realized_60d², scaled to bps²-like.
+    """
+    realized_vol_60d: float = Field(description="SPY 60-day stddev (annualized)")
+    realized_vol_20d: float = Field(description="SPY 20-day stddev (annualized)")
+    vrp_60d: float = Field(
+        default=0.0,
+        description="Variance risk premium: VIX² - realized_60d² (bps²-like)",
     )
