@@ -1,0 +1,9 @@
+{
+  "pr": "PR2a — Stage 2a β calibration",
+  "branch": "feat/stage2a-beta-calibration",
+  "started_at": "2026-05-24T07:26:27Z",
+  "current_commit": "C0",
+  "status": "scaffolding",
+  "long_running_jobs": {},
+  "notes": "PR1 후 / PR2b 전 — Issue #18 resolution. macOS arm64 환경 (Linux-first 가정 macOS 에서도 호환 확인됨)."
+}
