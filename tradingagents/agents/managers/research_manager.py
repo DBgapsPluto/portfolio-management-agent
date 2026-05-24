@@ -1,301 +1,194 @@
-"""Research Manager (Stage 2) — 24-cell Cartesian product framework.
+"""Research Manager (Stage 2) — Factor model (PR 2026-05-22).
 
-흐름:
-  Stage 1 summaries (macro/risk/technical/news) + Stage 0 신호 cleaning
-  (conditional stress surprise + KR residual signals)
-    → estimator (deep_llm 1회, ScenarioProbabilities24 산출 — 24 cell 분포)
-    → map_probs_to_bucket (결정적 가중평균, BucketTarget + dominant_cell/cycle)
+Pipeline:
+  Stage 1 (4 analyst struct + 4 summary) → AgentState
+    → compute_all_factors(state) → FactorScores (9 z-vector)
+    → apply_prior_smoothing (EMA in factor space, λ=1 default no-op)
+    → apply_factor_model_with_safety(z) → (bucket, tips, contributions, diagnostics)
+    → derive_dominant_scenario + derive_conviction (deterministic legacy compat)
     → ResearchDecision
 
-axis 정의:
-  D1 cycle (4): A/B/C/D
-  D2 tail (2):  N/T  (conditional surprise z 기준)
-  D3 kr (3):    F/boom/stress  (residual signal 기준)
-
-mandate (위험자산 ≤ 0.70)은 모든 cell playbook이 ≤ 0.70 → 선형결합 자동 보장.
+Stage 2 추가 LLM 호출 0. macro_news_analyst 의 NewsReport structured field 활용 (Option Z).
 """
-from tradingagents.schemas.research import (
-    ALL_CELLS, ResearchDecision, ScenarioProbabilities24,
+from dataclasses import replace
+from typing import Optional
+
+from tradingagents.schemas.portfolio import BucketTarget
+from tradingagents.schemas.research import ResearchDecision
+from tradingagents.skills.research.factor_estimators import (
+    FactorScore,
+    FactorScores,
+    compute_all_factors,
 )
-from tradingagents.skills._helpers import invoke_with_structured_retry
-from tradingagents.skills.research.scenario_definitions import (
-    CYCLE_DEFINITIONS, KR_DEFINITIONS, TAIL_DEFINITIONS,
-    all_cells_definition_block,
+from tradingagents.skills.research.factor_to_bucket import (
+    FACTORS,
+    INITIAL_BASELINE,
+    apply_factor_model_with_safety,
 )
-from tradingagents.skills.research.scenario_mapper import map_probs_to_bucket
-from tradingagents.skills.risk.conditional_stress import compute_conditional_stress
-from tradingagents.skills.risk.kr_residual_signals import compute_kr_residual_signals
 
 
-# Temporal smoothing (Issue #11 / spec §2 C3 / decisions.md D2, D3).
-# C2 variance n=20: flip rate 0%, bond σ 0.3pp ≪ 3pp → 둘 다 no-op default.
-# infrastructure 만 구축 — 미래 cycle transition 시점 재측정 후 활성화 권장.
-_EMA_LAMBDA: float = 1.0      # D2: λ=1.0 (new only, prior 무시 — no smoothing)
-_HYSTERESIS_DELTA: float = 0.0  # D3: Δ=0.0 (off — flip threshold 0)
+# Temporal smoothing (factor space). EMA infrastructure 유지 — default no-op.
+_EMA_LAMBDA: float = 1.0
 
 
-def _blend_with_prior(
-    new: ScenarioProbabilities24,
-    prior_decision: ResearchDecision | None,
+def _blend_factors_with_prior(
+    new: FactorScores,
+    prior_decision: Optional[ResearchDecision],
     lam: float,
-) -> ScenarioProbabilities24:
-    """EMA blend: final_probs = λ·new + (1-λ)·prior. λ=1.0 또는 prior None 시 identity.
-
-    24-cell 분포 합 = 1.0 보장 (renormalize). reasoning 은 new 의 것 유지.
-    """
+) -> FactorScores:
+    """EMA on factor z-vector. λ=1 → identity. prior None → identity."""
     if prior_decision is None or lam >= 1.0 - 1e-9:
         return new
-    prior_probs = prior_decision.scenario_probabilities
-    blended = {
-        key: lam * getattr(new, key) + (1.0 - lam) * getattr(prior_probs, key)
-        for key in ALL_CELLS
-    }
-    total = sum(blended.values())
-    if total <= 0:
+    prior_z = prior_decision.factor_scores
+    if not prior_z:
         return new
-    blended = {k: v / total for k, v in blended.items()}
-    return ScenarioProbabilities24(**blended, reasoning=new.reasoning)
 
+    def _blend(new_factor: FactorScore, prior_key: str) -> FactorScore:
+        prior_val = prior_z.get(prior_key, new_factor.z_score)
+        blended_z = lam * new_factor.z_score + (1 - lam) * prior_val
+        return replace(new_factor, z_score=blended_z)
 
-def _apply_hysteresis(
-    decision: ResearchDecision,
-    prior_decision: ResearchDecision | None,
-    delta: float,
-) -> ResearchDecision:
-    """Dominant cycle 변경 시 새 marginal 이 기존 cycle marginal 보다 +Δ 이상 앞서야 변경.
-
-    Δ=0.0 또는 prior None 또는 cycle 변경 없음 → identity.
-    변경 거부 시 dominant_cycle/probability 만 prior 의 값으로 override (marginal 값 보존).
-    """
-    if prior_decision is None or delta <= 0:
-        return decision
-    if decision.dominant_cycle == prior_decision.dominant_cycle:
-        return decision
-    new_dominant = decision.dominant_cycle
-    prior_dominant = prior_decision.dominant_cycle
-    new_marg = decision.cycle_marginals.get(new_dominant, 0.0)
-    prior_in_new = decision.cycle_marginals.get(prior_dominant, 0.0)
-    if (new_marg - prior_in_new) >= delta:
-        return decision  # large enough — allow change
-    # Override: keep prior dominant label (marginal 값은 raw 유지)
-    overridden = decision.model_copy(update={
-        "dominant_cycle": prior_dominant,  # type: ignore[arg-type]
-        "dominant_cycle_probability": prior_in_new,
-    })
-    return overridden
-
-
-_CYCLE_BLOCK = "\n".join(f"- {c}: {defn}" for c, defn in CYCLE_DEFINITIONS.items())
-_TAIL_BLOCK = "\n".join(f"- {t}: {defn}" for t, defn in TAIL_DEFINITIONS.items())
-_KR_BLOCK = "\n".join(f"- {k}: {defn}" for k, defn in KR_DEFINITIONS.items())
-_ALL_CELLS_BLOCK = all_cells_definition_block()
-
-
-# Prompt 분리 (Issue #10 / spec §2 C4 / decisions.md): 고정/가변 구분.
-# - SYSTEM_PROMPT (~5KB, 매 호출 동일): Framework + axis 정의 + 24-cell + 절차 + 금지.
-#   prompt caching 대상 — Anthropic 은 cache_control, OpenAI 는 auto-prefix-cache 활용.
-# - USER_TEMPLATE (~3-5KB, 호출마다 다름): Stage 1 4 summary + signal blocks.
-_SYSTEM_PROMPT = f"""\
-당신은 자산배분 시나리오 분석가입니다. Stage 1의 4명 분석가 (macro_quant,
-market_risk, technical, macro_news)가 만든 요약 4개를 받습니다.
-
-[Framework — 3축 직교 cell 분류]
-세계 경제 상태를 3축의 Cartesian product로 표현합니다. 각 cell은 서로 disjoint하고,
-24 cell의 union이 전체 상태공간을 덮습니다 (mutually exclusive + exhaustive).
-
-D1 cycle (4 cells):
-{_CYCLE_BLOCK}
-
-D2 tail (2 cells):
-{_TAIL_BLOCK}
-
-D3 kr (3 cells):
-{_KR_BLOCK}
-
-[24 Cell 전체 list — cycle_tail_kr 형식]
-{_ALL_CELLS_BLOCK}
-
-[추정 절차 — axis-aware reasoning]
-1. 머릿속에서 먼저 axis별 marginal 추정:
-   - D1: A/B/C/D 어느 cycle? (확률 합 = 1.0)
-   - D2: N vs T? (P(T) = conditional surprise aggregate_z 기반)
-   - D3: F vs boom vs stress? (KR residual score 기반)
-2. axis가 독립이면 P(cell) = P(cycle) × P(tail) × P(kr).
-   상관 있으면 그 상관 반영 (예: D-T가 A-T보다 자연 결합).
-3. 24 cell 분포 출력 — 합 = 1.0 엄격.
-4. TRANSIENT cell (B_T_*)은 P ≤ 0.03 권장 (historically rare).
-5. reasoning ≤1500자: axis별 marginal 근거 + top 3 cell 근거.
-
-[금지]
-- 절대값 thresholds 단독으로 D2=T 판정 (예: "HY OAS > 600bp" 단독으로 tail X).
-  반드시 Conditional Stress Surprise block의 aggregate_z 참조.
-- kr_yield_curve 같은 cycle proxy로 D3 판정.
-  KR Residual Signals block의 kr_stress_score / kr_boom_score만 사용.
-
-ScenarioProbabilities24 JSON 출력. 합 검증 자동 적용.
-"""
-
-
-_USER_TEMPLATE = """\
-[Stage 1 요약]
-=== Macro Quant ===
-{macro_summary}
-
-=== Market Risk ===
-{risk_summary}
-
-=== Technical ===
-{technical_summary}
-
-=== Macro News ===
-{news_summary}
-
-[축 직교성 가이드 — D2, D3 신호 cycle-decontamination (Stage 0)]
-{conditional_stress_block}
-{kr_residual_block}
-"""
-
-
-# Backward-compat alias — 일부 외부 caller (test/script) 가 합쳐진 prompt 를 사용.
-# 새 코드는 _SYSTEM_PROMPT + _USER_TEMPLATE 권장.
-ESTIMATOR_PROMPT = _SYSTEM_PROMPT + "\n" + _USER_TEMPLATE
-
-
-def _build_messages(
-    macro_summary: str, risk_summary: str, technical_summary: str,
-    news_summary: str, conditional_stress_block: str, kr_residual_block: str,
-) -> list[dict]:
-    """System + user 메시지 구조. system 에 cache_control 마커 (Anthropic 만 사용, OpenAI 무시).
-
-    OpenAI Responses API 는 ≥1024 token 동일 prefix 자동 캐싱 (별도 마커 불요).
-    Anthropic 은 explicit cache_control. langchain-openai/anthropic 둘 다 dict 통과.
-    """
-    user_msg = _USER_TEMPLATE.format(
-        macro_summary=macro_summary,
-        risk_summary=risk_summary,
-        technical_summary=technical_summary,
-        news_summary=news_summary,
-        conditional_stress_block=conditional_stress_block,
-        kr_residual_block=kr_residual_block,
+    return FactorScores(
+        growth_surprise=_blend(new.growth_surprise, "F1_growth"),
+        inflation_surprise=_blend(new.inflation_surprise, "F2_inflation"),
+        real_rate=_blend(new.real_rate, "F3_real_rate"),
+        term_premium=_blend(new.term_premium, "F4_term_premium"),
+        credit_cycle=_blend(new.credit_cycle, "F5_credit_cycle"),
+        krw_regime=_blend(new.krw_regime, "F6_krw_regime"),
+        equity_vol_regime=_blend(new.equity_vol_regime, "F7_equity_vol_regime"),
+        valuation=_blend(new.valuation, "F8_valuation"),
+        liquidity_regime=_blend(new.liquidity_regime, "F9_liquidity_regime"),
     )
-    return [
-        {
-            "role": "system",
-            "content": _SYSTEM_PROMPT,
-            # Anthropic prompt cache marker (5분 TTL). 다른 provider 는 ignore.
-            "cache_control": {"type": "ephemeral"},
-        },
-        {"role": "user", "content": user_msg},
+
+
+def derive_dominant_scenario(factor_scores: FactorScores) -> str:
+    """Legacy compat — deterministic mapping factor z → scenario name.
+
+    Priority:
+      1. F7 > 1.5 AND F5 > 1.0 → "global_credit"
+      2. F6 > 1.0 → "kr_stress" (if F5/F7 > 0.5 corroborate) else "kr_boom"
+      3. F6 < -1.0 → "kr_boom"
+      4. cycle quadrant (F1, F2):
+         F1>0.5 + F2>0.5 → "overheating"
+         F1>0.5 + F2<-0.5 → "goldilocks"
+         F1<-0.5 + F2>0.5 → "stagflation"
+         F1<-0.5 + F2<-0.5 → "broad_recession"
+      5. default → "goldilocks"
+    """
+    f1 = factor_scores.growth_surprise.z_score
+    f2 = factor_scores.inflation_surprise.z_score
+    f5 = factor_scores.credit_cycle.z_score
+    f6 = factor_scores.krw_regime.z_score
+    f7 = factor_scores.equity_vol_regime.z_score
+
+    if f7 > 1.5 and f5 > 1.0:
+        return "global_credit"
+    if f6 > 1.0:
+        if f5 > 0.5 or f7 > 0.5:
+            return "kr_stress"
+        return "kr_boom"
+    if f6 < -1.0:
+        return "kr_boom"
+
+    if f1 > 0.5 and f2 > 0.5:
+        return "overheating"
+    if f1 > 0.5 and f2 < -0.5:
+        return "goldilocks"
+    if f1 < -0.5 and f2 > 0.5:
+        return "stagflation"
+    if f1 < -0.5 and f2 < -0.5:
+        return "broad_recession"
+    return "goldilocks"
+
+
+def derive_conviction(factor_scores: FactorScores) -> str:
+    """total magnitude + sign agreement 기반."""
+    z_dict = factor_scores.to_dict()
+    total_mag = sum(abs(z) for z in z_dict.values())
+    # 주요 risk-on/off factor — F1 growth (+), F5 credit_cycle (-), F7 vol (-)
+    signs = [
+        z_dict["F1_growth"],
+        -z_dict["F5_credit_cycle"],
+        -z_dict["F7_equity_vol_regime"],
     ]
+    avg_sign_count = sum(1 if s > 0 else -1 if s < 0 else 0 for s in signs)
+    alignment = abs(avg_sign_count) / len(signs)
 
-
-def _build_signal_blocks(state) -> tuple[str, str]:
-    """state의 macro_report + risk_report에서 D2 surprise + D3 residual 산출."""
-    macro_report = state.get("macro_report")
-    risk_report = state.get("risk_report")
-    if macro_report is None or risk_report is None:
-        return ("", "")
-
-    try:
-        regime = macro_report.regime if hasattr(macro_report, "regime") else macro_report.get("regime")
-        if regime is None:
-            return ("", "")
-        quadrant = regime.quadrant if hasattr(regime, "quadrant") else regime.get("quadrant")
-        if quadrant is None:
-            return ("", "")
-
-        def _g(obj, *path, default=0.0):
-            for p in path:
-                if obj is None:
-                    return default
-                obj = getattr(obj, p, None) if hasattr(obj, p) else (obj.get(p) if isinstance(obj, dict) else None)
-            return obj if obj is not None else default
-
-        stress = compute_conditional_stress(
-            quadrant,
-            hy_oas_bps=_g(risk_report, "credit_spread_us_hy", "current_bps"),
-            vix=_g(risk_report, "vix", "current_value"),
-            funding_spread_bps=_g(risk_report, "funding_stress", "spread_bps"),
-            credit_quality_bps=_g(risk_report, "credit_quality", "quality_spread_bps"),
-            equity_bond_corr=_g(risk_report, "equity_bond_corr", "correlation_60d", default=-0.3),
-        )
-        kr = compute_kr_residual_signals(
-            kr_corp_spread_bps=_g(risk_report, "kr_corp_spread", "spread_bps"),
-            hy_oas_bps=_g(risk_report, "credit_spread_us_hy", "current_bps"),
-            kr_margin_change_20d_pct=_g(risk_report, "kr_margin_debt", "change_20d_pct"),
-            kr_tier_relative_pct=_g(risk_report, "kr_market_tier", "relative_perf_pct"),
-            foreign_flow_z=_g(macro_report, "foreign_flow", "net_flow_z", default=0.0),
-        )
-        return (stress.to_prompt_block(), kr.to_prompt_block())
-    except Exception:
-        return ("", "")
+    if total_mag > 4.0 and alignment > 0.6:
+        return "high"
+    if total_mag > 2.0 and alignment > 0.3:
+        return "medium"
+    return "low"
 
 
 def create_research_manager(deep_llm):
+    """Note: deep_llm 인자 유지 (interface compat), 사용 안 함."""
+
     def node(state):
-        conditional_stress_block, kr_residual_block = _build_signal_blocks(state)
-        messages = _build_messages(
-            macro_summary=state.get("macro_summary", ""),
-            risk_summary=state.get("risk_summary", ""),
-            technical_summary=state.get("technical_summary", ""),
-            news_summary=state.get("news_summary", ""),
-            conditional_stress_block=conditional_stress_block,
-            kr_residual_block=kr_residual_block,
-        )
-        probs: ScenarioProbabilities24 = invoke_with_structured_retry(
-            deep_llm, ScenarioProbabilities24, messages, max_retries=1,
+        # 1. Compute 9 factors (deterministic)
+        factor_scores = compute_all_factors(state)
+
+        # 2. EMA blend (λ=1.0 default no-op)
+        prior_decision: Optional[ResearchDecision] = state.get("prior_research_decision")
+        factor_scores = _blend_factors_with_prior(
+            factor_scores, prior_decision, _EMA_LAMBDA,
         )
 
-        # EMA temporal smoothing (Issue #11 / D2). λ=1.0 default → identity.
-        prior_decision: ResearchDecision | None = state.get("prior_research_decision")
-        smoothed_probs = _blend_with_prior(probs, prior_decision, _EMA_LAMBDA)
-
-        decision: ResearchDecision = map_probs_to_bucket(
-            smoothed_probs, rationale_seed=smoothed_probs.reasoning[:200],
+        # 3. Factor → bucket + QP mandate projection + safety diagnostics
+        bucket, tips_share, contributions, safety_diag = apply_factor_model_with_safety(
+            factor_scores.to_dict()
         )
 
-        # Hysteresis (Issue #11 / D3). Δ=0.0 default → identity.
-        decision = _apply_hysteresis(decision, prior_decision, _HYSTERESIS_DELTA)
+        # 4. Legacy compat fields
+        dominant_scenario = derive_dominant_scenario(factor_scores)
+        conviction = derive_conviction(factor_scores)
 
-        target = decision.bucket_target
-        # Top cells 표기 (5개만)
-        top_cells = sorted(
-            decision.scenario_probabilities.as_dict().items(),
-            key=lambda kv: -kv[1],
-        )[:5]
-        cell_lines = "\n".join(
-            f"  {key:<14} {p*100:>5.1f}%" for key, p in top_cells
+        # 5. BucketTarget
+        z_dict = factor_scores.to_dict()
+        z_str_top = ", ".join(
+            f"{f}={z_dict[f]:+.2f}"
+            for f in sorted(z_dict, key=lambda k: -abs(z_dict[k]))[:3]
         )
-        cycle_lines = "\n".join(
-            f"  {c}  {decision.cycle_marginals[c]*100:>5.1f}%"
-            for c in sorted(decision.cycle_marginals,
-                            key=lambda k: -decision.cycle_marginals[k])
+        rationale = (
+            f"Factor model: dominant_scenario={dominant_scenario}, conviction={conviction}. "
+            f"Top contributors: {z_str_top}"
+        )[:500]
+
+        target = BucketTarget(
+            kr_equity=bucket["kr_equity"],
+            global_equity=bucket["global_equity"],
+            fx_commodity=bucket["fx_commodity"],
+            bond=bucket["bond"],
+            cash_mmf=bucket["cash_mmf"],
+            bond_tips_share=tips_share,
+            rationale=rationale,
         )
 
-        eff_dom = decision.effective_cycle_marginals.get(decision.dominant_cycle, 0)
+        # 6. ResearchDecision — factor model 만 (C5: 24-cell field 제거됨)
+        decision = ResearchDecision(
+            bucket_target=target,
+            conviction=conviction,
+            dominant_scenario=dominant_scenario,
+            # Factor model
+            factor_scores=z_dict,
+            factor_contributions=contributions,
+            baseline_bucket=dict(INITIAL_BASELINE),
+            safety_diagnostics=safety_diag,
+        )
+
+        # 7. Summary text
         summary = (
-            f"## Research Decision (24-cell framework)\n"
-            f"**Dominant cycle**: {decision.dominant_cycle} "
-            f"({decision.dominant_cycle_probability*100:.1f}% raw, "
-            f"{eff_dom*100:.1f}% eff, β={decision.conviction_beta:.2f}, "
-            f"{decision.conviction} conviction)\n"
-            f"**Dominant cell**:  {decision.dominant_cell.key} "
-            f"({decision.dominant_cell_probability*100:.1f}%)\n\n"
-            f"Cycle marginal (raw):\n{cycle_lines}\n\n"
-            f"Tail marginal: T={decision.tail_marginals.get('T',0)*100:.1f}% / "
-            f"N={decision.tail_marginals.get('N',0)*100:.1f}%\n"
-            f"KR marginal: F={decision.kr_marginals.get('F',0)*100:.1f}% / "
-            f"boom={decision.kr_marginals.get('boom',0)*100:.1f}% / "
-            f"stress={decision.kr_marginals.get('stress',0)*100:.1f}%\n\n"
-            f"Top cells:\n{cell_lines}\n\n"
-            f"## Bucket Target\n"
+            f"## Research Decision (Factor Model)\n"
+            f"Dominant scenario: {dominant_scenario} ({conviction})\n\n"
+            f"Factor z-scores:\n"
+            + "\n".join(f"  {f}: {z:+.2f}" for f, z in z_dict.items())
+            + f"\n\n## Bucket Target\n"
             f"국내주식: {target.kr_equity*100:.1f}%, "
             f"해외주식: {target.global_equity*100:.1f}%, "
             f"FX/원자재: {target.fx_commodity*100:.1f}%, "
-            f"채권: {target.bond*100:.1f}% (TIPS share {target.bond_tips_share*100:.0f}%), "
+            f"채권: {target.bond*100:.1f}% (TIPS {tips_share*100:.0f}%), "
             f"MMF: {target.cash_mmf*100:.1f}%\n"
-            f"위험자산 합: {target.risk_asset_weight*100:.1f}%\n"
-            f"근거: {target.rationale[:300]}"
+            f"위험자산 합: {(target.kr_equity + target.global_equity + target.fx_commodity)*100:.1f}%"
         )
 
         return {

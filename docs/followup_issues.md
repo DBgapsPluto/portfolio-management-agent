@@ -479,3 +479,179 @@ LLM client wrapper 가 cache_control 미지원 시 wrapper 자체 보강 필요.
 | 9 | **#10 (caching)** | 비용/latency 즉시 개선. |
 | 10 | **#8 (ablation)** | stage 2 ROI 정량화. |
 | 11 | **#6 (baseline 회귀)** | data 의존, 시간 가장 큼. |
+
+---
+
+## Issue #12 — Stage 1 macro_quant 에 KR FX skill 추가 (factor model F6 Gap E+F)
+
+### Problem
+factor model 의 F6 krw_regime 가 KRW/USD level + REER 필요. 현재 Stage 2 의
+`external_fetchers.py` 가 yfinance 임시 fetch. Stage 1 fetch + cache 가 더 적절.
+
+### Proposed approach
+- macro_quant 의 sub_skill: kr_fx (KRW/USD level via yfinance KRW=X, REER via BIS monthly)
+- MacroReport schema 에 `kr_fx: KRFXSnapshot` 필드 추가
+- factor_estimators.py 의 F6 가 `stage1.macro_report.kr_fx.*` 으로 source 변경 (external_fetcher 제거)
+
+### Effort
+~4-6시간
+
+### Dependencies
+None (Stage 1 작업)
+
+### Priority
+High — factor F6 의 *current level* 가 *2026-05 reliability medium-high*. fetch 의 임시 성격
+이 production 운영 시 reliability risk.
+
+---
+
+## Issue #13 — Stage 1 macro_quant 에 LEI + ISM sub-components 추가 (factor model F1 Gap A+B)
+
+### Problem
+factor F1 growth_surprise 의 LEI 6m change + ISM PMI sub-components (new orders, employment,
+prices) component weight 가 PR1 에서 *0* (data 부재). F1 의 reliability ↓.
+
+### Proposed approach
+- macro_quant 에 LEI fetch (FRED 의 USSLIND 또는 CB LEI)
+- ISM PMI sub-components fetch (Bloomberg/FRED)
+- MacroReport.growth schema 확장
+- factor_baselines.py 에 baseline 추가
+- factor_estimators.py 의 F1 weights 재조정 (현재 sum=0.85 → 1.0)
+
+### Effort
+~3-4시간
+
+### Priority
+Medium
+
+---
+
+## Issue #14 — Stage 1 macro_quant 에 r-star (HLW) + ACM/KW term premium 추가 (factor model F3+F4 Gap C+D)
+
+### Problem
+factor F3 의 r-star, F4 의 ACM/Kim-Wright term premium model 모두 부재. F3 의 single-component
+의존, F4 의 slope-only (post-COVID de-anchored issue) 가 reliability risk.
+
+### Proposed approach
+- HLW r-star fetch (NY Fed quarterly publish)
+- Kim-Wright term premium (Fed published) — ACM 의 2024 review 대신
+- MacroReport.fed_path 에 r_star 추가, yield_curve 에 term_premium_kim_wright 추가
+- factor_baselines.py + factor_estimators.py 의 F3/F4 weights 재조정
+
+### Effort
+~5-7시간
+
+### Priority
+Medium-high — F4 의 post-COVID de-anchored issue 직접 mitigation.
+
+---
+
+## Issue #15 — Stage 1 market_risk 에 valuation skill 추가 (factor model F8 Gap G)
+
+### Problem
+factor F8 valuation 의 forward P/E, ERP component 모두 Stage 2 의 external_fetchers (yfinance
+trailing P/E proxy). forward P/E 가 더 적절 (Bloomberg / Refinitiv 필요).
+
+### Proposed approach
+- market_risk 에 sub_skill: equity_valuation (forward P/E via yfinance + earnings revision)
+- RiskReport.equity_valuation schema 추가
+- factor_estimators.py 의 F8 source 변경
+
+### Effort
+~3-5시간
+
+### Priority
+Medium — F8 가 *2026 reliability medium* (AI environment noise). 정확도 향상 marginal.
+
+---
+
+## Issue #16 — Stage 1 market_risk 에 cross-currency basis 추가 (factor model F9 Gap H)
+
+### Problem
+factor F9 liquidity_regime 의 cross-currency basis component 부재 (현재 weight=0).
+funding liquidity 의 *forward signal* 누락.
+
+### Proposed approach
+- market_risk 에 cross_currency_basis fetch (Bloomberg / DTCC public data)
+- RiskReport.funding_stress 에 cross_currency_basis 추가
+- factor_estimators.py 의 F9 weight 재조정
+
+### Effort
+~2-3시간
+
+### Priority
+Low — F9 의 다른 components (VRP, dispersion) 가 이미 작동.
+
+---
+
+## Issue #17 — external_fetchers.py 의 임시 fetch 를 Stage 1 으로 migrate (cleanup)
+
+### Problem
+PR `feat/stage2-factor-model` 가 `tradingagents/skills/research/external_fetchers.py` 신설:
+- `fetch_krw_usd_level()` via yfinance (KRW/USD)
+- `fetch_sp_trailing_pe()` via yfinance (S&P trailing P/E)
+
+본 모듈은 *Stage 2 의 layering 위반* (Stage 2 가 external API 직접 호출).
+
+### Proposed approach
+Issue #12 (KR FX), #15 (valuation) 완료 후:
+- factor_estimators.py 의 F6/F8 source 가 Stage 1 의 macro_quant/market_risk struct
+- `external_fetchers.py` 자체 삭제
+- 해당 test 도 삭제
+
+### Effort
+~1시간 (cleanup only — 의존성 작업 완료 후)
+
+### Dependencies
+Blocked by Issue #12 + #15
+
+### Priority
+Medium (cleanup) — production 운영 전 권장.
+
+---
+
+## Issue #18 — factor model β 의 real historical fetch + production calibration
+
+### Problem
+PR1 의 C6 calibration 은 *synthetic data* 으로 infrastructure 검증만. real INITIAL_BETA
+update 가 *Stage 1 real fetch + walk-forward Sharpe* 필요.
+
+### Proposed approach
+1. Historical fetch script:
+   - FRED quarterly (1991-2024): CPI, GDP, NFCI, CFNAI, yield curve, TIPS, fed funds
+   - yfinance quarterly: S&P 500, KOSPI, IEF, DJP, ^IRX
+   - pykrx quarterly: 외국인 순매수, KRW REER (BIS monthly aggregated)
+2. `factor_calibration.load_historical_data()` 의 *synthetic fallback* 제거 → real fetch
+3. `scripts/calibrate_factor_model.py --shrinkage-grid` 재실행
+4. validation_report 확인 — acceptance criteria PASS 시 INITIAL_BETA 교체
+5. Acceptance 미통과 시 design 재검토 (factor weights, sample window, etc.)
+
+### Effort
+~25-40시간 (fetch + cache + calibration)
+
+### Priority
+High — 본 PR 의 *empirical superiority* 검증의 단일 path.
+
+### Dependencies
+Issue #12, #14, #15 의 일부 (factor estimator 의 input source 가 production grade 후)
+
+---
+
+## Issue #19 — factor reliability audit 6m 재검증 (AUDIT_DATE update)
+
+### Problem
+factor_reliability_audit.py 의 COMPONENT_RELIABILITY 가 *시점 의존*. 6m 마다 재검증 권장
+(test 가 강제 fail trigger).
+
+### Proposed approach
+- 매 6개월:
+  - Sahm rule, yield curve, SKEW level, valuation 의 *2026 의 weakening 가 여전한지* 검토
+  - 새로 weakening 된 indicator 식별 (예: VIX 의 post-2024 새 patterns)
+  - AUDIT_DATE update, COMPONENT_RELIABILITY 갱신
+  - test_factor_indicator_validity.py 의 EXPECTED_COMPONENTS 도 update
+
+### Effort
+~2-3시간 per cycle
+
+### Priority
+Recurring (low/medium)

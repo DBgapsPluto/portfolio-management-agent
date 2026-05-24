@@ -74,46 +74,12 @@ def create_portfolio_allocator(
             raise RuntimeError("returns matrix empty — Stage 3 cannot proceed")
 
         # 2. Multi-factor + corr de-dup + (Phase C) scenario sub_category boost.
-        # 24-cell framework: dominant_cell.key (e.g. "A_N_F") 우선 사용 — log_boost가
-        # cell-axis 좌표 직접 받아 3축 boost 합성. 없으면 legacy dominant_scenario.
+        # Factor model PR (2026-05-22): dominant_cell 제거. 항상 legacy scenario name string 사용.
+        # log_boost 가 cell key 받던 path 도 해당 path 제거됨 (sub_category.py).
         dominant_scenario = None
         legacy_scenario_label = None
         if research_decision is not None:
-            cell = getattr(research_decision, "dominant_cell", None)
-            if cell is not None and hasattr(cell, "key"):
-                dominant_scenario = cell.key  # "A_N_F" 같은 cell key
-            else:
-                dominant_scenario = getattr(research_decision, "dominant_scenario", None)
-            legacy_scenario_label = getattr(
-                research_decision, "dominant_scenario", None,
-            )
-
-        attribution: dict = {
-            "as_of_date": state["as_of_date"],
-            "config": {
-                "attempts":             attempts,
-                "per_bucket_n":         per_bucket_n,
-                "regime_quadrant":      regime.quadrant if regime else None,
-                "regime_confidence":    regime.confidence if regime else 0.5,
-                "systemic_score":       risk_score.score if risk_score else None,
-                "systemic_regime":      risk_score.regime if risk_score else None,
-                "dominant_scenario":    dominant_scenario,
-                "legacy_scenario":      legacy_scenario_label,
-                "conviction":           (
-                    getattr(research_decision, "conviction", None)
-                    if research_decision else None
-                ),
-                "bond_tips_share":      bucket_target.bond_tips_share,
-                "bucket_target": {
-                    "kr_equity":     bucket_target.kr_equity,
-                    "global_equity": bucket_target.global_equity,
-                    "fx_commodity":  bucket_target.fx_commodity,
-                    "bond":          bucket_target.bond,
-                    "cash_mmf":      bucket_target.cash_mmf,
-                },
-            },
-        }
-
+            dominant_scenario = getattr(research_decision, "dominant_scenario", None)
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,

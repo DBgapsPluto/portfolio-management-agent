@@ -44,12 +44,15 @@ STAGE_PREREQUISITES: dict[str, list[str]] = {
     "market_risk": [],
     "technical": [],
     "macro_news": [],
-    # Stage 2 research_debate — 4 analyst summaries + 2 structured reports
-    # (Stage 0 신호 cleaning이 macro_report.regime + risk_report.* 구조체 접근 필요)
+    # Stage 2 research_debate — 4 analyst summaries + structured reports
+    # (Stage 0 신호 cleaning이 macro_report.regime + risk_report.* + news_report +
+    # technical_report 의 factor_panel 등 구조체 접근 필요. Sub-graph wrapper 폐기 후
+    # research_manager 가 AgentState 직접 접근 — Issue A fix.)
     "research_debate": [
         "macro_summary", "risk_summary",
         "technical_summary", "news_summary",
         "macro_report", "risk_report",
+        "news_report", "technical_report",
     ],
     # Stage 3 allocator (C5: technical_report.factor_panel + macro_report.regime +
     # risk_report.systemic_score 추가 — node 가 직접 접근)

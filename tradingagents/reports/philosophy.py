@@ -34,15 +34,20 @@ Output the full markdown document."""
 
 
 def _format_scenario_probs(rd) -> str:
-    """ResearchDecision.scenario_probabilities → 정렬된 한 줄 요약."""
-    if rd is None or not hasattr(rd, "scenario_probabilities"):
+    """ResearchDecision factor scores → 정렬된 한 줄 요약.
+
+    C5 (2026-05-23): scenario_probabilities (24-cell) 제거. 본 함수는 factor z-score
+    sorted summary 로 대체. dominant_scenario string 도 노출.
+    """
+    if rd is None:
         return "(none)"
-    try:
-        probs = rd.scenario_probabilities.as_dict()
-    except AttributeError:
-        return "(unavailable)"
-    sorted_p = sorted(probs.items(), key=lambda kv: -kv[1])
-    return ", ".join(f"{name} {p*100:.0f}%" for name, p in sorted_p)
+    factor_scores = getattr(rd, "factor_scores", None) or {}
+    dominant = getattr(rd, "dominant_scenario", None) or "?"
+    if not factor_scores:
+        return f"dominant={dominant} (no factor scores)"
+    sorted_z = sorted(factor_scores.items(), key=lambda kv: -abs(kv[1]))[:5]
+    z_str = ", ".join(f"{name} {z:+.2f}" for name, z in sorted_z)
+    return f"dominant={dominant}; top factors: {z_str}"
 
 
 def _format_overlay(overlay) -> str:

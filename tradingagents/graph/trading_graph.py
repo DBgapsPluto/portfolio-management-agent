@@ -13,13 +13,11 @@ from tradingagents.agents.analysts.technical_analyst import create_technical_ana
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
 from tradingagents.agents.managers.research_manager import create_research_manager
 from tradingagents.agents.managers.risk_judge import create_risk_judge
-from tradingagents.agents.researchers.debate_state import InvestDebateState
 from tradingagents.agents.utils.agent_states import _create_empty_state
 from tradingagents.agents.validator.mandate_validator import create_mandate_validator
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.builder import build_main_graph
 from tradingagents.graph.conditional_logic import create_fallback_normalizer
-from tradingagents.graph.debate_subgraph import build_invest_debate_subgraph
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.observability.run_archive import (
     archive_metadata, archive_wrap_node,
@@ -79,7 +77,9 @@ class TradingAgentsGraph:
         }
 
         research_estimator = create_research_manager(deep)
-        invest_subgraph = build_invest_debate_subgraph(research_estimator)
+        # Stage 2 research_manager — single-node (sub-graph wrapper 제거, Issue A fix).
+        # AgentState 직접 접근 → macro_report / risk_report / news_report / prior_research_decision 모두 가용.
+        research_debate_node = research_estimator  # plain node
 
         allocator = archive_wrap_node(
             create_portfolio_allocator(quick, deep, cache_path=cache_path),
@@ -89,25 +89,6 @@ class TradingAgentsGraph:
         validator = create_mandate_validator()
         fallback = create_fallback_normalizer(cache_path=cache_path)
         pm = create_portfolio_manager(deep, artifacts_dir=artifacts_dir)
-
-        # Wrap research_debate as a parent node that invokes the sub-graph
-        def research_debate_node(state):
-            sub_input = InvestDebateState(
-                messages=[],
-                macro_summary=state.get("macro_summary", ""),
-                risk_summary=state.get("risk_summary", ""),
-                technical_summary=state.get("technical_summary", ""),
-                news_summary=state.get("news_summary", ""),
-                bucket_target=None,
-                research_decision=None,
-                research_debate_summary="",
-            )
-            sub_result = invest_subgraph.invoke(sub_input)
-            return {
-                "research_debate_summary": sub_result.get("research_debate_summary", ""),
-                "bucket_target": sub_result.get("bucket_target"),
-                "research_decision": sub_result.get("research_decision"),
-            }
 
         # Stage 4 Risk Judge (Phase 1 — no-op placeholder, Phase 2 lenses 채울 예정).
         # LLM이 weight 직접 산출 X. RiskOverlay constraint만 생성, Stage 3 2차 호출.

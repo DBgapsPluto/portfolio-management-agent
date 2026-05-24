@@ -31,9 +31,7 @@ import pytest
 from tradingagents.dataflows.universe import sync_from_xlsx
 from tradingagents.schemas.macro import RegimeClassification
 from tradingagents.schemas.news import ImpactAssessment
-from tradingagents.schemas.research import (
-    ResearchDecision, ScenarioProbabilities,
-)
+from tradingagents.schemas.research import ResearchDecision
 from tradingagents.schemas.portfolio import BucketTarget, CandidateSet
 from tradingagents.schemas.risk import (
     BreadthSnapshot, SpreadSnapshot, SystemicRiskScore, VolatilitySnapshot,
@@ -126,19 +124,14 @@ def test_5_28_dry_run_produces_artifacts(
         method=OptimizationMethod.HRP, params={},
         reasoning="Recession + risk_off → defensive HRP.",
     )
-    # Phase 1: ScenarioProbabilities를 LLM이 산출 → mapper가 BucketTarget 결정.
-    scenario_out = ScenarioProbabilities(
-        goldilocks=0.20, ai_concentration=0.10, stagflation=0.10,
-        broad_recession=0.20, global_credit=0.20,
-        kr_boom=0.10, kr_stress=0.10,
-        reasoning="mock — broad uncertainty, balanced across scenarios",
-    )
+    # C5 (2026-05-23): Stage 2 가 factor model 로 전환되어 ScenarioProbabilities
+    # LLM 호출 자체가 없음. deep_llm mock 에 RegimeClassification / SystemicRiskScore /
+    # MethodChoice 만 등록.
 
     deep_llm = _mock_llm_factory({
         "RegimeClassification": regime_out,
         "SystemicRiskScore": systemic_out,
         "MethodChoice": method_out,
-        "ScenarioProbabilities": scenario_out,
     })
     quick_llm = _mock_llm_factory({
         "ImpactAssessment": impact_out,
@@ -158,8 +151,7 @@ def test_5_28_dry_run_produces_artifacts(
     )
 
     # Stage 2: research_manager mock — 5 ETF fixture (1 per bucket) 호환 위해
-    # 균등 0.20 BucketTarget 강제. ScenarioProbabilities 자체는 deep_llm mock에
-    # 등록되지만 mapper 결과를 우회.
+    # 균등 0.20 BucketTarget 강제. factor model 결과를 우회.
     _fixture_bucket = BucketTarget(
         kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
         bond=0.20, cash_mmf=0.20,
@@ -167,10 +159,8 @@ def test_5_28_dry_run_produces_artifacts(
     )
     _fixture_decision = ResearchDecision(
         bucket_target=_fixture_bucket,
-        scenario_probabilities=scenario_out,
-        dominant_scenario="goldilocks",
-        dominant_probability=scenario_out.goldilocks,
         conviction="low",
+        dominant_scenario="goldilocks",
     )
 
     def _fixture_research_manager(_deep_llm):
