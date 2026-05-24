@@ -258,3 +258,47 @@ $ uv run python scripts/calibrate_factor_model.py \
 
 Status: **FAIL (1/5 condition)**. grill-me #3 marker (Task 8.3) 도달 —
 sign violation 처리 (strict reject vs marginal accept) 결정 필요.
+
+## Post-C9 (feat: INITIAL_BETA replace + acceptance tolerance relax)
+
+grill-me #3: user "B. Marginal accept" 결정 — sign tolerance 1e-9 → 1e-3.
+β=+0.0009 (≈ 0) violation 흡수 → verdict PASS.
+
+```
+$ uv run python scripts/calibrate_factor_model.py …
+{
+  "pass": true,
+  "best_shrinkage": 2.0,
+  "mean_oos_sharpe": 1.171,
+  "prior_oos_sharpe": 0.829,
+  "improvement_delta": +0.342
+}
+```
+
+INITIAL_BETA 교체:
+- tradingagents/skills/research/factor_to_bucket.py: hand-coded prior →
+  calibrated (45 entries). Row sums no longer 0 (hand-coded invariant),
+  but bounded ±0.4. `_project_simple` 가 sum=1 으로 normalize.
+- F7×kr_equity = +0.0009 (marginal noise, tolerance 1e-3 흡수).
+
+Test update (6 tests):
+- test_initial_beta_each_factor_sums_to_zero → row_sums_bounded (±0.4).
+- test_apply_factor_model_preserves_sum_when_no_capping →
+  preserves_sum_bounded_no_capping (±0.5 of 1.0).
+- test_apply_factor_model_sum_drift_bounded_under_capping → bounds 0-2.0.
+- test_apply_factor_model_contributions_audit → dynamic INITIAL_BETA read.
+- test_per_contribution_cap_applied → dynamic β scan + scale z to trigger cap.
+- test_per_contribution_cap_does_not_affect_small_signals → dynamic β read.
+
+```
+$ uv run pytest tests/unit/ -q
+2 failed, 786 passed, 7 warnings in 79.24s
+
+$ uv run pytest tests/integration/ -q
+18 failed, 28 passed, 1 warning in 46.42s
+```
+
+Δ from C8: Unit +1 new pass (acceptance change). Integration: unchanged.
+0 new failure (baseline 2 unit + 18 integ 유지).
+
+Status: PASS. **PR2a 완료** — INITIAL_BETA = data-driven (+34% Sharpe gain).

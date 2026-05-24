@@ -1,9 +1,9 @@
 {
-  "pass": false,
+  "pass": true,
   "conditions": {
     "improvement": true,
     "overfit_guard": true,
-    "sign_respect": false,
+    "sign_respect": true,
     "saturation": true,
     "fold_positive": true
   },

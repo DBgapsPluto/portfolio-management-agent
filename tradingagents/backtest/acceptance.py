@@ -39,13 +39,21 @@ _PRIOR_STUCK_THRESHOLD = 1e-3  # |β - prior| < threshold = stuck
 _PRIOR_STUCK_FRACTION_WARN = 0.80
 
 
+_SIGN_TOLERANCE = 1e-3  # grill-me #3 2026-05-24: numerical noise tolerance.
+# β 의 가능 범위 [-0.20, 0.20] 의 0.5% — optimizer 가 거의 0 에 도달했으나
+# strict `value ≤ 0` 에 의해 양수/음수 미세 차이로 reject 되는 edge case 흡수.
+
+
 def _check_sign(key: tuple[str, str], value: float) -> bool:
-    """SIGN_RESTRICTION 의 expected sign 위반 검출."""
+    """SIGN_RESTRICTION 의 expected sign 위반 검출.
+
+    `_SIGN_TOLERANCE` (1e-3) 범위 내 위반 은 noise 로 간주 — pass.
+    """
     expected = SIGN_RESTRICTION.get(key, "either")
     if expected == "positive":
-        return value >= -1e-9
+        return value >= -_SIGN_TOLERANCE
     if expected == "negative":
-        return value <= 1e-9
+        return value <= _SIGN_TOLERANCE
     return True
 
 
