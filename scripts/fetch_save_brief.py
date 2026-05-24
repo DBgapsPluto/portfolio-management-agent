@@ -284,7 +284,7 @@ def git_commit_push(file_path: Path) -> None:
     except ValueError:
         log.warning("출력 파일이 repo 밖이라 git push skip: %s", file_path)
         return
-    subprocess.run(["git", "add", str(rel)], cwd=REPO_ROOT, check=True)
+    subprocess.run(["git", "add", "-f", str(rel)], cwd=REPO_ROOT, check=True)
     diff = subprocess.run(
         ["git", "diff", "--cached", "--quiet"], cwd=REPO_ROOT
     )
