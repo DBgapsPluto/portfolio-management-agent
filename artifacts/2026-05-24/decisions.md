@@ -17,7 +17,7 @@
 
 ## Critical issue 처리
 
-- C1 (Point-in-time): ALFRED vintage fetch for 7 series (CFNAI, NFCI, ANFCI, GDPNOW, UNRATE, CPIAUCSL, PCEPILFE) — **NOTE 2026-05-24**: plan 의 `CFNAINMNI` 는 ALFRED 에 존재하지 않음 ("does not exist in ALFRED" error). 정정: `CFNAI` 로 교체. 6 series 는 그대로 (NFCI/ANFCI/GDPNOW/UNRATE/CPIAUCSL/PCEPILFE 모두 vintage smoke test PASS). C1 commit 시 fetcher_alfred.py 에 반영.
+- C1 (Point-in-time): ALFRED vintage fetch for 7 series (CFNAI, NFCI, ANFCI, GDPNOW, UNRATE, CPIAUCSL, PCEPILFE) — **2026-05-24 정정 완료**: plan/spec 4개 문서의 `CFNAINMNI` typo (ALFRED 에 존재하지 않는 ID) 를 `CFNAI` 로 일괄 정정. 정정 대상: stage2a plan/spec + stage1 plan/spec (PR1 의 잔존 typo). Production 코드는 처음부터 `CFNAI`/`CFNAIMA3` 를 사용 중. C1 의 fetcher_alfred.py 는 정정된 plan 기준으로 작성.
 - C2 (News-sentinel mismatch): factor_estimators 의 mode="historical" flag — news weight 0 + quant renorm
 - C3 (Gate strictness): paired-t p<0.20 + |IS-OOS|<0.30 + ≥6/7 folds positive
 - C4 (Currency basis): KRW basis with USDKRW translation, pre-1996 kr_equity None

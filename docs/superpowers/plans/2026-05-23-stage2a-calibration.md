@@ -159,7 +159,7 @@ touch artifacts/$RUN_DATE/calibration_runs/.gitkeep
 
 ## Critical issue 처리
 
-- C1 (Point-in-time): ALFRED vintage fetch for 7 series (CFNAINMNI, NFCI, ANFCI, GDPNOW, UNRATE, CPIAUCSL, PCEPILFE)
+- C1 (Point-in-time): ALFRED vintage fetch for 7 series (CFNAI, NFCI, ANFCI, GDPNOW, UNRATE, CPIAUCSL, PCEPILFE)
 - C2 (News-sentinel mismatch): factor_estimators 의 mode="historical" flag — news weight 0 + quant renorm
 - C3 (Gate strictness): paired-t p<0.20 + |IS-OOS|<0.30 + ≥6/7 folds positive
 - C4 (Currency basis): KRW basis with USDKRW translation, pre-1996 kr_equity None
@@ -489,14 +489,14 @@ from tradingagents.backtest.historical.fetcher_alfred import (
 def test_alfred_series_lists_7_revising() -> None:
     """7 revising series — Critical 1."""
     assert set(ALFRED_SERIES) == {
-        "CFNAINMNI", "NFCI", "ANFCI", "GDPNOW",
+        "CFNAI", "NFCI", "ANFCI", "GDPNOW",
         "UNRATE", "CPIAUCSL", "PCEPILFE",
     }
 
 
 def test_fetch_alfred_vintage_uses_cache(tmp_path: Path) -> None:
     """Cache hit → API call 없음."""
-    cache_path = tmp_path / "raw" / "fred_alfred" / "CFNAINMNI.parquet"
+    cache_path = tmp_path / "raw" / "fred_alfred" / "CFNAI.parquet"
     cache_path.parent.mkdir(parents=True)
     cached = pd.DataFrame({
         "vintage_value": [-0.3, -0.2, -0.1],
@@ -505,7 +505,7 @@ def test_fetch_alfred_vintage_uses_cache(tmp_path: Path) -> None:
 
     with patch("tradingagents.backtest.historical.fetcher_alfred._call_alfred") as m:
         result = fetch_alfred_vintage_quarterly(
-            "CFNAINMNI", date(1991, 1, 1), date(1991, 12, 31),
+            "CFNAI", date(1991, 1, 1), date(1991, 12, 31),
             cache_dir=tmp_path / "raw" / "fred_alfred",
         )
         m.assert_not_called()
@@ -523,11 +523,11 @@ def test_fetch_alfred_vintage_fetches_per_quarter(tmp_path: Path) -> None:
         side_effect=fake_call,
     ) as m:
         result = fetch_alfred_vintage_quarterly(
-            "CFNAINMNI", date(1991, 3, 31), date(1991, 9, 30),
+            "CFNAI", date(1991, 3, 31), date(1991, 9, 30),
             cache_dir=tmp_path / "raw" / "fred_alfred",
         )
         assert m.call_count == 3  # 3 quarters: 1991-Q1, Q2, Q3
-    assert (tmp_path / "raw" / "fred_alfred" / "CFNAINMNI.parquet").exists()
+    assert (tmp_path / "raw" / "fred_alfred" / "CFNAI.parquet").exists()
     assert list(result["vintage_value"]) == [-0.5, -0.5, -0.3]
 ```
 
@@ -551,7 +551,7 @@ Expected: ImportError — `fetcher_alfred` 부재.
 있던 값을 반환 → point-in-time 정합성.
 
 7 revising series 대상:
-- CFNAINMNI: Chicago Fed National Activity Index (monthly)
+- CFNAI: Chicago Fed National Activity Index (monthly)
 - NFCI, ANFCI: National Financial Conditions Index (weekly)
 - GDPNOW: Atlanta Fed GDPNow (2011+)
 - UNRATE: Unemployment rate (Sahm rule input)
@@ -578,7 +578,7 @@ logger = logging.getLogger(__name__)
 
 
 ALFRED_SERIES: list[str] = [
-    "CFNAINMNI", "NFCI", "ANFCI", "GDPNOW",
+    "CFNAI", "NFCI", "ANFCI", "GDPNOW",
     "UNRATE", "CPIAUCSL", "PCEPILFE",
 ]
 
@@ -653,7 +653,7 @@ def fetch_alfred_vintage_quarterly(
     """각 quarter end 시점에 *알려져 있던* 값 (vintage-aware).
 
     Args:
-        series_id: ALFRED series ID (e.g., "CFNAINMNI").
+        series_id: ALFRED series ID (e.g., "CFNAI").
         start, end: date range.
         cache_dir: e.g., `backtest/historical/raw/fred_alfred/`.
 
@@ -1094,7 +1094,7 @@ PR2a 의 historical data fetch infrastructure. 4 개 fetcher + parquet cache
 - fetcher_fred.py: 기존 dataflows.fred.fetch_fred_series 의 thin wrapper +
   per-series parquet cache (latest-vintage, daily/monthly).
 - fetcher_alfred.py: ALFRED API vintage-aware fetch (Critical 1) for 7
-  revising series (CFNAINMNI, NFCI, ANFCI, GDPNOW, UNRATE, CPIAUCSL,
+  revising series (CFNAI, NFCI, ANFCI, GDPNOW, UNRATE, CPIAUCSL,
   PCEPILFE). 각 quarter end 시점의 vintage value.
 - fetcher_yfinance.py: yfinance daily Close + parquet cache. Linux only
   (Issue #20 — Windows curl_cffi SSL fail).
@@ -1498,7 +1498,7 @@ def assemble_quarterly_panel(
     cols["real_yield_10y_pct"] = daily_to_quarter_end_last(_load_fred("DFII10"))
 
     # ALFRED vintage — CFNAI / NFCI / ANFCI / GDPNOW / UNRATE / CPI / Core PCE
-    cfnai_df = _load_alfred("CFNAINMNI")
+    cfnai_df = _load_alfred("CFNAI")
     cols["cfnai"] = cfnai_df["vintage_value"] if not cfnai_df.empty else pd.Series(dtype=float)
     # CFNAI 3m avg requires monthly CFNAI history — for simplicity, use rolling on vintage quarterly
     if not cfnai_df.empty:

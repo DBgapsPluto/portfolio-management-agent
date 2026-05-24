@@ -92,7 +92,7 @@ PR1 완료 (C11 e52e2dc) 로:
   │    → 1991-2024: CPI, GDP, DGS{2,5,10,30}, BAA, AAA, BAA10Y, TB3MS,
   │                   T10YIE, T5YIFR, DFII10, DEXKOUS, DTWEXM, MICH, USREC, UNRATE
   ├─ ALFRED fetcher (Critical 1) — vintage-aware
-  │    → 7 revising series: CFNAINMNI, NFCI, ANFCI, GDPNOW, UNRATE,
+  │    → 7 revising series: CFNAI, NFCI, ANFCI, GDPNOW, UNRATE,
   │                          CPIAUCSL, PCEPILFE
   ├─ yfinance fetcher (Linux 에서만 SSL 정상)
   │    → 1991-2024 daily Close: ^GSPC, ^KS11, ^VIX, ^SKEW, IEF, TIP, DJP,
@@ -233,7 +233,7 @@ PR1 C2 의 `_build_real_stage1_baseline()` (모든 schema instance baseline valu
 |---|---|---|---|---|---|
 | F1 | GDP nowcast | GDPNOW (FRED) | 2011+ | FRED + ALFRED | ✓ |
 | F1 | NFCI / ANFCI | NFCI, ANFCI (FRED) | 1971+ weekly | FRED + ALFRED | ✓ |
-| F1 | CFNAI / CFNAI 3m | CFNAINMNI (FRED) | 1967+ monthly | FRED + ALFRED | ✓ |
+| F1 | CFNAI / CFNAI 3m | CFNAI (FRED) | 1967+ monthly | FRED + ALFRED | ✓ |
 | F1 | Sahm rule | derived from UNRATE (FRED) | 1948+ | FRED + ALFRED | ✓ |
 | F1 | Yield curve 2-10y | DGS10 - DGS2 (FRED) | 1976+ daily | FRED | — (daily, no revise) |
 | F2 | CPI YoY / 3mo mom | CPIAUCSL (FRED) | 1948+ monthly | FRED + ALFRED | ✓ |
@@ -283,7 +283,7 @@ def fetch_alfred_vintage_quarterly(
 ```
 
 ALFRED 의 vintage-aware 7 series:
-1. `CFNAINMNI` — CFNAI
+1. `CFNAI` — CFNAI
 2. `NFCI` — Chicago Fed National Financial Conditions Index
 3. `ANFCI` — Adjusted NFCI
 4. `GDPNOW` — Atlanta Fed GDPNow (2011+)
