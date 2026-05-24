@@ -111,3 +111,24 @@ test_factor_estimators_real_schema.py 의 `_build_baseline_*_report()` 패턴을
 값으로 일부 field overlay (model_copy with update).
 
 Status: PASS. **grill-me #1 marker (Task 3.4)** 도달.
+
+## Post-C4 (feat: factor_estimators mode='historical' flag — Critical 2)
+
+```
+$ uv run pytest tests/unit/ -q
+2 failed, 773 passed, 6 warnings in 80.51s
+
+$ uv run pytest tests/integration/ -q
+18 failed, 26 passed, 2 warnings in 17.28s
+```
+
+Δ from C3: Unit +4 new pass (production-mode default backward-compat,
+historical-mode drops news, confidence range, NEWS_DERIVED_COMPONENTS const).
+Integration: unchanged.
+
+**Backward compat 검증**:
+- test_factor_estimators_real_schema (existing 83 tests) + 4 new = 87 PASS.
+- production mode default 호출 → PR1 의 100% identical (test_production_mode_
+  default_matches_explicit).
+
+Status: PASS. C5 (135Q sample 생성) 진행 가능.

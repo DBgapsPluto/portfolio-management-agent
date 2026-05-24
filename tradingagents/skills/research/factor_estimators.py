@@ -45,7 +45,7 @@ Each factor weight dict re-normalized to sum=1.0 (D11 plan default).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from tradingagents.skills.research.external_fetchers import (
     fetch_krw_usd_level,
@@ -53,6 +53,41 @@ from tradingagents.skills.research.external_fetchers import (
 )
 from tradingagents.skills.research.factor_baselines import z_score
 from tradingagents.skills.research.factor_reliability_audit import get_weight_cap
+
+
+# ---------------------- Critical 2 (PR2a) — historical mode ----------------------
+#
+# Set of components_raw keys that are sourced from `news_report`. In
+# `mode="historical"`, these are dropped at the entry of `_aggregate` (their
+# weights are removed from the renormalization pool, and the surviving
+# *quant* components carry the full weight after renorm).
+#
+# Rationale: historical backtest reconstructs Stage 1 from quarterly indicator
+# data — news/LLM-derived state cannot be replayed. Setting news weights to 0
+# (via mode='historical') keeps the factor z magnitude on the same scale as
+# production, where news components do exist.
+#
+# Default mode='production' → 100% identical behavior to pre-PR2a.
+NEWS_DERIVED_COMPONENTS: Final[frozenset[str]] = frozenset({
+    # F1
+    "release_surprise", "hawkish_bias", "macro_sent", "risk_regime_overnight",
+    # F2 (release_hawkish is F2's specific name for what F1 calls hawkish_bias)
+    "release_hawkish",
+    # F3
+    "fed_voting_balance",
+    # F4 (fed_voting_balance also appears here; included above)
+    "fed_tone_balance",
+    # F5
+    "corporate_distress", "dovish_bias",
+    # F6
+    "krw_overnight_pct", "bok_tone_balance",
+    # F7
+    "sentiment_dispersion", "geopolitical_surge",
+    # F9
+    "event_cluster", "rising_signal",
+})
+
+FactorMode = Literal["production", "historical"]
 
 
 # ---------------------- schema ----------------------
@@ -143,11 +178,27 @@ def _aggregate(
     factor_name: str,
     components_raw: dict[str, float | None],
     weights: dict[str, float],
+    mode: FactorMode = "production",
 ) -> FactorScore:
     """Convert raw component values → final FactorScore.
 
     See module docstring for the 4-step recipe.
+
+    Args:
+        mode: "production" (default, full behavior) or "historical" (Critical 2,
+            PR2a) — drops NEWS_DERIVED_COMPONENTS at entry so historical
+            backtest's quant-only Stage 1 reconstructions yield z magnitudes
+            on the same scale as production.
     """
+    # Critical 2 (PR2a): in historical mode, drop news-derived components
+    # before any z-score / weight processing. Surviving quant weights are
+    # renormalized by the existing Step 4 logic.
+    if mode == "historical":
+        components_raw = {
+            k: v for k, v in components_raw.items()
+            if k not in NEWS_DERIVED_COMPONENTS
+        }
+
     # Step 1+2: drop None, look up z-score via baseline.
     component_z: dict[str, float] = {}
     used_original_weights: dict[str, float] = {}
@@ -233,7 +284,7 @@ def _interpretation(factor_name: str, z: float) -> str:
 # ---------------------- F1 growth_surprise ----------------------
 
 
-def compute_growth_surprise(stage1: Any) -> FactorScore:
+def compute_growth_surprise(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F1 growth_surprise — +z = stronger growth, -z = recession.
 
     PR0 hotfix (2026-05-23 C1): paths fixed to real MacroReport schema.
@@ -289,13 +340,13 @@ def compute_growth_surprise(stage1: Any) -> FactorScore:
         "release_surprise": 0.18, "hawkish_bias": 0.05,
         "macro_sent": 0.05, "risk_regime_overnight": 0.07,
     }
-    return _aggregate("F1_growth", components_raw, weights)
+    return _aggregate("F1_growth", components_raw, weights, mode=mode)
 
 
 # ---------------------- F2 inflation_surprise ----------------------
 
 
-def compute_inflation_surprise(stage1: Any) -> FactorScore:
+def compute_inflation_surprise(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F2 inflation_surprise — +z = higher inflation, -z = disinflation.
 
     PR0 hotfix (C1): cpi.* → inflation.*; inflation_exp.* →
@@ -346,13 +397,13 @@ def compute_inflation_surprise(stage1: Any) -> FactorScore:
         "real_yield_inv": 0.08, "fed_path_bps": 0.08,
         "release_hawkish": 0.07, "macro_sent": 0.07,
     }
-    return _aggregate("F2_inflation", components_raw, weights)
+    return _aggregate("F2_inflation", components_raw, weights, mode=mode)
 
 
 # ---------------------- F3 real_rate ----------------------
 
 
-def compute_real_rate(stage1: Any) -> FactorScore:
+def compute_real_rate(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F3 real_rate — +z = high real rate (tight policy).
 
     PR0 hotfix (C1): tips_yield는 risk_report.real_yields.tips_10y;
@@ -370,13 +421,13 @@ def compute_real_rate(stage1: Any) -> FactorScore:
     weights: dict[str, float] = {
         "tips_yield": 0.55, "fed_voting_balance": 0.35, "fed_path_implied": 0.10,
     }
-    return _aggregate("F3_real_rate", components_raw, weights)
+    return _aggregate("F3_real_rate", components_raw, weights, mode=mode)
 
 
 # ---------------------- F4 term_premium ----------------------
 
 
-def compute_term_premium(stage1: Any) -> FactorScore:
+def compute_term_premium(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F4 term_premium — +z = steeper curve.
 
     PR0 hotfix (C1): slope_2_10y_bps → spread_10y_2y_bps.
@@ -408,13 +459,13 @@ def compute_term_premium(stage1: Any) -> FactorScore:
         "slope_5_30y": 0.20,   # C8 activated
         "fed_tone_balance": 0.30, "fed_voting_balance": 0.25,
     }
-    return _aggregate("F4_term_premium", components_raw, weights)
+    return _aggregate("F4_term_premium", components_raw, weights, mode=mode)
 
 
 # ---------------------- F5 credit_cycle ----------------------
 
 
-def compute_credit_cycle(stage1: Any) -> FactorScore:
+def compute_credit_cycle(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F5 credit_cycle — +z = credit stress.
 
     PR0 hotfix (C1): hy_oas momentum field 명은 momentum_zscore
@@ -468,13 +519,13 @@ def compute_credit_cycle(stage1: Any) -> FactorScore:
         "credit_quality_bps": 0.15, "funding_bps": 0.10,
         "corporate_distress": 0.15, "dovish_bias": 0.05,
     }
-    return _aggregate("F5_credit_cycle", components_raw, weights)
+    return _aggregate("F5_credit_cycle", components_raw, weights, mode=mode)
 
 
 # ---------------------- F6 krw_regime ----------------------
 
 
-def compute_krw_regime(stage1: Any) -> FactorScore:
+def compute_krw_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F6 krw_regime — +z = weaker KRW.
 
     PR0 hotfix (C1):
@@ -512,13 +563,13 @@ def compute_krw_regime(stage1: Any) -> FactorScore:
         "kr_us_rate_diff": 0.15, "foreign_flow_z": 0.20,
         "kr_exports_yoy": 0.10, "bok_tone_balance": 0.15,
     }
-    return _aggregate("F6_krw_regime", components_raw, weights)
+    return _aggregate("F6_krw_regime", components_raw, weights, mode=mode)
 
 
 # ---------------------- F7 equity_vol_regime ----------------------
 
 
-def compute_equity_vol_regime(stage1: Any) -> FactorScore:
+def compute_equity_vol_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F7 equity_vol_regime — +z = high vol.
 
     PR0 hotfix (C1):
@@ -569,13 +620,13 @@ def compute_equity_vol_regime(stage1: Any) -> FactorScore:
         "skew_change": 0.07,        # C8 activated (C7.5)
         "sentiment_dispersion": 0.10, "geopolitical_surge": 0.15,
     }
-    return _aggregate("F7_equity_vol", components_raw, weights)
+    return _aggregate("F7_equity_vol", components_raw, weights, mode=mode)
 
 
 # ---------------------- F8 valuation ----------------------
 
 
-def compute_valuation(stage1: Any) -> FactorScore:
+def compute_valuation(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F8 valuation — +z = more expensive.
 
     PR0 hotfix (C1):
@@ -610,13 +661,13 @@ def compute_valuation(stage1: Any) -> FactorScore:
         "sp_pe": 0.20, "earnings_yield": 0.25, "erp": 0.30,
         "kospi_pbr": 0.25,   # C8 activated
     }
-    return _aggregate("F8_valuation", components_raw, weights)
+    return _aggregate("F8_valuation", components_raw, weights, mode=mode)
 
 
 # ---------------------- F9 liquidity_regime ----------------------
 
 
-def compute_liquidity_regime(stage1: Any) -> FactorScore:
+def compute_liquidity_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F9 liquidity_regime — +z = liquidity stress.
 
     PR0 hotfix (C1):
@@ -672,29 +723,41 @@ def compute_liquidity_regime(stage1: Any) -> FactorScore:
         "event_cluster": 0.15,
         "rising_signal": 0.15,
     }
-    return _aggregate("F9_liquidity", components_raw, weights)
+    return _aggregate("F9_liquidity", components_raw, weights, mode=mode)
 
 
 # ---------------------- compute_all_factors ----------------------
 
 
-def compute_all_factors(stage1: Any) -> FactorScores:
+def compute_all_factors(
+    stage1: Any, mode: FactorMode = "production",
+) -> FactorScores:
+    """Compute all 9 factors.
+
+    Args:
+        mode: "production" (default) or "historical" (Critical 2, PR2a).
+            In "historical" mode, NEWS_DERIVED_COMPONENTS are dropped from each
+            factor's component pool (news_report is not LLM-reproducible in
+            backtest); surviving quant weights are renormalized.
+    """
     return FactorScores(
-        growth_surprise=compute_growth_surprise(stage1),
-        inflation_surprise=compute_inflation_surprise(stage1),
-        real_rate=compute_real_rate(stage1),
-        term_premium=compute_term_premium(stage1),
-        credit_cycle=compute_credit_cycle(stage1),
-        krw_regime=compute_krw_regime(stage1),
-        equity_vol_regime=compute_equity_vol_regime(stage1),
-        valuation=compute_valuation(stage1),
-        liquidity_regime=compute_liquidity_regime(stage1),
+        growth_surprise=compute_growth_surprise(stage1, mode=mode),
+        inflation_surprise=compute_inflation_surprise(stage1, mode=mode),
+        real_rate=compute_real_rate(stage1, mode=mode),
+        term_premium=compute_term_premium(stage1, mode=mode),
+        credit_cycle=compute_credit_cycle(stage1, mode=mode),
+        krw_regime=compute_krw_regime(stage1, mode=mode),
+        equity_vol_regime=compute_equity_vol_regime(stage1, mode=mode),
+        valuation=compute_valuation(stage1, mode=mode),
+        liquidity_regime=compute_liquidity_regime(stage1, mode=mode),
     )
 
 
 __all__: Final = [
     "FactorScore",
     "FactorScores",
+    "FactorMode",
+    "NEWS_DERIVED_COMPONENTS",
     "compute_all_factors",
     "compute_credit_cycle",
     "compute_equity_vol_regime",
