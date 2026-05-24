@@ -1,0 +1,5 @@
+{
+  "avg_abs_diff_shrinkage_0.1_vs_2.0": 0.06335118298650172,
+  "warning_if_below": 0.01,
+  "warning_triggered": false
+}

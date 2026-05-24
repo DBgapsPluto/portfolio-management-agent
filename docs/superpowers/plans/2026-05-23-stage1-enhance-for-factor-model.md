@@ -1221,7 +1221,7 @@ def compute_cfnai_metrics(
     """Returns (cfnai_latest, cfnai_3m_avg).
 
     Args:
-        cfnai_series: FRED CFNAINMNI (monthly index, dated).
+        cfnai_series: FRED CFNAI (monthly index, dated).
         as_of: report date.
 
     Returns:
@@ -1272,7 +1272,7 @@ fci = compute_financial_conditions(nfci, anfci, as_of=as_of)
 # ★ NEW (2026-05-23 C3 — CFNAI for factor model F1)
 try:
     from tradingagents.skills.macro.real_activity import compute_cfnai_metrics
-    cfnai_series = fred.get_series("CFNAINMNI")  # IMPLEMENTER: verify FRED series ID
+    cfnai_series = fred.get_series("CFNAI")  # IMPLEMENTER: verify FRED series ID
     cfnai_latest, cfnai_3m_avg = compute_cfnai_metrics(cfnai_series, as_of)
     fci = fci.model_copy(update={
         "cfnai": cfnai_latest,
@@ -1324,7 +1324,7 @@ Sub-skill 신설:
 - compute_cfnai_metrics(cfnai_series, as_of) → (latest, 3m_avg)
 
 Analyst integration:
-- macro_quant_analyst.py: FRED CFNAINMNI fetch + fci.model_copy(update=...)
+- macro_quant_analyst.py: FRED CFNAI fetch + fci.model_copy(update=...)
 - Try/except: fetch 실패 시 default 0.0 유지 (graceful degradation)
 
 Test (4 + 2 new):

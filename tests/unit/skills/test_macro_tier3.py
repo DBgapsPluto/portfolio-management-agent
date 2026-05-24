@@ -63,7 +63,7 @@ def test_copper_gold_risk_on():
     au = _daily(au_vals, start="2025-05-10")
     snap = compute_risk_appetite(cu, au, as_of=date(2026, 5, 10))
     assert snap.signal == "risk_on"
-    assert snap.ratio_percentile_1y > 0.7
+    assert snap.ratio_percentile_5y > 0.7
 
 
 def test_copper_gold_risk_off():
@@ -74,7 +74,7 @@ def test_copper_gold_risk_off():
     au = _daily(au_vals, start="2025-05-10")
     snap = compute_risk_appetite(cu, au, as_of=date(2026, 5, 10))
     assert snap.signal == "risk_off"
-    assert snap.ratio_percentile_1y < 0.3
+    assert snap.ratio_percentile_5y < 0.3
 
 
 def test_copper_gold_empty_returns_sentinel():

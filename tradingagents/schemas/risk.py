@@ -44,6 +44,14 @@ class BreadthSnapshot(StalenessAware):
         description="Cross-sectional std of sector ETF 60d returns "
                     "(decimal scale, e.g., 0.05 = 5pp). F9 liquidity component.",
     )
+    # 2026-05: SP500 sector breadth 만으론 mega-cap narrow rally invisible
+    # (mega-cap 7개가 IT/Comm/Disc 3 섹터에 분산 매수). RSP/SPY ratio percentile 로
+    # equal-weight 우위 여부 직접 측정. <0.20 mega-cap heavy, >0.80 broad rally.
+    mega_cap_concentration_pct: float | None = Field(
+        default=None,
+        description="1y percentile of RSP/SPY ratio. None = SP500 외 market 또는 fetch 실패. "
+                    "낮을수록 mega-cap 집중 (narrow rally). KOSPI200 entry 는 항상 None.",
+    )
 
 
 class PCASnapshot(StalenessAware):
@@ -159,8 +167,17 @@ class KRYieldCurveSnapshot(StalenessAware):
     treasury_10y: float = Field(description="국고채 10년 yield (%)")
     spread_10y_3y_bps: float = Field(description="(10y - 3y) × 100, bps")
     inverted: bool = Field(description="True if spread < 0 (역전)")
+    # 2026-05: 절대 임계 +50/-10 만으론 BOK 정책 사이클 base shift 흡수 불가.
+    # spread 의 5y rolling percentile 추가 — regime label 은 percentile 기반,
+    # spread_10y_3y_bps 는 폭 정보로 그대로 유지 (dual output).
+    percentile_5y: float = Field(
+        default=0.5, ge=0, le=1,
+        description="5-year percentile rank of (10y-3y) spread. "
+                    "낮을수록 flatter/inverted, 높을수록 steeper.",
+    )
     regime: Literal["normal", "flat", "inverted"] = Field(
-        description=">+50bps normal, -10~+50 flat, <-10 inverted"
+        description="percentile_5y >0.5 normal / 0.15~0.5 flat / <0.15 inverted. "
+                    "데이터 부족 시 절대 임계 fallback (+50bps normal, -10~+50 flat, <-10 inverted)."
     )
 
 
@@ -207,7 +224,8 @@ class EquityBondCorrelationSnapshot(StalenessAware):
     positive flip = stagflation/inflation regime의 정체 신호.
     1970s, 2022 같은 시기에 발생; 60/40 portfolio의 hedge가 사라짐.
     """
-    correlation_60d: float = Field(ge=-1, le=1, description="SPY-TLT 60-day rolling corr")
+    # 2026-05 rename: 실제 window 가 120d. field name 이 60d 라 LLM/reader misled.
+    correlation_120d: float = Field(ge=-1, le=1, description="SPY-TLT 120-day rolling corr")
     change_3m: float = Field(description="3개월 전 대비 상관계수 변화")
     regime: Literal["normal_hedge", "weakening_hedge", "positive_flip", "extreme_positive"] = Field(
         description="<-0.3 normal_hedge, -0.3~0 weakening, 0~+0.3 positive_flip, >+0.3 extreme"

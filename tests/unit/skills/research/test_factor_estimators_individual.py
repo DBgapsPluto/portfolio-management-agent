@@ -173,7 +173,7 @@ def _full_stage1_baseline():
     risk_hy = SimpleNamespace(current_bps=400.0, momentum_zscore=0.0)
     risk_quality = SimpleNamespace(quality_spread_bps=90.0)
     risk_funding = SimpleNamespace(spread_bps=10.0)
-    risk_corr = SimpleNamespace(correlation_60d=-0.2)
+    risk_corr = SimpleNamespace(correlation_120d=-0.2)
     # RealYieldsSnapshot uses tips_10y (not ten_y_pct)
     risk_real_yields = SimpleNamespace(tips_10y=0.5)
     # BreadthSnapshot uses advancing_pct

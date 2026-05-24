@@ -40,7 +40,7 @@ def _full_state():
     s["risk_report"].vix.term_ratio = 1.0
     s["risk_report"].move.current_value = 90
     s["risk_report"].realized_vol.sixty_d = 0.012
-    s["risk_report"].equity_bond_corr.correlation_60d = -0.2
+    s["risk_report"].equity_bond_corr.correlation_120d = -0.2
     s["risk_report"].skew.change_1m = 0.0
 
     s["technical_report"] = MagicMock()

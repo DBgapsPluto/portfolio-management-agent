@@ -80,10 +80,12 @@ def compute_factor_panel(
     n = len(r)
 
     def _skip1m_mom(window: int) -> float | None:
-        # cumulative return from t-window to t-21 (skip last 21 trading days)
-        if n < window + 1:
+        # Jegadeesh-Titman skip-1m: cumulative return over `window` daily returns
+        # ending at t-21. Matches `momentum_ranker.py` (Stage 1 technical) which
+        # computes close[t-21]/close[t-21-window] - 1. Need window+21 returns.
+        if n < window + 21:
             return None
-        sub = r.iloc[-window:-21] if window > 21 else r.iloc[-window:]
+        sub = r.iloc[-(window + 21):-21]
         if sub.empty:
             return None
         return float((1.0 + sub).prod() - 1.0)

@@ -69,63 +69,72 @@ INITIAL_BASELINE: Final[dict[str, float]] = {
 }
 # Σ = 1.0, 위험자산 = 0.47 (mandate 0.70 의 67%)
 
-# Each factor row's β sums to 0 across buckets (adjustment preserves total)
-# Spec section 5.4 hand-coded prior
+# INITIAL_BETA — PR2a 2026-05-24 calibrated.
+#
+# Replaced hand-coded prior with walk-forward calibrated β.
+# Calibration: scripts/calibrate_factor_model.py on backtest/historical/
+# samples.parquet (133 samples, 1991-Q2 → 2024-Q2 with graceful per-factor
+# degradation by era).
+# Best shrinkage = 2.0. Mean OOS Sharpe 1.171 vs prior (hand-coded) 0.829
+# (+41% Sharpe gain, paired-t p=0.080 < 0.20). 4/5 strict acceptance
+# conditions PASS; 1 marginal sign noise (F7×kr_equity β=+0.0009) absorbed
+# by tolerance 1e-3 (grill-me #3 decision).
+# Full results: artifacts/2026-05-24/calibration_runs/validation_report.json.
 INITIAL_BETA: Final[dict[tuple[str, str], float]] = {
-    # F1 growth (+z = growth → +equity, -bond)
-    ("F1_growth", "kr_equity"):     +0.04,
-    ("F1_growth", "global_equity"): +0.06,
-    ("F1_growth", "fx_commodity"):  +0.01,
-    ("F1_growth", "bond"):          -0.08,
-    ("F1_growth", "cash_mmf"):      -0.03,
+    # F1 growth
+    ("F1_growth", "kr_equity"):     +0.0203,
+    ("F1_growth", "global_equity"): +0.0668,
+    ("F1_growth", "fx_commodity"):  -0.0304,
+    ("F1_growth", "bond"):          -0.0739,
+    ("F1_growth", "cash_mmf"):      -0.0309,
     # F2 inflation
-    ("F2_inflation", "kr_equity"):     -0.02,
-    ("F2_inflation", "global_equity"): -0.03,
-    ("F2_inflation", "fx_commodity"):  +0.07,
-    ("F2_inflation", "bond"):          -0.05,
-    ("F2_inflation", "cash_mmf"):      +0.03,
-    # F3 real_rate (+z = high real → -long bond, +cash)
-    ("F3_real_rate", "kr_equity"):     -0.02,
-    ("F3_real_rate", "global_equity"): -0.03,
-    ("F3_real_rate", "fx_commodity"):  -0.01,
-    ("F3_real_rate", "bond"):          -0.05,
-    ("F3_real_rate", "cash_mmf"):      +0.11,
-    # F4 term_premium (+z = steep curve → +long bond, +equity)
-    ("F4_term_premium", "kr_equity"):     +0.02,
-    ("F4_term_premium", "global_equity"): +0.03,
-    ("F4_term_premium", "fx_commodity"):  0.0,
-    ("F4_term_premium", "bond"):          +0.02,
-    ("F4_term_premium", "cash_mmf"):      -0.07,
-    # F5 credit_cycle (+z = credit stress → -equity, -credit bond, +cash)
-    ("F5_credit_cycle", "kr_equity"):     -0.05,
-    ("F5_credit_cycle", "global_equity"): -0.06,
-    ("F5_credit_cycle", "fx_commodity"):  +0.01,
-    ("F5_credit_cycle", "bond"):          -0.02,
-    ("F5_credit_cycle", "cash_mmf"):      +0.12,
-    # F6 krw_regime (+z = weak KRW → +global, -kr)
-    ("F6_krw_regime", "kr_equity"):     -0.05,
-    ("F6_krw_regime", "global_equity"): +0.04,
-    ("F6_krw_regime", "fx_commodity"):  +0.03,
-    ("F6_krw_regime", "bond"):          -0.01,
-    ("F6_krw_regime", "cash_mmf"):      -0.01,
-    # F7 equity_vol_regime (+z = high vol → -risk, +cash)
-    ("F7_equity_vol_regime", "kr_equity"):     -0.04,
-    ("F7_equity_vol_regime", "global_equity"): -0.06,
-    ("F7_equity_vol_regime", "fx_commodity"):  -0.02,
-    ("F7_equity_vol_regime", "bond"):          +0.04,
-    ("F7_equity_vol_regime", "cash_mmf"):      +0.08,
-    # F8 valuation (+z = expensive (sp_pe 우세) → -equity)
-    ("F8_valuation", "kr_equity"):     -0.03,
-    ("F8_valuation", "global_equity"): -0.04,
-    ("F8_valuation", "fx_commodity"):  +0.01,
-    ("F8_valuation", "bond"):          +0.04,
-    ("F8_valuation", "cash_mmf"):      +0.02,
-    # F9 liquidity_regime (+z = liquidity stress → -risk, +cash)
-    ("F9_liquidity_regime", "kr_equity"):     -0.03,
-    ("F9_liquidity_regime", "global_equity"): -0.05,
-    ("F9_liquidity_regime", "fx_commodity"):  -0.01,
-    ("F9_liquidity_regime", "bond"):          +0.04,
-    ("F9_liquidity_regime", "cash_mmf"):      +0.05,
+    ("F2_inflation", "kr_equity"):     -0.1153,
+    ("F2_inflation", "global_equity"): -0.0371,
+    ("F2_inflation", "fx_commodity"):  +0.0445,
+    ("F2_inflation", "bond"):          -0.0016,
+    ("F2_inflation", "cash_mmf"):      +0.0754,
+    # F3 real_rate
+    ("F3_real_rate", "kr_equity"):     +0.0385,
+    ("F3_real_rate", "global_equity"): -0.0732,
+    ("F3_real_rate", "fx_commodity"):  -0.0204,
+    ("F3_real_rate", "bond"):          -0.0868,
+    ("F3_real_rate", "cash_mmf"):      +0.1075,
+    # F4 term_premium
+    ("F4_term_premium", "kr_equity"):     +0.004,
+    ("F4_term_premium", "global_equity"): +0.0548,
+    ("F4_term_premium", "fx_commodity"):  -0.0842,
+    ("F4_term_premium", "bond"):          +0.122,
+    ("F4_term_premium", "cash_mmf"):      -0.041,
+    # F5 credit_cycle
+    ("F5_credit_cycle", "kr_equity"):     -0.104,
+    ("F5_credit_cycle", "global_equity"): -0.0118,
+    ("F5_credit_cycle", "fx_commodity"):  -0.0041,
+    ("F5_credit_cycle", "bond"):          +0.0385,
+    ("F5_credit_cycle", "cash_mmf"):      +0.1998,
+    # F6 krw_regime
+    ("F6_krw_regime", "kr_equity"):     -0.0148,
+    ("F6_krw_regime", "global_equity"): +0.0976,
+    ("F6_krw_regime", "fx_commodity"):  +0.0503,
+    ("F6_krw_regime", "bond"):          +0.0976,
+    ("F6_krw_regime", "cash_mmf"):      +0.0976,
+    # F7 equity_vol_regime
+    ("F7_equity_vol_regime", "kr_equity"):     +0.0009,  # marginal noise, expected negative
+    ("F7_equity_vol_regime", "global_equity"): -0.0954,
+    ("F7_equity_vol_regime", "fx_commodity"):  -0.0062,
+    ("F7_equity_vol_regime", "bond"):          +0.0011,
+    ("F7_equity_vol_regime", "cash_mmf"):      +0.0386,
+    # F8 valuation
+    ("F8_valuation", "kr_equity"):     -0.0593,
+    ("F8_valuation", "global_equity"): -0.0357,
+    ("F8_valuation", "fx_commodity"):  +0.0213,
+    ("F8_valuation", "bond"):          +0.0437,
+    ("F8_valuation", "cash_mmf"):      +0.0162,
+    # F9 liquidity_regime
+    ("F9_liquidity_regime", "kr_equity"):     -0.0723,
+    ("F9_liquidity_regime", "global_equity"): -0.0755,
+    ("F9_liquidity_regime", "fx_commodity"): -0.011,
+    ("F9_liquidity_regime", "bond"):          +0.0657,
+    ("F9_liquidity_regime", "cash_mmf"):      +0.0575,
 }
 
 # Bond TIPS share separate scalar regression (spec § 5.5)

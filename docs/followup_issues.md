@@ -612,11 +612,30 @@ Medium (cleanup) — production 운영 전 권장.
 
 ## Issue #18 — factor model β 의 real historical fetch + production calibration
 
-### Problem
+### Status (PR2a 완료, 2026-05-24) — **RESOLVED**
+
+PR2a 의 walk-forward calibration acceptance gate PASS. INITIAL_BETA 가
+data-driven 으로 교체됨 (commit C9, 2d81a7b).
+
+- Improvement Δ: **+0.342 OOS Sharpe** (prior 0.829 → calibrated 1.171, +41%)
+- Paired-t p: 0.080 (< 0.20 threshold)
+- 5/5 acceptance conditions PASS (sign tolerance 1e-3, grill-me #3 결정)
+- Best shrinkage: 2.0
+
+산출물:
+- backtest/historical/samples.parquet: 133Q × 23 col (1991-Q2 ~ 2024-Q2)
+- artifacts/2026-05-24/calibration_runs/validation_report.json
+- tradingagents/skills/research/factor_to_bucket.py: INITIAL_BETA = 45
+  data-driven entries.
+
+다음 단계: PR2b 의 benchmark 비교 (24-cell / 60-40 / 1-N / risk parity) +
+empirical superiority 통계 검증 + 2026-05-15 산출물 regen.
+
+### (Historical) Problem
 PR1 의 C6 calibration 은 *synthetic data* 으로 infrastructure 검증만. real INITIAL_BETA
 update 가 *Stage 1 real fetch + walk-forward Sharpe* 필요.
 
-### Proposed approach
+### (Historical) Proposed approach
 1. Historical fetch script:
    - FRED quarterly (1991-2024): CPI, GDP, NFCI, CFNAI, yield curve, TIPS, fed funds
    - yfinance quarterly: S&P 500, KOSPI, IEF, DJP, ^IRX
@@ -625,15 +644,6 @@ update 가 *Stage 1 real fetch + walk-forward Sharpe* 필요.
 3. `scripts/calibrate_factor_model.py --shrinkage-grid` 재실행
 4. validation_report 확인 — acceptance criteria PASS 시 INITIAL_BETA 교체
 5. Acceptance 미통과 시 design 재검토 (factor weights, sample window, etc.)
-
-### Effort
-~25-40시간 (fetch + cache + calibration)
-
-### Priority
-High — 본 PR 의 *empirical superiority* 검증의 단일 path.
-
-### Dependencies
-Issue #12, #14, #15 의 일부 (factor estimator 의 input source 가 production grade 후)
 
 ---
 

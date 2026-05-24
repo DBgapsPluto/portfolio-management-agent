@@ -255,7 +255,8 @@ signal = "small_cap_risk_on"  if relative > +3%
 #### `equity_bond_corr` — SPY-TLT 120일 rolling correlation
 ```
 # 2026-05 fix: 60d → 120d (60d는 단일 이벤트로 corr 흔들림. 학계 표준 90-120d).
-# Snapshot field name `correlation_60d`는 backward compat 위해 유지, 실제는 120d.
+# 2026-05 추가 rename: Snapshot field name 도 `correlation_120d` 로 갱신
+# (이전 `correlation_60d` backward compat 유지는 LLM/reader 오해 야기).
 corr_120d = SPY_returns.tail(120).corr(TLT_returns.tail(120))
 
 regime = "normal_hedge"     if corr < -0.3   (bonds hedge equity)

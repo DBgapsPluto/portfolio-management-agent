@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 import pandas as pd
 
@@ -20,10 +21,14 @@ MICHIGAN_ANCHOR_LOW = 2.0
 MICHIGAN_ANCHOR_HIGH = 4.0
 
 
-def _classify_unanchored(breakeven: float, michigan: float) -> str:
+def _classify_unanchored(
+    breakeven: float, michigan: float,
+) -> Literal["upside", "downside", "none"]:
+    # 2026-05 fix: downside 도 michigan symmetric. 이전엔 breakeven 만 봐서
+    # 가계측 deflation expectations (michigan < 2.0) 가 invisible 이었음.
     if breakeven > BREAKEVEN_ANCHOR_HIGH or michigan > MICHIGAN_ANCHOR_HIGH:
         return "upside"
-    if breakeven < BREAKEVEN_ANCHOR_LOW:
+    if breakeven < BREAKEVEN_ANCHOR_LOW or michigan < MICHIGAN_ANCHOR_LOW:
         return "downside"
     return "none"
 

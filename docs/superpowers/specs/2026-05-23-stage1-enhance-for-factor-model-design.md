@@ -49,7 +49,7 @@ Path 수정 후에도 *진짜 schema 부재* 5 개:
 
 | Indicator | Factor 사용 | Source |
 |---|---|---|
-| CFNAI (Chicago Fed National Activity Index) | F1 growth | FRED CFNAINMNI |
+| CFNAI (Chicago Fed National Activity Index) | F1 growth | FRED CFNAI |
 | Yield curve 5-30y slope | F4 term_premium | FRED DGS5 + DGS30 |
 | Realized vol 60d (SPY) | F7 + F9 (VRP) | yfinance SPY daily aggregate |
 | Sector return dispersion | F9 liquidity | 11 sector ETF returns |
@@ -398,7 +398,7 @@ def compute_cfnai_metrics(
     """Returns (cfnai_latest, cfnai_3m_avg).
 
     Args:
-        cfnai_series: FRED CFNAINMNI (monthly index value).
+        cfnai_series: FRED CFNAI (monthly index value).
         as_of: report date.
 
     Returns:
@@ -423,7 +423,7 @@ Analyst integration:
 from tradingagents.skills.macro.real_activity import compute_cfnai_metrics
 
 # FRED fetch (기존 fred_fetcher 활용)
-cfnai_series = fred.get_series("CFNAINMNI", start_date=as_of - relativedelta(years=5))
+cfnai_series = fred.get_series("CFNAI", start_date=as_of - relativedelta(years=5))
 cfnai_latest, cfnai_3m_avg = compute_cfnai_metrics(cfnai_series, as_of)
 
 # FinancialConditionsSnapshot 에 populate
@@ -440,7 +440,7 @@ fci = fci.model_copy(update={
 
 | Indicator | Source | 주의사항 |
 |---|---|---|
-| CFNAI | FRED CFNAINMNI (monthly) | Lag 1-2 months 정상 — analyst 의 staleness handle |
+| CFNAI | FRED CFNAI (monthly) | Lag 1-2 months 정상 — analyst 의 staleness handle |
 | slope_5_30y | FRED DGS5 (5y) + DGS30 (30y) | 동일 publish date — derive |
 | KOSPI PBR | pykrx `market.get_market_fundamental(date, market="KOSPI200")` | KR business day 만 — as_of 가 holiday 시 prior trading day |
 | realized_vol_60d | yfinance SPY 1d interval | annualized = std × sqrt(252) |

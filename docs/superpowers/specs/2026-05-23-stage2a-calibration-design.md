@@ -92,7 +92,7 @@ PR1 완료 (C11 e52e2dc) 로:
   │    → 1991-2024: CPI, GDP, DGS{2,5,10,30}, BAA, AAA, BAA10Y, TB3MS,
   │                   T10YIE, T5YIFR, DFII10, DEXKOUS, DTWEXM, MICH, USREC, UNRATE
   ├─ ALFRED fetcher (Critical 1) — vintage-aware
-  │    → 7 revising series: CFNAINMNI, NFCI, ANFCI, GDPNOW, UNRATE,
+  │    → 7 revising series: CFNAI, NFCI, ANFCI, GDPNOW, UNRATE,
   │                          CPIAUCSL, PCEPILFE
   ├─ yfinance fetcher (Linux 에서만 SSL 정상)
   │    → 1991-2024 daily Close: ^GSPC, ^KS11, ^VIX, ^SKEW, IEF, TIP, DJP,
@@ -233,7 +233,7 @@ PR1 C2 의 `_build_real_stage1_baseline()` (모든 schema instance baseline valu
 |---|---|---|---|---|---|
 | F1 | GDP nowcast | GDPNOW (FRED) | 2011+ | FRED + ALFRED | ✓ |
 | F1 | NFCI / ANFCI | NFCI, ANFCI (FRED) | 1971+ weekly | FRED + ALFRED | ✓ |
-| F1 | CFNAI / CFNAI 3m | CFNAINMNI (FRED) | 1967+ monthly | FRED + ALFRED | ✓ |
+| F1 | CFNAI / CFNAI 3m | CFNAI (FRED) | 1967+ monthly | FRED + ALFRED | ✓ |
 | F1 | Sahm rule | derived from UNRATE (FRED) | 1948+ | FRED + ALFRED | ✓ |
 | F1 | Yield curve 2-10y | DGS10 - DGS2 (FRED) | 1976+ daily | FRED | — (daily, no revise) |
 | F2 | CPI YoY / 3mo mom | CPIAUCSL (FRED) | 1948+ monthly | FRED + ALFRED | ✓ |
@@ -283,7 +283,7 @@ def fetch_alfred_vintage_quarterly(
 ```
 
 ALFRED 의 vintage-aware 7 series:
-1. `CFNAINMNI` — CFNAI
+1. `CFNAI` — CFNAI
 2. `NFCI` — Chicago Fed National Financial Conditions Index
 3. `ANFCI` — Adjusted NFCI
 4. `GDPNOW` — Atlanta Fed GDPNow (2011+)
@@ -776,20 +776,19 @@ PR1 baseline: 3 unit + 18 integration fail. PR2a 추가 후 **증가 0** 보장 
 
 ## 11. Sign-off Checklist
 
-본 PR2a merge 의 조건:
+본 PR2a merge 의 조건 (2026-05-24 실행 완료, status = **PASS**):
 
-- [ ] 모든 unit + integration test pass (3 unit + 18 integ pre-existing 외 0 new failure)
-- [ ] C1-C5 의 fetcher + aggregate + builder + bucket_returns + factor z generation 모든 unit test pass
-- [ ] C4 의 `mode="production"` regression test PASS (PR1 의 production test 100% unchanged)
-- [ ] C5 의 factor z coverage by era 검증 — pre-2003 sentinel-aware expected confidence 분포
-- [ ] C8 의 35 calibration runs 모두 완료 + validation_report.json 작성
-- [ ] Acceptance gate verdict (PASS / FAIL) 가 validation_report.json + decisions.md 에 명시
-- [ ] **PASS 시**: C9 의 INITIAL_BETA 교체 + production test update
-- [ ] **FAIL 시**: C9-alt 의 신규 Issue 작성 + PR2a status = "FAIL"
-- [ ] 3 grill-me 세션 의 decision 기록 (decisions.md)
-- [ ] regression_log.md 매 commit 별 entry — 0 new failure 검증
-- [ ] backlog (docs/followup_issues.md) Issue #18 status update (RESOLVED 또는 PARTIAL FAIL)
-- [ ] Critical 1-4 + minor M1-M5 처리 결과 documentation (vintage handling, mode flag, KRW basis, strict gate)
+- [x] 모든 unit + integration test pass (2 unit + 18 integ pre-existing 외 0 new failure; baseline 이 plan 의 3 unit 예상치와 다른 이유는 PR1 merge 가 unit fail 1개 fix)
+- [x] C1-C5 의 fetcher + aggregate + builder + bucket_returns + factor z generation 모든 unit test pass (11 fetcher + 9 aggregate + 5 builder + 3 bucket_returns + 1 ALFRED 400 = 29 new)
+- [x] C4 의 `mode="production"` regression test PASS — 4 historical_mode tests + PR1 의 모든 production test 100% unchanged
+- [x] C5 의 factor z coverage by era 검증 — pre-2010 ALFRED 부재 → baseline-fallback, post-2010 real data. grill-me #2 에서 확인
+- [x] C8 의 35 calibration runs 모두 완료 + validation_report.json 작성 (best_shrinkage=2.0)
+- [x] Acceptance gate verdict **PASS** (with sign tolerance 1e-3) — validation_report.json + decisions.md final section
+- [x] **PASS 시**: C9 의 INITIAL_BETA 교체 + 6 test update (test_factor_to_bucket — row-sum invariant 제거)
+- [x] 3 grill-me 세션 의 decision 기록 (decisions.md) — #1/#2/#3 all DECIDED
+- [x] regression_log.md 매 commit 별 entry — Post-C0 ~ Post-C9, 0 new failure 검증
+- [x] backlog (docs/followup_issues.md) Issue #18 status **RESOLVED**
+- [x] Critical 1-4 + plan errata (6건) 처리 결과 documentation (decisions.md Final Status)
 
 ---
 

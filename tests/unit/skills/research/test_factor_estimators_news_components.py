@@ -41,7 +41,7 @@ def _base_stage1():
     risk_hy = SimpleNamespace(current_bps=400.0, momentum_z=0.0)
     risk_quality = SimpleNamespace(quality_spread_bps=90.0)
     risk_funding = SimpleNamespace(spread_bps=10.0)
-    risk_corr = SimpleNamespace(correlation_60d=-0.2)
+    risk_corr = SimpleNamespace(correlation_120d=-0.2)
     risk_report = SimpleNamespace(
         vix=risk_vix, move=risk_move, realized_vol=risk_rv, skew=risk_skew,
         credit_spread_us_hy=risk_hy, credit_quality=risk_quality,

@@ -17,7 +17,7 @@ def test_equity_bond_corr_normal_hedge():
     bd = [-0.01 * (i % 2 == 0) + 0.01 * (i % 2 == 1) for i in range(n)]  # 완벽한 음의 상관
     snap = compute_equity_bond_corr(_daily(eq), _daily(bd), as_of=date(2026, 5, 10))
     assert snap.regime == "normal_hedge"
-    assert snap.correlation_60d < -0.3
+    assert snap.correlation_120d < -0.3
 
 
 def test_equity_bond_corr_extreme_positive():
@@ -27,7 +27,7 @@ def test_equity_bond_corr_extreme_positive():
     bd = [0.01 if i % 2 == 0 else -0.01 for i in range(n)]  # 완벽한 양의 상관
     snap = compute_equity_bond_corr(_daily(eq), _daily(bd), as_of=date(2026, 5, 10))
     assert snap.regime == "extreme_positive"
-    assert snap.correlation_60d > 0.3
+    assert snap.correlation_120d > 0.3
 
 
 def test_equity_bond_corr_positive_flip():
