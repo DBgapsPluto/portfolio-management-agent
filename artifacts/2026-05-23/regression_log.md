@@ -776,3 +776,26 @@ FAILED tests/integration/test_eval_systemic_score.py::test_systemic_score_accura
     F9 sector_dispersion 미반영
 - 5/28 대회 narrative: factor table 의 z-score 가 실제 fetched signal 로 작성됨
 
+## Post-C11
+
+### Final state (PR complete)
+- C0-C11 + C7.5 모든 commit landed
+- Unit: 2-3 failed (pre-existing) / 710-711 passed
+- Integration: 18 failed (pre-existing) / 26 passed (+10 new from C2, C9, etc.)
+- 0 new regression
+- mandate.passed: True (2026-05-15 산출물)
+
+### PR scope complete
+- PR0 hotfix: C1 path fix + C2 real schema integration test
+- PR1 Stage 1 enhance: C3-C7.5 6 indicator (CFNAI + slope_5_30y + KOSPI PBR + realized_vol + sector_dispersion + skew change_1m_z)
+- Factor model update: C8 (6 placeholder activated + weight 재조정 + audit) + C9 (test 확장)
+- Production: C10 (regen + diff)
+- Docs: C11 (backlog #20-#23 + audit status)
+
+### Backlog (next PR)
+- Issue #20: Windows path encoding (yfinance SSL)
+- Issue #21: pykrx KOSPI200 API mismatch
+- Issue #22: F6 foreign_flow_z baseline sd 재교정
+- Issue #23: Linux/CI 환경 verify
+
+→ PR2 backtest 의 prerequisite (real signal verify).
