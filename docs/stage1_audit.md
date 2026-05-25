@@ -114,3 +114,71 @@ def _safe_get(obj, *path, default=None):
 | method_picker (via allocator) | 위 두 값 + research_decision (Stage 2) | 직접 staleness 검사 없음 — 합성 로직이 sentinel-safe 인지 의존. |
 
 → Task 2/3 에서 합성 로직 검증.
+
+---
+
+## Task 1 — technical analyst
+
+### 발견
+
+#### F1.1 — 8곳 `except: continue` silent
+
+`technical_analyst.py` 의 6 tier 산출 루프 모두 silent except. 어떤 ETF 가 어느 tier 에서 실패했는지 trace 불가.
+
+→ 188 ETF 중 일부가 누락된 채 Stage 3 cluster-aware selection 으로 전달돼도 알 수 없음 (blackbox).
+
+#### F1.2 — `_benchmark_for_category` 가 모든 "국내_*" 를 KOSPI200으로 매핑
+
+[line 51-53]:
+```python
+return "KOSPI200" if category.startswith("국내") else "SPY"
+```
+
+채권/현금성 카테고리 (국내채권_*, 금리연계형/초단기채권) 도 KOSPI200 dual-momentum 계산 → `momentum_*_rel` 값 noise. trend_quantification 의 relative momentum 신뢰성 하락.
+
+#### F1.3 — trend_state substring 비교
+
+[line 282]: `sum(1 for v in trend_states.values() if "uptrend" in v.value)`
+
+`TrendState.STRONG_UPTREND`, `UPTREND` 둘 다 "uptrend" 포함 → 의도대로 동작은 하지만 enum 비교가 substring 매칭은 fragile.
+
+#### F1.4 — 매직넘버 산재
+
+- correlation cluster threshold **0.7** (Stage 3 cluster-aware 의존)
+- MA200 필요 최소 history **200**
+- 1y window **252**
+- top_rank threshold **5**
+- price lookback **365*3+30**
+
+분석가 entry 에 흩어져 있어 향후 튜닝 어렵고 의도 불명확.
+
+#### F1.5 — observability 부재
+
+`logger` 호출 0번. 188 ETF scan 결과, 누락 카운트, exception 카운트 모두 invisible.
+
+### 결정
+
+**D1.1** — silent except → `failures: dict[str, int]` counter + `logger.debug/warning`. summary 에 failure dict 노출.
+**D1.2** — `_benchmark_for_category` 채권/현금성 카테고리 → "none". 명시적 분기.
+**D1.3** — `"uptrend" in v.value` → `v in {TrendState.STRONG_UPTREND, TrendState.UPTREND}`.
+**D1.4** — 매직넘버 5개 → 모듈 상단 named const 분리 (CORRELATION_CLUSTER_THRESHOLD, MIN_HISTORY_DAYS_TA, MIN_HISTORY_DAYS_LONG, PRICE_LOOKBACK_DAYS, TOP_RANK_THRESHOLD).
+**D1.5** — entry 와 cluster 산출 직후 progress log.
+
+### 수정
+
+- [x] 6 except 절 → counter + logger 추가
+- [x] _benchmark_for_category 명시적 분기
+- [x] trend_state enum 비교
+- [x] named const 분리
+- [x] entry/clusters 진척 로그
+
+### 회귀
+
+`pytest tests/unit/agents/test_technical_analyst.py tests/unit/skills/test_portfolio_candidate.py tests/unit/skills/test_portfolio_factor_scorer.py` → **60 pass, 1 pre-existing fail** (test_technical_analyst_returns_report — main 에서도 동일하게 실패. 내 변경과 무관).
+
+### 합격 기준
+
+- [x] silent except 0 (모두 counter + logger).
+- [x] cluster threshold named const.
+- [x] 채권/현금성 카테고리 dual-momentum 분기 명시.
+- [x] failure summary 가 narrative 에 노출.
