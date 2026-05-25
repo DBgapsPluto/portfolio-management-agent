@@ -33,10 +33,13 @@ Audit:
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Final, Literal
 
 import numpy as np
 from scipy.optimize import minimize
+
+logger = logging.getLogger(__name__)
 
 
 BUCKETS: Final[tuple[str, ...]] = (
@@ -303,6 +306,7 @@ def project_to_mandate_qp(
     else:
         x0 = np.ones_like(target) / len(target)
 
+    fail_msg: str | None = None
     try:
         result = minimize(
             objective,
@@ -314,17 +318,30 @@ def project_to_mandate_qp(
             options={"maxiter": 200, "ftol": 1e-9},
         )
         success = bool(result.success)
+        if not success:
+            fail_msg = f"SLSQP non-success: status={result.status}, message={result.message}"
         w_raw = np.asarray(result.x, dtype=float)
-    except Exception:  # pragma: no cover - defensive
+    except Exception as e:  # pragma: no cover - defensive
         success = False
+        fail_msg = f"SLSQP raised: {e}"
         w_raw = np.zeros_like(target)
 
     if not success:
+        # Stage 2 audit (Task 2): silent → logger.warning. fallback 발동 visible.
+        logger.warning(
+            "project_to_mandate_qp: optimizer failed → INITIAL_BASELINE fallback (%s). "
+            "factor intent 손상 — narrative 에 명시 권장. target=%s",
+            fail_msg, bucket_target,
+        )
         return dict(INITIAL_BASELINE)
 
     w = np.maximum(w_raw, 0.0)
     s = float(w.sum())
     if s <= 0.0:
+        logger.warning(
+            "project_to_mandate_qp: w.sum=0 post-clip → INITIAL_BASELINE fallback. "
+            "target=%s w_raw=%s", bucket_target, w_raw.tolist(),
+        )
         return dict(INITIAL_BASELINE)
     w = w / s
     return {k: float(w[i]) for i, k in enumerate(keys)}
@@ -343,20 +360,38 @@ def apply_factor_model_with_safety(
 
     Returns 4-tuple ``(bucket_projected, tips, contributions, diagnostics)``.
 
-    Diagnostics keys:
-        - pre_projection_risk_asset (float)
-        - pre_projection_negatives (list[str])
-        - pre_projection_sum (float)
-        - mandate_violated_pre_projection (bool)
-        - extreme_factor_active (bool)
-        - projection_l2_distance (float)
-        - projection_intervened (bool) — l2 > 0.01
+    Diagnostics keys (Stage 2 audit Task 2 — 외부 노출용 의미 명시):
+      - pre_projection_risk_asset (float): projection 전 위험자산 합. 0.70 초과면 mandate 위반.
+      - pre_projection_negatives (list[str]): projection 전 weight<0 bucket — factor intent 가
+        baseline 을 넘어 음수 영역까지 보내려 함. projection 으로 0 으로 clip 됨.
+      - pre_projection_sum (float): projection 전 sum. β rows sum to 0 + cap 으로 약간 ≠ 1.0
+        가능. projection 이 sum=1 회복.
+      - mandate_violated_pre_projection (bool): pre_risk > 0.70 + ε. projection 강제 발동.
+      - extreme_factor_active (bool): 어느 factor 의 |z| ≥ 2.5. tail event 가능성 — 운영자
+        리뷰 권장.
+      - projection_l2_distance (float): bucket_projected vs bucket_raw 의 L2 거리.
+        0.01 미만 = projection 거의 무동작, 큰 값 = factor intent 가 mandate 와 충돌.
+      - projection_intervened (bool): l2_dist > 0.01.
+      - cap_hits (int): per-factor-bucket β·z 가 ±0.10 cap 에 닿은 (factor, bucket) 페어 수.
+        많을수록 single factor 가 single bucket 을 dominate 하려 한 정도 — diversification
+        보호 발동 빈도.
+      - cap_hits_detail (list[tuple[str, str, float]]): 각 cap hit 의 (factor, bucket,
+        capped_value) — debugging.
     """
     bucket_raw, tips, contributions = apply_factor_model(factor_z, **kwargs)
 
     pre_risk = sum(bucket_raw.get(b, 0.0) for b in RISK_BUCKETS)
     pre_negatives = [b for b, w in bucket_raw.items() if w < -1e-9]
     pre_sum = float(sum(bucket_raw.values()))
+
+    # Stage 2 audit (Task 2): cap_hits — 어느 (factor, bucket) 페어가 cap 에 닿았나.
+    # contributions[f][b] 가 정확히 ±PER_FACTOR_BUCKET_CONTRIB_CAP 면 cap 발동.
+    cap_eps = 1e-12
+    cap_hits_detail: list[tuple[str, str, float]] = []
+    for f, fmap in contributions.items():
+        for b, c in fmap.items():
+            if abs(abs(c) - PER_FACTOR_BUCKET_CONTRIB_CAP) < cap_eps:
+                cap_hits_detail.append((f, b, c))
 
     bucket_projected = project_to_mandate_qp(bucket_raw)
 
@@ -376,6 +411,8 @@ def apply_factor_model_with_safety(
         "extreme_factor_active": bool(extreme_active),
         "projection_l2_distance": l2_dist,
         "projection_intervened": bool(l2_dist > 0.01),
+        "cap_hits": len(cap_hits_detail),
+        "cap_hits_detail": cap_hits_detail,
     }
 
     return bucket_projected, tips, contributions, diagnostics
