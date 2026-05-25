@@ -51,6 +51,28 @@ def create_portfolio_allocator(
         risk_score = state["risk_report"].systemic_score if state.get("risk_report") else None
         research_decision = state.get("research_decision")
 
+        # Stage 3 audit (2026-05-26, Task 0): Stage 1+2 deferred —
+        # regime / systemic_score 의 staleness_days 검사. 둘 다 sentinel (≥99) 이면
+        # downstream method_picker 가 placeholder 값 (score=5.0, regime="unknown")
+        # 으로 결정하는 위험. method_picker 에 degraded_inputs=True 전달 →
+        # rule 0 (MIN_VARIANCE 강제) 발동.
+        regime_staleness = (
+            getattr(regime, "staleness_days", None) if regime is not None else None
+        )
+        systemic_staleness = (
+            getattr(risk_score, "staleness_days", None) if risk_score is not None else None
+        )
+        degraded_inputs = (
+            isinstance(regime_staleness, int) and regime_staleness >= 99
+            and isinstance(systemic_staleness, int) and systemic_staleness >= 99
+        )
+        if degraded_inputs:
+            logger.warning(
+                "allocator: regime + systemic 둘 다 sentinel (staleness regime=%s, "
+                "systemic=%s) → method_picker degraded_inputs=True (strict MIN_VARIANCE)",
+                regime_staleness, systemic_staleness,
+            )
+
         # per_bucket_n: low conviction이면 후보 다양화, retry 시 확장.
         per_bucket_n = 4
         if research_decision is not None and getattr(research_decision, "conviction", "medium") == "low":
@@ -108,6 +130,10 @@ def create_portfolio_allocator(
                     "bond":          bucket_target.bond,
                     "cash_mmf":      bucket_target.cash_mmf,
                 },
+                # Stage 3 audit Task 0: Stage 1+2 sentinel propagation 가시화.
+                "regime_staleness":    regime_staleness,
+                "systemic_staleness":  systemic_staleness,
+                "degraded_inputs":     degraded_inputs,
             },
         }
 
@@ -153,6 +179,9 @@ def create_portfolio_allocator(
             systemic_regime=risk_score.regime if risk_score else "neutral",
             research_decision=research_decision,
             feedback=feedback_str,
+            degraded_inputs=degraded_inputs,
+            regime_staleness=regime_staleness,
+            systemic_staleness=systemic_staleness,
         )
 
         # 4. Optimize WITH bucket-constraints (D12).
