@@ -57,4 +57,24 @@ NBER regime: OOS sample 의 recession N=2 (very small), Cohen's d 무의미.
 
 Verdict: **PASS marginal** (1위지만 60-40 대비 차이 작고 not significant).
 
-grill-me #1 결정 필요.
+grill-me #1: **PASS with caveat** (user 결정) — INITIAL_BETA 유지, 60-40 caveat 기록.
+
+## Post-C3 (data: sensitivity sweeps — era + robustness + sample_quality)
+
+production code 변경 없음.
+
+**Sensitivity 결과**:
+- **Era split** (pre/post 2010-01-01): |β_pre - β_post|_avg = **0.036** (MODERATE
+  DRIFT, threshold 0.03~0.06). Max single-entry diff = 0.16. β 가 era 의존성
+  약간 보임 → 미래 era 에서 retrain 시 결과 달라질 가능성.
+- **Robustness penalty** {0.10, 0.25, 0.50}: **SENSITIVE** — 0.25 (default)
+  → best shrinkage=2.0, 0.50 → best=0.1 으로 dramatic 변화. PR2a 의 0.25
+  default 선택이 결과에 결정적.
+- **Sample quality**: 모든 sample 의 confidence = 0.7233 (baseline-fallback
+  dominant) → quartile 분류 불가. PR2a 의 stage1_builder baseline-fallback
+  policy 의 자연스러운 결과 (grill-me #2 PR2a 에서 인지).
+
+**caveat 추가** (followup_issues.md Issue #18 업데이트):
+1. (C2) 60-40 대비 not statistically significant (p=0.717)
+2. (C3) β 가 era 의존 (moderate drift |β_pre - β_post|_avg = 0.036)
+3. (C3) Best shrinkage 가 robustness penalty 계수에 sensitive

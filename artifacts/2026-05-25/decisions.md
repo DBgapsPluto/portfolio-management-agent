@@ -21,5 +21,27 @@
 
 ## grill-me decisions (appended at each grill point)
 
-(grill-me #1: TBD — C2 validation 실행 직후)
+### grill-me #1 (C2 직후, 2026-05-25) — DECIDED: PASS with caveat
+
+C2 validation 결과 (49 OOS samples, 1991-2024):
+
+| Strategy | Mean OOS Sharpe | Δ vs calib | p-value | Cohen's d |
+|---|---|---|---|---|
+| calibrated | 1.229 | — | — | — |
+| 60_40_kr_tilted | 1.179 | +0.050 | 0.717 ⚠️ | -0.06 |
+| hand_coded_prior | 0.829 | +0.400 | 0.075 | +0.07 |
+| equal_weight | 0.818 | +0.411 | 0.060 | +0.11 |
+| risk_parity | 0.782 | +0.447 | 0.035 ✓ | +0.12 |
+
+**Verdict: PASS with caveat** (user 결정).
+- Calibrated 가 5/5 benchmark 모두 이김 (절대 우월) ✓
+- Risk parity 대비 statistically significant (p=0.035) ✓
+- 60-40 대비 우위는 **marginal + NOT statistically significant** (Δ=+0.05, p=0.717) ⚠️
+- 추가: expansion 구간 단독 비교 (N=47) 시 60-40 (0.821) 이 calibrated (0.779) 보다 약간 우월. recession N=2 너무 작아 검증 불가.
+
+**조치**:
+- INITIAL_BETA 유지 (calibrated 그대로)
+- followup_issues.md Issue #18 에 caveat 추가: "60-40 대비 statistically not significant"
+- C5 final 에 "VERIFIED with caveat" status 기록
+
 (grill-me #2: TBD — C4 regen 실행 직후)
