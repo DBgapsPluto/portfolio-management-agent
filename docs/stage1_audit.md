@@ -345,3 +345,66 @@ vix_term, skew, vxn, real_yields, funding_stress, credit_quality, kr_yield_curve
 - [x] SAVE brief 미스 시 명시 fallback 로그.
 - [x] missing-tier inventory summary 노출.
 - [x] 매직 상수 분리.
+
+---
+
+## Task 5 — 통합 sanity
+
+### 수행
+
+#### 5.1 전체 unit 회귀
+
+```
+uv run pytest tests/unit/ -q --deselect <2 pre-existing fails>
+→ 865 passed, 0 new fail (2 pre-existing fail 의도적 제외)
+```
+
+#### 5.2 Stage 1 → Stage 2 통합 sentinel 검증
+
+`tests/integration/test_factor_estimators_real_schema.py` 에 2개 통합 테스트 추가:
+- `test_sentinel_snapshot_drops_components`: 실제 Stage 1 baseline → `inflation` snapshot 을 staleness=99 로 강제 → F2 inflation_surprise 의 components set 변경 + confidence 감소 검증. **Task 0 의 _safe_get sentinel guard 가 실제 schema 흐름에서 작동함을 입증**.
+- `test_sentinel_guard_constant`: STALENESS_SENTINEL_DAYS=99 invariant.
+
+→ **integration 12 pass**, 회귀 0.
+
+### 합격 기준
+
+- [x] 전체 unit 회귀 0 new fail.
+- [x] integration: sentinel guard 가 실제 schema 흐름에서 정확히 component drop + confidence 감소.
+- [x] integration regression 0.
+
+---
+
+## 미해결 / 후속 작업
+
+다음은 Stage 1 audit 범위에서 식별됐지만 별도 PR 로 분리:
+
+| 항목 | Task | 사유 |
+|---|---|---|
+| classify_regime LLM prompt 에 staleness/sentinel hint 추가 | T2 (D2.5) | prompt 재설계 — 효과 측정 필요. Stage 2 prompt 작업 시 처리. |
+| method_picker / portfolio_allocator 에서 macro_report.regime, risk_report.systemic_score 직접 검사 추가 | T0 D0.3 | regime/systemic_score 합성 로직이 sentinel-safe 인지 의존. T2/T3 의 sentinel inventory 가 가시화 보강했으므로 immediate 위험 작음. 추후 strict mode 도입 시 추가. |
+| `is_stale` / `is_very_stale` property 활용 | T0 D0.2 | 본 audit 에서는 sentinel(99) cut 만 적용. 일반 stale (>1d, >7d) 검사는 별도 정책 결정 필요. |
+| pre-existing 2 fail | - | (a) test_technical_analyst_returns_report — main 회귀 (rank_momentum empty), (b) test_select_etf_candidates_populates_attribution — Stage 2 PR (2026-05-22)에서 `dominant_scenario` cell key path 제거 후 테스트 미동기화. 별도 cleanup PR. |
+| 매직 임계값 (ADX>25, BB<5% 등) tuning | T1 H1.4 | named const 만 분리. 실제 값 튜닝은 backtest 필요. |
+
+---
+
+## Summary 표 (dimension × analyst)
+
+| 차원 | technical | macro_quant | market_risk | macro_news | cross-cutting |
+|---|---|---|---|---|---|
+| **L** Logic | benchmark mapping fix (채권 → none); enum 비교 | sentinel-LLM leak (deferred) | **CRITICAL: synthetic PCA fallback 차단** | SAVE brief fallback 명시 | _safe_get sentinel guard |
+| **H** Hardcoding | 5 const 분리 | 7 const 분리 | 8 const 분리 | 6 const 분리 | STALENESS_SENTINEL_DAYS const |
+| **D** Data flow | factor_panel/clusters → Stage 3 mapping 확인 | regime → Stage 3 (간접) | systemic_score → Stage 3 | NewsReport → Stage 2 (LLM only) | Stage 1 → 2 _safe_get drops sentinel |
+| **O** Observability | 6 tier counter + logger | 13 logger + sentinel inventory | 12 logger + sentinel inventory | 5 logger + missing-tier inventory | integration test 검증 |
+
+---
+
+## Commits (6)
+
+1. f877639 — Task 0 cross-cutting staleness guard
+2. 059eea0 — Task 1 technical
+3. 44a8968 — Task 2 macro_quant
+4. 348e0fe — Task 3 market_risk (CRITICAL stub fallback 차단)
+5. af05403 — Task 4 macro_news
+6. (이번) — Task 5 integration sanity + summary

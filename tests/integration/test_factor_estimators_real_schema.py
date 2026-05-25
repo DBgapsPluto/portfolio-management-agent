@@ -728,3 +728,46 @@ def test_sector_dispersion_affects_liquidity(
         f"baseline={baseline_scores.liquidity_regime.z_score:.2f} "
         f"new={new_scores.liquidity_regime.z_score:.2f}"
     )
+
+
+# ---------------------- Stage 1 audit (2026-05-26 Task 0/5) ----------------------
+
+
+@patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
+@patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
+def test_sentinel_snapshot_drops_components(
+    _pe: Any, _krw: Any, real_stage1_baseline: dict[str, Any]
+) -> None:
+    """Stage 1 audit Task 0: fetch 실패 snapshot(staleness_days=99) 을 _safe_get 가
+    드롭하는지 통합 검증. inflation snapshot 을 sentinel 로 강제 → F2 inflation_surprise
+    의 components 에서 cpi/core_pce 가 누락되고 confidence 감소.
+    """
+    baseline_scores = compute_all_factors(real_stage1_baseline)
+    baseline_inflation_components = set(baseline_scores.inflation_surprise.components.keys())
+    baseline_conf = baseline_scores.inflation_surprise.confidence
+
+    # inflation snapshot 을 sentinel(staleness=99)로 교체.
+    state = dict(real_stage1_baseline)
+    macro = state["macro_report"]
+    macro.inflation = macro.inflation.model_copy(update={"staleness_days": 99})
+    state["macro_report"] = macro
+
+    new_scores = compute_all_factors(state)
+    new_inflation_components = set(new_scores.inflation_surprise.components.keys())
+
+    # inflation-derived components (cpi_yoy, momentum_3m, core_pce, breakeven_5y5y 등의
+    # 일부)가 sentinel guard 로 drop됨. components set 감소 또는 confidence 감소 검증.
+    assert new_scores.inflation_surprise.confidence < baseline_conf, (
+        f"sentinel 적용 후 confidence 가 감소해야 함 "
+        f"(baseline={baseline_conf:.3f}, new={new_scores.inflation_surprise.confidence:.3f})"
+    )
+    # 적어도 하나는 빠져야 함.
+    assert new_inflation_components != baseline_inflation_components, (
+        f"sentinel 적용 후 components set 이 변해야 함 "
+        f"(baseline={baseline_inflation_components}, new={new_inflation_components})"
+    )
+
+
+def test_sentinel_guard_constant() -> None:
+    """STALENESS_SENTINEL_DAYS=99 invariant — analysts 의 fetch-fail marker 와 일치."""
+    assert fe.STALENESS_SENTINEL_DAYS == 99
