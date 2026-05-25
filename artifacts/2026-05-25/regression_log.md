@@ -41,3 +41,20 @@ $ uv run python -m pytest tests/integration/ -q
 
 Note: test_regime 의 1차 fix (test data 가 의도와 반대), test_statistics 의
 1차 fix (ttest_rel 의 identical-sequence NaN handling).
+
+## Post-C2 (data: validation runner + execute, 5 strategies)
+
+production code 변경 없음 (script + artifacts only). Regression 영향 없음.
+
+**Validation 결과** (mean OOS Sharpe across 49 OOS samples):
+- calibrated: 1.229 ← 1위
+- 60_40_kr_tilted: 1.179 (Δ=+0.050, p=0.717, **NOT significant**)
+- hand_coded_prior: 0.829 (Δ=+0.400, p=0.075)
+- equal_weight: 0.818 (Δ=+0.411, p=0.060)
+- risk_parity: 0.782 (Δ=+0.447, p=0.035 — **only statistically significant beat**)
+
+NBER regime: OOS sample 의 recession N=2 (very small), Cohen's d 무의미.
+
+Verdict: **PASS marginal** (1위지만 60-40 대비 차이 작고 not significant).
+
+grill-me #1 결정 필요.
