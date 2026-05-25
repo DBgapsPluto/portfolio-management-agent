@@ -62,6 +62,10 @@ def test_risk_judge_records_overlay_outcome_in_overlay_schema():
         with patch(
             "tradingagents.agents.managers.risk_judge.apply_risk_overlay",
             return_value=(state["weight_vector"], "relax_band"),
+        ), patch(
+            # ~/.tradingagents/stats/overlay_outcomes.jsonl 폴루션 차단
+            "tradingagents.agents.managers.risk_judge.record_overlay_outcome",
+            lambda **kw: None,
         ):
             out = node(state)
 
