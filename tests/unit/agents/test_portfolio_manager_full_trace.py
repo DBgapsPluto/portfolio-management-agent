@@ -204,3 +204,77 @@ def test_portfolio_manager_no_warnings_when_prices_available(tmp_path):
     assert qty_warnings == []
     csv_text = Path(result["trade_plan_csv_path"]).read_text(encoding="utf-8-sig")
     assert "# WARNING:" not in csv_text
+
+
+# ---------- Stage 6 audit (2026-05-26) tests ----------
+
+
+def test_portfolio_json_includes_stage345_attribution(tmp_path, monkeypatch):
+    """Stage 6 audit Task 2: portfolio.json full_trace 에 Stage 3/4/5 의 attribution
+    이 모두 포함된다.
+    """
+    from datetime import date as _date
+    import json
+    from unittest.mock import MagicMock
+    from pathlib import Path
+
+    from tradingagents.agents.managers.portfolio_manager import (
+        create_portfolio_manager,
+    )
+    from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
+
+    universe_path = Path("data/universe.json")
+    if not universe_path.exists():
+        pytest.skip("universe.json not present")
+
+    wv = WeightVector(
+        method=OptimizationMethod.MIN_VARIANCE,
+        weights={"A114260": 0.5, "A459580": 0.5},
+        rationale="test",
+    )
+    state = {
+        "weight_vector": wv,
+        "capital_krw": 10_000_000_000,
+        "as_of_date": "2026-05-15",
+        "universe_path": str(universe_path),
+        # Stage 3/4/5 attribution 마킹
+        "allocation_attribution": {"config": {"method": "min_variance"}},
+        "risk_judge_attribution": {
+            "strength_applied": 0.3,
+            "lens_concerns": [{"lens": "tail_risk", "level": "high"}],
+        },
+        "mandate_validator_attribution": {
+            "validation_passed": True,
+            "check_counts": {"concentration": {"hard": 0, "soft": 0}},
+        },
+    }
+
+    # philosophy LLM mock (deep_llm)
+    deep_llm = MagicMock()
+    deep_llm.invoke.return_value.content = (
+        "## 1. 투자가이드 요약\n" + "본문\n" * 500
+    )
+
+    node = create_portfolio_manager(deep_llm, artifacts_dir=str(tmp_path))
+    out = node(state)
+
+    portfolio_json = json.loads(
+        Path(out["final_portfolio_path"]).read_text(encoding="utf-8"),
+    )
+    # 3 attribution 모두 포함 검증
+    assert "allocation_attribution" in portfolio_json
+    assert "risk_judge_attribution" in portfolio_json
+    assert "mandate_validator_attribution" in portfolio_json
+    # 값 정합성
+    assert portfolio_json["allocation_attribution"]["config"]["method"] == "min_variance"
+    assert portfolio_json["risk_judge_attribution"]["strength_applied"] == 0.3
+    assert portfolio_json["mandate_validator_attribution"]["validation_passed"] is True
+
+
+def test_portfolio_manager_named_const_present():
+    """Stage 6 audit Task 3: portfolio_manager 의 named const 존재."""
+    from tradingagents.agents.managers import portfolio_manager as pm
+    assert pm.PHILOSOPHY_MIN_CHARS == 4000
+    assert pm.PHILOSOPHY_MAX_RETRIES == 1
+    assert pm.WARN_REASON_PRICE_FETCH_FAILED == "PRICE_FETCH_FAILED"
+    assert pm.WARN_REASON_PRICE_ZERO == "PRICE_ZERO"
