@@ -428,6 +428,117 @@ def _timing_overlay(
     return max(-TIMING_CAP, min(TIMING_CAP, score))
 
 
+def _corr_groups(
+    elig: list[str], returns: "pd.DataFrame", threshold: float,
+) -> list[list[str]]:
+    """Greedy corr 그룹화 (cluster_aware fallback).
+
+    각 ticker 를 순회하며 |corr| ≥ threshold 면 기존 그룹의 head 와 같은 그룹으로
+    배정, 아니면 새 그룹. 이전 `select_diverse` 의 의미와 동등.
+    """
+    groups: list[list[str]] = []
+    for t in elig:
+        placed = False
+        for g in groups:
+            head = g[0]
+            if t in returns.columns and head in returns.columns:
+                c = returns[t].corr(returns[head])
+                if pd.notna(c) and abs(float(c)) >= threshold:
+                    g.append(t)
+                    placed = True
+                    break
+        if not placed:
+            groups.append([t])
+    return groups
+
+
+def select_cluster_aware(
+    eligible: list[str],
+    alpha_scores: dict[str, float],
+    impl_scores: dict[str, float],
+    clusters: list | None,
+    n: int,
+    returns: "pd.DataFrame | None",
+    correlation_threshold: float = 0.85,
+    selection_trace: dict | None = None,
+) -> list[str]:
+    """Cluster-aware selection (Stage 3).
+
+    그룹 간(다른 노출/sector) = alpha 랭킹. 그룹 내(대체재) = impl 랭킹.
+
+    clusters 가 제공되면 그것으로 그룹화; cluster 멤버 아닌 ticker 는 singleton.
+    clusters 가 None/빈이면 returns 의 pairwise corr 로 fallback grouping
+    (이전 select_diverse 의미). returns 도 없으면 모든 eligible = singleton.
+
+    얇은 pool(그룹 수 < n)에서는 남은 ticker 를 alpha 순으로 패딩.
+    """
+    if n <= 0 or not eligible:
+        return []
+    elig = [t for t in eligible if t in alpha_scores]
+    if not elig:
+        return []
+
+    # 1. 그룹화
+    groups: list[list[str]]
+    if clusters:
+        member_to_cluster: dict[str, str] = {}
+        for c in clusters:
+            for m in getattr(c, "members", []):
+                member_to_cluster.setdefault(m, getattr(c, "cluster_id"))
+        groups = []
+        by_cluster: dict[str, list[str]] = {}
+        for t in elig:
+            cid = member_to_cluster.get(t)
+            if cid is None:
+                groups.append([t])
+            else:
+                by_cluster.setdefault(cid, []).append(t)
+        groups.extend(by_cluster.values())
+    elif returns is not None and not returns.empty:
+        groups = _corr_groups(elig, returns, correlation_threshold)
+    else:
+        groups = [[t] for t in elig]
+
+    # 2. 각 그룹의 대표(impl 최고) + group alpha(멤버 alpha 최고)
+    group_repr: list[tuple[float, str, list[str]]] = []
+    for g in groups:
+        rep = max(g, key=lambda t: impl_scores.get(t, 0.0))
+        g_alpha = max(alpha_scores.get(t, float("-inf")) for t in g)
+        group_repr.append((g_alpha, rep, g))
+    group_repr.sort(key=lambda x: x[0], reverse=True)
+
+    chosen: list[str] = [rep for _a, rep, _g in group_repr[:n]]
+
+    if selection_trace is not None:
+        for g_alpha, rep, g in group_repr:
+            selection_trace[rep] = {
+                "selected":  rep in chosen,
+                "reason":    f"cluster-aware (group_alpha={g_alpha:.4f}, group_size={len(g)})",
+                "group_members": list(g),
+                "group_alpha":   g_alpha,
+            }
+
+    # 3. 패딩 — 그룹 수 < n 이면 남은 ticker 를 alpha 순
+    if len(chosen) < n:
+        seen = set(chosen)
+        remaining = [t for t in elig if t not in seen]
+        remaining.sort(key=lambda t: alpha_scores.get(t, float("-inf")), reverse=True)
+        for t in remaining:
+            chosen.append(t)
+            if selection_trace is not None:
+                selection_trace.setdefault(t, {})
+                selection_trace[t].update({
+                    "selected": True,
+                    "reason": (
+                        f"padding fallback (alpha={alpha_scores.get(t, 0.0):.4f}, "
+                        f"was: {selection_trace.get(t, {}).get('reason', 'not-rep')})"
+                    ),
+                })
+            if len(chosen) >= n:
+                break
+    return chosen[:n]
+
+
 def select_diverse(
     ranked_tickers: list[str],
     returns: pd.DataFrame,

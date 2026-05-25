@@ -389,3 +389,104 @@ def test_impl_score_missing_ticker_in_signal_neutral():
     panels = {"A111111": _panel_for(aum=1e12), "A222222": _panel_for(aum=1e12)}
     impl = compute_impl_score(panels, adv={"A111111": 1e10})
     assert "A111111" in impl and "A222222" in impl
+
+
+# ---------- Stage 3: cluster-aware select ----------
+
+
+from tradingagents.schemas.technical import Cluster
+from tradingagents.skills.portfolio.factor_scorer import select_cluster_aware
+
+
+def test_cluster_aware_within_picks_best_impl_not_alpha():
+    # A1/A2 같은 cluster(대체재). A1 alpha 높지만 impl 낮음; A2 alpha 낮지만 impl 높음.
+    # 그룹 내 대표 = impl 기준 → A2 선택. B는 singleton.
+    alpha = {"A111111": 2.0, "A222222": 0.0, "B111111": 1.0}
+    impl = {"A111111": 0.0, "A222222": 2.0, "B111111": 1.0}
+    clusters = [Cluster(
+        cluster_id="c1", members=["A111111", "A222222"],
+        avg_internal_correlation=0.95, category_label="dup",
+    )]
+    chosen = select_cluster_aware(
+        ["A111111", "A222222", "B111111"], alpha, impl, clusters, n=2, returns=None,
+    )
+    assert "A222222" in chosen and "A111111" not in chosen
+    assert "B111111" in chosen
+
+
+def test_cluster_aware_across_groups_ranked_by_alpha():
+    alpha = {"X111111": 2.0, "Y111111": 0.5}
+    impl = {"X111111": 0.0, "Y111111": 5.0}
+    chosen = select_cluster_aware(
+        ["X111111", "Y111111"], alpha, impl, clusters=[], n=1, returns=None,
+    )
+    assert chosen == ["X111111"]
+
+
+def test_cluster_aware_pads_when_groups_fewer_than_n():
+    # 그룹 1개(A1,A2 대체재), n=2 → 대표 1 + 패딩으로 2개.
+    alpha = {"A111111": 2.0, "A222222": 1.0}
+    impl = {"A111111": 2.0, "A222222": 0.0}
+    clusters = [Cluster(
+        cluster_id="c1", members=["A111111", "A222222"],
+        avg_internal_correlation=0.95, category_label="dup",
+    )]
+    chosen = select_cluster_aware(
+        ["A111111", "A222222"], alpha, impl, clusters, n=2, returns=None,
+    )
+    assert len(chosen) == 2
+    assert set(chosen) == {"A111111", "A222222"}
+
+
+def test_cluster_aware_singleton_not_in_any_cluster():
+    # X 는 어느 cluster 에도 안 들어감 → singleton 으로 자동 처리
+    alpha = {"X111111": 2.0, "A111111": 1.0, "A222222": 0.5}
+    impl = {"X111111": 1.0, "A111111": 0.0, "A222222": 2.0}
+    clusters = [Cluster(
+        cluster_id="c1", members=["A111111", "A222222"],
+        avg_internal_correlation=0.95, category_label="dup",
+    )]
+    chosen = select_cluster_aware(
+        ["X111111", "A111111", "A222222"], alpha, impl, clusters, n=2, returns=None,
+    )
+    # 그룹 간 alpha 순: X(alpha=2.0) > A_group(max alpha=1.0)
+    # 그룹 내 대표: X singleton → X / A_group → impl 최고 A222222
+    assert set(chosen) == {"X111111", "A222222"}
+
+
+def test_cluster_aware_fallback_to_corr_when_clusters_empty():
+    # clusters 빈 dict + returns 제공 → corr-based fallback grouping.
+    # A, B 강상관 (대체재) — 그룹 내 impl 최고 선택.
+    import numpy as np, pandas as pd
+    rng = np.random.default_rng(0)
+    base = rng.normal(0, 0.01, 200)
+    df = pd.DataFrame({
+        "A111111": base,
+        "A222222": base + rng.normal(0, 0.001, 200),  # ~corr 0.99
+        "B111111": rng.normal(0, 0.01, 200),
+    })
+    alpha = {"A111111": 2.0, "A222222": 0.0, "B111111": 1.0}
+    impl = {"A111111": 0.0, "A222222": 2.0, "B111111": 1.0}
+    chosen = select_cluster_aware(
+        ["A111111", "A222222", "B111111"], alpha, impl, clusters=None,
+        n=2, returns=df, correlation_threshold=0.85,
+    )
+    # A 그룹 내 대표 impl 최고 = A222222, B singleton
+    assert "A222222" in chosen and "B111111" in chosen
+    assert "A111111" not in chosen
+
+
+def test_cluster_aware_empty_inputs():
+    assert select_cluster_aware([], {}, {}, [], n=3, returns=None) == []
+    assert select_cluster_aware(["X111111"], {"X111111": 1.0}, {"X111111": 1.0},
+                                [], n=0, returns=None) == []
+
+
+def test_cluster_aware_skips_ticker_without_alpha():
+    # alpha 에 없는 ticker는 eligible 에서 자동 제거 (Stage 1 누락 데이터 가드)
+    alpha = {"A111111": 1.0}
+    impl = {"A111111": 1.0, "A222222": 2.0}
+    chosen = select_cluster_aware(
+        ["A111111", "A222222"], alpha, impl, clusters=[], n=2, returns=None,
+    )
+    assert chosen == ["A111111"]
