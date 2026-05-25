@@ -262,3 +262,84 @@ def test_timing_missing_ticker_in_panels_neutral():
         {"AOTHER1": _ra("AOTHER1", mr=True)},
     )
     assert out == 0.0
+
+
+# ---------- Stage 3: alpha family enrichment ----------
+
+
+from tradingagents.schemas.technical import TrendQuantification
+from tradingagents.skills.portfolio.factor_scorer import FactorPanel
+
+
+def _panel_for(mom=0.05, vol=0.15, sharpe=0.5, aum=1e12):
+    return FactorPanel(
+        skip1m_mom_3m=mom, skip1m_mom_6m=mom, skip1m_mom_12m=mom,
+        realized_vol_60d=vol, sharpe_60d=sharpe, log_aum=math.log(aum),
+    )
+
+
+def _tq(t, trend_strength=0.0, accel=0.0):
+    return TrendQuantification(
+        ticker=t, trend_strength_score=trend_strength,
+        time_in_state_days=30, distance_ma200_pct=0.0, distance_ma50_pct=0.0,
+        momentum_3m_abs=0.05, momentum_3m_rel=0.0,
+        momentum_12m_abs=0.10, momentum_12m_rel=0.0,
+        momentum_acceleration=accel, benchmark="KOSPI200",
+    )
+
+
+def test_qual_family_absorbs_sortino_calmar_maxdd():
+    # 동일 sharpe, A는 sortino/calmar 우수 + 작은 dd → 더 높은 점수
+    panels = {"A123456": _panel_for(sharpe=0.5), "A654321": _panel_for(sharpe=0.5)}
+    ra = {
+        "A123456": _ra("A123456", sortino=2.0, calmar=2.0, maxdd=-0.05),
+        "A654321": _ra("A654321", sortino=-2.0, calmar=-2.0, maxdd=-0.50),
+    }
+    scores = score_candidates(
+        panels, "recession_disinflation", 1.0, risk_adjusted=ra,
+    )
+    assert scores["A123456"] > scores["A654321"]
+
+
+def test_mom_family_absorbs_trend_strength_and_accel():
+    panels = {"A123456": _panel_for(mom=0.05), "A654321": _panel_for(mom=0.05)}
+    tq = {
+        "A123456": _tq("A123456", trend_strength=0.9, accel=0.3),
+        "A654321": _tq("A654321", trend_strength=-0.9, accel=-0.3),
+    }
+    scores = score_candidates(panels, "growth_disinflation", 1.0, trend_quant=tq)
+    assert scores["A123456"] > scores["A654321"]
+
+
+def test_extended_panel_applies_timing_in_score():
+    # 동일 base panels, A는 bullish divergence, B는 bearish → score(A) > score(B)
+    panels = {"A123456": _panel_for(), "A654321": _panel_for()}
+    ext = {
+        "A123456": _ext(ticker="A123456", rsi_div="bullish"),
+        "A654321": _ext(ticker="A654321", rsi_div="bearish"),
+    }
+    scores = score_candidates(panels, "growth_disinflation", 1.0, extended=ext)
+    assert scores["A123456"] > scores["A654321"]
+
+
+def test_etf_state_breakdown_penalizes_in_score():
+    panels = {"A123456": _panel_for(), "A654321": _panel_for()}
+    states = {"A123456": TrendState.UPTREND, "A654321": TrendState.BREAKDOWN}
+    ext = {"A123456": _ext(ticker="A123456"), "A654321": _ext(ticker="A654321")}
+    scores = score_candidates(
+        panels, "growth_disinflation", 1.0, extended=ext, etf_states=states,
+    )
+    assert scores["A123456"] > scores["A654321"]
+
+
+def test_backward_compat_score_without_new_panels():
+    # 신규 panel 미제공 → 현행과 동일 결과 (regression guard)
+    panels = {
+        "A111111": _panel_for(mom=0.20, vol=0.15, sharpe=1.0, aum=1e12),
+        "A222222": _panel_for(mom=0.05, vol=0.15, sharpe=1.0, aum=1e12),
+    }
+    s_new = score_candidates(panels, "growth_disinflation", 1.0)
+    s_legacy = score_candidates(panels, "growth_disinflation", 1.0)
+    # 새 인자 미제공 시 두 호출 동일
+    assert s_new == s_legacy
+    assert s_new["A111111"] > s_new["A222222"]

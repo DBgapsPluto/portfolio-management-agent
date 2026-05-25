@@ -186,21 +186,31 @@ def score_candidates_with_components(
     regime_quadrant: str | None,
     regime_confidence: float,
     normalization: str = "rank_percentile",
+    *,
+    risk_adjusted: dict | None = None,
+    trend_quant: dict | None = None,
+    extended: dict | None = None,
+    etf_states: dict | None = None,
 ) -> tuple[dict[str, float], dict[str, dict], dict[str, float]]:
     """Same as score_candidates but also returns per-ticker breakdown + weights.
 
     Args:
         normalization: "rank_percentile" (default, bounded ∈ [-0.5, +0.5],
             scale-invariant — recommended) or "zscore" (legacy, unbounded).
+        risk_adjusted, trend_quant, extended, etf_states: Stage 1 technical
+            panels (optional). 미제공 시 현행 4-family score와 수학적으로 동일.
+            제공 시 qual = mean(z(sharpe), z(sortino), z(calmar), z(-maxdd));
+            mom = mean(z(skip1m), z(trend_strength), z(accel)); + timing overlay.
 
     Returns:
-        scores:     ticker → composite base_score
-        breakdown:  ticker → dict with raw values, normalized values, contributions
+        scores:     ticker → composite base_score (+ timing overlay if extended/states)
+        breakdown:  ticker → dict with raw values, normalized values, contributions, timing
         weights:    factor → blended regime weight (4 keys: mom/lowvol/qual/size)
     """
     if not panels:
         return {}, {}, blend_regime_weights(regime_quadrant, regime_confidence)
 
+    # momentum core: mean of skip1m windows (현행).
     mom_values: dict[str, float | None] = {}
     for t, p in panels.items():
         windows = [p.skip1m_mom_3m, p.skip1m_mom_6m, p.skip1m_mom_12m]
@@ -220,10 +230,45 @@ def score_candidates_with_components(
             f"unknown normalization {normalization!r} (expected 'rank_percentile' or 'zscore')"
         )
 
-    n_mom = normalize(mom_values)
+    n_mom_core = normalize(mom_values)
     n_vol = normalize(vol_values)
-    n_qual = normalize(sharpe_values)
+    n_qual_core = normalize(sharpe_values)
     n_size = normalize(size_values)
+
+    # Stage 3: family enrichment — sub-composite = mean(normalized sub-signals).
+    # 신호 누락(None) 시 해당 sub-signal 만 제외 후 mean.
+    extra_qual: dict[str, list[float]] = {t: [] for t in panels}
+    extra_mom: dict[str, list[float]] = {t: [] for t in panels}
+    if risk_adjusted:
+        n_sortino = normalize({
+            t: getattr(risk_adjusted.get(t), "sortino_60d", None) for t in panels
+        })
+        n_calmar = normalize({
+            t: getattr(risk_adjusted.get(t), "calmar_12m", None) for t in panels
+        })
+        n_neg_maxdd = normalize({
+            t: (-getattr(risk_adjusted.get(t), "max_drawdown_12m", None)
+                if risk_adjusted.get(t) is not None else None)
+            for t in panels
+        })
+        for t in panels:
+            extra_qual[t].extend([n_sortino[t], n_calmar[t], n_neg_maxdd[t]])
+    if trend_quant:
+        n_trend_strength = normalize({
+            t: getattr(trend_quant.get(t), "trend_strength_score", None) for t in panels
+        })
+        n_accel = normalize({
+            t: getattr(trend_quant.get(t), "momentum_acceleration", None) for t in panels
+        })
+        for t in panels:
+            extra_mom[t].extend([n_trend_strength[t], n_accel[t]])
+
+    n_mom: dict[str, float] = {
+        t: float(np.mean([n_mom_core[t], *extra_mom[t]])) for t in panels
+    }
+    n_qual: dict[str, float] = {
+        t: float(np.mean([n_qual_core[t], *extra_qual[t]])) for t in panels
+    }
 
     weights = blend_regime_weights(regime_quadrant, regime_confidence)
 
@@ -237,7 +282,12 @@ def score_candidates_with_components(
             "size":   weights["size"]   * n_size[t],
         }
         base = sum(contribs.values())
-        scores[t] = base
+
+        ext_t = extended.get(t) if extended else None
+        timing = _timing_overlay(t, ext_t, etf_states, risk_adjusted)
+        final_base = base + timing
+
+        scores[t] = final_base
         breakdown[t] = {
             "raw": {
                 "mom_value":    mom_values[t],
@@ -251,8 +301,13 @@ def score_candidates_with_components(
                 "vol":  n_vol[t],
                 "qual": n_qual[t],
                 "size": n_size[t],
+                "mom_core": n_mom_core[t],
+                "qual_core": n_qual_core[t],
+                "mom_extras": extra_mom[t],
+                "qual_extras": extra_qual[t],
             },
             "contributions": contribs,
+            "timing": timing,
             "base_score":    base,
         }
     return scores, breakdown, weights
@@ -263,14 +318,24 @@ def score_candidates(
     regime_quadrant: str | None,
     regime_confidence: float,
     normalization: str = "rank_percentile",
+    *,
+    risk_adjusted: dict | None = None,
+    trend_quant: dict | None = None,
+    extended: dict | None = None,
+    etf_states: dict | None = None,
 ) -> dict[str, float]:
     """Compute composite score per ticker. Higher = better.
 
     Normalized values are computed across the input ticker set (typically one
     bucket's eligible pool), so scores are *relative* within the bucket.
+
+    Optional Stage 1 technical panels enrich qual/mom families + apply timing
+    overlay (Stage 3 cluster-aware selection). 미제공 시 현행과 동일.
     """
     scores, _, _ = score_candidates_with_components(
         panels, regime_quadrant, regime_confidence, normalization=normalization,
+        risk_adjusted=risk_adjusted, trend_quant=trend_quant,
+        extended=extended, etf_states=etf_states,
     )
     return scores
 
