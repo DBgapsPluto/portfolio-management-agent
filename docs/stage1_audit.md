@@ -182,3 +182,61 @@ return "KOSPI200" if category.startswith("국내") else "SPY"
 - [x] cluster threshold named const.
 - [x] 채권/현금성 카테고리 dual-momentum 분기 명시.
 - [x] failure summary 가 narrative 에 노출.
+
+---
+
+## Task 2 — macro_quant analyst
+
+### 발견
+
+#### F2.1 — 13 silent except → sentinel without logger
+
+KR exports/leading/BSI, US leading/GDPNow, FCI, inflation_exp, fed_path, FX, risk_appetite, china_leading, foreign_flow, tail_risk. fetch 실패 → sentinel 으로 변환만 되고 어디서 실패했는지 trace 없음.
+
+#### F2.2 — Sentinel 값과 정상 평균치 구별 불가 (LLM leak)
+
+대표 sentinel:
+- `kr_bsi.mfg_bsi = 100.0` → BSI 100 은 평균/중립 수준이라 LLM 이 "정상 경제"로 해석.
+- `kr_leading.cli_value = 100.0` → 동일.
+- `us_leading.cfnai_ma3 = 0.0` → "neutral activity" 로 해석.
+- `fx.usd_krw = 1300` → 정상 환율로 해석.
+- `tail_risk.vvix = 90.0` → 평균 변동성으로 해석.
+
+`classify_regime` LLM prompt 가 `staleness_days` 를 전달받지 않아 (line 439-491 의 input 들이 모두 raw value) — fetch 실패가 "정상 경제" 시그널로 흡수.
+
+**근본 해결**: prompt 에 staleness 인디케이터 추가 + LLM 이 sentinel signal 무시하도록 지침. Stage 1 audit scope 밖 (별도 작업).
+
+#### F2.3 — 매직 lookback 윈도우 산재
+
+- `365 * 5` (macro lookback)
+- `90` (GDPNow)
+- `120` (USDCNH)
+- `200` (iron ore)
+- `60` (foreign flow)
+- `400` (commodities × 2)
+
+### 결정
+
+**D2.1** — 13 silent except → `logger.warning("<name> fetch failed → sentinel: %s", e)`. sub-fetch (china_cli_series 등) 도 동일.
+**D2.2** — sentinel inventory dict 산출 + `n_sentinels` 카운트. `n_sentinels > 0` 시 `logger.warning` 및 narrative summary 상단에 "Sentinels: N/17 (names)" 노출.
+**D2.3** — magic lookback 7개 → named const 모듈 상단 분리 (MACRO_LOOKBACK_DAYS=365*5, COMMODITY_LOOKBACK_DAYS=400, GDPNOW_LOOKBACK_DAYS=90, USDCNH_LOOKBACK_DAYS=120, IRON_ORE_LOOKBACK_DAYS=200, FOREIGN_FLOW_LOOKBACK_DAYS=60, CALENDAR_LOOKAHEAD_DAYS=90).
+**D2.4** — entry log `logger.info("macro_quant start: as_of=%s, lookback=%dd")`.
+**D2.5** — classify_regime LLM prompt staleness 보강은 본 PR 밖 (followup_issues 로 이관).
+
+### 수정
+
+- [x] 13 except 절 → logger.warning
+- [x] sentinel inventory + summary 노출
+- [x] named lookback const 분리
+- [x] entry log
+
+### 회귀
+
+`pytest tests/unit/agents/test_macro_quant_analyst.py tests/unit/skills/research/test_factor_estimators_individual.py` → **27 pass, 0 fail**.
+
+### 합격 기준
+
+- [x] silent except 0 (모두 logger.warning).
+- [x] sentinel inventory 가 summary 에 가시화.
+- [x] lookback 윈도우 named const.
+- [ ] [Deferred] LLM prompt staleness 보강 — Stage 2 prompt 재설계 시 처리 (followup).
