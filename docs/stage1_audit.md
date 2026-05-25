@@ -297,3 +297,51 @@ vix_term, skew, vxn, real_yields, funding_stress, credit_quality, kr_yield_curve
 - [x] silent except 0.
 - [x] sentinel inventory 가 summary 에 가시화.
 - [x] 매직 lookback 분리.
+
+---
+
+## Task 4 — macro_news analyst
+
+### 발견
+
+#### F4.1 — 6 silent except + SAVE brief silent fallback
+
+- impact_classifier loop: `try/except/continue` 한 항목 실패 시 다음으로 (cost 보호 OK, but no log).
+- overnight, save_brief, surprise, sentiment, speaker — 모두 `try/except: x = None` silent.
+- SAVE brief 가 없을 때 `state["release_surprises_30d"]` fallback — 이 fallback 발동도 silent.
+
+#### F4.2 — 매직 상수
+
+- `days=90` (calendar lookahead)
+- `window_days=7` (news fetch)
+- `[:30]` (impact classify cap, cost 보호)
+- `top_n=10` (ranked news)
+- `[:500]` (narrative)
+- `[:2000]` (summary)
+
+### 결정
+
+**D4.1** — 6 silent except → logger 추가. impact_classifier 는 per-item debug + final warning count.
+**D4.2** — SAVE brief 없을 때 fallback 발동 시 명시적 logger.info (release_surprises_30d 개수 표시).
+**D4.3** — 6 매직 상수 → 모듈 상단 named const.
+**D4.4** — missing-tier inventory dict (5 항목) + n_missing 카운터. summary 상단에 노출.
+**D4.5** — entry + fetch counts log.
+
+### 수정
+
+- [x] 6 except 절 → logger
+- [x] SAVE brief fallback 명시 로그
+- [x] named const 6개
+- [x] missing-tier inventory + summary 노출
+- [x] entry/fetch progress log
+
+### 회귀
+
+`pytest tests/unit/agents/test_macro_news_analyst.py` → **1 pass, 0 fail**.
+
+### 합격 기준
+
+- [x] silent except 0.
+- [x] SAVE brief 미스 시 명시 fallback 로그.
+- [x] missing-tier inventory summary 노출.
+- [x] 매직 상수 분리.
