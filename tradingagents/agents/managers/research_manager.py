@@ -10,8 +10,11 @@ Pipeline:
 
 Stage 2 추가 LLM 호출 0. macro_news_analyst 의 NewsReport structured field 활용 (Option Z).
 """
+import logging
 from dataclasses import replace
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.schemas.research import ResearchDecision
@@ -125,11 +128,32 @@ def create_research_manager(deep_llm):
     """Note: deep_llm 인자 유지 (interface compat), 사용 안 함."""
 
     def node(state):
+        logger.info("research_manager start: computing 9-factor z-vector")
+
         # 1. Compute 9 factors (deterministic)
         factor_scores = compute_all_factors(state)
+        z_dict_pre = factor_scores.to_dict()
+        n_active = sum(
+            1 for f in [
+                factor_scores.growth_surprise, factor_scores.inflation_surprise,
+                factor_scores.real_rate, factor_scores.term_premium,
+                factor_scores.credit_cycle, factor_scores.krw_regime,
+                factor_scores.equity_vol_regime, factor_scores.valuation,
+                factor_scores.liquidity_regime,
+            ] if f.confidence > 0.0
+        )
+        logger.info(
+            "research_manager: 9 factors computed (%d/9 with active components), "
+            "|z| sum=%.2f",
+            n_active, sum(abs(v) for v in z_dict_pre.values()),
+        )
 
         # 2. EMA blend (λ=1.0 default no-op)
         prior_decision: Optional[ResearchDecision] = state.get("prior_research_decision")
+        if prior_decision is not None and _EMA_LAMBDA < 1.0 - 1e-9:
+            logger.info(
+                "research_manager: EMA blend active (λ=%.2f, prior present)", _EMA_LAMBDA,
+            )
         factor_scores = _blend_factors_with_prior(
             factor_scores, prior_decision, _EMA_LAMBDA,
         )
@@ -142,6 +166,13 @@ def create_research_manager(deep_llm):
         # 4. Legacy compat fields
         dominant_scenario = derive_dominant_scenario(factor_scores)
         conviction = derive_conviction(factor_scores)
+        logger.info(
+            "research_manager: scenario=%s, conviction=%s, "
+            "extreme_factor=%s, projection_intervened=%s",
+            dominant_scenario, conviction,
+            safety_diag.get("extreme_factor_active"),
+            safety_diag.get("projection_intervened"),
+        )
 
         # 5. BucketTarget
         z_dict = factor_scores.to_dict()
@@ -176,10 +207,32 @@ def create_research_manager(deep_llm):
             safety_diagnostics=safety_diag,
         )
 
+        # Stage 2 audit (Task 0): top-3 contributors (|β·z| 큰 순) — "왜 이 bucket?" trace.
+        # contributions 형태: dict[bucket, dict[factor, β·z 기여도]]
+        flat_contribs: list[tuple[str, str, float]] = []
+        for bucket_name, fmap in (contributions or {}).items():
+            for factor_name, contrib in (fmap or {}).items():
+                flat_contribs.append((bucket_name, factor_name, contrib))
+        flat_contribs.sort(key=lambda x: -abs(x[2]))
+        top_contribs_str = ", ".join(
+            f"{f}→{b} {c*100:+.1f}pp"
+            for b, f, c in flat_contribs[:3]
+        ) or "(none)"
+
+        # Safety diagnostics 의 핵심 3 키 — projection 발동, mandate 위반, extreme factor.
+        diag_line = (
+            f"Safety: mandate_violated_pre={safety_diag.get('mandate_violated_pre_projection')}, "
+            f"projection_intervened={safety_diag.get('projection_intervened')}, "
+            f"l2_distance={safety_diag.get('projection_l2_distance', 0.0):.3f}, "
+            f"extreme_factor={safety_diag.get('extreme_factor_active')}\n"
+        )
+
         # 7. Summary text
         summary = (
             f"## Research Decision (Factor Model)\n"
-            f"Dominant scenario: {dominant_scenario} ({conviction})\n\n"
+            f"Dominant scenario: {dominant_scenario} ({conviction})\n"
+            f"Top contributors: {top_contribs_str}\n"
+            f"{diag_line}\n"
             f"Factor z-scores:\n"
             + "\n".join(f"  {f}: {z:+.2f}" for f, z in z_dict.items())
             + f"\n\n## Bucket Target\n"
