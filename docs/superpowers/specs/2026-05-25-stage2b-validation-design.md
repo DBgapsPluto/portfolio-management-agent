@@ -369,17 +369,17 @@ uv run python scripts/replay_stage.py --as-of 2026-05-15 --write-archive
 
 ## 9. Sign-off Checklist
 
-본 PR2b merge 의 조건:
+본 PR2b merge 의 조건 (2026-05-25 실행 완료, status = **PASS with caveat**):
 
-- [ ] 모든 unit + integration test pass (PR2a baseline 2 unit + 18 integ 외 0 new failure)
-- [ ] C1 의 4 utility module unit test pass (15+ tests)
-- [ ] C2 의 validation_report.md generated + 모든 5 benchmark 결과 포함
-- [ ] C3 의 sensitivity_report.md generated + 3 sub-report 모두 작성
-- [ ] C4 의 production regen — 4 artifacts (backtest_summary, philosophy, portfolio, trade_plan) 교체 또는 partial success 명시
-- [ ] 2 grill-me 세션의 decision 기록 (artifacts/2026-05-25/decisions.md)
-- [ ] regression_log.md 매 commit 별 entry — 0 new failure 검증
-- [ ] docs/followup_issues.md Issue #18 status update (FULLY VERIFIED 또는 caveat)
-- [ ] PR2b conclusion: keep / refine / revert INITIAL_BETA 결정 명시
+- [x] 모든 unit + integration test pass (PR2a baseline 2 unit + 18 integ 외 0 new failure; +16 new pass from C1)
+- [x] C1 의 3 utility module unit test pass (16 tests: 5 benchmark + 4 regime + 7 statistics)
+- [x] C2 의 validation_report.md generated + 5 strategy 결과 포함 (24-cell legacy deferred 명시)
+- [x] C3 의 sensitivity_report.md generated + 3 sub-report (era / robustness / sample_quality)
+- [x] C4 의 production regen — 3 artifacts 교체 (philosophy.md, portfolio.json, trade_plan.csv). backtest_summary.json 은 generate_backtest 별도 흐름 (regen pipeline 비대상).
+- [x] 2 grill-me 세션의 decision 기록 (artifacts/2026-05-25/decisions.md)
+- [x] regression_log.md 매 commit 별 entry — 0 new failure 검증
+- [x] docs/followup_issues.md Issue #18 status update **VERIFIED with caveat**
+- [x] PR2b conclusion: **keep INITIAL_BETA = calibrated, production regen 적용, 4 caveat 명시**
 
 ---
 

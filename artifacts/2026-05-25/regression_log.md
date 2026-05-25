@@ -96,3 +96,26 @@ Runtime 203.4s (Stage 1-6 + LLM). validation passed=True hard=0 soft=0.
 위험자산 합계 26.3% → 38.6% (cap 70% 안).
 
 **grill-me #2**: Accept with caveat. C5 진행.
+
+## Post-C5 (FINAL — PR2b 완료)
+
+```
+$ uv run python -m pytest tests/unit/ -q
+2 failed, 828 passed, 37 warnings in 107.95s
+
+$ uv run python -m pytest tests/integration/ -q
+16 failed, 30 passed, 1 warning in 49.66s
+```
+
+Δ from PR2b baseline (post-PR2a):
+- Unit: +16 new pass (C1 utilities). 0 new fail.
+- Integration: -2 fewer fail (main rebase brought stage4 fixes which improved
+  eval_regime_classifier and others). +2 new pass.
+
+Total 0 new failure through PR2b C0-C5.
+
+**PR2b status: PASS with caveat**
+- INITIAL_BETA: keep calibrated (PR2a 결과 유지)
+- Production output (artifacts/2026-05-15/*): 교체 적용
+- 4 caveat 명시 (Issue #18 + decisions.md final)
+- Spec section 9 sign-off checklist: 모두 [x]

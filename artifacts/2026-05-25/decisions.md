@@ -79,3 +79,31 @@ C4 regen 결과 (artifacts/2026-05-15/* 갱신):
   2. β era moderate drift (|Δ|_avg = 0.036)
   3. Robustness penalty sensitive
   4. Extreme factor signal 환경에서 bucket 극단 reposition
+
+## Final Status (PR2b 완료, 2026-05-25) — **PASS with caveat**
+
+- 5-strategy benchmark comparison: calibrated 1위 (mean OOS Sharpe 1.229)
+- NBER regime decomposition: OOS recession N=2 (불충분), expansion N=47
+- Sensitivity: era moderate drift + robustness sensitive + quality 분류불가
+- Production regen (2026-05-15): KR equity +10pp, bond -12pp, validation passed
+- INITIAL_BETA: keep calibrated (PR2a 결과 유지)
+- Spec sign-off: 모든 condition [x]
+- Issue #18 status: VERIFIED with caveat
+
+## Critical issue 처리 결과
+- K1 (caveat reporting): completed — 4 caveat 명시
+- K2 (NBER small N): Cohen's d 병행 reporting (Section 1)
+- K3 (regen LLM 실패): success — 203.4s runtime, validation passed
+- K4 (working tree 정리): rebase 후 clean state — 단 도중에 외부 branch
+  작업 충돌 발생, 한번 일시중단 후 main rebase 로 깨끗하게 재개
+
+## 2 grill-me decisions
+- grill-me #1 (C2 validation): PASS with caveat (5/5 우월하지만 60-40 not sig)
+- grill-me #2 (C4 regen): Accept with caveat (regen 적용, 4 caveat 명시)
+
+## PR2b 종착점 (다음 단계 입력)
+- **PR2c+ 영역**: quarterly re-calibration cadence (era drift monitoring),
+  새 factor 추가 (momentum, quality) for 더 명확한 차별성, 시간 경과로
+  sample N 증가.
+- **monitoring**: artifacts/2026-05-15/* 의 production 적용 후 실제 운용
+  결과 추적.
