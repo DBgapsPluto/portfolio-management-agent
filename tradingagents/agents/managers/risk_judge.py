@@ -19,6 +19,7 @@
 
 LLM 호출 0회 (Stage 1·2·3 정신 일관). WeightAdjustment.delta는 영구 폐기.
 """
+import logging
 from datetime import date, timedelta
 
 from tradingagents.agents.allocator.overlay_apply import apply_risk_overlay
@@ -29,10 +30,13 @@ from tradingagents.agents.risk_lens.macro_conditional_lens import (
     run_macro_conditional_lens,
 )
 from tradingagents.agents.risk_lens.tail_risk_lens import run_tail_risk_lens
+from tradingagents.observability.overlay_stats import record_overlay_outcome
 from tradingagents.schemas.risk_overlay import RiskOverlay
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
 from tradingagents.skills.risk.portfolio_metrics import compute_portfolio_numerics
 from tradingagents.skills.risk.severity_aggregator import aggregate_lens_concerns
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_risk_signals(risk_report) -> dict:
@@ -168,6 +172,21 @@ def create_risk_judge(
             f"Weight vector "
             f"{'updated by 2nd allocator' if weight_changed else 'unchanged'}.\n"
         )[:2000]
+
+        # 7. telemetry — 누적 stats jsonl 한 줄 append
+        try:
+            record_overlay_outcome(
+                date=as_of_str or "unknown",
+                outcome=overlay.overlay_apply_outcome,
+                lens_levels={c.lens: c.level for c in concerns},
+                strength=overlay.strength_applied,
+                multiplier=overlay.risk_asset_multiplier,
+            )
+        except Exception:
+            # telemetry 실패는 파이프라인 안 막음
+            logger.warning(
+                "overlay_outcomes.jsonl write failed", exc_info=True,
+            )
 
         return {
             "weight_vector": weight_vector_2,
