@@ -351,6 +351,7 @@ def evaluate_all_live(
     *,
     universe_path: str,
     cache_path: str | None = None,
+    with_stage4: bool = False,
 ) -> list[AnchorEvalResult]:
     catalog_dir = Path(catalog_dir)
     anchor_files = sorted(
@@ -365,6 +366,7 @@ def evaluate_all_live(
             r = evaluate_anchor_live(
                 p, universe_path=universe_path, cache_path=cache_path,
                 quick_llm=quick_llm, deep_llm=deep_llm,
+                with_stage4=with_stage4,
             )
             results.append(r)
         except Exception as e:

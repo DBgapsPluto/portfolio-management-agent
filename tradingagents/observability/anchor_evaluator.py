@@ -548,6 +548,7 @@ def evaluate_all(
     *,
     universe_path: str,
     cache_path: str | None = None,
+    with_stage4: bool = False,
 ) -> list[AnchorEvalResult]:
     catalog_dir = Path(catalog_dir)
     anchor_files = sorted(
@@ -557,7 +558,10 @@ def evaluate_all(
     results = []
     for p in anchor_files:
         try:
-            r = evaluate_anchor(p, universe_path=universe_path, cache_path=cache_path)
+            r = evaluate_anchor(
+                p, universe_path=universe_path, cache_path=cache_path,
+                with_stage4=with_stage4,
+            )
             results.append(r)
         except Exception as e:
             logger.error("anchor %s evaluation failed: %s", p.name, e)

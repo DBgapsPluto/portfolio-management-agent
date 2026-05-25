@@ -39,7 +39,31 @@ def _print_anchor(r, mode: str) -> None:
     print("  " + "-" * (len(head) - 2))
     print(f"  method chosen     : {r.chosen_method}")
     print(f"  positions         : {len(r.weights)}, unique_sub_cat={r.n_unique_sub_categories}, risk_asset={r.risk_asset_total:.3f}")
-    print(f"  pass {r.pass_count}/{len(r.checks)}  (fail {r.fail_count})")
+    print(f"  Stage 3 only      : pass {r.pass_count}/{len(r.checks)}  (fail {r.fail_count})")
+    if r.stage4_checks is not None:
+        s4_pass = sum(1 for c in r.stage4_checks if c.passed)
+        print(
+            f"  Stage 3 + 4       : pass {s4_pass}/{len(r.stage4_checks)}  "
+            f"(outcome={r.stage4_outcome}, active={r.stage4_overlay_was_active})"
+        )
+        s3_by_name = {c.name: c.passed for c in r.checks}
+        s4_by_name = {c.name: c.passed for c in r.stage4_checks}
+        flipped = [
+            f"{name}: {'pass' if s3_by_name[name] else 'fail'}→"
+            f"{'pass' if s4_by_name.get(name, False) else 'fail'}"
+            for name in s3_by_name
+            if s4_by_name.get(name) is not None
+            and s3_by_name[name] != s4_by_name[name]
+        ]
+        if flipped:
+            print(f"  Δ axes            : {'; '.join(flipped)}")
+        else:
+            print(f"  Δ axes            : (none flipped)")
+        if r.stage4_bucket_diff:
+            diff_str = ", ".join(
+                f"{b}={v:+.3f}" for b, v in sorted(r.stage4_bucket_diff.items())
+            )
+            print(f"  Δ buckets         : {diff_str}")
     for c in r.checks:
         icon = "✓" if c.passed else "✗"
         print(f"    {icon} {c.name:<22s} {c.detail}")
@@ -59,6 +83,10 @@ def main() -> int:
         "--compare-synthetic", action="store_true",
         help="LIVE와 synthetic 동시 실행 후 비교 표 출력",
     )
+    p.add_argument(
+        "--with-stage4", action="store_true",
+        help="Stage 4 적용 후 weight 도 8 축 채점, 나란히 출력",
+    )
     args = p.parse_args()
 
     catalog_dir = Path(args.catalog)
@@ -70,24 +98,39 @@ def main() -> int:
 
         if args.compare_synthetic:
             print(f"\n{'='*80}\n SYNTHETIC mode\n{'='*80}")
-            r_syn = evaluate_anchor(anchor_path, universe_path=args.universe, cache_path=args.cache)
+            r_syn = evaluate_anchor(
+                anchor_path, universe_path=args.universe, cache_path=args.cache,
+                with_stage4=args.with_stage4,
+            )
             _print_anchor(r_syn, "synthetic")
             print(f"\n{'='*80}\n LIVE mode (Stage 1 실측)\n{'='*80}")
-            r_live = evaluate_anchor_live(anchor_path, universe_path=args.universe, cache_path=args.cache)
+            r_live = evaluate_anchor_live(
+                anchor_path, universe_path=args.universe, cache_path=args.cache,
+                with_stage4=args.with_stage4,
+            )
             _print_anchor(r_live, "live")
             print(f"\n--- 비교 요약 ---")
             print(f"  synthetic  pass {r_syn.pass_count}/{len(r_syn.checks)}, method={r_syn.chosen_method}")
             print(f"  live       pass {r_live.pass_count}/{len(r_live.checks)}, method={r_live.chosen_method}")
             return 0
 
-        results = [evaluate_anchor_live(anchor_path, universe_path=args.universe, cache_path=args.cache)]
+        results = [evaluate_anchor_live(
+            anchor_path, universe_path=args.universe, cache_path=args.cache,
+            with_stage4=args.with_stage4,
+        )]
     else:
         if args.compare_synthetic:
             print(f"\n{'='*80}\n LIVE vs SYNTHETIC — 전체 anchor 비교\n{'='*80}")
             print(f"\n[synthetic mode 실행]")
-            syn_results = evaluate_all(catalog_dir, universe_path=args.universe, cache_path=args.cache)
+            syn_results = evaluate_all(
+                catalog_dir, universe_path=args.universe, cache_path=args.cache,
+                with_stage4=args.with_stage4,
+            )
             print(f"\n[live mode 실행 — Stage 1 LLM 호출 발생]")
-            live_results = evaluate_all_live(catalog_dir, universe_path=args.universe, cache_path=args.cache)
+            live_results = evaluate_all_live(
+                catalog_dir, universe_path=args.universe, cache_path=args.cache,
+                with_stage4=args.with_stage4,
+            )
 
             syn_by_id = {r.anchor_id: r for r in syn_results}
             live_by_id = {r.anchor_id: r for r in live_results}
@@ -104,7 +147,10 @@ def main() -> int:
                 print(f"  {aid:<32s}  {ss:>6s}    {ll:>6s}   {sm:<10s}  {lm}{marker}")
             return 0
 
-        results = evaluate_all_live(catalog_dir, universe_path=args.universe, cache_path=args.cache)
+        results = evaluate_all_live(
+            catalog_dir, universe_path=args.universe, cache_path=args.cache,
+            with_stage4=args.with_stage4,
+        )
 
     print("\n" + "=" * 80)
     print(f" ANCHOR LIVE EVAL — {len(results)} anchors")
@@ -117,8 +163,18 @@ def main() -> int:
     print("\n" + "=" * 80)
     print(f" SUMMARY: {total_pass}/{total_checks} checks passed  ({total_pass/max(total_checks,1)*100:.0f}%)")
     print("=" * 80)
-    for r in results:
-        print(f"  {r.anchor_id:<32s} {r.pass_count:>4d} / {len(r.checks):>3d}  {r.chosen_method}")
+    if results and results[0].stage4_checks is not None:
+        print(f"  {'anchor':<32s} {'s3':>4s}/{'tot':>3s} {'s3+4':>4s}/{'tot':>3s}  outcome")
+        for r in results:
+            s4_pass = sum(c.passed for c in r.stage4_checks)
+            print(
+                f"  {r.anchor_id:<32s} "
+                f"{r.pass_count:>4d}/{len(r.checks):>3d} "
+                f"{s4_pass:>4d}/{len(r.stage4_checks):>3d}  {r.stage4_outcome}"
+            )
+    else:
+        for r in results:
+            print(f"  {r.anchor_id:<32s} {r.pass_count:>4d} / {len(r.checks):>3d}  {r.chosen_method}")
 
     out_path = args.out or str(_ROOT / "artifacts" / "anchor_live_report.json")
     out_path = Path(out_path)

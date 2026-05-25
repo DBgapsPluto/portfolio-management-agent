@@ -32,7 +32,33 @@ def _print_anchor(r: AnchorEvalResult) -> None:
     print("  " + "-" * (len(head) - 2))
     print(f"  method chosen     : {r.chosen_method}")
     print(f"  positions         : {len(r.weights)}, unique_sub_cat={r.n_unique_sub_categories}, risk_asset={r.risk_asset_total:.3f}")
-    print(f"  pass {r.pass_count}/{len(r.checks)}  (fail {r.fail_count})\n")
+    print(f"  Stage 3 only      : pass {r.pass_count}/{len(r.checks)}  (fail {r.fail_count})")
+    if r.stage4_checks is not None:
+        s4_pass = sum(1 for c in r.stage4_checks if c.passed)
+        print(
+            f"  Stage 3 + 4       : pass {s4_pass}/{len(r.stage4_checks)}  "
+            f"(outcome={r.stage4_outcome}, active={r.stage4_overlay_was_active})"
+        )
+        # Δ axes: stage3 vs stage4 채점 결과가 flip 된 축 목록
+        s3_by_name = {c.name: c.passed for c in r.checks}
+        s4_by_name = {c.name: c.passed for c in r.stage4_checks}
+        flipped = [
+            f"{name}: {'pass' if s3_by_name[name] else 'fail'}→"
+            f"{'pass' if s4_by_name.get(name, False) else 'fail'}"
+            for name in s3_by_name
+            if s4_by_name.get(name) is not None
+            and s3_by_name[name] != s4_by_name[name]
+        ]
+        if flipped:
+            print(f"  Δ axes            : {'; '.join(flipped)}")
+        else:
+            print(f"  Δ axes            : (none flipped)")
+        if r.stage4_bucket_diff:
+            diff_str = ", ".join(
+                f"{b}={v:+.3f}" for b, v in sorted(r.stage4_bucket_diff.items())
+            )
+            print(f"  Δ buckets         : {diff_str}")
+    print()
     for c in r.checks:
         icon = icon_pass if c.passed else icon_fail
         print(f"    {icon} {c.name:<22s} {c.detail}")
@@ -59,6 +85,10 @@ def main() -> int:
         "--out", default=None,
         help="결과 JSON 저장 경로. default: artifacts/anchor_report.json",
     )
+    p.add_argument(
+        "--with-stage4", action="store_true",
+        help="Stage 4 적용 후 weight 도 8 축 채점, 나란히 출력",
+    )
     args = p.parse_args()
 
     catalog_dir = Path(args.catalog)
@@ -73,10 +103,12 @@ def main() -> int:
             return 2
         results = [evaluate_anchor(
             anchor_path, universe_path=args.universe, cache_path=args.cache,
+            with_stage4=args.with_stage4,
         )]
     else:
         results = evaluate_all(
             catalog_dir, universe_path=args.universe, cache_path=args.cache,
+            with_stage4=args.with_stage4,
         )
 
     print("\n" + "=" * 80)
@@ -91,9 +123,19 @@ def main() -> int:
     print("\n" + "=" * 80)
     print(f" SUMMARY: {total_pass}/{total_checks} checks passed  ({total_pass/max(total_checks,1)*100:.0f}%)")
     print("=" * 80)
-    print(f"  {'anchor':<32s} {'pass':>4s} / {'tot':>3s}  method")
-    for r in results:
-        print(f"  {r.anchor_id:<32s} {r.pass_count:>4d} / {len(r.checks):>3d}  {r.chosen_method}")
+    if results and results[0].stage4_checks is not None:
+        print(f"  {'anchor':<32s} {'s3':>4s}/{'tot':>3s} {'s3+4':>4s}/{'tot':>3s}  outcome")
+        for r in results:
+            s4_pass = sum(c.passed for c in r.stage4_checks)
+            print(
+                f"  {r.anchor_id:<32s} "
+                f"{r.pass_count:>4d}/{len(r.checks):>3d} "
+                f"{s4_pass:>4d}/{len(r.stage4_checks):>3d}  {r.stage4_outcome}"
+            )
+    else:
+        print(f"  {'anchor':<32s} {'pass':>4s} / {'tot':>3s}  method")
+        for r in results:
+            print(f"  {r.anchor_id:<32s} {r.pass_count:>4d} / {len(r.checks):>3d}  {r.chosen_method}")
     print()
 
     out_path = args.out or str(_ROOT / "artifacts" / "anchor_report.json")
