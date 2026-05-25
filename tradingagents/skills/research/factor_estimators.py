@@ -150,15 +150,31 @@ _Z_CAP: Final[float] = 3.0
 # ---------------------- helpers ----------------------
 
 
+# Stage 1 sentinel marker — analyst가 fetch 실패 fallback snapshot을 만들 때
+# staleness_days=99로 설정한다. Stage 2 factor estimator는 그 snapshot의 field를
+# raw 값으로 사용하면 silent distortion이 생기므로(예: BSI=100 sentinel을 정상
+# 평균치로 해석) component drop 한다. 정상 stale(1-7d) 데이터는 통과.
+STALENESS_SENTINEL_DAYS: Final[int] = 99
+
+
 def _safe_get(obj: Any, *path: str, default: Any = None) -> Any:
     """Walk a chain of attribute / dict-key accesses safely.
 
     Each step uses ``getattr`` then dict ``__getitem__``; any exception
     or a ``None`` intermediate yields ``default``.
+
+    Stage 1 audit (2026-05-26, Task 0): walk 중 만난 StalenessAware snapshot이
+    sentinel(staleness_days >= STALENESS_SENTINEL_DAYS)이면 default 반환 →
+    factor_estimators._aggregate가 None component를 자동 drop + weight 재정규화.
+    이로써 fetch 실패 snapshot의 placeholder 값이 silent하게 factor z에 흡수되는
+    blackbox 위험을 차단.
     """
     cur: Any = obj
     for key in path:
         if cur is None:
+            return default
+        stale = getattr(cur, "staleness_days", None)
+        if isinstance(stale, int) and stale >= STALENESS_SENTINEL_DAYS:
             return default
         try:
             cur = getattr(cur, key)
