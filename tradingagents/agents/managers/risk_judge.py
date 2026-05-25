@@ -144,12 +144,12 @@ def create_risk_judge(
         # 5. severity-gated 합의
         overlay = aggregate_lens_concerns(concerns, as_of_date=as_of)
 
-        # 6. overlay 적용 (empty면 1차 그대로)
-        # NOTE: overlay_apply_outcome wiring is Task 4 — discard outcome here.
-        weight_vector_2, _outcome = apply_risk_overlay(
+        # 6. overlay 적용 (empty면 1차 그대로) + outcome 기록 (Task 4)
+        weight_vector_2, outcome = apply_risk_overlay(
             weight_vector_1, overlay, candidate_set, returns, bucket_target,
-            method=weight_vector_1.method,
+            method=weight_vector_1.method, clusters=clusters,
         )
+        overlay = overlay.model_copy(update={"overlay_apply_outcome": outcome})
 
         # Summary
         lens_str = "\n".join(
