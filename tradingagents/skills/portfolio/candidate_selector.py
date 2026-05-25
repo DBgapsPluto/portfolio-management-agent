@@ -28,9 +28,13 @@ BUCKET_TO_CATEGORIES = {
 }
 
 
+# Investability floor — flat ~500억 (Stage 3 cluster-aware selection, D2).
+# 운영 capital ~100억 가정 + 포지션 < AUM 5% 가이드 → 500억이 안전 최소선.
+# 유동성·구현품질은 hard filter 가 아니라 impl_score 의 soft 선호로 분리(D3).
+DEFAULT_MIN_AUM_KRW: float = 50_000_000_000   # 500억
+
 # Sub_category별 minimum AUM 완화 — KR 시장에 large-AUM 옵션이 부족한
 # sparse sub_category 한정. default min_aum_krw 대신 이 값 사용.
-# 운영 capital 10억-100억 가정에서 안전 (포지션 < AUM의 5%).
 _RELAXED_MIN_AUM_KRW: dict[str, float] = {
     "inflation_linked": 10_000_000_000,   # 100억 — KR TIPS 시장 매우 작음
 }
@@ -56,11 +60,19 @@ def _min_aum_for_etf(etf, default_threshold: float) -> float:
     return default_threshold
 
 
+def _eligible_for_bucket(universe: Universe, cats: list[str], min_aum_krw: float):
+    """Single eligibility filter (Stage 3 D2/D3 — used by both list_* and select_*)."""
+    return [
+        e for e in universe.etfs
+        if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
+    ]
+
+
 def list_eligible_tickers(
     universe: Universe,
     bucket_target: BucketTarget,
     as_of: date,
-    min_aum_krw: float = 1_000_000_000_000,
+    min_aum_krw: float = DEFAULT_MIN_AUM_KRW,
 ) -> dict[str, list[str]]:
     """Return tickers passing hard filters (tradable + category + AUM), pre-ranking.
 
@@ -80,10 +92,7 @@ def list_eligible_tickers(
             out[bucket_name] = []
             continue
         cats = BUCKET_TO_CATEGORIES[bucket_name]
-        out[bucket_name] = [
-            e.ticker for e in universe.etfs
-            if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
-        ]
+        out[bucket_name] = [e.ticker for e in _eligible_for_bucket(universe, cats, min_aum_krw)]
     return out
 
 
@@ -95,7 +104,7 @@ def select_etf_candidates(
     *,
     returns: pd.DataFrame,
     factor_panel: dict[str, FactorPanel],
-    min_aum_krw: float = 1_000_000_000_000,  # 1조원 floor
+    min_aum_krw: float = DEFAULT_MIN_AUM_KRW,
     per_bucket_n: int = 5,
     regime_quadrant: str | None = None,
     regime_confidence: float = 0.5,
@@ -164,10 +173,7 @@ def select_etf_candidates(
             continue
 
         cats = BUCKET_TO_CATEGORIES[bucket_name]
-        eligible = [
-            e for e in universe.etfs
-            if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
-        ]
+        eligible = _eligible_for_bucket(universe, cats, min_aum_krw)
         if bucket_attr is not None:
             bucket_attr["eligible_count"] = len(eligible)
 

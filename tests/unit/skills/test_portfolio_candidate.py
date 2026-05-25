@@ -9,7 +9,7 @@ import pytest
 from tradingagents.dataflows.universe import Universe, ETFEntry
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.skills.portfolio.candidate_selector import (
-    list_eligible_tickers, select_etf_candidates,
+    DEFAULT_MIN_AUM_KRW, list_eligible_tickers, select_etf_candidates,
 )
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
@@ -71,6 +71,25 @@ def test_select_candidates_for_target():
     assert "A459580" in candidates.bucket_to_tickers["cash_mmf"]
 
 
+def test_default_floor_is_500eok():
+    """Stage 3 D2 — flat ~500억 (현 KR 시장 pool 두께 확보)."""
+    assert DEFAULT_MIN_AUM_KRW == 50_000_000_000
+
+
+def test_floor_500eok_admits_midcap():
+    """1000억 AUM ETF는 새 floor(500억) 통과 — 이전 1조 floor 였으면 탈락."""
+    universe = Universe(version="t", etfs=[
+        ETFEntry(ticker="A111111", name="big", aum_krw=6e11, underlying_index="x",
+                 bucket="위험", category="국내주식_지수"),
+        ETFEntry(ticker="A222222", name="mid", aum_krw=1e11, underlying_index="x",
+                 bucket="위험", category="국내주식_지수"),
+    ])
+    bt = BucketTarget(kr_equity=1.0, global_equity=0, fx_commodity=0, bond=0,
+                      cash_mmf=0, rationale="t")
+    out = list_eligible_tickers(universe, bt, as_of=date(2025, 1, 2))
+    assert set(out["kr_equity"]) == {"A111111", "A222222"}
+
+
 def test_list_eligible_tickers_filters_by_aum_and_category():
     target = BucketTarget(
         kr_equity=0.5, global_equity=0.0, fx_commodity=0.0,
@@ -80,7 +99,8 @@ def test_list_eligible_tickers_filters_by_aum_and_category():
     universe = Universe(version="t", etfs=[
         ETFEntry(ticker="A111111", name="big kr", aum_krw=10e12,
                  underlying_index="x", bucket="위험", category="국내주식_지수"),
-        ETFEntry(ticker="A222222", name="small kr", aum_krw=0.1e12,
+        # 30억 — Stage 3 floor 500억 미달, AUM 필터 단언 유지
+        ETFEntry(ticker="A222222", name="small kr", aum_krw=3_000_000_000,
                  underlying_index="x", bucket="위험", category="국내주식_지수"),
         ETFEntry(ticker="A333333", name="bond", aum_krw=5e12,
                  underlying_index="x", bucket="안전", category="국내채권_종합"),
@@ -165,17 +185,19 @@ def test_bond_tips_quota_zero_falls_back_to_legacy_path():
 
 
 def test_relaxed_min_aum_admits_inflation_linked_etf():
-    """sub_category='inflation_linked' ETF는 default 1조 미달이라도 100억 이상이면 통과."""
+    """sub_category='inflation_linked' ETF는 default 500억 미달이라도 100억 이상이면 통과."""
     universe = Universe(version="t", etfs=[
-        ETFEntry(ticker="A_TIPS_SMALL", name="KR-TIPS small", aum_krw=200_000_000_000,
+        # 200억 — Stage 3 default 500억 미달이지만 inflation_linked relax(100억) 통과
+        ETFEntry(ticker="A_TIPS_SMALL", name="KR-TIPS small", aum_krw=20_000_000_000,
                  underlying_index="x", bucket="안전", category="국내채권_종합",
-                 sub_category="inflation_linked"),  # 200억, default 1조 미달
+                 sub_category="inflation_linked"),
         ETFEntry(ticker="A_NOM_BIG", name="KTB big", aum_krw=2_000_000_000_000,
                  underlying_index="x", bucket="안전", category="국내채권_종합",
                  sub_category="kr_treasury"),  # 2조, default 통과
-        ETFEntry(ticker="A_NOM_SMALL", name="KTB small", aum_krw=200_000_000_000,
+        # 200억 — default 500억 미달, kr_treasury는 relax 비대상 → 탈락
+        ETFEntry(ticker="A_NOM_SMALL", name="KTB small", aum_krw=20_000_000_000,
                  underlying_index="x", bucket="안전", category="국내채권_종합",
-                 sub_category="kr_treasury"),  # 200억, default 1조 미달 → 탈락
+                 sub_category="kr_treasury"),
     ])
     target = BucketTarget(
         kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
