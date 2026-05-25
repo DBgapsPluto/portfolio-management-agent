@@ -9,6 +9,7 @@ Stage 3 1차 WeightVector + returns를 받아 portfolio-level risk metric을 사
   - CVaR/VaR: portfolio-level 1-day 95% 손실 (historical sim)
   - realized_vol_60d: 우리 portfolio의 실제 vol
 """
+import logging
 import math
 
 import numpy as np
@@ -19,6 +20,14 @@ from tradingagents.schemas._base import StalenessAware
 from tradingagents.schemas.portfolio import WeightVector
 from tradingagents.schemas.technical import Cluster
 from tradingagents.skills.registry import register_skill
+
+logger = logging.getLogger(__name__)
+
+
+# Stage 4 audit (2026-05-26, Task 4): named min-data thresholds.
+MIN_OBS_REALIZED_VOL: int = 60     # 60d annualized vol 계산 최소
+MIN_OBS_CVAR: int = 100            # historical sim CVaR 신뢰 가능 최소
+VAR_PERCENTILE: float = 95.0       # 1-day VaR confidence level
 
 
 class PortfolioNumerics(StalenessAware):
@@ -115,17 +124,26 @@ def compute_portfolio_numerics(
     pf_ret = _portfolio_returns(weights, returns)
     pf_ret_clean = pf_ret.dropna()
 
-    if len(pf_ret_clean) >= 60:
-        realized_vol_60d = float(pf_ret_clean.tail(60).std())
+    if len(pf_ret_clean) >= MIN_OBS_REALIZED_VOL:
+        realized_vol_60d = float(pf_ret_clean.tail(MIN_OBS_REALIZED_VOL).std())
     else:
+        logger.warning(
+            "portfolio_metrics: realized_vol_60d 계산 불가 (obs=%d < %d) → 0.0",
+            len(pf_ret_clean), MIN_OBS_REALIZED_VOL,
+        )
         realized_vol_60d = 0.0
 
-    if len(pf_ret_clean) >= 100:
+    if len(pf_ret_clean) >= MIN_OBS_CVAR:
         losses = -pf_ret_clean.values  # 양수 = 손실
-        var_95 = float(np.percentile(losses, 95))
+        var_95 = float(np.percentile(losses, VAR_PERCENTILE))
         tail_losses = losses[losses >= var_95]
         cvar_95 = float(tail_losses.mean()) if len(tail_losses) > 0 else var_95
     else:
+        logger.warning(
+            "portfolio_metrics: CVaR_95_1d 계산 불가 (obs=%d < %d) → 0.0. "
+            "tail_risk_lens 의 결정이 systemic_score 만으로 좁아짐.",
+            len(pf_ret_clean), MIN_OBS_CVAR,
+        )
         var_95 = 0.0
         cvar_95 = 0.0
 
