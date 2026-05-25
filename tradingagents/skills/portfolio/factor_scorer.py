@@ -29,6 +29,12 @@ from pydantic import BaseModel
 # - recession_inflation (stagflation): defensive → heavy low-vol + quality
 # - recession_disinflation (deflationary recession): defensive → heaviest low-vol
 # - unknown / low confidence: equal weight (no view)
+# Stage 3 cluster-aware selection — timing overlay constants.
+# 신호당 가감점 δ + 양방향 bound. backtest 튜닝 대상이라 named const로 노출.
+TIMING_DELTA: float = 0.1
+TIMING_CAP: float = 0.3
+
+
 REGIME_FACTOR_WEIGHTS: dict[str, dict[str, float]] = {
     "growth_disinflation":    {"mom": 0.50, "lowvol": 0.10, "qual": 0.25, "size": 0.15},
     "growth_inflation":       {"mom": 0.30, "lowvol": 0.15, "qual": 0.30, "size": 0.25},
@@ -267,6 +273,49 @@ def score_candidates(
         panels, regime_quadrant, regime_confidence, normalization=normalization,
     )
     return scores
+
+
+def _timing_overlay(
+    ticker: str,
+    extended,
+    etf_states,
+    risk_adjusted,
+) -> float:
+    """Bounded soft 가감점 (Stage 3 cluster-aware selection).
+
+    누락 데이터는 0 기여. 반환 ∈ [-TIMING_CAP, +TIMING_CAP].
+    - rsi/macd divergence: bearish 페널티 / bullish 보너스
+    - bb_percent_b>1.0 OR mfi>80 OR stoch_k>80 → overbought 페널티
+    - trend state ∈ {breakdown, downtrend} 페널티
+    - is_mean_reversion_candidate 보너스
+    """
+    d = TIMING_DELTA
+    score = 0.0
+    if extended is not None:
+        if extended.rsi_divergence == "bearish":
+            score -= d
+        elif extended.rsi_divergence == "bullish":
+            score += d
+        if extended.macd_divergence == "bearish":
+            score -= d
+        elif extended.macd_divergence == "bullish":
+            score += d
+        if (
+            extended.bb_percent_b > 1.0
+            or extended.mfi > 80.0
+            or extended.stoch_k > 80.0
+        ):
+            score -= d
+    if etf_states is not None:
+        st = etf_states.get(ticker)
+        st_val = getattr(st, "value", st)
+        if st_val in ("breakdown", "downtrend"):
+            score -= d
+    if risk_adjusted is not None:
+        ra = risk_adjusted.get(ticker)
+        if ra is not None and getattr(ra, "is_mean_reversion_candidate", False):
+            score += d
+    return max(-TIMING_CAP, min(TIMING_CAP, score))
 
 
 def select_diverse(

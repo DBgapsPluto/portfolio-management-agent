@@ -175,3 +175,90 @@ class TestSelectDiverse:
     def test_n_zero_returns_empty(self):
         ret = self._returns({"A": 1.0})
         assert select_diverse(["A"], ret, n=0) == []
+
+
+# ---------- Stage 3: timing overlay ----------
+
+
+from tradingagents.schemas.technical import (
+    ExtendedIndicatorPanel, RiskAdjustedMetrics, TrendState,
+)
+from tradingagents.skills.portfolio.factor_scorer import (
+    TIMING_CAP, _timing_overlay,
+)
+
+
+def _ext(ticker="A000001", *, rsi_div="none", macd_div="none",
+         bb=0.5, mfi=50.0, stoch=50.0):
+    return ExtendedIndicatorPanel(
+        ticker=ticker, bb_percent_b=bb, bb_bandwidth=0.05, adx=25.0,
+        stoch_k=stoch, stoch_d=stoch, obv=0.0, obv_slope_20d=0.0, mfi=mfi,
+        rsi_divergence=rsi_div, macd_divergence=macd_div,
+        weekly_ma50=100.0, weekly_rsi=50.0, weekly_trend="neutral",
+    )
+
+
+def _ra(ticker, *, sortino=0.0, calmar=0.0, maxdd=-0.1, mr=False):
+    return RiskAdjustedMetrics(
+        ticker=ticker, sortino_60d=sortino, max_drawdown_12m=maxdd,
+        calmar_12m=calmar, skewness_60d=0.0, excess_kurtosis_60d=0.0,
+        return_z_30d=0.0, is_mean_reversion_candidate=mr,
+    )
+
+
+def test_timing_penalizes_bearish_divergence():
+    base = _timing_overlay("A000001", _ext(), None, None)
+    bear = _timing_overlay("A000001", _ext(rsi_div="bearish"), None, None)
+    assert bear < base
+
+
+def test_timing_rewards_bullish_divergence():
+    base = _timing_overlay("A000001", _ext(), None, None)
+    bull = _timing_overlay("A000001", _ext(rsi_div="bullish"), None, None)
+    assert bull > base
+
+
+def test_timing_penalizes_overbought_bb_or_mfi_or_stoch():
+    bb_ob = _timing_overlay("A000001", _ext(bb=1.2), None, None)
+    mfi_ob = _timing_overlay("A000001", _ext(mfi=85.0), None, None)
+    stoch_ob = _timing_overlay("A000001", _ext(stoch=85.0), None, None)
+    assert bb_ob < 0 and mfi_ob < 0 and stoch_ob < 0
+
+
+def test_timing_bonus_mean_reversion():
+    ra_panel = {"A000001": _ra("A000001", mr=True)}
+    mr = _timing_overlay("A000001", _ext(), None, ra_panel)
+    assert mr > 0
+
+
+def test_timing_penalizes_breakdown_state():
+    bd = _timing_overlay("A000001", _ext(), {"A000001": TrendState.BREAKDOWN}, None)
+    assert bd < 0
+
+
+def test_timing_penalizes_downtrend_state():
+    dt = _timing_overlay("A000001", _ext(), {"A000001": TrendState.DOWNTREND}, None)
+    assert dt < 0
+
+
+def test_timing_bounded_by_cap():
+    worst = _timing_overlay(
+        "A000001",
+        _ext(rsi_div="bearish", macd_div="bearish", bb=1.5, mfi=95, stoch=95),
+        {"A000001": TrendState.BREAKDOWN}, None,
+    )
+    assert worst >= -TIMING_CAP - 1e-9
+    assert worst <= TIMING_CAP + 1e-9
+
+
+def test_timing_zero_when_no_panels():
+    assert _timing_overlay("A000001", None, None, None) == 0.0
+
+
+def test_timing_missing_ticker_in_panels_neutral():
+    # ticker not in etf_states / risk_adjusted → ignored
+    out = _timing_overlay(
+        "AMISS01", _ext(), {"AOTHER1": TrendState.BREAKDOWN},
+        {"AOTHER1": _ra("AOTHER1", mr=True)},
+    )
+    assert out == 0.0
