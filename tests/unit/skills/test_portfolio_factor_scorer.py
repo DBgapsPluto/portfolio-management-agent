@@ -343,3 +343,49 @@ def test_backward_compat_score_without_new_panels():
     # 새 인자 미제공 시 두 호출 동일
     assert s_new == s_legacy
     assert s_new["A111111"] > s_new["A222222"]
+
+
+# ---------- Stage 3: implementation-quality score ----------
+
+
+from tradingagents.skills.portfolio.factor_scorer import compute_impl_score
+
+
+def test_impl_score_prefers_larger_aum_phase1():
+    panels = {"A111111": _panel_for(aum=5e12), "A222222": _panel_for(aum=5e11)}
+    impl = compute_impl_score(panels)
+    assert impl["A111111"] > impl["A222222"]
+
+
+def test_impl_score_adds_adv_when_provided():
+    panels = {"A111111": _panel_for(aum=1e12), "A222222": _panel_for(aum=1e12)}
+    impl = compute_impl_score(panels, adv={"A111111": 1e10, "A222222": 1e8})
+    assert impl["A111111"] > impl["A222222"]
+
+
+def test_impl_score_penalizes_tracking_error():
+    panels = {"A111111": _panel_for(aum=1e12), "A222222": _panel_for(aum=1e12)}
+    impl = compute_impl_score(
+        panels, tracking_error={"A111111": 0.001, "A222222": 0.02},
+    )
+    assert impl["A111111"] > impl["A222222"]
+
+
+def test_impl_score_penalizes_abs_deviation():
+    panels = {"A111111": _panel_for(aum=1e12), "A222222": _panel_for(aum=1e12)}
+    impl = compute_impl_score(
+        panels, deviation={"A111111": 0.001, "A222222": -0.05},
+    )
+    # |0.001| < |-0.05| → A111111 우대
+    assert impl["A111111"] > impl["A222222"]
+
+
+def test_impl_score_empty_panels():
+    assert compute_impl_score({}) == {}
+
+
+def test_impl_score_missing_ticker_in_signal_neutral():
+    # adv 에 한 ticker만 있어도 깨지지 않음, 누락은 None → neutral
+    panels = {"A111111": _panel_for(aum=1e12), "A222222": _panel_for(aum=1e12)}
+    impl = compute_impl_score(panels, adv={"A111111": 1e10})
+    assert "A111111" in impl and "A222222" in impl

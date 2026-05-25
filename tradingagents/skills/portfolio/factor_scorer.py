@@ -340,6 +340,51 @@ def score_candidates(
     return scores
 
 
+def compute_impl_score(
+    panels: dict[str, FactorPanel],
+    *,
+    adv: dict[str, float | None] | None = None,
+    deviation: dict[str, float | None] | None = None,
+    tracking_error: dict[str, float | None] | None = None,
+    normalization: str = "rank_percentile",
+) -> dict[str, float]:
+    """Implementation-quality score (Stage 3 cluster-aware selection).
+
+    "대체재 중 최선 vehicle" — 그룹 내 선택에 사용. 높을수록 좋음.
+    - Phase 1: log_aum (큰 ETF = 더 유동, 좁은 spread proxy)
+    - Phase 2 (optional): + ADV↑, |괴리율|↓, 추적오차율↓
+    미제공 신호는 neutral(0 기여). normalization은 alpha와 동일 기본값.
+    """
+    if not panels:
+        return {}
+
+    if normalization == "rank_percentile":
+        normalize = _rank_normalize
+    elif normalization == "zscore":
+        normalize = _zscore
+    else:
+        raise ValueError(
+            f"unknown normalization {normalization!r} (expected 'rank_percentile' or 'zscore')"
+        )
+
+    parts: list[dict[str, float]] = [
+        normalize({t: p.log_aum for t, p in panels.items()})
+    ]
+    if adv is not None:
+        parts.append(normalize({t: adv.get(t) for t in panels}))
+    if deviation is not None:
+        parts.append(normalize({
+            t: (-abs(deviation[t]) if deviation.get(t) is not None else None)
+            for t in panels
+        }))
+    if tracking_error is not None:
+        parts.append(normalize({
+            t: (-tracking_error[t] if tracking_error.get(t) is not None else None)
+            for t in panels
+        }))
+    return {t: float(np.mean([p[t] for p in parts])) for t in panels}
+
+
 def _timing_overlay(
     ticker: str,
     extended,
