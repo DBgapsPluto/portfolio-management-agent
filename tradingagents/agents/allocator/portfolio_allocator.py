@@ -18,7 +18,8 @@ from pypfopt import EfficientFrontier, HRPOpt, risk_models, expected_returns
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
 from tradingagents.skills.portfolio.candidate_selector import (
-    BUCKET_TO_CATEGORIES, list_eligible_tickers, select_etf_candidates,
+    BUCKET_TO_CATEGORIES, DEFAULT_MIN_AUM_KRW, list_eligible_tickers,
+    select_etf_candidates,
 )
 from tradingagents.skills.portfolio.method_picker import pick_optimization_method
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
@@ -61,7 +62,7 @@ def create_portfolio_allocator(
         start = as_of - timedelta(days=365 * 3)
         eligible_by_bucket = list_eligible_tickers(
             universe, bucket_target, as_of=as_of,
-            min_aum_krw=1_000_000_000_000,
+            min_aum_krw=DEFAULT_MIN_AUM_KRW,
         )
         eligible_tickers = list({t for ts in eligible_by_bucket.values() for t in ts})
         if not eligible_tickers:
@@ -113,7 +114,7 @@ def create_portfolio_allocator(
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,
-            min_aum_krw=1_000_000_000_000,
+            min_aum_krw=DEFAULT_MIN_AUM_KRW,
             per_bucket_n=per_bucket_n,
             returns=returns,
             factor_panel=factor_panel,
@@ -122,6 +123,11 @@ def create_portfolio_allocator(
             correlation_threshold=0.85,
             dominant_scenario=dominant_scenario,
             attribution=attribution,
+            risk_adjusted=getattr(tech_report, "risk_adjusted", None),
+            trend_quant=getattr(tech_report, "trend_quantification", None),
+            extended=getattr(tech_report, "extended_indicators", None),
+            etf_states=getattr(tech_report, "individual_etf_states", None),
+            clusters=getattr(tech_report, "correlation_clusters", None),
         )
 
         all_candidates = [
