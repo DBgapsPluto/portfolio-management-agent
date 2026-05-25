@@ -145,7 +145,8 @@ def create_risk_judge(
         overlay = aggregate_lens_concerns(concerns, as_of_date=as_of)
 
         # 6. overlay 적용 (empty면 1차 그대로)
-        weight_vector_2 = apply_risk_overlay(
+        # NOTE: overlay_apply_outcome wiring is Task 4 — discard outcome here.
+        weight_vector_2, _outcome = apply_risk_overlay(
             weight_vector_1, overlay, candidate_set, returns, bucket_target,
             method=weight_vector_1.method,
         )
