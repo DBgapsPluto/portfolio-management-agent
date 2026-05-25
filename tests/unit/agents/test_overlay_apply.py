@@ -1,12 +1,10 @@
 """apply_risk_overlay — Stage 3 1차 → Stage 4 overlay → Stage 3 2차 흐름."""
-import math
-
 import numpy as np
 import pandas as pd
 import pytest
 
 from tradingagents.agents.allocator.overlay_apply import (
-    _half_strength, _shrink_bucket_by_multiplier, apply_risk_overlay,
+    _shrink_bucket_by_multiplier, apply_risk_overlay,
 )
 from tradingagents.schemas.portfolio import (
     BucketTarget, CandidateSet, OptimizationMethod, WeightVector,
@@ -60,9 +58,9 @@ def _returns():
 
 def test_empty_overlay_returns_weight_vector_unchanged():
     overlay = RiskOverlay()
-    result = apply_risk_overlay(
+    result, _ = apply_risk_overlay(
         _wv(), overlay, _candidates(), _returns(), _bucket(),
-        method=OptimizationMethod.MIN_VARIANCE,
+        method=OptimizationMethod.MIN_VARIANCE, clusters=[],
     )
     assert result.weights == _wv().weights
 
@@ -84,31 +82,15 @@ def test_shrink_bucket_by_multiplier_10_is_noop():
     assert shrunk.cash_mmf == bucket.cash_mmf
 
 
-def test_half_strength_relaxes_overlay():
-    o = RiskOverlay(
-        weight_ceilings={"A001": 0.05},
-        risk_asset_multiplier=0.7,
-        tail_hedge_floor={"A005": 0.20},
-        severity_decision="critical",
-        strength_applied=1.0,
-    )
-    half = _half_strength(o)
-    assert half.weight_ceilings["A001"] > 0.05  # 더 관대
-    assert half.risk_asset_multiplier > 0.7
-    assert half.tail_hedge_floor["A005"] < 0.20
-    assert half.strength_applied == 0.5
-    assert "half" in half.severity_decision
-
-
 def test_overlay_with_multiplier_shrinks_risk_assets():
     overlay = RiskOverlay(
         risk_asset_multiplier=0.7,
         severity_decision="test shrink",
         strength_applied=0.7,
     )
-    result = apply_risk_overlay(
+    result, _ = apply_risk_overlay(
         _wv(), overlay, _candidates(), _returns(), _bucket(),
-        method=OptimizationMethod.MIN_VARIANCE,
+        method=OptimizationMethod.MIN_VARIANCE, clusters=[],
     )
     # 위험자산 줄어들었는지
     risk_total = (
@@ -128,9 +110,9 @@ def test_overlay_infeasible_returns_1st_result():
         severity_decision="extreme test",
         strength_applied=1.0,
     )
-    result = apply_risk_overlay(
+    result, _ = apply_risk_overlay(
         _wv(), overlay, _candidates(), _returns(), _bucket(),
-        method=OptimizationMethod.MIN_VARIANCE,
+        method=OptimizationMethod.MIN_VARIANCE, clusters=[],
     )
     # 1차 결과로 fallback
     assert "infeasible" in result.rationale.lower() or result.weights == _wv().weights
@@ -143,9 +125,9 @@ def test_overlay_mandate_safe_after_apply():
         severity_decision="test mandate",
         strength_applied=0.5,
     )
-    result = apply_risk_overlay(
+    result, _ = apply_risk_overlay(
         _wv(), overlay, _candidates(), _returns(), _bucket(),
-        method=OptimizationMethod.MIN_VARIANCE,
+        method=OptimizationMethod.MIN_VARIANCE, clusters=[],
     )
     # 모든 weight ≤ 0.20
     for t, w in result.weights.items():
@@ -161,8 +143,8 @@ def test_overlay_hrp_method_swaps_to_min_variance():
         severity_decision="test hrp swap",
         strength_applied=0.3,
     )
-    result = apply_risk_overlay(
+    result, _ = apply_risk_overlay(
         _wv(), overlay, _candidates(), _returns(), _bucket(),
-        method=OptimizationMethod.HRP,
+        method=OptimizationMethod.HRP, clusters=[],
     )
     assert result.method == OptimizationMethod.MIN_VARIANCE

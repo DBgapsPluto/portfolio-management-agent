@@ -197,3 +197,64 @@ def test_macro_none_for_aligned_scenario():
         systemic_score=4.0,
     )
     assert c.level == "none"
+
+
+def test_macro_lens_recession_high_branch_reachable():
+    """recession 분기에서 risk_weight=0.70 → high (이전엔 medium에서 fall-through)."""
+    from tradingagents.agents.risk_lens.macro_conditional_lens import (
+        run_macro_conditional_lens,
+    )
+    from tradingagents.schemas.portfolio import (
+        CandidateSet, OptimizationMethod, WeightVector,
+    )
+
+    wv = WeightVector(
+        method=OptimizationMethod.MIN_VARIANCE,
+        weights={"A001": 0.20, "A002": 0.20, "A003": 0.20, "A004": 0.20, "A005": 0.20},
+        rationale="test",
+    )
+    cs = CandidateSet(
+        bucket_to_tickers={
+            "kr_equity": ["A001"], "global_equity": ["A002"],
+            "fx_commodity": ["A003"], "bond": ["A004"], "cash_mmf": ["A005"],
+        },
+        selection_criteria="test", total_candidates=5,
+    )
+    # risk_weight 0.75 만들기: 위험자산 3개 합쳐 0.75
+    wv2 = wv.model_copy(update={
+        "weights": {"A001": 0.25, "A002": 0.25, "A003": 0.25, "A004": 0.15, "A005": 0.10},
+    })
+    result = run_macro_conditional_lens(
+        wv2, cs, research_decision=None, systemic_score=5.0,
+        regime_quadrant="recession_disinflation",
+    )
+    assert result.level == "high", f"expected high, got {result.level}"
+
+
+def test_macro_lens_recession_medium_still_works():
+    """recession + risk=0.60 → medium (high 분기 추가 후에도 medium 정상)."""
+    from tradingagents.agents.risk_lens.macro_conditional_lens import (
+        run_macro_conditional_lens,
+    )
+    from tradingagents.schemas.portfolio import (
+        CandidateSet, OptimizationMethod, WeightVector,
+    )
+
+    wv = WeightVector(
+        method=OptimizationMethod.MIN_VARIANCE,
+        weights={"A001": 0.20, "A002": 0.20, "A003": 0.20, "A004": 0.20, "A005": 0.20},
+        rationale="test",
+    )
+    cs = CandidateSet(
+        bucket_to_tickers={
+            "kr_equity": ["A001"], "global_equity": ["A002"],
+            "fx_commodity": ["A003"], "bond": ["A004"], "cash_mmf": ["A005"],
+        },
+        selection_criteria="test", total_candidates=5,
+    )
+    # risk_weight=0.60 (각 위험자산 0.20)
+    result = run_macro_conditional_lens(
+        wv, cs, research_decision=None, systemic_score=5.0,
+        regime_quadrant="recession_inflation",
+    )
+    assert result.level == "medium", f"expected medium, got {result.level}"

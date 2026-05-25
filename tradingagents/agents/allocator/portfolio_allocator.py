@@ -80,6 +80,36 @@ def create_portfolio_allocator(
         legacy_scenario_label = None
         if research_decision is not None:
             dominant_scenario = getattr(research_decision, "dominant_scenario", None)
+            legacy_scenario_label = dominant_scenario
+
+        # attribution dict — Phase D observability. Restored after merge regression
+        # (lost block; referenced at line below + lines 135/142/153).
+        attribution: dict = {
+            "as_of_date": state["as_of_date"],
+            "config": {
+                "attempts":             attempts,
+                "per_bucket_n":         per_bucket_n,
+                "regime_quadrant":      regime.quadrant if regime else None,
+                "regime_confidence":    regime.confidence if regime else 0.5,
+                "systemic_score":       risk_score.score if risk_score else None,
+                "systemic_regime":      risk_score.regime if risk_score else None,
+                "dominant_scenario":    dominant_scenario,
+                "legacy_scenario":      legacy_scenario_label,
+                "conviction":           (
+                    getattr(research_decision, "conviction", None)
+                    if research_decision else None
+                ),
+                "bond_tips_share":      bucket_target.bond_tips_share,
+                "bucket_target": {
+                    "kr_equity":     bucket_target.kr_equity,
+                    "global_equity": bucket_target.global_equity,
+                    "fx_commodity":  bucket_target.fx_commodity,
+                    "bond":          bucket_target.bond,
+                    "cash_mmf":      bucket_target.cash_mmf,
+                },
+            },
+        }
+
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,
