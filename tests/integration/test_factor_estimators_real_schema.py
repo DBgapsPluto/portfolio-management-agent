@@ -771,3 +771,140 @@ def test_sentinel_snapshot_drops_components(
 def test_sentinel_guard_constant() -> None:
     """STALENESS_SENTINEL_DAYS=99 invariant — analysts 의 fetch-fail marker 와 일치."""
     assert fe.STALENESS_SENTINEL_DAYS == 99
+
+
+# ---------------------- Stage 2 audit (2026-05-26 Task 5) ----------------------
+
+
+@patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
+@patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
+def test_multiple_sentinels_yield_low_conviction(
+    _pe: Any, _krw: Any, real_stage1_baseline: dict[str, Any]
+) -> None:
+    """Stage 2 audit Task 5: Stage 1 의 여러 snapshot 동시 sentinel →
+    factor confidence 동시 감소 → conviction 자동 하향 검증.
+
+    여러 snapshot 을 강제 sentinel 화 했을 때 ResearchDecision 의 conviction 이
+    여전히 "high" 면 위험 (가짜 신호로 high conviction 결정). low/medium 으로
+    하향되거나 최소한 baseline conviction 과 같거나 낮아야 함.
+    """
+    from tradingagents.agents.managers.research_manager import (
+        derive_conviction,
+    )
+
+    baseline_scores = compute_all_factors(real_stage1_baseline)
+    baseline_conv = derive_conviction(baseline_scores)
+
+    # 여러 snapshot 강제 sentinel: inflation, employment, fci (3개 동시).
+    state = dict(real_stage1_baseline)
+    macro = state["macro_report"]
+    macro.inflation = macro.inflation.model_copy(update={"staleness_days": 99})
+    macro.employment = macro.employment.model_copy(update={"staleness_days": 99})
+    macro.financial_conditions = macro.financial_conditions.model_copy(
+        update={"staleness_days": 99}
+    )
+    state["macro_report"] = macro
+
+    degraded_scores = compute_all_factors(state)
+    degraded_conv = derive_conviction(degraded_scores)
+
+    # total_mag 가 감소 (3 sentinel → F1/F2 components 일부 drop → |z| 합 ↓)
+    baseline_mag = sum(abs(z) for z in baseline_scores.to_dict().values())
+    degraded_mag = sum(abs(z) for z in degraded_scores.to_dict().values())
+    assert degraded_mag <= baseline_mag, (
+        f"sentinel 추가 후 total |z| 감소 기대 "
+        f"(baseline={baseline_mag:.3f}, degraded={degraded_mag:.3f})"
+    )
+
+    # conviction 은 동등 또는 하향 (절대 high 로 upgrade 되지 않음)
+    rank = {"low": 0, "medium": 1, "high": 2}
+    assert rank[degraded_conv] <= rank[baseline_conv], (
+        f"sentinel 추가 후 conviction upgrade 발생 — 위험 "
+        f"(baseline={baseline_conv}, degraded={degraded_conv})"
+    )
+
+
+@patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
+@patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
+def test_scenario_threshold_no_hysteresis(
+    _pe: Any, _krw: Any, real_stage1_baseline: dict[str, Any]
+) -> None:
+    """Stage 2 audit Task 5: derive_dominant_scenario 의 hysteresis 부재를 reproduce.
+
+    F1 z-score 가 threshold 근처에서 미세하게 어느 쪽에 있는지에 따라 scenario 가
+    jump 함을 통합 테스트로 입증. fix 는 본 audit 외 (별도 brainstorm).
+    """
+    from tradingagents.agents.managers.research_manager import (
+        SCENARIO_CYCLE_THRESHOLD, derive_dominant_scenario,
+    )
+    from tradingagents.skills.research.factor_estimators import (
+        FactorScore, FactorScores,
+    )
+
+    def _make_scores(f1: float, f2: float) -> FactorScores:
+        """F1, F2 직접 설정. 나머지 0 (default goldilocks 영역)."""
+        def _fs(name: str, z: float) -> FactorScore:
+            return FactorScore(
+                name=name, z_score=z, components={}, component_weights={},
+                confidence=1.0, interpretation="",
+            )
+        return FactorScores(
+            growth_surprise=_fs("F1_growth", f1),
+            inflation_surprise=_fs("F2_inflation", f2),
+            real_rate=_fs("F3_real_rate", 0.0),
+            term_premium=_fs("F4_term_premium", 0.0),
+            credit_cycle=_fs("F5_credit_cycle", 0.0),
+            krw_regime=_fs("F6_krw_regime", 0.0),
+            equity_vol_regime=_fs("F7_equity_vol_regime", 0.0),
+            valuation=_fs("F8_valuation", 0.0),
+            liquidity_regime=_fs("F9_liquidity_regime", 0.0),
+        )
+
+    # threshold = 0.5. f1=0.49 → goldilocks default; f1=0.51 + f2=0.51 → overheating.
+    just_below = _make_scores(f1=SCENARIO_CYCLE_THRESHOLD - 0.01,
+                              f2=SCENARIO_CYCLE_THRESHOLD + 0.01)
+    just_above = _make_scores(f1=SCENARIO_CYCLE_THRESHOLD + 0.01,
+                              f2=SCENARIO_CYCLE_THRESHOLD + 0.01)
+    s_below = derive_dominant_scenario(just_below)
+    s_above = derive_dominant_scenario(just_above)
+    # 0.02 차이로 scenario jump — hysteresis 없음 확인
+    assert s_below != s_above, (
+        f"hysteresis 없음 기대 (0.02 z 차이로 scenario jump). "
+        f"below={s_below}, above={s_above}"
+    )
+    assert s_below == "goldilocks"          # default 영역
+    assert s_above == "overheating"          # F1>0.5 AND F2>0.5
+
+
+def test_stage2_named_constants_present() -> None:
+    """Stage 2 audit Task 1: scenario/conviction threshold 가 const 화 됐는지."""
+    from tradingagents.agents.managers import research_manager as rm
+    assert hasattr(rm, "SCENARIO_CYCLE_THRESHOLD")
+    assert hasattr(rm, "SCENARIO_KR_THRESHOLD")
+    assert hasattr(rm, "SCENARIO_VOL_THRESHOLD")
+    assert hasattr(rm, "SCENARIO_CREDIT_THRESHOLD")
+    assert hasattr(rm, "CONVICTION_HIGH_MAG")
+    assert hasattr(rm, "CONVICTION_MED_MAG")
+    assert hasattr(rm, "CONVICTION_HIGH_ALIGN")
+    assert hasattr(rm, "CONVICTION_MED_ALIGN")
+
+
+def test_factor_to_bucket_cap_hits_diagnostic() -> None:
+    """Stage 2 audit Task 2: extreme z 입력 시 cap_hits diagnostic 발동."""
+    from tradingagents.skills.research.factor_to_bucket import (
+        apply_factor_model_with_safety,
+    )
+    # extreme F1 = 5.0 → β·z 가 ±0.10 cap 에 닿을 가능성.
+    extreme_z = {
+        "F1_growth": 5.0, "F2_inflation": 0.0, "F3_real_rate": 0.0,
+        "F4_term_premium": 0.0, "F5_credit_cycle": 0.0, "F6_krw_regime": 0.0,
+        "F7_equity_vol_regime": 0.0, "F8_valuation": 0.0,
+        "F9_liquidity_regime": 0.0,
+    }
+    _bucket, _tips, _contribs, diag = apply_factor_model_with_safety(extreme_z)
+    assert "cap_hits" in diag
+    assert "cap_hits_detail" in diag
+    assert diag["cap_hits"] >= 1, (
+        f"extreme F1=5.0 에서 적어도 1 cap hit 기대 (cap_hits={diag['cap_hits']})"
+    )
+    assert diag["extreme_factor_active"] is True
