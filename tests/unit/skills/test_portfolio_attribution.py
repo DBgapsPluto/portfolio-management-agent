@@ -38,11 +38,12 @@ def test_score_candidates_with_components_matches_score_candidates():
     assert set(scores) == set(scores_only) == {"A", "B", "C"}
     for t in scores:
         assert scores[t] == pytest.approx(scores_only[t], abs=1e-12)
-    # breakdown keys 정합
+    # breakdown keys 정합 — Stage 3 family enrichment 이후 normalized 에 sub-composite
+    # 메타(mom_core/qual_core/mom_extras/qual_extras) 가 추가될 수 있어 superset 단언.
     for t in scores:
         b = breakdown[t]
         assert set(b["raw"]) == {"mom_value", "vol_value", "sharpe_value", "size_value"}
-        assert set(b["normalized"]) == {"mom", "vol", "qual", "size"}
+        assert {"mom", "vol", "qual", "size"}.issubset(b["normalized"])
         assert set(b["contributions"]) == {"mom", "lowvol", "qual", "size"}
         assert b["base_score"] == pytest.approx(sum(b["contributions"].values()), abs=1e-12)
     assert set(weights) == {"mom", "lowvol", "qual", "size"}

@@ -6,8 +6,8 @@ from tradingagents.dataflows.universe import Universe
 from tradingagents.schemas.portfolio import BucketTarget, CandidateSet
 from tradingagents.schemas.technical import ETFRanking
 from tradingagents.skills.portfolio.factor_scorer import (
-    FactorPanel, compute_factor_panel, score_candidates,
-    score_candidates_with_components, select_diverse,
+    FactorPanel, compute_factor_panel, compute_impl_score, score_candidates,
+    score_candidates_with_components, select_cluster_aware, select_diverse,
 )
 from tradingagents.skills.portfolio.sub_category import (
     _scenario_to_axes, compose_boost, log_boost,
@@ -28,9 +28,13 @@ BUCKET_TO_CATEGORIES = {
 }
 
 
+# Investability floor — flat ~500억 (Stage 3 cluster-aware selection, D2).
+# 운영 capital ~100억 가정 + 포지션 < AUM 5% 가이드 → 500억이 안전 최소선.
+# 유동성·구현품질은 hard filter 가 아니라 impl_score 의 soft 선호로 분리(D3).
+DEFAULT_MIN_AUM_KRW: float = 50_000_000_000   # 500억
+
 # Sub_category별 minimum AUM 완화 — KR 시장에 large-AUM 옵션이 부족한
 # sparse sub_category 한정. default min_aum_krw 대신 이 값 사용.
-# 운영 capital 10억-100억 가정에서 안전 (포지션 < AUM의 5%).
 _RELAXED_MIN_AUM_KRW: dict[str, float] = {
     "inflation_linked": 10_000_000_000,   # 100억 — KR TIPS 시장 매우 작음
 }
@@ -56,11 +60,19 @@ def _min_aum_for_etf(etf, default_threshold: float) -> float:
     return default_threshold
 
 
+def _eligible_for_bucket(universe: Universe, cats: list[str], min_aum_krw: float):
+    """Single eligibility filter (Stage 3 D2/D3 — used by both list_* and select_*)."""
+    return [
+        e for e in universe.etfs
+        if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
+    ]
+
+
 def list_eligible_tickers(
     universe: Universe,
     bucket_target: BucketTarget,
     as_of: date,
-    min_aum_krw: float = 1_000_000_000_000,
+    min_aum_krw: float = DEFAULT_MIN_AUM_KRW,
 ) -> dict[str, list[str]]:
     """Return tickers passing hard filters (tradable + category + AUM), pre-ranking.
 
@@ -80,10 +92,7 @@ def list_eligible_tickers(
             out[bucket_name] = []
             continue
         cats = BUCKET_TO_CATEGORIES[bucket_name]
-        out[bucket_name] = [
-            e.ticker for e in universe.etfs
-            if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
-        ]
+        out[bucket_name] = [e.ticker for e in _eligible_for_bucket(universe, cats, min_aum_krw)]
     return out
 
 
@@ -95,7 +104,7 @@ def select_etf_candidates(
     *,
     returns: pd.DataFrame,
     factor_panel: dict[str, FactorPanel],
-    min_aum_krw: float = 1_000_000_000_000,  # 1조원 floor
+    min_aum_krw: float = DEFAULT_MIN_AUM_KRW,
     per_bucket_n: int = 5,
     regime_quadrant: str | None = None,
     regime_confidence: float = 0.5,
@@ -105,6 +114,11 @@ def select_etf_candidates(
     attribution: dict | None = None,
     normalization: str = "rank_percentile",
     boost_scale: float = DEFAULT_BOOST_SCALE,
+    risk_adjusted: dict | None = None,
+    trend_quant: dict | None = None,
+    extended: dict | None = None,
+    etf_states: dict | None = None,
+    clusters: list | None = None,
 ) -> CandidateSet:
     """Filter universe by bucket target + AUM, then multi-factor rank + corr de-dup.
 
@@ -164,10 +178,7 @@ def select_etf_candidates(
             continue
 
         cats = BUCKET_TO_CATEGORIES[bucket_name]
-        eligible = [
-            e for e in universe.etfs
-            if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
-        ]
+        eligible = _eligible_for_bucket(universe, cats, min_aum_krw)
         if bucket_attr is not None:
             bucket_attr["eligible_count"] = len(eligible)
 
@@ -191,7 +202,7 @@ def select_etf_candidates(
             )
         else:
             rank_break: dict | None = {} if bucket_attr is not None else None
-            ranked = _rank_by_factors(
+            alpha_scores, panels_for_impl = _compute_alpha_scores(
                 eligible, returns, aum_lookup,
                 regime_quadrant, regime_confidence,
                 precomputed_panel=factor_panel,
@@ -199,23 +210,33 @@ def select_etf_candidates(
                 breakdown_out=rank_break,
                 normalization=normalization,
                 boost_scale=boost_scale,
+                risk_adjusted=risk_adjusted, trend_quant=trend_quant,
+                extended=extended, etf_states=etf_states,
             )
-            longlist_n = max(per_bucket_n * longlist_multiplier, per_bucket_n)
-            longlist = ranked[:longlist_n]
+            impl_scores = compute_impl_score(panels_for_impl, normalization=normalization)
+            ranked = sorted(
+                alpha_scores.keys(), key=lambda t: alpha_scores[t], reverse=True,
+            )
             sel_trace: dict | None = {} if bucket_attr is not None else None
-            chosen = select_diverse(
-                longlist, returns, n=per_bucket_n,
+            chosen = select_cluster_aware(
+                [e.ticker for e in eligible],
+                alpha_scores, impl_scores,
+                clusters=clusters,
+                n=per_bucket_n,
+                returns=returns,
                 correlation_threshold=correlation_threshold,
                 selection_trace=sel_trace,
             )
             if bucket_attr is not None:
                 bucket_attr["bond_split"] = False
                 bucket_attr["ranked_order"] = ranked
-                bucket_attr["longlist_n"] = longlist_n
+                bucket_attr["alpha_scores"] = alpha_scores
+                bucket_attr["impl_scores"] = impl_scores
                 bucket_attr["regime_weights"] = (rank_break or {}).get("regime_weights")
                 bucket_attr["scenario_axes"] = (rank_break or {}).get("scenario_axes")
                 bucket_attr["per_ticker"] = (rank_break or {}).get("per_ticker", {})
                 bucket_attr["selection_trace"] = sel_trace or {}
+                bucket_attr["clusters_used"] = bool(clusters)
                 bucket_attr["chosen"] = chosen[:per_bucket_n]
 
         bucket_to_tickers[bucket_name] = chosen[:per_bucket_n]
@@ -328,32 +349,12 @@ def _select_bond_with_tips_quota(
     return tips_picks + nominal_picks
 
 
-def _rank_by_factors(
-    eligible,
-    returns: pd.DataFrame,
-    aum_lookup: dict[str, float],
-    regime_quadrant: str | None,
-    regime_confidence: float,
-    precomputed_panel: dict[str, FactorPanel] | None = None,
-    dominant_scenario: str | None = None,
-    breakdown_out: dict | None = None,
-    normalization: str = "rank_percentile",
-    boost_scale: float = DEFAULT_BOOST_SCALE,
-) -> list[str]:
-    """Compute composite factor scores for eligible tickers; return tickers sorted desc.
-
-    If `precomputed_panel` is provided (from Stage 1 Technical Analyst), reuse
-    those values and skip recomputation. Missing tickers fall back to local
-    computation from `returns`.
-
-    Phase C: dominant_scenario가 있고 ETF의 sub_category가 채워져 있으면
-    log_boost를 score에 가산해서 시나리오 친화 sub_category에 가중치 부여.
-
-    If `breakdown_out` dict is provided, mutates it in place to record per-ticker
-    factor decomposition (raw values, z-scores, contributions, scenario boost,
-    final_score) + regime weights + scenario coords.
-    """
-    panels = {}
+def _build_panels(
+    eligible, returns: pd.DataFrame, aum_lookup: dict[str, float],
+    precomputed_panel: dict[str, FactorPanel] | None,
+) -> dict[str, FactorPanel]:
+    """eligible ETF 의 FactorPanel dict — precomputed 우선, 누락 시 returns 로 fallback."""
+    panels: dict[str, FactorPanel] = {}
     for e in eligible:
         if precomputed_panel is not None and e.ticker in precomputed_panel:
             panels[e.ticker] = precomputed_panel[e.ticker]
@@ -366,14 +367,35 @@ def _rank_by_factors(
         panels[e.ticker] = compute_factor_panel(
             returns[e.ticker], aum_lookup.get(e.ticker, e.aum_krw),
         )
+    return panels
+
+
+def _compute_alpha_scores(
+    eligible,
+    returns: pd.DataFrame,
+    aum_lookup: dict[str, float],
+    regime_quadrant: str | None,
+    regime_confidence: float,
+    precomputed_panel: dict[str, FactorPanel] | None = None,
+    dominant_scenario: str | None = None,
+    breakdown_out: dict | None = None,
+    normalization: str = "rank_percentile",
+    boost_scale: float = DEFAULT_BOOST_SCALE,
+    risk_adjusted: dict | None = None,
+    trend_quant: dict | None = None,
+    extended: dict | None = None,
+    etf_states: dict | None = None,
+) -> tuple[dict[str, float], dict[str, FactorPanel]]:
+    """alpha scores dict + panel dict 반환. scenario boost 가산 포함."""
+    panels = _build_panels(eligible, returns, aum_lookup, precomputed_panel)
 
     scores, breakdown, regime_weights = score_candidates_with_components(
         panels, regime_quadrant, regime_confidence,
         normalization=normalization,
+        risk_adjusted=risk_adjusted, trend_quant=trend_quant,
+        extended=extended, etf_states=etf_states,
     )
 
-    # Scenario boost — ETF에 sub_category 있고 dominant_scenario가 boost 정의돼
-    # 있는 경우만 가산.
     sub_cat_lookup = {e.ticker: e.sub_category for e in eligible}
     scenario_coords = _scenario_to_axes(dominant_scenario) if dominant_scenario else None
     composed_for_scenario = (
@@ -395,9 +417,9 @@ def _rank_by_factors(
                 "scenario":      dominant_scenario,
                 "axes":          list(scenario_coords) if scenario_coords else None,
                 "composed_mult": mult,
-                "log_boost":     boost_log,        # raw, 스케일 적용 전
+                "log_boost":     boost_log,
                 "boost_scale":   boost_scale,
-                "boost_applied": boost_applied,    # base에 실제 더해진 값
+                "boost_applied": boost_applied,
             }
             breakdown[ticker]["final_score"] = scores[ticker]
 
@@ -407,6 +429,39 @@ def _rank_by_factors(
             list(scenario_coords) if scenario_coords else None
         )
         breakdown_out["per_ticker"] = breakdown
+    return scores, panels
+
+
+def _rank_by_factors(
+    eligible,
+    returns: pd.DataFrame,
+    aum_lookup: dict[str, float],
+    regime_quadrant: str | None,
+    regime_confidence: float,
+    precomputed_panel: dict[str, FactorPanel] | None = None,
+    dominant_scenario: str | None = None,
+    breakdown_out: dict | None = None,
+    normalization: str = "rank_percentile",
+    boost_scale: float = DEFAULT_BOOST_SCALE,
+    risk_adjusted: dict | None = None,
+    trend_quant: dict | None = None,
+    extended: dict | None = None,
+    etf_states: dict | None = None,
+) -> list[str]:
+    """Compute composite factor scores for eligible tickers; return tickers sorted desc.
+
+    bond bucket path 호환용 wrapper — Stage 3 cluster-aware 경로는 직접
+    `_compute_alpha_scores` 를 호출해서 scores dict 를 받음.
+    """
+    scores, _panels = _compute_alpha_scores(
+        eligible, returns, aum_lookup, regime_quadrant, regime_confidence,
+        precomputed_panel=precomputed_panel,
+        dominant_scenario=dominant_scenario,
+        breakdown_out=breakdown_out,
+        normalization=normalization, boost_scale=boost_scale,
+        risk_adjusted=risk_adjusted, trend_quant=trend_quant,
+        extended=extended, etf_states=etf_states,
+    )
 
     return sorted(scores.keys(), key=lambda t: scores[t], reverse=True)
 
