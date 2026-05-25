@@ -34,6 +34,17 @@ from tradingagents.schemas.technical import Cluster
 logger = logging.getLogger(__name__)
 
 _BUCKET_BAND = 0.05  # ±5%p (Stage 3 D4 retry 패턴과 동일)
+SINGLE_ASSET_CAP_OVERLAY: float = 0.20
+
+# Stage 3 audit (2026-05-26, Task 4): 5 drop_level 의미 명시.
+# 운영자가 attribution 만 봐도 어느 제약이 풀려서 통과했는지 알 수 있게.
+OVERLAY_DROP_LEVELS: dict[int, str] = {
+    0: "all_constraints",          # cluster_caps + weight_ceilings + bucket equality + multiplier
+    1: "no_cluster_caps",          # cluster_caps 제거
+    2: "no_weight_ceilings",       # + weight_ceilings 제거
+    3: "bucket_band_relaxed",      # + bucket equality → ±5%p band
+    4: "stage3_preserved",         # + multiplier=1.0 (= Stage 3 결과)
+}
 
 _OUTCOMES = [
     "primary_success", "relax_cluster", "relax_ceiling",
@@ -137,7 +148,7 @@ def _solve_with_overlay(
     S = risk_models.sample_cov(returns)
     mu = expected_returns.mean_historical_return(returns, returns_data=True)
 
-    ef = EfficientFrontier(mu, S, weight_bounds=(0, 0.20))
+    ef = EfficientFrontier(mu, S, weight_bounds=(0, SINGLE_ASSET_CAP_OVERLAY))
     ef.add_sector_constraints(sector_mapper, sector_lower, sector_upper)
 
     asset_idx = {t: i for i, t in enumerate(ef.tickers)}
@@ -146,7 +157,7 @@ def _solve_with_overlay(
     for t, upper in ceilings.items():
         if t in asset_idx:
             idx = asset_idx[t]
-            cap = min(0.20, upper)
+            cap = min(SINGLE_ASSET_CAP_OVERLAY, upper)
             ef.add_constraint(lambda w, i=idx, u=cap: w[i] <= u)
 
     # Per-ticker floor (always)
@@ -182,8 +193,10 @@ def _solve_with_overlay(
         raise RuntimeError("Optimizer returned empty weights")
     weights = {t: w / total for t, w in weights.items()}
 
-    if any(w > 0.20 + 1e-6 for w in weights.values()):
-        raise RuntimeError("Optimizer with overlay still violates 20% cap")
+    if any(w > SINGLE_ASSET_CAP_OVERLAY + 1e-6 for w in weights.values()):
+        raise RuntimeError(
+            f"Optimizer with overlay still violates {SINGLE_ASSET_CAP_OVERLAY*100:.0f}% cap"
+        )
 
     return WeightVector(
         method=method,
@@ -205,13 +218,37 @@ def apply_risk_overlay(
     bucket_target: BucketTarget,
     method: OptimizationMethod,
     clusters: list[Cluster] | None = None,
+    attribution: dict | None = None,
 ) -> tuple[WeightVector, str]:
     """Stage 4 overlay 적용 → (WeightVector, outcome) tuple.
 
     outcome ∈ {primary_success, relax_cluster, relax_ceiling, relax_band,
     fallback_to_1st}. Empty overlay → (w1, primary_success).
+
+    attribution (Stage 3 audit Task 4): 제공 시 다음 키 기록.
+      - final_level: int — 성공한 drop_level (또는 None if all-fail)
+      - final_level_label: str — OVERLAY_DROP_LEVELS[final_level]
+      - infeasible_levels: list[int] — 실패한 level list
+      - infeasible_errors: list[str] — 각 실패 사유
+      - all_failed: bool — 모두 실패 시 True
+      - dropped_constraints: list[str] — 성공 level 까지 누적 풀린 제약 list
     """
+    if attribution is not None:
+        attribution["overlay"] = {
+            "final_level": None,
+            "final_level_label": None,
+            "infeasible_levels": [],
+            "infeasible_errors": [],
+            "all_failed": False,
+            "dropped_constraints": [],
+        }
+    overlay_attr = attribution["overlay"] if attribution is not None else None
+
     if overlay.is_empty():
+        if overlay_attr is not None:
+            overlay_attr["final_level"] = -1   # -1 = overlay empty (skip)
+            overlay_attr["final_level_label"] = "overlay_empty"
+        logger.info("Stage 4 overlay empty → 1차 결과 그대로 통과")
         return weight_vector_1, "primary_success"
 
     clusters = clusters or []
@@ -222,17 +259,36 @@ def apply_risk_overlay(
                 method, returns, candidates, bucket_target, overlay,
                 clusters, drop_level=level,
             )
+            logger.info(
+                "Stage 4 overlay 성공: drop_level=%d (%s) → %s",
+                level, OVERLAY_DROP_LEVELS[level], _OUTCOMES[level],
+            )
+            if overlay_attr is not None:
+                overlay_attr["final_level"] = level
+                overlay_attr["final_level_label"] = OVERLAY_DROP_LEVELS[level]
+                # 성공 level 까지 누적 풀린 제약 (level 0 = 풀린 거 없음).
+                overlay_attr["dropped_constraints"] = [
+                    OVERLAY_DROP_LEVELS[i] for i in range(1, level + 1)
+                ]
             return wv, _OUTCOMES[level]
         except Exception as e:
             last_err = e
             logger.warning(
-                "Stage 4 overlay drop_level=%d infeasible (%s)", level, e,
+                "Stage 4 overlay drop_level=%d (%s) infeasible: %s",
+                level, OVERLAY_DROP_LEVELS[level], e,
             )
+            if overlay_attr is not None:
+                overlay_attr["infeasible_levels"].append(level)
+                overlay_attr["infeasible_errors"].append(str(e)[:200])
 
     # 모든 level 실패 — 1 차 결과 보존
     logger.warning(
-        "Stage 4 overlay all drop_levels infeasible; last err=%s", last_err,
+        "Stage 4 overlay all drop_levels infeasible → 1차 결과 보존. last err=%s",
+        last_err,
     )
+    if overlay_attr is not None:
+        overlay_attr["all_failed"] = True
+        overlay_attr["final_level_label"] = "all_infeasible_kept_stage3"
     return weight_vector_1.model_copy(update={
         "rationale": (
             f"[Stage 4 overlay infeasible — 1st result kept] "
