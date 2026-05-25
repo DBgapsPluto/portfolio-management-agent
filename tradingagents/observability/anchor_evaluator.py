@@ -196,68 +196,25 @@ def _bucket_of_ticker(universe: Universe) -> dict[str, str]:
     }
 
 
-# ─────────────────────────────────────────────────────────────────────
-# Main entry
-# ─────────────────────────────────────────────────────────────────────
-
-def evaluate_anchor(
-    anchor_path: Path | str,
+def _score_eight_axes(
+    expected: dict,
     *,
-    universe_path: str,
-    cache_path: str | None = None,
-) -> AnchorEvalResult:
-    anchor_path = Path(anchor_path)
-    anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
+    weights: dict[str, float],
+    sub_totals: dict[str, float],
+    n_unique: int,
+    risk_asset_total: float,
+    method_str: str,
+) -> list[CheckResult]:
+    """7-8 축 채점 — anchor_evaluator + anchor_live 공통.
 
-    universe = load_universe(universe_path)
-    as_of = date.fromisoformat(anchor["as_of_date"])
-
-    # eligible tickers + returns matrix (1 year for factor panel)
-    bt = BucketTarget(
-        kr_equity=anchor["stage2"]["bucket_target"]["kr_equity"],
-        global_equity=anchor["stage2"]["bucket_target"]["global_equity"],
-        fx_commodity=anchor["stage2"]["bucket_target"]["fx_commodity"],
-        bond=anchor["stage2"]["bucket_target"]["bond"],
-        cash_mmf=anchor["stage2"]["bucket_target"]["cash_mmf"],
-        bond_tips_share=anchor["stage2"]["bucket_target"].get("bond_tips_share", 0.0),
-        rationale="anchor evaluation",
-    )
-    eligible_by_bucket = list_eligible_tickers(
-        universe, bt, as_of=as_of, min_aum_krw=1_000_000_000_000,
-    )
-    eligible = sorted({t for ts in eligible_by_bucket.values() for t in ts})
-    if not eligible:
-        raise RuntimeError(f"{anchor['anchor_id']}: no eligible tickers")
-
-    returns = fetch_returns_matrix(
-        eligible, as_of - timedelta(days=365 * 3), as_of, cache_path=cache_path,
-    )
-
-    state = _build_state(anchor, universe, returns, universe_path)
-
-    # Stage 3 실행
-    node = create_portfolio_allocator(cache_path=cache_path)
-    out = node(state)
-
-    wv = out["weight_vector"]
-    mc = out["method_choice"]
-    weights = wv.weights
-    sub_totals = _sub_category_totals(weights, universe)
-    n_unique = sum(1 for sc, w in sub_totals.items() if sc != "_unknown" and w > 0)
-
-    # bucket → ticker로 risk_asset 비중 계산
-    bucket_of = _bucket_of_ticker(universe)
-    risk_asset_total = sum(
-        w for t, w in weights.items() if bucket_of.get(t) in _RISK_BUCKETS
-    )
-
-    # ─── 7축 체크 ───
-    expected = anchor["expected_stage3"]
+    expected: anchor JSON 의 expected_stage3 dict.
+    return: 8 개 CheckResult (method/required/substitute/forbidden/
+            min_weights/max_weights/diversity/risk_asset).
+    """
     checks: list[CheckResult] = []
 
     # 1. method
     accepted = set(expected.get("acceptable_methods", []))
-    method_str = mc.method.value
     checks.append(CheckResult(
         name="method_ok",
         passed=(not accepted) or (method_str in accepted),
@@ -360,6 +317,75 @@ def evaluate_anchor(
         detail=f"risk_asset={risk_asset_total:.3f}, max={risk_max:.3f}",
         expected=risk_max, actual=risk_asset_total,
     ))
+
+    return checks
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Main entry
+# ─────────────────────────────────────────────────────────────────────
+
+def evaluate_anchor(
+    anchor_path: Path | str,
+    *,
+    universe_path: str,
+    cache_path: str | None = None,
+) -> AnchorEvalResult:
+    anchor_path = Path(anchor_path)
+    anchor = json.loads(anchor_path.read_text(encoding="utf-8"))
+
+    universe = load_universe(universe_path)
+    as_of = date.fromisoformat(anchor["as_of_date"])
+
+    # eligible tickers + returns matrix (1 year for factor panel)
+    bt = BucketTarget(
+        kr_equity=anchor["stage2"]["bucket_target"]["kr_equity"],
+        global_equity=anchor["stage2"]["bucket_target"]["global_equity"],
+        fx_commodity=anchor["stage2"]["bucket_target"]["fx_commodity"],
+        bond=anchor["stage2"]["bucket_target"]["bond"],
+        cash_mmf=anchor["stage2"]["bucket_target"]["cash_mmf"],
+        bond_tips_share=anchor["stage2"]["bucket_target"].get("bond_tips_share", 0.0),
+        rationale="anchor evaluation",
+    )
+    eligible_by_bucket = list_eligible_tickers(
+        universe, bt, as_of=as_of, min_aum_krw=1_000_000_000_000,
+    )
+    eligible = sorted({t for ts in eligible_by_bucket.values() for t in ts})
+    if not eligible:
+        raise RuntimeError(f"{anchor['anchor_id']}: no eligible tickers")
+
+    returns = fetch_returns_matrix(
+        eligible, as_of - timedelta(days=365 * 3), as_of, cache_path=cache_path,
+    )
+
+    state = _build_state(anchor, universe, returns, universe_path)
+
+    # Stage 3 실행
+    node = create_portfolio_allocator(cache_path=cache_path)
+    out = node(state)
+
+    wv = out["weight_vector"]
+    mc = out["method_choice"]
+    weights = wv.weights
+    sub_totals = _sub_category_totals(weights, universe)
+    n_unique = sum(1 for sc, w in sub_totals.items() if sc != "_unknown" and w > 0)
+
+    # bucket → ticker로 risk_asset 비중 계산
+    bucket_of = _bucket_of_ticker(universe)
+    risk_asset_total = sum(
+        w for t, w in weights.items() if bucket_of.get(t) in _RISK_BUCKETS
+    )
+
+    # ─── 7축 체크 ───
+    method_str = mc.method.value
+    checks = _score_eight_axes(
+        expected=anchor["expected_stage3"],
+        weights=weights,
+        sub_totals=sub_totals,
+        n_unique=n_unique,
+        risk_asset_total=risk_asset_total,
+        method_str=method_str,
+    )
 
     return AnchorEvalResult(
         anchor_id=anchor["anchor_id"],
