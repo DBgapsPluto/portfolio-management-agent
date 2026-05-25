@@ -18,6 +18,11 @@ from tradingagents.schemas.portfolio import WeightVector
 from tradingagents.skills.registry import register_skill
 
 
+# Stage 5 audit (2026-05-26, Task 1): named tolerance.
+# turnover 비교는 weight 차이의 합 → 더 작은 tolerance (1e-9) 사용.
+TURNOVER_TOLERANCE: float = 1e-9
+
+
 @register_skill(name="validate_turnover_feasibility", category="mandate")
 def validate_turnover_feasibility(
     proposed: WeightVector,
@@ -49,7 +54,7 @@ def validate_turnover_feasibility(
     turnover = (buy_amount + sell_amount) / avg_assets
 
     violations = []
-    if turnover < floor_pct - 1e-9:
+    if turnover < floor_pct - TURNOVER_TOLERANCE:
         violations.append(Violation(
             rule="turnover_floor",
             description=f"Planned turnover {turnover:.4f} < floor {floor_pct}",
