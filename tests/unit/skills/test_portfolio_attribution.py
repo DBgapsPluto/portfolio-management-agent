@@ -154,7 +154,10 @@ def test_select_etf_candidates_populates_attribution():
     cs = select_etf_candidates(
         u, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
-        dominant_scenario="D_N_F",          # stagflation cell — gold sub_cat boost
+        # Stage 2 audit (2026-05-26, Task 4): cell-key "D_N_F" path removed
+        # by 2026-05-22 PR. Use legacy 7-scenario name "stagflation" which
+        # maps to (D, N, F) axes — same gold boost.
+        dominant_scenario="stagflation",
         regime_quadrant="recession_inflation", regime_confidence=0.8,
         per_bucket_n=2,
         attribution=attr,
@@ -162,7 +165,7 @@ def test_select_etf_candidates_populates_attribution():
     # 기본 산출은 이전과 같이 정상
     assert "kr_equity" in cs.bucket_to_tickers
     # attribution 구조
-    assert attr["config"]["dominant_scenario"] == "D_N_F"
+    assert attr["config"]["dominant_scenario"] == "stagflation"
     assert attr["config"]["regime_quadrant"] == "recession_inflation"
     assert set(attr["buckets"]) >= {"kr_equity", "fx_commodity"}
     kr = attr["buckets"]["kr_equity"]
@@ -173,7 +176,7 @@ def test_select_etf_candidates_populates_attribution():
     fx = attr["buckets"]["fx_commodity"]
     assert "A3" in fx["per_ticker"]
     sb = fx["per_ticker"]["A3"]["scenario_boost"]
-    assert sb["scenario"] == "D_N_F"
+    assert sb["scenario"] == "stagflation"
     assert sb["composed_mult"] > 1.0      # gold는 D에서 1.8 boost
     assert sb["log_boost"] > 0
 

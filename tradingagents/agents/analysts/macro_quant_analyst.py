@@ -53,6 +53,16 @@ from tradingagents.skills.macro.yield_curve import compute_yield_curve, compute_
 logger = logging.getLogger(__name__)
 
 
+# Stage 1 audit (2026-05-26, Task 2): named lookback windows.
+MACRO_LOOKBACK_DAYS: int = 365 * 5      # 5y FRED/ECOS macro series
+COMMODITY_LOOKBACK_DAYS: int = 400      # ~1y trading buffer for copper/gold/iron ore
+GDPNOW_LOOKBACK_DAYS: int = 90          # quarter window for nowcast
+USDCNH_LOOKBACK_DAYS: int = 120         # 4mo for real-time China proxy
+IRON_ORE_LOOKBACK_DAYS: int = 200       # 6-7mo for momentum proxy
+FOREIGN_FLOW_LOOKBACK_DAYS: int = 60    # 2mo for 20d net buy aggregate
+CALENDAR_LOOKAHEAD_DAYS: int = 90       # CB calendar horizon
+
+
 NARRATIVE_PROMPT = """\
 You are summarizing a macro snapshot for an asset-allocation team.
 
@@ -182,7 +192,8 @@ def _sentinel_tail_risk(as_of: date) -> TailRiskSnapshot:
 def create_macro_quant_analyst(quick_llm, deep_llm):
     def node(state):
         as_of = date.fromisoformat(state["as_of_date"])
-        start_macro = as_of - timedelta(days=365 * 5)
+        start_macro = as_of - timedelta(days=MACRO_LOOKBACK_DAYS)
+        logger.info("macro_quant start: as_of=%s, lookback=%dd", as_of, MACRO_LOOKBACK_DAYS)
 
         # All fetchers receive as_of_date for point-in-time truncation (D13)
         s_10y = fetch_fred_series_skill("us_10y", start_macro, as_of, as_of_date=as_of)
@@ -267,21 +278,24 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         try:
             kr_exp_series = fetch_ecos_series_skill("kr_export", start_macro, as_of, as_of_date=as_of)
             kr_export = compute_kr_export_trend(kr_exp_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_export fetch failed → sentinel: %s", e)
             kr_export = _sentinel_kr_export(as_of)
 
         # Tier-1: KR leading index (선행지수 순환변동치)
         try:
             kr_cli_series = fetch_ecos_series_skill("kr_cli", start_macro, as_of, as_of_date=as_of)
             kr_leading = compute_kr_leading_index(kr_cli_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_leading fetch failed → sentinel: %s", e)
             kr_leading = _sentinel_kr_leading(as_of)
 
         # Tier-1: KR BSI (제조업 업황)
         try:
             kr_bsi_series = fetch_ecos_series_skill("kr_bsi_mfg", start_macro, as_of, as_of_date=as_of)
             kr_bsi = compute_kr_business_survey(kr_bsi_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_bsi fetch failed → sentinel: %s", e)
             kr_bsi = _sentinel_kr_bsi(as_of)
 
         # Tier-1: US CFNAI (Chicago Fed National Activity Index)
@@ -289,16 +303,18 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             cfnai = fetch_fred_series_skill("us_cfnai", start_macro, as_of, as_of_date=as_of)
             cfnai_ma3 = fetch_fred_series_skill("us_cfnai_ma3", start_macro, as_of, as_of_date=as_of)
             us_leading = compute_us_leading_index(cfnai, cfnai_ma3, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("us_leading (CFNAI) fetch failed → sentinel: %s", e)
             us_leading = _sentinel_us_leading(as_of)
 
         # Tier-1: Atlanta Fed GDPNow
         try:
             gdpnow_series = fetch_fred_series_skill(
-                "us_gdp_nowcast", as_of - timedelta(days=90), as_of, as_of_date=as_of,
+                "us_gdp_nowcast", as_of - timedelta(days=GDPNOW_LOOKBACK_DAYS), as_of, as_of_date=as_of,
             )
             gdp_nowcast = compute_gdp_nowcast(gdpnow_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("gdp_nowcast fetch failed → sentinel: %s", e)
             gdp_nowcast = _sentinel_gdp_nowcast(as_of)
 
         # Tier-2: Chicago Fed NFCI (financial conditions, weekly)
@@ -306,7 +322,8 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             nfci = fetch_fred_series_skill("us_nfci", start_macro, as_of, as_of_date=as_of)
             anfci = fetch_fred_series_skill("us_anfci", start_macro, as_of, as_of_date=as_of)
             fci = compute_financial_conditions(nfci, anfci, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("fci (NFCI/ANFCI) fetch failed → sentinel: %s", e)
             fci = _sentinel_fci(as_of)
 
         # 2026-05-23 C3 — CFNAI fold-in for factor model F1 growth_surprise.
@@ -337,7 +354,8 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
                 "us_michigan_1y", start_macro, as_of, as_of_date=as_of,
             )
             inflation_exp = compute_inflation_expectations(breakeven, michigan, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("inflation_expectations fetch failed → sentinel: %s", e)
             inflation_exp = _sentinel_inflexp(as_of)
 
         # Tier-2: Fed path implied (DGS2 - DFF proxy for futures-implied path)
@@ -345,7 +363,8 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             dgs2 = fetch_fred_series_skill("us_2y", start_macro, as_of, as_of_date=as_of)
             dff = fetch_fred_series_skill("us_policy_rate", start_macro, as_of, as_of_date=as_of)
             fed_path = compute_fed_path(dff, dgs2, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("fed_path fetch failed → sentinel: %s", e)
             fed_path = _sentinel_fed_path(as_of)
 
         # Tier-3: FX overlay (USD/KRW + DXY)
@@ -353,15 +372,17 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             krw = fetch_fred_series_skill("usd_krw", start_macro, as_of, as_of_date=as_of)
             dxy = fetch_fred_series_skill("dxy", start_macro, as_of, as_of_date=as_of)
             fx = compute_fx_overlay(krw, dxy, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("fx (USD/KRW + DXY) fetch failed → sentinel: %s", e)
             fx = _sentinel_fx(as_of)
 
         # Tier-3: Risk appetite (Copper/Gold via yfinance)
         try:
-            copper = fetch_commodity_close("copper", as_of - timedelta(days=400), as_of)
-            gold = fetch_commodity_close("gold", as_of - timedelta(days=400), as_of)
+            copper = fetch_commodity_close("copper", as_of - timedelta(days=COMMODITY_LOOKBACK_DAYS), as_of)
+            gold = fetch_commodity_close("gold", as_of - timedelta(days=COMMODITY_LOOKBACK_DAYS), as_of)
             risk_appetite = compute_risk_appetite(copper, gold, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("risk_appetite (Cu/Au) fetch failed → sentinel: %s", e)
             risk_appetite = _sentinel_risk_appetite(as_of)
 
         # Tier-3: China leading (OECD CLI + 2026-05 보강 USDCNH/iron ore 실시간).
@@ -370,19 +391,22 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             china_cli_series = fetch_fred_series_skill(
                 "china_cli", start_macro, as_of, as_of_date=as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("china_cli fetch failed (sub-fetch): %s", e)
             china_cli_series = None
         try:
             usdcnh_series = fetch_equity_index_close(
-                "usdcnh", as_of - timedelta(days=120), as_of,
+                "usdcnh", as_of - timedelta(days=USDCNH_LOOKBACK_DAYS), as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("usdcnh fetch failed (sub-fetch): %s", e)
             usdcnh_series = None
         try:
             iron_ore_series = fetch_equity_index_close(
-                "iron_ore", as_of - timedelta(days=200), as_of,
+                "iron_ore", as_of - timedelta(days=IRON_ORE_LOOKBACK_DAYS), as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("iron_ore fetch failed (sub-fetch): %s", e)
             iron_ore_series = None
         try:
             if china_cli_series is not None:
@@ -392,17 +416,20 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
                     iron_ore_series=iron_ore_series,
                 )
             else:
+                logger.warning("china_leading: cli series missing → sentinel")
                 china_leading = _sentinel_china_leading(as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("china_leading compute failed → sentinel: %s", e)
             china_leading = _sentinel_china_leading(as_of)
 
         # Tier-3: Foreign flow (KRX 외국인 KOSPI 순매수)
         try:
             foreign_series = fetch_foreign_flow(
-                as_of - timedelta(days=60), as_of, market="KOSPI",
+                as_of - timedelta(days=FOREIGN_FLOW_LOOKBACK_DAYS), as_of, market="KOSPI",
             )
             foreign_flow = compute_foreign_flow(foreign_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("foreign_flow fetch failed → sentinel: %s", e)
             foreign_flow = _sentinel_foreign_flow(as_of)
 
         # Tier-4: Policy uncertainty (US + Global EPU) — 2026-05 DEPRECATED.
@@ -415,10 +442,11 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
 
         # Tier-4: Tail risk (VVIX + MOVE via yfinance — FRED VVIXCLS/MOVE was retired)
         try:
-            vvix = fetch_equity_index_close("vvix", as_of - timedelta(days=400), as_of)
-            move = fetch_equity_index_close("move", as_of - timedelta(days=400), as_of)
+            vvix = fetch_equity_index_close("vvix", as_of - timedelta(days=COMMODITY_LOOKBACK_DAYS), as_of)
+            move = fetch_equity_index_close("move", as_of - timedelta(days=COMMODITY_LOOKBACK_DAYS), as_of)
             tail_risk = compute_tail_risk(vvix, move, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("tail_risk (VVIX/MOVE) fetch failed → sentinel: %s", e)
             tail_risk = _sentinel_tail_risk(as_of)
 
         # 2026-05-23 C5 — KR equity valuation (KOSPI PBR/PER/DivYield) for F8.
@@ -434,7 +462,32 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             logger.warning("KR valuation skill failed (factor F8 affected): %s", e)
             kr_valuation_snapshot = None
 
-        events = fetch_central_bank_calendar_skill(as_of, days=90)
+        events = fetch_central_bank_calendar_skill(as_of, days=CALENDAR_LOOKAHEAD_DAYS)
+
+        # Stage 1 audit (Task 2): sentinel inventory before regime classification.
+        # 어느 snapshot이 fetch 실패로 sentinel인지 카운트 → narrative summary 로 노출.
+        # classify_regime LLM은 sentinel을 정상값으로 흡수할 수 있으므로 (예: kr_bsi=100.0
+        # 평균치) debugger가 어느 신호가 실제 데이터인지 알 수 있어야 함.
+        _sentinel_inventory = {
+            name: getattr(snap, "staleness_days", 0) >= 99
+            for name, snap in [
+                ("yc", yc), ("infl", infl), ("emp", emp), ("kr_divergence", div),
+                ("kr_export", kr_export), ("kr_leading", kr_leading), ("kr_bsi", kr_bsi),
+                ("us_leading", us_leading), ("gdp_nowcast", gdp_nowcast),
+                ("fci", fci), ("inflation_exp", inflation_exp), ("fed_path", fed_path),
+                ("fx", fx), ("risk_appetite", risk_appetite),
+                ("china_leading", china_leading), ("foreign_flow", foreign_flow),
+                ("tail_risk", tail_risk),
+            ]
+        }
+        n_sentinels = sum(_sentinel_inventory.values())
+        if n_sentinels > 0:
+            stale_names = [k for k, v in _sentinel_inventory.items() if v]
+            logger.warning(
+                "macro_quant: %d/%d snapshots are sentinels (fetch failed): %s — "
+                "regime classifier may interpret placeholder values as live data",
+                n_sentinels, len(_sentinel_inventory), stale_names,
+            )
 
         regime: RegimeClassification = classify_regime(
             quick_llm, deep_llm,
@@ -521,8 +574,14 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             events=", ".join(f"{e.event_date} {e.bank}" for e in events[:3]) or "none",
         )
         narrative = quick_llm.invoke(narrative_prompt).content[:500]
+        sentinel_line = (
+            f"Sentinels: {n_sentinels}/{len(_sentinel_inventory)} "
+            f"({', '.join(k for k, v in _sentinel_inventory.items() if v)})\n"
+            if n_sentinels > 0 else ""
+        )
         summary = (
             f"## Macro\n"
+            f"{sentinel_line}"
             f"Regime: **{regime.quadrant}** ({regime.confidence:.2f})\n"
             f"YC 10y-2y: {yc.spread_10y_2y_bps:.0f}bps, inverted {yc.inverted_days_count}d\n"
             f"CPI: {infl.cpi_yoy:.1f}% YoY ({'↑' if infl.accelerating else '↓'})\n"

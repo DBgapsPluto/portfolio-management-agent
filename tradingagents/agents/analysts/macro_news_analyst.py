@@ -1,5 +1,16 @@
 """Macro News Analyst — calendar + news + impact classifier + ranker + Tier-1~5."""
+import logging
 from datetime import date
+
+logger = logging.getLogger(__name__)
+
+# Stage 1 audit (2026-05-26, Task 4): named constants.
+EVENT_CALENDAR_LOOKAHEAD_DAYS: int = 90
+NEWS_WINDOW_DAYS: int = 7
+IMPACT_CLASSIFY_CAP: int = 30   # cost 보호 — LLM 호출당 ~$0.01 가정 시 $0.30/run.
+TOP_RANKED_N: int = 10
+NARRATIVE_MAX_CHARS: int = 500
+SUMMARY_MAX_CHARS: int = 2000
 
 from tradingagents.schemas.reports import NewsReport
 from tradingagents.skills.news.event_calendar import fetch_event_calendar_skill
@@ -114,13 +125,18 @@ def _summarize_surprise(snap) -> str:
 def create_macro_news_analyst(quick_llm, deep_llm):
     def node(state):
         as_of = date.fromisoformat(state["as_of_date"])
+        logger.info("macro_news start: as_of=%s", as_of)
 
-        events = fetch_event_calendar_skill(as_of, days=90)
-        items = fetch_macro_news_skill(window_days=7)
+        events = fetch_event_calendar_skill(as_of, days=EVENT_CALENDAR_LOOKAHEAD_DAYS)
+        items = fetch_macro_news_skill(window_days=NEWS_WINDOW_DAYS)
+        logger.info(
+            "macro_news: %d events + %d news items fetched", len(events), len(items),
+        )
 
-        # Classify impact for each (cap at 30 to control cost)
+        # Classify impact for each (cap at IMPACT_CLASSIFY_CAP to control cost).
         impacts = {}
-        for item in items[:30]:
+        impact_failures = 0
+        for item in items[:IMPACT_CLASSIFY_CAP]:
             try:
                 impact = classify_event_impact(
                     quick_llm, deep_llm,
@@ -129,22 +145,31 @@ def create_macro_news_analyst(quick_llm, deep_llm):
                     date=item.published_at.isoformat(),
                 )
                 impacts[item.headline] = impact
-            except Exception:
+            except Exception as e:
+                impact_failures += 1
+                logger.debug("classify_event_impact failed for headline: %s", e)
                 continue
+        if impact_failures > 0:
+            logger.warning(
+                "macro_news: %d/%d impact classifications failed",
+                impact_failures, min(len(items), IMPACT_CLASSIFY_CAP),
+            )
 
-        ranked = dedupe_rank_news(items, impacts, top_n=10)
+        ranked = dedupe_rank_news(items, impacts, top_n=TOP_RANKED_N)
 
         # Tier-1: Global overnight snapshot (US 제외)
         try:
             overnight = compute_global_overnight_snapshot(as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("overnight snapshot failed → None: %s", e)
             overnight = None
         overnight_summary = _summarize_overnight(overnight)
 
         # Tier-5: SAVE 브리핑 ingest (가능 시) — Tier-2/3 input 보강에 우선 사용
         try:
             save_brief = ingest_save_brief(as_of=as_of, quick_llm=quick_llm)
-        except Exception:
+        except Exception as e:
+            logger.warning("SAVE brief ingest failed → None: %s", e)
             save_brief = None
         save_summary = _summarize_save(save_brief)
 
@@ -153,11 +178,17 @@ def create_macro_news_analyst(quick_llm, deep_llm):
         external_releases = list(state.get("release_surprises_30d", []) or [])
         if save_brief and save_brief.economic_releases:
             external_releases = list(save_brief.economic_releases) + external_releases
+        else:
+            logger.info(
+                "macro_news: SAVE brief releases unavailable, using state fallback "
+                "release_surprises_30d=%d items", len(external_releases),
+            )
         try:
             surprise_snapshot = compute_release_surprise_snapshot(
                 external_releases, as_of=as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("release_surprise compute failed → None: %s", e)
             surprise_snapshot = None
         surprise_summary = _summarize_surprise(surprise_snapshot)
 
@@ -173,7 +204,8 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             sentiment_snapshot = compute_news_sentiment_snapshot(
                 categorized, as_of=as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("news sentiment pipeline failed → None: %s", e)
             sentiment_snapshot = None
         sentiment_summary = _summarize_sentiment(sentiment_snapshot)
 
@@ -183,14 +215,31 @@ def create_macro_news_analyst(quick_llm, deep_llm):
             speaker_aggregate = compute_speaker_aggregate(
                 speaker_events, as_of=as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("speaker tracker failed → None: %s", e)
             speaker_aggregate = None
         speaker_summary = _summarize_speakers(speaker_aggregate)
 
+        # Missing-tier inventory — debug 가시화.
+        _missing_inventory = {
+            "overnight": overnight is None,
+            "save_brief": save_brief is None,
+            "release_surprise": surprise_snapshot is None,
+            "news_sentiment": sentiment_snapshot is None,
+            "cb_speaker": speaker_aggregate is None,
+        }
+        n_missing = sum(_missing_inventory.values())
+        if n_missing > 0:
+            missing_names = [k for k, v in _missing_inventory.items() if v]
+            logger.warning(
+                "macro_news: %d/%d tiers missing: %s",
+                n_missing, len(_missing_inventory), missing_names,
+            )
+
         narrative = quick_llm.invoke(
-            f"Summarize macro news in ≤500 Korean chars. "
+            f"Summarize macro news in ≤{NARRATIVE_MAX_CHARS} Korean chars. "
             f"Top: {[r.item.headline[:50] for r in ranked[:3]]}"
-        ).content[:500]
+        ).content[:NARRATIVE_MAX_CHARS]
         top_headline = ranked[0].item.headline[:80] if ranked else "(none)"
         top_severity = ranked[0].impact.severity if ranked else "n/a"
         # SAVE 주간 일정을 upcoming_events에 병합 (중복은 단순 dedupe)
@@ -200,15 +249,21 @@ def create_macro_news_analyst(quick_llm, deep_llm):
                 if (ev.event_date, ev.description) not in existing:
                     events.append(ev)
 
+        missing_line = (
+            f"Missing tiers: {n_missing}/{len(_missing_inventory)} "
+            f"({', '.join(k for k, v in _missing_inventory.items() if v)})\n"
+            if n_missing > 0 else ""
+        )
         summary = (
-            f"## News\nUpcoming events: {len(events)}\n"
+            f"## News\n{missing_line}"
+            f"Upcoming events: {len(events)}\n"
             f"Top headlines (severity {top_severity}): {top_headline}\n"
             f"{overnight_summary}"
             f"{surprise_summary}"
             f"{sentiment_summary}"
             f"{speaker_summary}"
             f"{save_summary}"
-        )[:2000]
+        )[:SUMMARY_MAX_CHARS]
 
         report = NewsReport(
             upcoming_events=events, ranked_news=ranked,

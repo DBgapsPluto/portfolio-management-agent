@@ -44,8 +44,11 @@ Each factor weight dict re-normalized to sum=1.0 (D11 plan default).
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal
+
+logger = logging.getLogger(__name__)
 
 from tradingagents.skills.research.external_fetchers import (
     fetch_krw_usd_level,
@@ -150,15 +153,31 @@ _Z_CAP: Final[float] = 3.0
 # ---------------------- helpers ----------------------
 
 
+# Stage 1 sentinel marker — analyst가 fetch 실패 fallback snapshot을 만들 때
+# staleness_days=99로 설정한다. Stage 2 factor estimator는 그 snapshot의 field를
+# raw 값으로 사용하면 silent distortion이 생기므로(예: BSI=100 sentinel을 정상
+# 평균치로 해석) component drop 한다. 정상 stale(1-7d) 데이터는 통과.
+STALENESS_SENTINEL_DAYS: Final[int] = 99
+
+
 def _safe_get(obj: Any, *path: str, default: Any = None) -> Any:
     """Walk a chain of attribute / dict-key accesses safely.
 
     Each step uses ``getattr`` then dict ``__getitem__``; any exception
     or a ``None`` intermediate yields ``default``.
+
+    Stage 1 audit (2026-05-26, Task 0): walk 중 만난 StalenessAware snapshot이
+    sentinel(staleness_days >= STALENESS_SENTINEL_DAYS)이면 default 반환 →
+    factor_estimators._aggregate가 None component를 자동 drop + weight 재정규화.
+    이로써 fetch 실패 snapshot의 placeholder 값이 silent하게 factor z에 흡수되는
+    blackbox 위험을 차단.
     """
     cur: Any = obj
     for key in path:
         if cur is None:
+            return default
+        stale = getattr(cur, "staleness_days", None)
+        if isinstance(stale, int) and stale >= STALENESS_SENTINEL_DAYS:
             return default
         try:
             cur = getattr(cur, key)
@@ -535,10 +554,19 @@ def compute_krw_regime(stage1: Any, mode: FactorMode = "production") -> FactorSc
       에 net_flow_z 없음, 20d 누적 순매수액을 proxy 로 사용)
     - krw_level: macro_report.fx.usd_krw 우선 사용, 없으면 external fetch.
     """
-    # macro_report.fx (FXSnapshot) 의 usd_krw 우선
+    # macro_report.fx (FXSnapshot) 의 usd_krw 우선. None 일 때 external fetch.
+    # Stage 2 audit (Task 3): None 의 원인 (sentinel guard 작동 or fx field 결측)
+    # 을 logger.info 로 trace — yfinance 우회 경로 가시화.
     krw_level = _safe_get(stage1, "macro_report", "fx", "usd_krw")
     if krw_level is None:
+        logger.info(
+            "compute_krw_regime: Stage 1 fx.usd_krw missing/sentinel → external yfinance fallback"
+        )
         krw_level = fetch_krw_usd_level()  # external fallback
+        if krw_level is None:
+            logger.warning(
+                "compute_krw_regime: external fallback also failed → krw_level component drop"
+            )
 
     components_raw: dict[str, float | None] = {
         "krw_overnight_pct": _safe_get(

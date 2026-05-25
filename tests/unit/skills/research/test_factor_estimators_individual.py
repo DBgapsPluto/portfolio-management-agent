@@ -98,6 +98,55 @@ def test_safe_get_with_default() -> None:
     assert _safe_get(obj, "x", "y", default="dflt") == "dflt"
 
 
+# ---------- Stage 1 audit (2026-05-26): sentinel guard ----------
+
+
+def test_safe_get_drops_sentinel_snapshot() -> None:
+    """Stage 1 sentinel (staleness_days=99) snapshot → field 접근이 default 반환.
+
+    macro_quant이 fetch 실패 시 BSI=100, staleness_days=99 sentinel snapshot
+    을 만든다. factor_estimators가 .bsi 를 그대로 100으로 읽으면 silent
+    distortion. sentinel guard로 component drop 되어야 함.
+    """
+    sentinel_snapshot = SimpleNamespace(bsi=100.0, staleness_days=99)
+    stage1 = SimpleNamespace(macro_report=SimpleNamespace(kr_bsi=sentinel_snapshot))
+    assert _safe_get(stage1, "macro_report", "kr_bsi", "bsi") is None
+
+
+def test_safe_get_passes_fresh_snapshot() -> None:
+    fresh = SimpleNamespace(bsi=92.0, staleness_days=0)
+    stage1 = SimpleNamespace(macro_report=SimpleNamespace(kr_bsi=fresh))
+    assert _safe_get(stage1, "macro_report", "kr_bsi", "bsi") == 92.0
+
+
+def test_safe_get_passes_stale_but_below_sentinel() -> None:
+    # is_stale(1d) / is_very_stale(7d) 단계는 통과 — 가용 정보는 활용.
+    stale = SimpleNamespace(bsi=95.0, staleness_days=10)
+    stage1 = SimpleNamespace(macro_report=SimpleNamespace(kr_bsi=stale))
+    assert _safe_get(stage1, "macro_report", "kr_bsi", "bsi") == 95.0
+
+
+def test_safe_get_sentinel_at_intermediate_level() -> None:
+    # 중간 노드(macro_report 자체가 아니라 sub-snapshot)가 sentinel인 경우도 drop.
+    sentinel = SimpleNamespace(spread_10y_2y_bps=-50.0, staleness_days=99)
+    stage1 = SimpleNamespace(
+        macro_report=SimpleNamespace(yield_curve=sentinel),
+    )
+    assert _safe_get(stage1, "macro_report", "yield_curve", "spread_10y_2y_bps") is None
+
+
+def test_safe_get_ignores_non_int_staleness() -> None:
+    # staleness_days 가 미설정/타입 다른 경우(예: pydantic 누락) — guard 미발동.
+    weird = SimpleNamespace(bsi=92.0, staleness_days=None)
+    stage1 = SimpleNamespace(macro_report=SimpleNamespace(kr_bsi=weird))
+    assert _safe_get(stage1, "macro_report", "kr_bsi", "bsi") == 92.0
+
+
+def test_safe_get_sentinel_constant_value() -> None:
+    # 사양 fix: STALENESS_SENTINEL_DAYS = 99 (analyst들이 fetch 실패 marker).
+    assert fe.STALENESS_SENTINEL_DAYS == 99
+
+
 # ---------- enum maps ----------
 
 def test_bias_map_values() -> None:
