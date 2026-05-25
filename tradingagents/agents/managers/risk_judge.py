@@ -119,15 +119,44 @@ def create_risk_judge(
         macro_report = state.get("macro_report")
         research_decision = state.get("research_decision")
         technical_report = state.get("technical_report")
+        logger.info(
+            "risk_judge start: as_of=%s, n_positions=%s",
+            as_of,
+            len(weight_vector_1.weights) if weight_vector_1 else 0,
+        )
+
+        # Stage 4 audit Task 1: attribution dict — Stage 6 narrative 가시화.
+        # Stage 3 의 allocation_attribution 옆에 별도 risk_judge_attribution 으로
+        # 산출 (state 키 충돌 회피).
+        rj_attribution: dict = {
+            "as_of": as_of_str,
+            "input_present": {
+                "weight_vector": weight_vector_1 is not None,
+                "candidate_set": candidate_set is not None,
+                "bucket_target": bucket_target is not None,
+                "risk_report": risk_report is not None,
+                "macro_report": macro_report is not None,
+                "research_decision": research_decision is not None,
+                "technical_report": technical_report is not None,
+            },
+        }
 
         # Input 검증
         if weight_vector_1 is None or candidate_set is None or bucket_target is None:
+            logger.warning(
+                "risk_judge: Stage 3 입력 부재 (wv=%s, cs=%s, bt=%s) → skip",
+                weight_vector_1 is not None,
+                candidate_set is not None,
+                bucket_target is not None,
+            )
             overlay = RiskOverlay.no_concerns(as_of_date=as_of)
+            rj_attribution["skipped"] = "stage3_inputs_missing"
             return {
                 "risk_overlay": overlay,
                 "risk_debate_summary": (
                     "## Risk Overlay\nStage 3 입력 부재 — skip\n"
                 ),
+                "risk_judge_attribution": rj_attribution,
             }
 
         # 1. returns matrix (Stage 3 캐시 재사용 ParquetCache)
@@ -145,12 +174,15 @@ def create_risk_judge(
             returns = None
 
         if returns is None or returns.empty:
+            logger.warning("risk_judge: returns matrix unavailable → skip")
             overlay = RiskOverlay.no_concerns(as_of_date=as_of)
+            rj_attribution["skipped"] = "returns_matrix_empty"
             return {
                 "risk_overlay": overlay,
                 "risk_debate_summary": (
                     "## Risk Overlay\nreturns matrix unavailable — skip\n"
                 ),
+                "risk_judge_attribution": rj_attribution,
             }
 
         # 2. Stage 3.5 numerics
@@ -183,10 +215,17 @@ def create_risk_judge(
                 risk_signals["funding_staleness"],
             )
             overlay = RiskOverlay.no_concerns(as_of_date=as_of)
+            rj_attribution["skipped"] = "risk_signals_degraded"
+            rj_attribution["risk_signal_staleness"] = {
+                "systemic": risk_signals["systemic_staleness"],
+                "vix_term": risk_signals["vix_term_staleness"],
+                "funding": risk_signals["funding_staleness"],
+            }
             return {
                 "weight_vector": weight_vector_1,
                 "risk_overlay": overlay,
                 "portfolio_numerics": numerics,
+                "risk_judge_attribution": rj_attribution,
                 "risk_debate_summary": (
                     "## Risk Overlay\n"
                     "**risk_signals_degraded**: Stage 1 risk_report 의 systemic / "
@@ -195,6 +234,13 @@ def create_risk_judge(
                     f"Strength applied: 0.00\n"
                 )[:2000],
             }
+
+        # Stage 4 audit Task 1: lens 호출 전 input snapshot.
+        rj_attribution["risk_signal_staleness"] = {
+            "systemic": risk_signals["systemic_staleness"],
+            "vix_term": risk_signals["vix_term_staleness"],
+            "funding": risk_signals["funding_staleness"],
+        }
 
         # 4. 3 lens 호출
         tail_concern = run_tail_risk_lens(
@@ -212,16 +258,48 @@ def create_risk_judge(
         )
 
         concerns = [tail_concern, conc_concern, macro_concern]
+        for c in concerns:
+            logger.info(
+                "lens %s → level=%s, evidence: %s",
+                c.lens, c.level, c.evidence[:120],
+            )
 
         # 5. severity-gated 합의
         overlay = aggregate_lens_concerns(concerns, as_of_date=as_of)
+        logger.info(
+            "severity_aggregator: strength=%.2f, multiplier=%.2f, "
+            "ceilings=%d, cluster_caps=%d, decision: %s",
+            overlay.strength_applied, overlay.risk_asset_multiplier,
+            len(overlay.weight_ceilings), len(overlay.cluster_caps),
+            overlay.severity_decision[:120],
+        )
 
-        # 6. overlay 적용 (empty면 1차 그대로) + outcome 기록 (Task 4)
+        # Stage 4 audit Task 1: lens 결과 + aggregate 결과 attribution.
+        rj_attribution["lens_concerns"] = [
+            {
+                "lens": c.lens,
+                "level": c.level,
+                "evidence": c.evidence[:200],
+            }
+            for c in concerns
+        ]
+        rj_attribution["strength_applied"] = overlay.strength_applied
+        rj_attribution["severity_decision"] = overlay.severity_decision
+        rj_attribution["multiplier"] = overlay.risk_asset_multiplier
+
+        # 6. overlay 적용 (empty면 1차 그대로) + outcome 기록 (Stage 3 Task 4 의
+        # overlay attribution 도 함께 채워짐).
+        rj_attribution["overlay"] = {}
         weight_vector_2, outcome = apply_risk_overlay(
             weight_vector_1, overlay, candidate_set, returns, bucket_target,
             method=weight_vector_1.method, clusters=clusters,
+            attribution=rj_attribution,
         )
         overlay = overlay.model_copy(update={"overlay_apply_outcome": outcome})
+        logger.info(
+            "risk_judge complete: outcome=%s, weight_changed=%s",
+            outcome, weight_vector_2.weights != weight_vector_1.weights,
+        )
 
         # Summary
         lens_str = "\n".join(
@@ -260,6 +338,7 @@ def create_risk_judge(
             "weight_vector": weight_vector_2,
             "risk_overlay": overlay,
             "portfolio_numerics": numerics,
+            "risk_judge_attribution": rj_attribution,
             "risk_debate_summary": summary,
         }
 
