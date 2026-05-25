@@ -10,7 +10,9 @@ from tradingagents.dataflows.universe import sync_from_xlsx
 from tradingagents.schemas.reports import TechnicalReport
 
 
-def _synthetic_prices(tickers: list, n: int = 260) -> pd.DataFrame:
+def _synthetic_prices(tickers: list, n: int = 300) -> pd.DataFrame:
+    # 274 = 252 (12m) + 21 (skip-1m) + 1 buffer — rank_momentum._MIN_HISTORY_DAYS.
+    # 300 으로 안전 마진. 이전 260일 → asset_class_momentum 빈 dict 회귀.
     dates = pd.date_range("2024-01-01", periods=n, freq="B")
     rng = np.random.default_rng(42)
     rows = []
