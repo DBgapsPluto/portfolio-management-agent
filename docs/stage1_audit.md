@@ -240,3 +240,60 @@ KR exports/leading/BSI, US leading/GDPNow, FCI, inflation_exp, fed_path, FX, ris
 - [x] sentinel inventory 가 summary 에 가시화.
 - [x] lookback 윈도우 named const.
 - [ ] [Deferred] LLM prompt staleness 보강 — Stage 2 prompt 재설계 시 처리 (followup).
+
+---
+
+## Task 3 — market_risk analyst
+
+### 발견
+
+#### F3.1 — **(CRITICAL) Synthetic data fallback in production path**
+
+[line 212-220, market_risk_analyst.py]:
+```python
+except Exception:
+    # Fallback: 기존 synthetic (degraded mode)
+    synthetic = pd.DataFrame({
+        "spy": [0.002, -0.001, 0.002, 0.0, 0.001] * 50,
+        ...
+    })
+    pca = compute_correlation_concentration(synthetic, as_of)
+    pca = pca.model_copy(update={"staleness_days": 99})
+```
+
+`fetch_cross_asset_returns` 실패 시 **하드코딩된 5일 패턴 × 50일 = 250개 가짜 return** 으로 PCA 계산. staleness=99 마크되긴 했지만 `pca.first_eigenvalue_share`, `pca.is_concentrated` 값이 **fabricated correlation structure** 에서 산출 → snapshot 자체가 의미 없는 값을 담음.
+
+Task 0 의 `_safe_get` sentinel guard 가 factor_estimators 의 downstream 흡수는 막아주지만, market_risk_analyst 의 systemic_score 가 같은 PCA 객체의 `.first_eigenvalue_share` 를 직접 LLM 으로 넘김 → systemic_score 계산이 fabricated 값으로 영향받음.
+
+#### F3.2 — 12 silent except → sentinel without logger
+
+vix_term, skew, vxn, real_yields, funding_stress, credit_quality, kr_yield_curve, kr_corp_spread, kr_margin, kr_market_tier, eq_bd_corr (2곳). 모두 trace 없음.
+
+#### F3.3 — 매직 lookback 산재
+
+`400` (vol, commodity), `365*5+30` (5y), `365` (PCA), `60` (market tier), `"120d"` (realized vol period), `"65d"` (sector dispersion), `"400d"` (mega cap).
+
+### 결정
+
+**D3.1** — synthetic fallback 제거. fetch 실패 시 명시적 `PCASnapshot(first_eigenvalue_share=0.0, n_assets_analyzed=2, is_concentrated=False, staleness_days=99)` 생성. fabricated correlation 차단.
+**D3.2** — 12 silent except → `logger.warning("<name> fetch failed → sentinel: %s", e)`.
+**D3.3** — magic lookback → 함수 내부 named const (function-local; 모듈 const 와 달리 함수 진입 시점에만 결정).
+**D3.4** — sentinel inventory (13 snapshots) + summary 노출.
+
+### 수정
+
+- [x] PCA synthetic fallback → explicit sentinel (CRITICAL F3.1 차단)
+- [x] 12 silent except → logger.warning
+- [x] magic lookback → named const
+- [x] sentinel inventory + summary line
+
+### 회귀
+
+`pytest tests/unit/agents/test_market_risk_analyst.py tests/unit/skills/test_risk_correlation_pca.py tests/unit/skills/research/` → **85 pass, 0 fail**.
+
+### 합격 기준
+
+- [x] F3.1 stub fallback 차단 — 명시적 sentinel.
+- [x] silent except 0.
+- [x] sentinel inventory 가 summary 에 가시화.
+- [x] 매직 lookback 분리.
