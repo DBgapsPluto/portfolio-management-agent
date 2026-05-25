@@ -612,7 +612,46 @@ Medium (cleanup) — production 운영 전 권장.
 
 ## Issue #18 — factor model β 의 real historical fetch + production calibration
 
-### Status (PR2a 완료, 2026-05-24) — **RESOLVED**
+### Status (PR2b 완료, 2026-05-25) — **VERIFIED with caveat**
+
+PR2b 의 5-strategy benchmark 비교 + NBER regime decomposition + sensitivity
+sweep + 2026-05-15 production regen 모두 완료. Calibrated INITIAL_BETA 가
+모든 benchmark 를 이김 (1위) — 단 60-40 대비 우위 statistically not
+significant.
+
+**5-strategy comparison** (49 OOS samples, 1991-2024):
+- calibrated: mean OOS Sharpe **1.229** ← 1위
+- 60_40_kr_tilted: 1.179 (Δ=+0.05, p=**0.717** ⚠️)
+- hand_coded_prior: 0.829 (Δ=+0.40, p=0.075)
+- equal_weight: 0.818 (Δ=+0.41, p=0.060)
+- risk_parity: 0.782 (Δ=+0.45, p=0.035 ✓)
+
+**Sensitivity findings**:
+- Era split (pre/post 2010): |β_pre - β_post|_avg = 0.036 (MODERATE DRIFT)
+- Robustness penalty: SENSITIVE (0.25 → 0.50 shrinkage 2.0 → 0.1)
+- Sample quality: 분류 불가 (모든 sample confidence = 0.7233, baseline-fallback)
+
+**Production regen** (2026-05-15):
+- KR equity: 16.1% → 26.3% (+10pp)
+- Bond: 37.3% → 25.0% (-12pp)
+- Global equity: 4.8% → 0.3% (extreme factor signal effect, not β 책임)
+- Validation passed, mandate compliance OK.
+
+**Caveat (4건)**:
+1. 60-40 대비 not statistically significant (p=0.717)
+2. β era moderate drift
+3. Robustness penalty sensitive
+4. Extreme factor signal 환경에서 bucket 극단 reposition
+
+**다음 단계 (PR2c+ 영역)**:
+- Quarterly re-calibration cadence (era drift monitoring)
+- 새 factor 추가 (momentum, quality 등) for 더 명확한 차별성
+- 시간 경과로 sample N 증가 → 통계 power 자연 증가
+
+Full validation: artifacts/2026-05-25/validation/validation_report.md +
+sensitivity_report.md + regen/diff_report.md.
+
+### Status (PR2a 완료, 2026-05-24) — RESOLVED (historical)
 
 PR2a 의 walk-forward calibration acceptance gate PASS. INITIAL_BETA 가
 data-driven 으로 교체됨 (commit C9, 2d81a7b).
