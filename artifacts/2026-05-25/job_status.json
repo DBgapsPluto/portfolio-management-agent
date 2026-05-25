@@ -1,0 +1,9 @@
+{
+  "pr": "PR2b — Stage 2b validation + benchmark + regen",
+  "branch": "feat/stage2b-validation",
+  "started_at": "2026-05-25T00:00:00Z",
+  "current_commit": "C0",
+  "status": "scaffolding",
+  "long_running_jobs": {},
+  "notes": "PR2a merge 후. INITIAL_BETA = calibrated. samples.parquet (133 rows) 사용."
+}
