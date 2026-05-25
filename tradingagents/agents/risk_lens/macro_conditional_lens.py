@@ -50,10 +50,10 @@ def _classify(
         return "medium"
 
     if regime_quadrant in ("recession_disinflation", "recession_inflation"):
-        if risk_weight > 0.55:
-            return "medium"
         if risk_weight > 0.65:
             return "high"
+        if risk_weight > 0.55:
+            return "medium"
 
     return "none"
 
