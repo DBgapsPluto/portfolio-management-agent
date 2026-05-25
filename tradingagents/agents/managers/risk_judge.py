@@ -39,21 +39,61 @@ from tradingagents.skills.risk.severity_aggregator import aggregate_lens_concern
 logger = logging.getLogger(__name__)
 
 
+# Stage 4 audit (2026-05-26, Task 0): Stage 1 sentinel marker.
+# risk_report 의 fetch 실패 snapshot 은 staleness_days=99 로 표시됨.
+# Stage 1/2/3 audit 의 staleness propagation chain 의 마지막 끊김 보수.
+STALENESS_SENTINEL_DAYS_S4: int = 99
+
+
 def _extract_risk_signals(risk_report) -> dict:
-    """Stage 1 risk_report에서 lens가 쓸 정량 신호 추출. 없으면 안전 기본값."""
+    """Stage 1 risk_report에서 lens가 쓸 정량 신호 추출.
+
+    Stage 4 audit Task 0: staleness 추적 보강. systemic_score / vix_term /
+    funding_stress 객체의 staleness_days 도 함께 추출. 셋 다 sentinel(≥99) 이면
+    risk_judge 가 lens 호출 skip + empty overlay (Stage 3 가 이미 strict MIN_VAR
+    강제했으므로 Stage 4 는 추가 안 함이 보수적).
+
+    risk_report 자체가 None 인 경우도 fully degraded 로 처리.
+    """
     if risk_report is None:
+        # risk_report 자체 부재 — 기존 default 동작 (안전 기본값으로 lens 호출).
+        # Stage 4 audit Task 0 의 'all_degraded' 는 명시적 sentinel snapshot
+        # (staleness=99) 검출용으로 한정. risk_report 부재는 다른 시나리오
+        # (Stage 1 자체 skip 등) 가능성 있어 lens 호출은 유지.
         return {
             "systemic_score": 5.0,
             "vix_term_regime": "contango",
             "funding_regime": "calm",
+            "systemic_staleness": None,
+            "vix_term_staleness": None,
+            "funding_staleness": None,
+            "all_degraded": False,
         }
     systemic = getattr(risk_report, "systemic_score", None)
     vix_term = getattr(risk_report, "vix_term", None)
     funding = getattr(risk_report, "funding_stress", None)
+
+    systemic_stale = getattr(systemic, "staleness_days", None) if systemic else None
+    vix_stale = getattr(vix_term, "staleness_days", None) if vix_term else None
+    funding_stale = getattr(funding, "staleness_days", None) if funding else None
+
+    def _is_sentinel(s: int | None) -> bool:
+        return isinstance(s, int) and s >= STALENESS_SENTINEL_DAYS_S4
+
+    all_degraded = (
+        _is_sentinel(systemic_stale)
+        and _is_sentinel(vix_stale)
+        and _is_sentinel(funding_stale)
+    )
+
     return {
         "systemic_score": float(systemic.score) if systemic else 5.0,
         "vix_term_regime": getattr(vix_term, "regime", "contango") or "contango",
         "funding_regime": getattr(funding, "regime", "calm") or "calm",
+        "systemic_staleness": systemic_stale,
+        "vix_term_staleness": vix_stale,
+        "funding_staleness": funding_stale,
+        "all_degraded": all_degraded,
     }
 
 
@@ -121,12 +161,40 @@ def create_risk_judge(
             weight_vector_1, returns, clusters=clusters,
         )
 
-        # 3. Stage 1 정량 신호 추출
+        # 3. Stage 1 정량 신호 추출 (staleness 포함 — Stage 4 audit Task 0)
         risk_signals = _extract_risk_signals(risk_report)
         regime_quadrant = (
             getattr(macro_report.regime, "quadrant", None)
             if macro_report and getattr(macro_report, "regime", None) else None
         )
+
+        # Stage 4 audit Task 0: Stage 1 risk_signals 모두 sentinel (≥99) 이면
+        # placeholder 값 (systemic=5.0, vix=contango, funding=calm) 으로 lens
+        # 호출 시 silent 잘못된 overlay 산출 위험. Stage 3 audit Task 0 이 이미
+        # degraded_inputs 시 MIN_VARIANCE 강제했으므로, Stage 4 는 추가 overlay
+        # 안 만드는 게 보수적 (empty overlay = Stage 3 결과 보존).
+        if risk_signals["all_degraded"]:
+            logger.warning(
+                "risk_judge: risk_signals 모두 sentinel "
+                "(systemic_stale=%s, vix_stale=%s, funding_stale=%s) → "
+                "lens 호출 skip + empty overlay (Stage 3 결과 보존)",
+                risk_signals["systemic_staleness"],
+                risk_signals["vix_term_staleness"],
+                risk_signals["funding_staleness"],
+            )
+            overlay = RiskOverlay.no_concerns(as_of_date=as_of)
+            return {
+                "weight_vector": weight_vector_1,
+                "risk_overlay": overlay,
+                "portfolio_numerics": numerics,
+                "risk_debate_summary": (
+                    "## Risk Overlay\n"
+                    "**risk_signals_degraded**: Stage 1 risk_report 의 systemic / "
+                    "vix_term / funding_stress 모두 sentinel (staleness≥99)\n"
+                    "→ lens skip, empty overlay (Stage 3 결과 보존)\n"
+                    f"Strength applied: 0.00\n"
+                )[:2000],
+            }
 
         # 4. 3 lens 호출
         tail_concern = run_tail_risk_lens(
