@@ -138,6 +138,7 @@ def evaluate_anchor_live(
     cache_path: str | None = None,
     quick_llm=None,
     deep_llm=None,
+    with_stage4: bool = False,
 ) -> AnchorEvalResult:
     """Stage 1 LIVE + Stage 2 anchor 명세 + Stage 3 평가."""
     from tradingagents.agents.allocator.portfolio_allocator import (
@@ -279,6 +280,53 @@ def evaluate_anchor_live(
         expected=risk_max, actual=risk_asset_total,
     ))
 
+    # Stage 4 (with_stage4=True 시만) — LIVE state 는 이미 risk_judge 가
+    # 기대하는 형태 (correlation_clusters, vix_term, funding_stress) 이므로
+    # risk_judge 노드 직접 호출.
+    stage4_checks = stage4_outcome = stage4_weights = stage4_bucket_diff = None
+    stage4_active = False
+    if with_stage4:
+        from tradingagents.observability.anchor_evaluator import (
+            _score_eight_axes, _bucket_weights,
+        )
+        from tradingagents.agents.managers.risk_judge import create_risk_judge
+
+        risk_state = dict(state)
+        risk_state.update({
+            "as_of_date":    anchor["as_of_date"],
+            "weight_vector": wv,
+            "candidate_set": out["candidate_set"],
+        })
+        risk_node = create_risk_judge(cache_path=cache_path)
+        risk_out = risk_node(risk_state)
+        stage4_weights = risk_out["weight_vector"].weights
+        stage4_outcome = risk_out["risk_overlay"].overlay_apply_outcome
+        stage4_active = not risk_out["risk_overlay"].is_empty()
+
+        sub_totals_4 = _sub_category_totals(stage4_weights, universe)
+        n_unique_4 = sum(
+            1 for sc, w in sub_totals_4.items() if sc != "_unknown" and w > 0
+        )
+        risk_asset_total_4 = sum(
+            w for t, w in stage4_weights.items() if bucket_of.get(t) in _RISK_BUCKETS
+        )
+        stage4_checks = _score_eight_axes(
+            expected=anchor["expected_stage3"],
+            weights=stage4_weights,
+            sub_totals=sub_totals_4,
+            n_unique=n_unique_4,
+            risk_asset_total=risk_asset_total_4,
+            method_str=method_str,
+        )
+        b3 = _bucket_weights(weights, universe)
+        b4 = _bucket_weights(stage4_weights, universe)
+        all_b = set(b3) | set(b4)
+        stage4_bucket_diff = {
+            b: round(b4.get(b, 0) - b3.get(b, 0), 4)
+            for b in all_b
+            if abs(b4.get(b, 0) - b3.get(b, 0)) >= 0.005
+        }
+
     return AnchorEvalResult(
         anchor_id=anchor["anchor_id"],
         as_of_date=anchor["as_of_date"],
@@ -290,6 +338,11 @@ def evaluate_anchor_live(
         n_unique_sub_categories=n_unique,
         risk_asset_total=risk_asset_total,
         allocation_attribution=out.get("allocation_attribution"),
+        stage4_checks=stage4_checks,
+        stage4_outcome=stage4_outcome,
+        stage4_weights=stage4_weights,
+        stage4_overlay_was_active=stage4_active,
+        stage4_bucket_diff=stage4_bucket_diff,
     )
 
 

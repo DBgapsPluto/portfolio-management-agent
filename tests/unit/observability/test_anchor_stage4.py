@@ -82,3 +82,12 @@ def test_weight_diff_summary_present_when_active():
         assert isinstance(result.stage4_bucket_diff, dict)
         # 변화량 합 ≈ 0 (재정규화) — 0.01 이내 tolerance
         assert abs(sum(result.stage4_bucket_diff.values())) < 0.01
+
+
+def test_live_evaluate_with_stage4_optional_kwarg_exists():
+    """signature 확인 — LIVE 실제 호출은 LLM 비용으로 skip."""
+    import inspect
+    from tradingagents.observability.anchor_live import evaluate_anchor_live
+    sig = inspect.signature(evaluate_anchor_live)
+    assert "with_stage4" in sig.parameters
+    assert sig.parameters["with_stage4"].default is False
