@@ -78,3 +78,21 @@ production code 변경 없음.
 1. (C2) 60-40 대비 not statistically significant (p=0.717)
 2. (C3) β 가 era 의존 (moderate drift |β_pre - β_post|_avg = 0.036)
 3. (C3) Best shrinkage 가 robustness penalty 계수에 sensitive
+
+## Post-C4 (data: 2026-05-15 production regen — Accept with caveat)
+
+production code 변경 없음 (artifacts 만 갱신). Regression 영향 없음.
+
+**Pipeline**: scripts/run_e2e_test.py --as-of 2026-05-15 --capital 1B KRW.
+Runtime 203.4s (Stage 1-6 + LLM). validation passed=True hard=0 soft=0.
+
+**Bucket target Δ**:
+- kr_equity 0.161 → 0.263 (+10.2pp)
+- global_equity 0.048 → 0.003 (-4.5pp, extreme F6/F7 signal)
+- fx_commodity 0.054 → 0.120 (+6.6pp)
+- bond 0.373 → 0.250 (-12.2pp)
+- cash_mmf 0.364 → 0.364 (-0.05pp)
+
+위험자산 합계 26.3% → 38.6% (cap 70% 안).
+
+**grill-me #2**: Accept with caveat. C5 진행.

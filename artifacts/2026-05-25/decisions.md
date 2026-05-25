@@ -44,4 +44,38 @@ C2 validation 결과 (49 OOS samples, 1991-2024):
 - followup_issues.md Issue #18 에 caveat 추가: "60-40 대비 statistically not significant"
 - C5 final 에 "VERIFIED with caveat" status 기록
 
-(grill-me #2: TBD — C4 regen 실행 직후)
+### grill-me #2 (C4 직후, 2026-05-25) — DECIDED: Accept with caveat
+
+C4 regen 결과 (artifacts/2026-05-15/* 갱신):
+
+| Bucket | OLD | NEW | Δ |
+|---|---|---|---|
+| kr_equity | 16.1% | 26.3% | +10.2pp |
+| global_equity | 4.8% | 0.3% | -4.5pp |
+| fx_commodity | 5.4% | 12.0% | +6.6pp |
+| bond | 37.3% | 25.0% | -12.2pp |
+| cash_mmf | 36.4% | 36.4% | -0.05pp |
+
+- Validation passed=True, hard=0, soft=0.
+- 위험자산 cap 38.6% < 70% mandate.
+- global_equity 0% 는 calibrated β 책임 아님 — F6=-3 / F7=+3 extreme
+  signal 에서 hand-coded 도 거의 같은 결정 (-0.22 vs -0.26 contribution).
+  diff_report.md β trace 분석.
+- LLM method 변경 (min_variance → hrp) — calibration 직접 영향 불확실.
+
+**User decision**: Accept with caveat.
+
+**근거**:
+- Statistical evidence borderline 이지만 +0.40 OOS Sharpe gain 의 economic
+  significance 충분.
+- PR2a calibration 은 "할 수 있는 일은 다 했다" 수준 — 추가 modification
+  필요 X (PR2c+ 영역).
+- Quarterly re-calibration cadence 로 era drift 추적 권장 (별도 follow-up).
+
+**조치**:
+- Regen artifacts production 적용 (artifacts/2026-05-15/* 교체).
+- 4 caveat Issue #18 + decisions.md final 에 명시:
+  1. 60-40 대비 not statistically significant
+  2. β era moderate drift (|Δ|_avg = 0.036)
+  3. Robustness penalty sensitive
+  4. Extreme factor signal 환경에서 bucket 극단 reposition
