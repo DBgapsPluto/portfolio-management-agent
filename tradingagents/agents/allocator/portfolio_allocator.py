@@ -411,7 +411,10 @@ def _optimize_with_bucket_constraints(
                 attribution["cov_final_obs"] = int(len(returns))
 
     if method == OptimizationMethod.HRP:
-        return _hrp_per_bucket(returns, candidates, bucket_target, sub_category_lookup)
+        return _hrp_per_bucket(
+            returns, candidates, bucket_target, sub_category_lookup,
+            attribution=attribution,
+        )
 
     S = risk_models.sample_cov(returns)
 
@@ -511,6 +514,7 @@ def _optimize_with_bucket_constraints(
 def _hrp_per_bucket(
     returns: pd.DataFrame, candidates, bucket_target,
     sub_category_lookup: dict[str, str | None] | None = None,
+    attribution: dict | None = None,
 ) -> WeightVector:
     """HRP within each bucket × bucket target, with ITERATIVE water-filling cap.
 
@@ -520,7 +524,11 @@ def _hrp_per_bucket(
 
     bond bucket: bond_tips_share > 0이면 (TIPS, nominal) sub-pool로 분리해서 각각
     HRP × sub-target. Stage 2 bond_tips_share intent enforce.
+
+    attribution (Stage 3 audit Task 3): 제공 시 cap-all shortfall + 최종 단위
+    normalization 발동 등을 dict 에 기록.
     """
+    bucket_shortfalls: list[dict] = []
     sub_category_lookup = sub_category_lookup or {}
     target_map = {
         "kr_equity": bucket_target.kr_equity,
@@ -576,20 +584,32 @@ def _hrp_per_bucket(
 
             scaled = {t: w * pool_target for t, w in inner.items()}
 
-            capped = {t: min(w, 0.20) for t, w in scaled.items()}
+            capped = {t: min(w, SINGLE_ASSET_CAP) for t, w in scaled.items()}
             residual = sum(scaled.values()) - sum(capped.values())
-            max_iters = 10
-            for _ in range(max_iters):
+            for _ in range(HRP_WATER_FILL_MAX_ITERS):
                 if residual <= 1e-9:
                     break
-                non_capped = [t for t, w in capped.items() if w < 0.20 - 1e-9]
+                non_capped = [t for t, w in capped.items() if w < SINGLE_ASSET_CAP - 1e-9]
                 if not non_capped:
                     # All assets at cap — bucket target unreachable; accept partial fill.
                     # Final normalization absorbs the shortfall across all buckets.
+                    # Stage 3 audit Task 3: 가시화.
+                    logger.warning(
+                        "HRP: bucket %s 의 모든 자산이 cap 도달 — target=%.3f, "
+                        "실제=%.3f (shortfall=%.3f)",
+                        bucket, pool_target, sum(capped.values()), residual,
+                    )
+                    bucket_shortfalls.append({
+                        "bucket": bucket,
+                        "pool_target": float(pool_target),
+                        "actual": float(sum(capped.values())),
+                        "shortfall": float(residual),
+                        "n_assets_capped": len(capped),
+                    })
                     break
                 share = residual / len(non_capped)
                 for t in non_capped:
-                    room = 0.20 - capped[t]
+                    room = SINGLE_ASSET_CAP - capped[t]
                     add = min(share, room)
                     capped[t] += add
                 residual = sum(scaled.values()) - sum(capped.values())
@@ -597,9 +617,16 @@ def _hrp_per_bucket(
             final.update(capped)
 
     total = sum(final.values())
+    final_norm_intervened = False
     if total > 0 and abs(total - 1.0) > 1e-9:
         # Iterative water-filling normalization: distribute 1.0 across all assets
-        # while respecting the 0.20 per-asset cap.
+        # while respecting the SINGLE_ASSET_CAP per-asset cap. 발동되면 bucket
+        # target 일부 미충족 — Stage 3 audit Task 3 가시화 대상.
+        final_norm_intervened = True
+        logger.info(
+            "HRP final normalization: sum=%.6f ≠ 1.0 → water-fill redistribute",
+            total,
+        )
         target_total = 1.0
         remaining = target_total
         normalized: dict[str, float] = {}
@@ -608,10 +635,10 @@ def _hrp_per_bucket(
         raw_total = sum(raw.values())
         # Scale proportionally first, then iteratively clip and redistribute.
         scaled_raw = {t: w / raw_total for t, w in raw.items()}
-        for _ in range(20):
-            capped_tickers = [t for t in uncapped if scaled_raw[t] >= 0.20 - 1e-9]
+        for _ in range(HRP_WATER_FILL_MAX_ITERS):
+            capped_tickers = [t for t in uncapped if scaled_raw[t] >= SINGLE_ASSET_CAP - 1e-9]
             for t in capped_tickers:
-                normalized[t] = min(scaled_raw[t], 0.20)
+                normalized[t] = min(scaled_raw[t], SINGLE_ASSET_CAP)
                 uncapped.remove(t)
             if not capped_tickers:
                 for t in uncapped:
@@ -630,8 +657,15 @@ def _hrp_per_bucket(
                 normalized[t] = scaled_raw[t]
         final = normalized
 
-    assert all(w <= 0.20 + 1e-6 for w in final.values()), \
-        "HRP-per-bucket post-condition: 20% cap violated"
+    if attribution is not None:
+        if bucket_shortfalls:
+            attribution["hrp_bucket_shortfalls"] = bucket_shortfalls
+        attribution["hrp_final_norm_intervened"] = final_norm_intervened
+
+    violators = [(t, w) for t, w in final.items() if w > SINGLE_ASSET_CAP + 1e-6]
+    assert not violators, (
+        f"HRP-per-bucket post-condition: {SINGLE_ASSET_CAP*100:.0f}% cap violated: {violators}"
+    )
 
     return WeightVector(
         method=OptimizationMethod.HRP,
