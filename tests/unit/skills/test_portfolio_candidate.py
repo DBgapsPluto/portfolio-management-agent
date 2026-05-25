@@ -369,3 +369,68 @@ def test_select_skips_unlisted_etf_for_past_as_of():
     )
     assert "A069500" in candidates.bucket_to_tickers["kr_equity"]
     assert "A999999" not in candidates.bucket_to_tickers["kr_equity"]
+
+
+# ---------- Stage 3: cluster-aware integration ----------
+
+
+def test_select_threads_clusters_for_within_group_impl():
+    """clusters 제공 시 그룹 내 대표는 impl(=AUM proxy) 기준."""
+    from tradingagents.schemas.technical import Cluster
+    universe = Universe(version="t", etfs=[
+        # A1/A2 대체재 (큰/작은 AUM), B 별도 노출
+        ETFEntry(ticker="A111111", name="A1", aum_krw=10e12,
+                 underlying_index="x", bucket="위험", category="국내주식_지수"),
+        ETFEntry(ticker="A222222", name="A2", aum_krw=1e12,
+                 underlying_index="x", bucket="위험", category="국내주식_지수"),
+        ETFEntry(ticker="A333333", name="B", aum_krw=5e12,
+                 underlying_index="x", bucket="위험", category="국내주식_지수"),
+    ])
+    target = BucketTarget(
+        kr_equity=1.0, global_equity=0, fx_commodity=0, bond=0, cash_mmf=0,
+        rationale="t",
+    )
+    tickers = ["A111111", "A222222", "A333333"]
+    returns = _synthetic_returns(tickers)
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    panel = _trivial_panel(tickers, aum_lookup)
+    clusters = [Cluster(
+        cluster_id="c1", members=["A111111", "A222222"],
+        avg_internal_correlation=0.95, category_label="dup",
+    )]
+    cs = select_etf_candidates(
+        universe, target, as_of=date(2026, 5, 10),
+        returns=returns, factor_panel=panel,
+        per_bucket_n=2, clusters=clusters,
+    )
+    chosen = cs.bucket_to_tickers["kr_equity"]
+    # A2(작은 AUM) 탈락, A1 또는 B + 다른 그룹
+    assert len(chosen) == 2
+    assert "A222222" not in chosen  # 그룹 내 큰 AUM 우대 → A111111 대표
+    assert "A111111" in chosen
+    assert "A333333" in chosen
+
+
+def test_select_backward_compat_without_clusters():
+    """clusters None → fallback (corr-based grouping) — 결과는 여전히 n개 채워짐."""
+    universe = Universe(version="t", etfs=[
+        ETFEntry(ticker="A111111", name="A", aum_krw=10e12, underlying_index="x",
+                 bucket="위험", category="국내주식_지수"),
+        ETFEntry(ticker="A222222", name="B", aum_krw=8e12, underlying_index="x",
+                 bucket="위험", category="국내주식_지수"),
+        ETFEntry(ticker="A333333", name="C", aum_krw=6e12, underlying_index="x",
+                 bucket="위험", category="국내주식_지수"),
+    ])
+    target = BucketTarget(
+        kr_equity=1.0, global_equity=0, fx_commodity=0, bond=0, cash_mmf=0,
+        rationale="t",
+    )
+    tickers = ["A111111", "A222222", "A333333"]
+    returns = _synthetic_returns(tickers)
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    panel = _trivial_panel(tickers, aum_lookup)
+    cs = select_etf_candidates(
+        universe, target, as_of=date(2026, 5, 10),
+        returns=returns, factor_panel=panel, per_bucket_n=2,
+    )
+    assert len(cs.bucket_to_tickers["kr_equity"]) == 2
