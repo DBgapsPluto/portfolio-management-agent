@@ -137,3 +137,69 @@ def test_method_picker_overheating_low_conviction_downgrade():
     )
     # method_picker.py line 82-84: low conviction + HRP → RISK_PARITY 격하
     assert out.method == OptimizationMethod.RISK_PARITY
+
+
+# ---------- Stage 3 audit (2026-05-26): degraded_inputs strict mode ----------
+
+
+def test_degraded_inputs_forces_min_variance():
+    """Stage 3 audit Task 0: regime + systemic 둘 다 sentinel → MIN_VARIANCE 강제.
+
+    Stage 1 (Task 0) sentinel guard 의 propagation 끝지점. macro_quant /
+    market_risk 가 fetch 실패로 staleness=99 객체 만들면 → allocator 가
+    degraded_inputs=True 전달 → method_picker rule 0 발동.
+    """
+    out = pick_optimization_method(
+        regime_quadrant="growth_disinflation",
+        regime_confidence=0.5,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        research_decision=_decision("goldilocks", "medium"),
+        degraded_inputs=True,
+        regime_staleness=99,
+        systemic_staleness=99,
+    )
+    assert out.method == OptimizationMethod.MIN_VARIANCE
+    assert out.rule_fired == "degraded_inputs_strict"
+    assert out.rule_index == 0
+    assert "sentinel" in out.reasoning
+    assert out.inputs["degraded_inputs"] is True
+    assert out.inputs["regime_staleness"] == 99
+    assert out.inputs["systemic_staleness"] == 99
+
+
+def test_normal_staleness_does_not_trigger_strict_mode():
+    """정상 stale (1-7d) 은 통과 — 둘 다 ≥99 일 때만 발동."""
+    out = pick_optimization_method(
+        regime_quadrant="growth_disinflation",
+        regime_confidence=0.8,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        research_decision=_decision("goldilocks", "medium"),
+        degraded_inputs=False,  # 정상 입력
+        regime_staleness=3,
+        systemic_staleness=2,
+    )
+    # goldilocks → HRP
+    assert out.method == OptimizationMethod.HRP
+    assert out.rule_fired == "scenario_mapping"
+
+
+def test_low_conviction_downgrade_attribution():
+    """Stage 3 audit Task 2: HRP→RISK_PARITY downgrade 시 inputs_trace 기록."""
+    out = pick_optimization_method(
+        regime_quadrant="growth_disinflation",
+        systemic_score=5.0,
+        research_decision=_decision("goldilocks", "low"),  # HRP → downgrade
+    )
+    assert out.method == OptimizationMethod.RISK_PARITY
+    assert out.inputs.get("downgraded_from_hrp") is True
+
+
+def test_named_const_present():
+    """Stage 3 audit Task 0/2: SYSTEMIC_EXTREME_THRESHOLD const 존재."""
+    from tradingagents.skills.portfolio import method_picker as mp
+    assert hasattr(mp, "SYSTEMIC_EXTREME_THRESHOLD")
+    assert mp.SYSTEMIC_EXTREME_THRESHOLD == 8.0
+    assert hasattr(mp, "LOW_CONVICTION_HRP_DOWNGRADE")
+    assert mp.LOW_CONVICTION_HRP_DOWNGRADE is True
