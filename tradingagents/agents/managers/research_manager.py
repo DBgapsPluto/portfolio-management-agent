@@ -57,6 +57,23 @@ CONVICTION_MED_MAG: float = 2.0          # 평균 |z|≈0.22 (절반 factor 가 
 CONVICTION_HIGH_ALIGN: float = 0.6       # 3 중 2 동의 (3-factor sign vote)
 CONVICTION_MED_ALIGN: float = 0.3        # 3 중 1 동의
 
+# Backtest prep (2026-05-26): scenario hysteresis — z-score 가 threshold 직전·직후
+# 에서 진동하면 scenario jump → portfolio 출렁임 → backtest noise. prior decision
+# 의 scenario 가 relaxed entry zone (threshold - band) 안에 있으면 유지.
+#
+# Priority 의 의미: 낮은 숫자 = 더 urgent state. 더 urgent 로 전환은 hysteresis 무시
+# (즉시 switch). 같거나 덜 urgent 로 전환만 hysteresis 적용 (premature exit 방지).
+SCENARIO_HYSTERESIS_BAND: float = 0.05   # ±5% z-score deadband
+SCENARIO_PRIORITY: dict[str, int] = {
+    "global_credit":   1,   # 가장 urgent (극단 stress)
+    "kr_stress":       2,
+    "kr_boom":         3,
+    "broad_recession": 4,
+    "stagflation":     5,
+    "overheating":     6,
+    "goldilocks":      7,   # default (가장 benign)
+}
+
 
 def _blend_factors_with_prior(
     new: FactorScores,
@@ -88,10 +105,64 @@ def _blend_factors_with_prior(
     )
 
 
-def derive_dominant_scenario(factor_scores: FactorScores) -> str:
-    """Legacy compat — deterministic mapping factor z → 7 scenario name.
+def _strict_classify_scenario(
+    f1: float, f2: float, f5: float, f6: float, f7: float,
+    offset: float = 0.0,
+) -> str:
+    """Strict scenario classification — entry threshold + offset 으로 평가.
 
-    Priority:
+    offset=0 → 정상 (entry) 검사. offset<0 → relaxed (exit) 검사 (hysteresis 용).
+    예: offset=-0.05 → threshold 가 0.5-(-0.05)*sign(threshold)=... 가 아니라
+    "threshold 의 magnitude 를 0.05 줄임" — entry 시 0.5 필요했던 게 0.45 만 필요.
+    """
+    cycle = SCENARIO_CYCLE_THRESHOLD + offset
+    kr = SCENARIO_KR_THRESHOLD + offset
+    kr_corr = SCENARIO_KR_CORROBORATE + offset
+    vol = SCENARIO_VOL_THRESHOLD + offset
+    credit = SCENARIO_CREDIT_THRESHOLD + offset
+
+    if f7 > vol and f5 > credit:
+        return "global_credit"
+    if f6 > kr:
+        if f5 > kr_corr or f7 > kr_corr:
+            return "kr_stress"
+        return "kr_boom"
+    if f6 < -kr:
+        return "kr_boom"
+
+    if f1 > cycle and f2 > cycle:
+        return "overheating"
+    if f1 > cycle and f2 < -cycle:
+        return "goldilocks"
+    if f1 < -cycle and f2 > cycle:
+        return "stagflation"
+    if f1 < -cycle and f2 < -cycle:
+        return "broad_recession"
+    return "goldilocks"
+
+
+def _is_in_scenario_relaxed(
+    f1: float, f2: float, f5: float, f6: float, f7: float,
+    target_scenario: str, band: float,
+) -> bool:
+    """target_scenario 의 relaxed entry 조건 (threshold - band) 을 만족하는가."""
+    relaxed_classification = _strict_classify_scenario(
+        f1, f2, f5, f6, f7, offset=-band,
+    )
+    # 핵심 점검: relaxed offset 이면 같은 scenario 분류로 떨어지는가.
+    # _strict_classify 의 priority 가 있으므로, relaxed 에서 같은 결과 → 여전히
+    # entry zone (band 안) 에 있음.
+    return relaxed_classification == target_scenario
+
+
+def derive_dominant_scenario(
+    factor_scores: FactorScores,
+    prior_scenario: str | None = None,
+    hysteresis_band: float = SCENARIO_HYSTERESIS_BAND,
+) -> str:
+    """Deterministic mapping factor z → 7 scenario name + optional hysteresis.
+
+    Priority (가장 urgent 부터):
       1. F7 > VOL_THRESHOLD AND F5 > CREDIT_THRESHOLD → "global_credit"
       2. F6 > KR_THRESHOLD → "kr_stress" (if F5/F7 > KR_CORROBORATE) else "kr_boom"
       3. F6 < -KR_THRESHOLD → "kr_boom"
@@ -100,9 +171,10 @@ def derive_dominant_scenario(factor_scores: FactorScores) -> str:
          F1<-, F2>+ → "stagflation"     | F1<-, F2<- → "broad_recession"
       5. default → "goldilocks"
 
-    Stage 2 audit (Task 1): hysteresis 없음. z 가 threshold 의 미세한 어느 한 쪽에
-    있으면 scenario 가 바로 jump. 운영 시 매 run 의 미세 변화로 시나리오 불안정
-    가능 — 영향 통합 테스트로 확인. hysteresis 도입은 별도 PR.
+    Hysteresis (2026-05-26 backtest prep): prior_scenario 가 있으면 z 가
+    threshold 직전·직후 fluctuation 으로 scenario jump 방지.
+    - 더 urgent (낮은 priority 숫자) 로 전환은 hysteresis 무시 → 즉시 switch
+    - 같거나 덜 urgent 로 전환은 prior 가 relaxed entry zone 안에 있으면 유지
     """
     f1 = factor_scores.growth_surprise.z_score
     f2 = factor_scores.inflation_surprise.z_score
@@ -110,24 +182,24 @@ def derive_dominant_scenario(factor_scores: FactorScores) -> str:
     f6 = factor_scores.krw_regime.z_score
     f7 = factor_scores.equity_vol_regime.z_score
 
-    if f7 > SCENARIO_VOL_THRESHOLD and f5 > SCENARIO_CREDIT_THRESHOLD:
-        return "global_credit"
-    if f6 > SCENARIO_KR_THRESHOLD:
-        if f5 > SCENARIO_KR_CORROBORATE or f7 > SCENARIO_KR_CORROBORATE:
-            return "kr_stress"
-        return "kr_boom"
-    if f6 < -SCENARIO_KR_THRESHOLD:
-        return "kr_boom"
+    new_scenario = _strict_classify_scenario(f1, f2, f5, f6, f7)
 
-    if f1 > SCENARIO_CYCLE_THRESHOLD and f2 > SCENARIO_CYCLE_THRESHOLD:
-        return "overheating"
-    if f1 > SCENARIO_CYCLE_THRESHOLD and f2 < -SCENARIO_CYCLE_THRESHOLD:
-        return "goldilocks"
-    if f1 < -SCENARIO_CYCLE_THRESHOLD and f2 > SCENARIO_CYCLE_THRESHOLD:
-        return "stagflation"
-    if f1 < -SCENARIO_CYCLE_THRESHOLD and f2 < -SCENARIO_CYCLE_THRESHOLD:
-        return "broad_recession"
-    return "goldilocks"
+    if prior_scenario is None or prior_scenario == new_scenario:
+        return new_scenario
+
+    # 다른 scenario 로 전환 후보. priority 비교.
+    new_priority = SCENARIO_PRIORITY.get(new_scenario, 99)
+    prior_priority = SCENARIO_PRIORITY.get(prior_scenario, 99)
+
+    if new_priority < prior_priority:
+        # 더 urgent state 로 전환 — 즉시 switch (hysteresis 무시).
+        return new_scenario
+
+    # 같거나 덜 urgent — hysteresis 적용.
+    # prior_scenario 가 relaxed entry zone (band 감소된 threshold) 안에 있으면 유지.
+    if _is_in_scenario_relaxed(f1, f2, f5, f6, f7, prior_scenario, hysteresis_band):
+        return prior_scenario
+    return new_scenario
 
 
 def derive_conviction(factor_scores: FactorScores) -> str:
@@ -198,8 +270,35 @@ def create_research_manager(deep_llm):
             factor_scores.to_dict()
         )
 
-        # 4. Legacy compat fields
-        dominant_scenario = derive_dominant_scenario(factor_scores)
+        # 4. Legacy compat fields — scenario hysteresis 적용 (backtest prep).
+        prior_scenario = (
+            getattr(prior_decision, "dominant_scenario", None)
+            if prior_decision is not None else None
+        )
+        dominant_scenario = derive_dominant_scenario(
+            factor_scores, prior_scenario=prior_scenario,
+        )
+        if prior_scenario and prior_scenario != dominant_scenario:
+            logger.info(
+                "research_manager: scenario transition %s → %s (priority %d → %d)",
+                prior_scenario, dominant_scenario,
+                SCENARIO_PRIORITY.get(prior_scenario, 99),
+                SCENARIO_PRIORITY.get(dominant_scenario, 99),
+            )
+        elif prior_scenario and prior_scenario == dominant_scenario:
+            # Hysteresis 가 발동했을 수 있음 (strict 와 결과 비교).
+            strict_new = _strict_classify_scenario(
+                factor_scores.growth_surprise.z_score,
+                factor_scores.inflation_surprise.z_score,
+                factor_scores.credit_cycle.z_score,
+                factor_scores.krw_regime.z_score,
+                factor_scores.equity_vol_regime.z_score,
+            )
+            if strict_new != dominant_scenario:
+                logger.info(
+                    "research_manager: hysteresis held — strict=%s vs maintained=%s",
+                    strict_new, dominant_scenario,
+                )
         conviction = derive_conviction(factor_scores)
         logger.info(
             "research_manager: scenario=%s, conviction=%s, "

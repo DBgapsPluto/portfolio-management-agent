@@ -908,3 +908,101 @@ def test_factor_to_bucket_cap_hits_diagnostic() -> None:
         f"extreme F1=5.0 에서 적어도 1 cap hit 기대 (cap_hits={diag['cap_hits']})"
     )
     assert diag["extreme_factor_active"] is True
+
+
+# ---------- Backtest prep (2026-05-26) ----------
+
+
+def test_scenario_hysteresis_prevents_jump_at_threshold():
+    """Backtest prep #1: prior_scenario='overheating' (F1>0.5, F2>0.5) 일 때
+    F1 = 0.46 (band 안) 으로 떨어져도 overheating 유지 검증.
+
+    Stage 2 audit Task 5 의 test_scenario_threshold_no_hysteresis 와 짝.
+    이전 test 는 hysteresis 부재 입증, 이번 test 는 hysteresis 정상 작동 입증.
+    """
+    from tradingagents.agents.managers.research_manager import (
+        SCENARIO_CYCLE_THRESHOLD, SCENARIO_HYSTERESIS_BAND,
+        derive_dominant_scenario,
+    )
+    from tradingagents.skills.research.factor_estimators import (
+        FactorScore, FactorScores,
+    )
+
+    def _make_scores(f1: float, f2: float) -> FactorScores:
+        def _fs(name: str, z: float) -> FactorScore:
+            return FactorScore(
+                name=name, z_score=z, components={}, component_weights={},
+                confidence=1.0, interpretation="",
+            )
+        return FactorScores(
+            growth_surprise=_fs("F1_growth", f1),
+            inflation_surprise=_fs("F2_inflation", f2),
+            real_rate=_fs("F3_real_rate", 0.0),
+            term_premium=_fs("F4_term_premium", 0.0),
+            credit_cycle=_fs("F5_credit_cycle", 0.0),
+            krw_regime=_fs("F6_krw_regime", 0.0),
+            equity_vol_regime=_fs("F7_equity_vol_regime", 0.0),
+            valuation=_fs("F8_valuation", 0.0),
+            liquidity_regime=_fs("F9_liquidity_regime", 0.0),
+        )
+
+    # threshold = 0.5, band = 0.05. 정상 entry: f1>0.5 AND f2>0.5 → overheating.
+    just_below_entry = _make_scores(
+        f1=SCENARIO_CYCLE_THRESHOLD - 0.04,   # 0.46 (band 안)
+        f2=SCENARIO_CYCLE_THRESHOLD + 0.01,
+    )
+
+    # prior 없으면: 0.46 < 0.5 → goldilocks (default)
+    no_prior = derive_dominant_scenario(just_below_entry, prior_scenario=None)
+    assert no_prior == "goldilocks"
+
+    # prior=overheating 이면: hysteresis 발동 — relaxed threshold (0.45) 까지는
+    # 유지. 0.46 > 0.45 → overheating 유지.
+    with_prior = derive_dominant_scenario(
+        just_below_entry, prior_scenario="overheating",
+        hysteresis_band=SCENARIO_HYSTERESIS_BAND,
+    )
+    assert with_prior == "overheating", (
+        f"hysteresis 발동 기대 (0.46 ∈ [0.45, 0.5] band), got {with_prior}"
+    )
+
+    # band 밖 (0.40) — hysteresis 도 잡지 못함 → overheating 탈출.
+    way_below = _make_scores(
+        f1=SCENARIO_CYCLE_THRESHOLD - 0.10,
+        f2=SCENARIO_CYCLE_THRESHOLD + 0.01,
+    )
+    exited = derive_dominant_scenario(way_below, prior_scenario="overheating")
+    assert exited == "goldilocks"
+
+
+def test_scenario_hysteresis_allows_immediate_upgrade_to_urgent():
+    """Backtest prep #1: prior=goldilocks 이고 F7+F5 가 globalcredit 진입 시
+    hysteresis 무시 + 즉시 switch (더 urgent state 로는 항상 즉시 전환).
+    """
+    from tradingagents.agents.managers.research_manager import (
+        derive_dominant_scenario,
+    )
+    from tradingagents.skills.research.factor_estimators import (
+        FactorScore, FactorScores,
+    )
+
+    def _fs(name: str, z: float) -> FactorScore:
+        return FactorScore(
+            name=name, z_score=z, components={}, component_weights={},
+            confidence=1.0, interpretation="",
+        )
+    scores = FactorScores(
+        growth_surprise=_fs("F1_growth", 0.0),
+        inflation_surprise=_fs("F2_inflation", 0.0),
+        real_rate=_fs("F3_real_rate", 0.0),
+        term_premium=_fs("F4_term_premium", 0.0),
+        credit_cycle=_fs("F5_credit_cycle", 2.0),   # > 1.0
+        krw_regime=_fs("F6_krw_regime", 0.0),
+        equity_vol_regime=_fs("F7_equity_vol_regime", 2.0),  # > 1.5
+        valuation=_fs("F8_valuation", 0.0),
+        liquidity_regime=_fs("F9_liquidity_regime", 0.0),
+    )
+    out = derive_dominant_scenario(scores, prior_scenario="goldilocks")
+    assert out == "global_credit", (
+        "더 urgent state 로 전환은 hysteresis 무시 (즉시 switch) 기대"
+    )
