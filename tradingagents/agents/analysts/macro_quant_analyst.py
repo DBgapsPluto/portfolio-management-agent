@@ -62,6 +62,15 @@ IRON_ORE_LOOKBACK_DAYS: int = 200       # 6-7mo for momentum proxy
 FOREIGN_FLOW_LOOKBACK_DAYS: int = 60    # 2mo for 20d net buy aggregate
 CALENDAR_LOOKAHEAD_DAYS: int = 90       # CB calendar horizon
 
+# Backtest prep (2026-05-26, #2): sentinel ratio gate for classify_regime LLM.
+# 입력 snapshot 의 절반 이상이 sentinel(staleness=99) 이면 LLM 호출 자체 skip +
+# 안전 default regime (low confidence, staleness=99 마킹) 반환.
+# Historical backtest 시 데이터 결측이 많은 분기에 LLM 이 placeholder 값 (BSI=100,
+# CFNAI=0 등)으로 잘못된 regime 결정하는 것 방지.
+SENTINEL_RATIO_SKIP_LLM: float = 0.5    # 50% 이상 sentinel → LLM skip
+DEGRADED_REGIME_DEFAULT: str = "growth_disinflation"  # neutral default (다른 분기로 silent 이동 방지)
+DEGRADED_REGIME_CONFIDENCE: float = 0.1   # 매우 낮은 confidence — method_picker 가 보수적 결정 유도
+
 
 NARRATIVE_PROMPT = """\
 You are summarizing a macro snapshot for an asset-allocation team.
@@ -481,67 +490,95 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             ]
         }
         n_sentinels = sum(_sentinel_inventory.values())
+        total_snapshots = len(_sentinel_inventory)
+        sentinel_ratio = n_sentinels / total_snapshots if total_snapshots else 0.0
         if n_sentinels > 0:
             stale_names = [k for k, v in _sentinel_inventory.items() if v]
             logger.warning(
-                "macro_quant: %d/%d snapshots are sentinels (fetch failed): %s — "
+                "macro_quant: %d/%d snapshots are sentinels (ratio=%.2f, fetch failed): %s — "
                 "regime classifier may interpret placeholder values as live data",
-                n_sentinels, len(_sentinel_inventory), stale_names,
+                n_sentinels, total_snapshots, sentinel_ratio, stale_names,
             )
 
-        regime: RegimeClassification = classify_regime(
-            quick_llm, deep_llm,
-            spread_10y_2y_bps=yc.spread_10y_2y_bps,
-            inverted_days_count=yc.inverted_days_count,
-            cpi_yoy=infl.cpi_yoy,
-            momentum_3mo=infl.momentum_3mo,
-            accelerating=infl.accelerating,
-            # PCE 는 결측 시 None — LLM 에 "n/a" 로 전달해 0.0 (디플레) 와 구분.
-            core_pce_yoy=infl.core_pce_yoy if infl.core_pce_yoy is not None else "n/a",
-            core_pce_3mo_ann=infl.pce_momentum_3mo if infl.pce_momentum_3mo is not None else "n/a",
-            unemployment_rate=emp.unemployment_rate,
-            sahm_rule_triggered=emp.sahm_rule_triggered,
-            jolts_openings_3mo=emp.job_openings_3mo_avg,
-            jolts_quits_rate=emp.quits_rate,
-            jolts_quits_change_6mo=emp.quits_rate_change_6mo,
-            # Tier-1 신규 inputs
-            kr_export_yoy=kr_export.yoy_pct,
-            kr_export_accelerating=kr_export.accelerating,
-            kr_cli_value=kr_leading.cli_value,
-            kr_cli_phase=kr_leading.phase,
-            kr_bsi_mfg=kr_bsi.mfg_bsi,
-            kr_bsi_contraction=kr_bsi.contraction_signal,
-            us_cfnai_ma3=us_leading.cfnai_ma3,
-            us_recession_signal=us_leading.recession_signal,
-            us_gdp_nowcast=gdp_nowcast.nowcast_pct,
-            # Tier-2 신규 inputs
-            us_nfci=fci.nfci,
-            us_nfci_regime=fci.regime,
-            us_nfci_tightening=fci.tightening,
-            us_breakeven_5y5y=inflation_exp.breakeven_5y5y,
-            us_michigan_1y=inflation_exp.michigan_1y,
-            us_inflation_anchored=inflation_exp.anchored,
-            fed_path_bps=fed_path.path_bps,
-            fed_market_view=fed_path.market_view,
-            # Tier-3 신규 inputs
-            usd_krw=fx.usd_krw,
-            krw_change_1m=fx.krw_change_1m_pct,
-            fx_regime=fx.regime,
-            copper_gold_signal=risk_appetite.signal,
-            copper_gold_percentile=risk_appetite.ratio_percentile_5y,
-            china_cli_value=china_leading.cli_value,
-            china_cli_phase=china_leading.phase,
-            china_usdcnh=china_leading.usdcnh,
-            china_usdcnh_change_1m=china_leading.usdcnh_change_1m_pct,
-            china_iron_ore_change_3m=china_leading.iron_ore_change_3m_pct,
-            china_realtime_signal=china_leading.realtime_signal,
-            foreign_flow_20d_krw=foreign_flow.net_20d_krw,
-            foreign_flow_signal=foreign_flow.signal,
-            # Tier-4 신규 inputs (EPU 2026-05 DEPRECATED — VIX/credit/SKEW이 우월)
-            vvix=tail_risk.vvix,
-            move=tail_risk.move,
-            tail_risk_signal=tail_risk.signal,
-        )
+        # Backtest prep (2026-05-26, #2): sentinel ratio ≥ 임계값이면 LLM skip.
+        # historical 데이터 결측이 많은 분기에 LLM 이 placeholder 값으로 잘못된
+        # regime 결정 방지. Stage 3 audit Task 0 의 degraded_inputs 와 연계 —
+        # regime.staleness=99 마킹 시 systemic 도 함께 degraded 면 strict MIN_VAR.
+        if sentinel_ratio >= SENTINEL_RATIO_SKIP_LLM:
+            logger.warning(
+                "macro_quant: sentinel_ratio=%.2f ≥ %.2f → classify_regime LLM skip, "
+                "safe default regime='%s' (confidence=%.2f, staleness=99)",
+                sentinel_ratio, SENTINEL_RATIO_SKIP_LLM,
+                DEGRADED_REGIME_DEFAULT, DEGRADED_REGIME_CONFIDENCE,
+            )
+            regime = RegimeClassification(
+                quadrant=DEGRADED_REGIME_DEFAULT,
+                confidence=DEGRADED_REGIME_CONFIDENCE,
+                drivers=[
+                    f"sentinel_ratio={sentinel_ratio:.2f} ≥ {SENTINEL_RATIO_SKIP_LLM}",
+                    f"LLM skip — {n_sentinels}/{total_snapshots} snapshots fetch failed",
+                ],
+                reasoning=(
+                    f"degraded run: {n_sentinels}/{total_snapshots} sentinel snapshots. "
+                    f"safe default to {DEGRADED_REGIME_DEFAULT}, low confidence."
+                )[:300],
+                source_date=as_of,
+                staleness_days=99,
+            )
+        else:
+            regime: RegimeClassification = classify_regime(
+                quick_llm, deep_llm,
+                spread_10y_2y_bps=yc.spread_10y_2y_bps,
+                inverted_days_count=yc.inverted_days_count,
+                cpi_yoy=infl.cpi_yoy,
+                momentum_3mo=infl.momentum_3mo,
+                accelerating=infl.accelerating,
+                # PCE 는 결측 시 None — LLM 에 "n/a" 로 전달해 0.0 (디플레) 와 구분.
+                core_pce_yoy=infl.core_pce_yoy if infl.core_pce_yoy is not None else "n/a",
+                core_pce_3mo_ann=infl.pce_momentum_3mo if infl.pce_momentum_3mo is not None else "n/a",
+                unemployment_rate=emp.unemployment_rate,
+                sahm_rule_triggered=emp.sahm_rule_triggered,
+                jolts_openings_3mo=emp.job_openings_3mo_avg,
+                jolts_quits_rate=emp.quits_rate,
+                jolts_quits_change_6mo=emp.quits_rate_change_6mo,
+                # Tier-1 신규 inputs
+                kr_export_yoy=kr_export.yoy_pct,
+                kr_export_accelerating=kr_export.accelerating,
+                kr_cli_value=kr_leading.cli_value,
+                kr_cli_phase=kr_leading.phase,
+                kr_bsi_mfg=kr_bsi.mfg_bsi,
+                kr_bsi_contraction=kr_bsi.contraction_signal,
+                us_cfnai_ma3=us_leading.cfnai_ma3,
+                us_recession_signal=us_leading.recession_signal,
+                us_gdp_nowcast=gdp_nowcast.nowcast_pct,
+                # Tier-2 신규 inputs
+                us_nfci=fci.nfci,
+                us_nfci_regime=fci.regime,
+                us_nfci_tightening=fci.tightening,
+                us_breakeven_5y5y=inflation_exp.breakeven_5y5y,
+                us_michigan_1y=inflation_exp.michigan_1y,
+                us_inflation_anchored=inflation_exp.anchored,
+                fed_path_bps=fed_path.path_bps,
+                fed_market_view=fed_path.market_view,
+                # Tier-3 신규 inputs
+                usd_krw=fx.usd_krw,
+                krw_change_1m=fx.krw_change_1m_pct,
+                fx_regime=fx.regime,
+                copper_gold_signal=risk_appetite.signal,
+                copper_gold_percentile=risk_appetite.ratio_percentile_5y,
+                china_cli_value=china_leading.cli_value,
+                china_cli_phase=china_leading.phase,
+                china_usdcnh=china_leading.usdcnh,
+                china_usdcnh_change_1m=china_leading.usdcnh_change_1m_pct,
+                china_iron_ore_change_3m=china_leading.iron_ore_change_3m_pct,
+                china_realtime_signal=china_leading.realtime_signal,
+                foreign_flow_20d_krw=foreign_flow.net_20d_krw,
+                foreign_flow_signal=foreign_flow.signal,
+                # Tier-4 신규 inputs (EPU 2026-05 DEPRECATED — VIX/credit/SKEW이 우월)
+                vvix=tail_risk.vvix,
+                move=tail_risk.move,
+                tail_risk_signal=tail_risk.signal,
+            )
 
         narrative_prompt = NARRATIVE_PROMPT.format(
             regime_quadrant=regime.quadrant, confidence=regime.confidence,

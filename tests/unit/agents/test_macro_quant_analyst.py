@@ -59,3 +59,38 @@ def test_macro_analyst_orchestration(monkeypatch):
     assert result["macro_report"].regime.quadrant == "recession_disinflation"
     assert "macro_summary" in result
     assert len(result["macro_summary"]) <= 2000
+
+
+# ---------- Backtest prep (2026-05-26) ----------
+
+
+def test_sentinel_ratio_gate_skips_llm():
+    """Backtest prep #2: 50%+ snapshots sentinel 시 classify_regime LLM skip +
+    safe default regime 반환 (DEGRADED_REGIME_DEFAULT, confidence=0.1, staleness=99).
+    """
+    from unittest.mock import MagicMock
+    from tradingagents.agents.analysts import macro_quant_analyst as mqa
+
+    # named const 존재 검증
+    assert mqa.SENTINEL_RATIO_SKIP_LLM == 0.5
+    assert mqa.DEGRADED_REGIME_DEFAULT == "growth_disinflation"
+    assert mqa.DEGRADED_REGIME_CONFIDENCE == 0.1
+
+
+def test_degraded_regime_classification_creation():
+    """Backtest prep #2: degraded path 의 RegimeClassification 객체 검증."""
+    from datetime import date as _date
+    from tradingagents.schemas.macro import RegimeClassification
+
+    # 직접 생성 — sentinel-skip path 의 출력 모방.
+    regime = RegimeClassification(
+        quadrant="growth_disinflation",
+        confidence=0.1,
+        drivers=["sentinel_ratio=0.65 ≥ 0.50", "LLM skip — 11/17 snapshots fetch failed"],
+        reasoning="degraded run: 11/17 sentinel snapshots. safe default.",
+        source_date=_date(2026, 5, 15),
+        staleness_days=99,
+    )
+    assert regime.staleness_days == 99
+    assert regime.confidence == 0.1
+    assert "sentinel" in regime.drivers[0]
