@@ -47,3 +47,14 @@ def test_z_score_sd_zero_returns_none() -> None:
     finally:
         fb.LONG_RUN_BASELINE.clear()
         fb.LONG_RUN_BASELINE.update(orig)
+
+
+def test_geopolitical_surge_baseline_within_normal_range() -> None:
+    """2026-05-26 F7 saturate fix (#1): geopolitical_surge baseline (5, 10).
+
+    실측 raw=25 (24h count vs 7d avg delta) → z=2.0. 기존 (0, 1) baseline 은
+    z=25 outlier 로 F7 단독 saturate 시켰음. 재발 방지.
+    """
+    z = z_score(25.0, "F7_equity_vol", "geopolitical_surge")
+    assert z is not None
+    assert 1.5 <= z <= 2.5, f"expected ~2.0, got {z}"

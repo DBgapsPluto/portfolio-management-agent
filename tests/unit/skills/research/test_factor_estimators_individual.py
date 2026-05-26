@@ -70,6 +70,42 @@ def test_aggregate_caps_at_plus_3() -> None:
     assert score.z_score == 3.0
 
 
+def test_aggregate_component_level_z_clip() -> None:
+    """2026-05-26 F7 saturate fix (#1): component-level z [-5, +5] clip.
+
+    raw=50 with baseline gdpnow=(2, 2) → z=24. component-level clip 후 5.
+    factor-level _Z_CAP=3 도 최종 적용 → 단독 component 면 +3.0.
+    중요한 건 score.components["gdpnow"] 가 5.0 (clip), 24.0 아님.
+    """
+    components_raw = {"gdpnow": 50.0}
+    weights = {"gdpnow": 1.0}
+    score = _aggregate("F1_growth", components_raw, weights)
+    # component_z 가 clip 됐는지
+    assert score.components["gdpnow"] == pytest.approx(5.0)
+    # 최종 factor z 는 _Z_CAP 적용
+    assert score.z_score == pytest.approx(3.0)
+
+
+def test_aggregate_component_clip_prevents_single_outlier_saturation() -> None:
+    """단일 outlier component 가 다른 정상 component 들 압도 못 함을 검증.
+
+    F7 saturate 시나리오 재현 (baseline mismatch → z=25 outlier):
+    - F1 의 component 1 = raw 가 z=25 나오게 (50, baseline (0, 2))
+    - F1 의 component 2 = 정상 (cfnai z=0)
+    - clip 없으면: 0.5*25 + 0.5*0 = 12.5 → cap +3
+    - clip 있으면: 0.5*5 + 0.5*0 = 2.5 → 정상 magnitude
+    """
+    # gdpnow=50 with baseline (2, 2) → z=24, clip 후 5.0
+    # cfnai=0.5 with baseline → z=1.0
+    components_raw = {"gdpnow": 50.0, "cfnai": 0.5}
+    weights = {"gdpnow": 0.5, "cfnai": 0.5}
+    score = _aggregate("F1_growth", components_raw, weights)
+    # clip 후: (5.0 * 0.5 + 1.0 * 0.5) = 3.0 (마침 cap 닿음 — outlier 영향 여전히 큼)
+    # 하지만 cfnai 신호 (1.0) 가 살아있음을 확인 (score.components 에)
+    assert score.components["gdpnow"] == pytest.approx(5.0)
+    assert score.components["cfnai"] == pytest.approx(1.0)
+
+
 def test_aggregate_caps_at_minus_3() -> None:
     components_raw = {"gdpnow": -10.0}  # z = -6 → cap -3
     weights = {"gdpnow": 1.0}

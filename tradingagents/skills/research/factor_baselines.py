@@ -85,7 +85,13 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     # (delta / hand-coded sd=5.0). Use (0, 1) so factor-level z passes through.
     ("F7_equity_vol", "skew_change"):          (0.0, 1.0),
     ("F7_equity_vol", "sentiment_dispersion"): (0.3, 0.15),
-    ("F7_equity_vol", "geopolitical_surge"):   (0.0, 1.0),
+    # 2026-05-26 F7 saturate fix (#1): raw 는 count delta (24h - 7d_avg).
+    # 실측 5 backtest 시점에서 raw=25 일관 (NEWS_WINDOW 가 24h cover →
+    # prev_7d_avg=0, recent≈25 → delta≈25 정수 범위). baseline (0, 1) 는 ±1
+    # 변동 가정 — 실제 raw 분포 (0~30+) 와 단위 mismatch → z=25 outlier 가
+    # F7 raw_avg 를 단독 cap 까지 끌고 감. (5, 10) 으로 raw 분포에 맞춤:
+    # z(25)=(25-5)/10=2.0 정상 magnitude.
+    ("F7_equity_vol", "geopolitical_surge"):   (5.0, 10.0),
 
     # === F8 valuation ===
     ("F8_valuation", "sp_pe"):           (18.0, 6.0),

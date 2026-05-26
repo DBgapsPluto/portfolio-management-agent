@@ -149,6 +149,14 @@ _RISK_REGIME_MAP: Final[dict[str, float]] = {
 
 _Z_CAP: Final[float] = 3.0
 
+# 2026-05-26 F7 saturate fix (#1): component-level z clip.
+# baseline (mean, sd) 가 raw 분포와 단위 mismatch 시 단일 component z 가 25+
+# 같은 outlier 가 나와서 factor raw_avg 를 단독으로 cap 까지 끌고 감 (예:
+# geopolitical_surge baseline (0,1) vs raw=25 → z=25, F7 raw_avg=+3.75 단독).
+# 모든 9 factor 의 모든 component 에 적용되는 보호 layer. ±5 는 _Z_CAP=±3 보다
+# 한 단계 넓어 정상 신호는 통과 (정상 z 는 |z|<2 가 99% 이상), outlier 만 차단.
+_COMPONENT_Z_CLIP: Final[float] = 5.0
+
 
 # ---------------------- helpers ----------------------
 
@@ -230,6 +238,9 @@ def _aggregate(
         z = z_score(float(raw), factor_name, name)
         if z is None:
             continue
+        # 2026-05-26 F7 saturate fix (#1): component-level outlier clip.
+        # 단일 component 가 25+ z 같은 outlier 로 raw_avg 단독 cap 못 끌게.
+        z = max(-_COMPONENT_Z_CLIP, min(_COMPONENT_Z_CLIP, z))
         component_z[name] = z
         used_original_weights[name] = w
 
