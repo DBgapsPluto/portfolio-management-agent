@@ -9,7 +9,7 @@ import pytest
 
 from tradingagents.agents.allocator.portfolio_allocator import (
     create_portfolio_allocator, _hrp_per_bucket, _build_sector_mapper_and_bounds,
-    _apply_min_weight_threshold,
+    _apply_min_weight_threshold, _apply_subcategory_cap,
 )
 from tradingagents.dataflows.universe import sync_from_xlsx
 from tradingagents.schemas.portfolio import (
@@ -289,3 +289,66 @@ def test_min_weight_threshold_redistributes_to_global_when_bucket_empty():
     assert "A_FX1" not in new_w
     assert "A_GOLD" not in new_w
     assert sum(new_w.values()) == pytest.approx(1.0, abs=1e-6)
+
+
+# ---- 2026-05-26 fix-A: sub_category cap ----
+
+
+def _candidate_set_fx_test():
+    return CandidateSet(
+        bucket_to_tickers={
+            "fx_commodity": ["A_JPY", "A_USD", "A_GOLD", "A_OIL"],
+        },
+        selection_criteria="t", total_candidates=4,
+    )
+
+
+def test_subcategory_cap_reduces_dominant_subcat():
+    """단일 sub_category 가 bucket 50% 초과 → cap + 다른 sub_cat 으로 redistribute."""
+    weights = {
+        "A_JPY": 0.13,   # jpy_fx — 13%, bucket 19% 의 68%
+        "A_USD": 0.03,   # usd_fx
+        "A_GOLD": 0.02,  # gold
+        "A_OIL": 0.01,   # oil
+    }
+    # bucket fx 합 = 0.19, jpy_fx 합 0.13 > 0.50 × 0.19 = 0.095
+    sub_lookup = {
+        "A_JPY": "jpy_fx", "A_USD": "usd_fx",
+        "A_GOLD": "gold", "A_OIL": "oil_energy",
+    }
+    cs = _candidate_set_fx_test()
+    attribution: dict = {}
+    new_w = _apply_subcategory_cap(
+        weights, cs, sub_category_lookup=sub_lookup, attribution=attribution,
+    )
+    # A_JPY 가 capped (bucket 19% × 50% = 9.5%)
+    assert new_w["A_JPY"] == pytest.approx(0.19 * 0.5, abs=1e-6)
+    # Sum 보존
+    assert sum(new_w.values()) == pytest.approx(sum(weights.values()), abs=1e-6)
+    # 다른 sub_cat 자산이 증가
+    assert new_w["A_USD"] > 0.03
+    assert new_w["A_GOLD"] > 0.02
+    # attribution 기록
+    assert "subcategory_capped" in attribution
+
+
+def test_subcategory_cap_no_op_when_balanced():
+    """모든 sub_category 가 50% 이하면 no-op."""
+    weights = {
+        "A_JPY": 0.05, "A_USD": 0.05, "A_GOLD": 0.05, "A_OIL": 0.04,
+    }
+    sub_lookup = {
+        "A_JPY": "jpy_fx", "A_USD": "usd_fx",
+        "A_GOLD": "gold", "A_OIL": "oil_energy",
+    }
+    cs = _candidate_set_fx_test()
+    new_w = _apply_subcategory_cap(weights, cs, sub_category_lookup=sub_lookup)
+    assert new_w == weights
+
+
+def test_subcategory_cap_no_lookup_returns_unchanged():
+    """sub_category_lookup=None 또는 빈 dict 면 변경 없음."""
+    weights = {"A_JPY": 0.13, "A_USD": 0.06}
+    cs = _candidate_set_fx_test()
+    assert _apply_subcategory_cap(weights, cs, sub_category_lookup=None) == weights
+    assert _apply_subcategory_cap(weights, cs, sub_category_lookup={}) == weights

@@ -42,6 +42,12 @@ CORRELATION_THRESHOLD_ALLOC: float = 0.85  # cluster-aware fallback corr cut
 # 다른 자산으로 비례 redistribute.
 MIN_POSITION_WEIGHT: float = 0.015
 
+# 2026-05-26 fix-A — bucket 내부 sub_category 다양성 cap.
+# 평가의 비판 ("FX/원자재 17% 인플레헤지 라벨인데 엔 11% 가 차지 = bucket 내부
+# 분산 약함"). 단일 sub_category 가 bucket 합의 이 비율을 초과하지 못하게 cap.
+# 0.5 = bucket 의 50%. 예: fx_commodity 19% 면 jpy_fx 최대 9.5%.
+MAX_SUBCATEGORY_BUCKET_SHARE: float = 0.50
+
 
 def create_portfolio_allocator(
     quick_llm=None, deep_llm=None, cache_path: str | None = None,
@@ -220,6 +226,11 @@ def create_portfolio_allocator(
             extended=getattr(tech_report, "extended_indicators", None),
             etf_states=getattr(tech_report, "individual_etf_states", None),
             clusters=getattr(tech_report, "correlation_clusters", None),
+            # 2026-05-26 fix-B — macro alignment boost (F2_inflation, F5_credit).
+            factor_scores=(
+                getattr(research_decision, "factor_scores", None)
+                if research_decision is not None else None
+            ),
         )
 
         all_candidates = [
@@ -506,6 +517,11 @@ def _optimize_with_bucket_constraints(
     except Exception as e:
         logger.warning("portfolio_performance failed: %s", e)
 
+    # 2026-05-26 fix-A — sub_category cap (bucket 내부 다양성).
+    weights = _apply_subcategory_cap(
+        weights, candidates, sub_category_lookup=sub_category_lookup,
+        attribution=attribution,
+    )
     # 2026-05-26 #2 fix — min weight threshold.
     weights = _apply_min_weight_threshold(
         weights, candidates, attribution=attribution,
@@ -520,6 +536,92 @@ def _optimize_with_bucket_constraints(
         expected_volatility=expected_vol,
         expected_sharpe=expected_sharpe,
     )
+
+
+def _apply_subcategory_cap(
+    weights: dict[str, float],
+    candidates,
+    sub_category_lookup: dict[str, str | None] | None = None,
+    max_share: float = MAX_SUBCATEGORY_BUCKET_SHARE,
+    attribution: dict | None = None,
+) -> dict[str, float]:
+    """Bucket 내부 single sub_category 가 bucket 합의 max_share 초과 시 redistribute.
+
+    2026-05-26 fix-A — 평가의 "FX/원자재 bucket 내부 분산 약함" 비판 해소.
+    fx_commodity 안의 jpy_fx 가 bucket 의 60-70% 차지하는 silent issue.
+
+    Same-bucket / different-sub_category 자산으로 비례 redistribute. 다른
+    sub_category 자산 없으면 cap 없이 keep (degenerate edge case).
+    """
+    if not weights or not sub_category_lookup:
+        return weights
+    bucket_of = {
+        t: b for b, ts in candidates.bucket_to_tickers.items() for t in ts
+    }
+    # bucket 별 weight 합 계산.
+    bucket_total: dict[str, float] = {}
+    for t, w in weights.items():
+        b = bucket_of.get(t)
+        if b:
+            bucket_total[b] = bucket_total.get(b, 0.0) + w
+
+    new_weights = dict(weights)
+    capped_subcats: list[dict] = []
+
+    for bucket, b_total in bucket_total.items():
+        if b_total <= 0:
+            continue
+        cap_value = b_total * max_share
+        # bucket 안의 ticker 들을 sub_category 별로 grouping.
+        subcat_to_tickers: dict[str, list[str]] = {}
+        for t, w in new_weights.items():
+            if bucket_of.get(t) != bucket:
+                continue
+            sc = sub_category_lookup.get(t) or "__none__"
+            subcat_to_tickers.setdefault(sc, []).append(t)
+
+        for sc, tickers in subcat_to_tickers.items():
+            sc_sum = sum(new_weights[t] for t in tickers)
+            if sc_sum <= cap_value + 1e-9:
+                continue
+            # redistribute 대상이 없으면 cap 적용 안 함 (sum 손실 방지).
+            # 같은 bucket 안에 단일 sub_cat 만 있으면 cap 의미 없음.
+            others = [
+                t for t in new_weights
+                if bucket_of.get(t) == bucket and t not in tickers
+            ]
+            others_total = sum(new_weights[t] for t in others)
+            if others_total <= 0:
+                logger.debug(
+                    "sub_category cap skip: bucket %s sub_cat %s 가 단독 점유 "
+                    "(redistribute 대상 없음) → cap 미적용",
+                    bucket, sc,
+                )
+                continue
+            # cap 적용 → 비례 축소 + excess 를 다른 sub_cat 자산에 redistribute
+            excess = sc_sum - cap_value
+            scale = cap_value / sc_sum
+            for t in tickers:
+                new_weights[t] *= scale
+            for t in others:
+                new_weights[t] += excess * (new_weights[t] / others_total)
+            capped_subcats.append({
+                "bucket": bucket, "sub_category": sc,
+                "original_sum": float(sc_sum),
+                "capped_to": float(cap_value),
+                "redistributed_to_others": len(others),
+            })
+
+    if capped_subcats:
+        logger.info(
+            "sub_category cap (%.2f): %d cases capped: %s",
+            max_share, len(capped_subcats),
+            [(c["bucket"], c["sub_category"], f"{c['original_sum']:.3f}→{c['capped_to']:.3f}")
+             for c in capped_subcats],
+        )
+        if attribution is not None:
+            attribution["subcategory_capped"] = capped_subcats
+    return new_weights
 
 
 def _apply_min_weight_threshold(
@@ -753,6 +855,11 @@ def _hrp_per_bucket(
         f"HRP-per-bucket post-condition: {SINGLE_ASSET_CAP*100:.0f}% cap violated: {violators}"
     )
 
+    # 2026-05-26 fix-A — sub_category cap (bucket 내부 다양성).
+    final = _apply_subcategory_cap(
+        final, candidates, sub_category_lookup=sub_category_lookup,
+        attribution=attribution,
+    )
     # 2026-05-26 #2 fix — min weight threshold.
     final = _apply_min_weight_threshold(
         final, candidates, attribution=attribution,

@@ -462,6 +462,7 @@ def select_cluster_aware(
     correlation_threshold: float = 0.85,
     selection_trace: dict | None = None,
     underlying_lookup: dict[str, str] | None = None,
+    require_positive_alpha: bool = True,
 ) -> list[str]:
     """Cluster-aware selection (Stage 3).
 
@@ -475,6 +476,12 @@ def select_cluster_aware(
     S&P 500 추종 TIGER/KODEX/RISE 3사) 는 *강제 같은 group* 으로 통합. 기존
     correlation cluster 는 top 5/카테고리 만 cover 해서 운영사 다른 동일 지수
     ETF 가 분리되는 silent bug 가 있었음. underlying_lookup 이 ground truth.
+
+    2026-05-26 fix-C — require_positive_alpha: alpha 음수 group 자동 제외.
+    이전엔 cluster-aware 가 group 4 개면 alpha 음수여도 padding 으로 chosen 에
+    들어감 (자리 채움). 결과: HRP 가 vol 낮은 alpha-음수 자산에 큰 weight 부여
+    (엔선물 13% 사례). True 이면 alpha > 0 인 group 만 chosen + padding.
+    단 모든 alpha 가 음수면 (특수 case) 최소 1개는 keep (bucket 비울 수 없음).
 
     얇은 pool(그룹 수 < n)에서는 남은 ticker 를 alpha 순으로 패딩.
     """
@@ -541,13 +548,40 @@ def select_cluster_aware(
         group_repr.append((g_alpha, rep, g))
     group_repr.sort(key=lambda x: x[0], reverse=True)
 
-    chosen: list[str] = [rep for _a, rep, _g in group_repr[:n]]
+    # 2026-05-26 fix-C — alpha 음수 group 제외 (require_positive_alpha=True).
+    # 단 bucket cap 부족 (Stage 3 solver infeasible) 방지 위해 최소 chosen 수
+    # 보장: 양수 group 이 충분하면 양수만, 부족하면 음수로 fill (alpha 순 top).
+    # 최소 보장 수 = max(1, n // 2) — bucket 의 단일 자산 cap 20% 고려하면 평균
+    # 50% target 도달 가능.
+    if require_positive_alpha:
+        positive_groups = [(a, r, g) for (a, r, g) in group_repr if a > 0]
+        min_required = max(1, n // 2)
+        if len(positive_groups) >= min_required:
+            group_repr_filtered = positive_groups
+        elif group_repr:
+            # 양수 group 부족 — 음수도 top 순으로 fill (덜 나쁜 것부터)
+            negative_groups = [(a, r, g) for (a, r, g) in group_repr if a <= 0]
+            shortfall = min_required - len(positive_groups)
+            group_repr_filtered = (
+                positive_groups + negative_groups[:shortfall]
+            )
+        else:
+            group_repr_filtered = []
+    else:
+        group_repr_filtered = group_repr
+
+    chosen: list[str] = [rep for _a, rep, _g in group_repr_filtered[:n]]
 
     if selection_trace is not None:
+        chosen_set = set(chosen)
         for g_alpha, rep, g in group_repr:
+            is_in_chosen = rep in chosen_set
+            reason = f"cluster-aware (group_alpha={g_alpha:.4f}, group_size={len(g)})"
+            if require_positive_alpha and not is_in_chosen and g_alpha <= 0:
+                reason += " [excluded: alpha ≤ 0]"
             selection_trace[rep] = {
-                "selected":  rep in chosen,
-                "reason":    f"cluster-aware (group_alpha={g_alpha:.4f}, group_size={len(g)})",
+                "selected":  is_in_chosen,
+                "reason":    reason,
                 "group_members": list(g),
                 "group_alpha":   g_alpha,
             }
@@ -571,6 +605,17 @@ def select_cluster_aware(
                 if (underlying_lookup or {}).get(t) not in chosen_underlyings
             ]
         remaining.sort(key=lambda t: alpha_scores.get(t, float("-inf")), reverse=True)
+        # 2026-05-26 fix-C — padding 도 alpha 양수 우선. 단 chosen 이 min_required
+        # (n//2) 미만이면 음수도 fill (bucket cap 보장).
+        if require_positive_alpha:
+            min_required_total = max(1, n // 2)
+            positive_remaining = [
+                t for t in remaining if alpha_scores.get(t, float("-inf")) > 0
+            ]
+            if len(chosen) + len(positive_remaining) >= min_required_total:
+                # 양수만으로 충분 → 음수 제외
+                remaining = positive_remaining
+            # else: 양수 부족 → remaining 그대로 (alpha 순 정렬됨, 음수 포함)
         for t in remaining:
             chosen.append(t)
             if underlying_lookup and underlying_lookup.get(t):

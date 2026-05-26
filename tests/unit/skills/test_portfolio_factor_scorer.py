@@ -546,3 +546,46 @@ def test_cluster_aware_underlying_empty_string_treated_as_unique():
     )
     # 모두 unique → 3개 다 선택됨
     assert set(chosen) == {"A1", "A2", "A3"}
+
+
+# ---- 2026-05-26 fix-C: alpha 음수 group 자동 제외 ----
+
+
+def test_cluster_aware_excludes_negative_alpha_groups():
+    """alpha ≤ 0 group 은 chosen 에서 자동 제외 (default require_positive_alpha=True)."""
+    tickers = ["A1", "A2", "A3", "A4"]
+    alpha = {"A1": 0.5, "A2": 0.2, "A3": -0.1, "A4": -0.3}
+    impl = {t: 1.0 for t in tickers}
+    chosen = select_cluster_aware(
+        tickers, alpha, impl, clusters=[], n=4, returns=None,
+    )
+    # 양수 alpha (A1, A2) 만 chosen — n=4 라도 padding 안 함 (alpha 음수 제외)
+    assert "A1" in chosen
+    assert "A2" in chosen
+    assert "A3" not in chosen
+    assert "A4" not in chosen
+
+
+def test_cluster_aware_keeps_top_when_all_negative():
+    """모든 alpha 음수면 top-1 만 keep (bucket 비우는 거 방지)."""
+    tickers = ["A1", "A2", "A3"]
+    alpha = {"A1": -0.1, "A2": -0.3, "A3": -0.5}
+    impl = {t: 1.0 for t in tickers}
+    chosen = select_cluster_aware(
+        tickers, alpha, impl, clusters=[], n=3, returns=None,
+    )
+    # 모두 음수 — 가장 덜 나쁜 A1 만 chosen
+    assert chosen == ["A1"]
+
+
+def test_cluster_aware_legacy_mode_no_positive_filter():
+    """require_positive_alpha=False 면 기존 동작 (음수도 chosen)."""
+    tickers = ["A1", "A2"]
+    alpha = {"A1": 0.5, "A2": -0.3}
+    impl = {t: 1.0 for t in tickers}
+    chosen = select_cluster_aware(
+        tickers, alpha, impl, clusters=[], n=2, returns=None,
+        require_positive_alpha=False,
+    )
+    # 양쪽 모두 chosen (legacy)
+    assert set(chosen) == {"A1", "A2"}

@@ -119,6 +119,8 @@ def select_etf_candidates(
     extended: dict | None = None,
     etf_states: dict | None = None,
     clusters: list | None = None,
+    factor_scores: dict[str, float] | None = None,
+    require_positive_alpha: bool = True,
 ) -> CandidateSet:
     """Filter universe by bucket target + AUM, then multi-factor rank + corr de-dup.
 
@@ -216,6 +218,7 @@ def select_etf_candidates(
                 boost_scale=boost_scale,
                 risk_adjusted=risk_adjusted, trend_quant=trend_quant,
                 extended=extended, etf_states=etf_states,
+                factor_scores=factor_scores,
             )
             impl_scores = compute_impl_score(panels_for_impl, normalization=normalization)
             ranked = sorted(
@@ -231,6 +234,7 @@ def select_etf_candidates(
                 correlation_threshold=correlation_threshold,
                 selection_trace=sel_trace,
                 underlying_lookup=underlying_lookup,
+                require_positive_alpha=require_positive_alpha,
             )
             if bucket_attr is not None:
                 bucket_attr["bond_split"] = False
@@ -390,6 +394,7 @@ def _compute_alpha_scores(
     trend_quant: dict | None = None,
     extended: dict | None = None,
     etf_states: dict | None = None,
+    factor_scores: dict[str, float] | None = None,
 ) -> tuple[dict[str, float], dict[str, FactorPanel]]:
     """alpha scores dict + panel dict 반환. scenario boost 가산 포함."""
     panels = _build_panels(eligible, returns, aum_lookup, precomputed_panel)
@@ -407,11 +412,34 @@ def _compute_alpha_scores(
         compose_boost(*scenario_coords) if scenario_coords else {}
     )
 
+    # 2026-05-26 fix-B — macro alignment boost.
+    # F2_inflation z 가 + 면 fx_commodity 의 inflation_hedge group (gold/oil
+    # /agricultural/broad_commodity) alpha 에 boost. 평가의 "엔선물 11% 인플레
+    # 헤지 라벨 사기" 비판에 root-level 응답.
+    # F5_credit_cycle z 가 - 면 (신용 약세) safe_haven group (usd_fx/jpy_fx) 도
+    # 부분 boost — carry unwind / dollar smile 환경.
+    from tradingagents.skills.portfolio.sub_category import fx_subcategory_group
+    f2_z = (factor_scores or {}).get("F2_inflation", 0.0)
+    f5_z = (factor_scores or {}).get("F5_credit_cycle", 0.0)
+    # boost coefficient: f2_z=+1 → +0.15 log boost ≈ ×1.16 multiplier
+    INFLATION_HEDGE_COEF = 0.15
+    SAFE_HAVEN_COEF = 0.10
+
     for ticker in list(scores):
         sub_cat = sub_cat_lookup.get(ticker)
         boost_log = log_boost(dominant_scenario, sub_cat) if dominant_scenario else 0.0
         boost_applied = boost_scale * boost_log
-        scores[ticker] = scores[ticker] + boost_applied
+
+        # fx_commodity 의미 group boost (F2 / F5 기반).
+        fx_group = fx_subcategory_group(sub_cat)
+        macro_align_boost = 0.0
+        if fx_group == "inflation_hedge" and f2_z > 0:
+            macro_align_boost = INFLATION_HEDGE_COEF * f2_z
+        elif fx_group == "safe_haven" and f5_z < 0:
+            # F5 음수 (신용 약세) → safe_haven boost. f5_z=-1 → +0.10 boost.
+            macro_align_boost = SAFE_HAVEN_COEF * (-f5_z)
+
+        scores[ticker] = scores[ticker] + boost_applied + macro_align_boost
         if breakdown_out is not None and ticker in breakdown:
             mult = (
                 composed_for_scenario.get(sub_cat, 1.0)
@@ -426,6 +454,13 @@ def _compute_alpha_scores(
                 "boost_scale":   boost_scale,
                 "boost_applied": boost_applied,
             }
+            if macro_align_boost != 0.0:
+                breakdown[ticker]["macro_align_boost"] = {
+                    "fx_group": fx_group,
+                    "f2_z": float(f2_z),
+                    "f5_z": float(f5_z),
+                    "boost": float(macro_align_boost),
+                }
             breakdown[ticker]["final_score"] = scores[ticker]
 
     if breakdown_out is not None:

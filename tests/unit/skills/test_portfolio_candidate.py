@@ -180,8 +180,13 @@ def test_bond_tips_quota_zero_falls_back_to_legacy_path():
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
     )
-    # both tickers should be eligible (legacy path), no quota split
-    assert set(candidates.bucket_to_tickers["bond"]) == {"A_TIPS1", "A_NOM1"}
+    # 2026-05-26 fix-C: alpha 음수 group 자동 제외 → bond bucket 에 최소 1개 보장.
+    # legacy path 검증 의도는 "single-pool 분기 안 됨" — chosen 의 정확한 ticker
+    # 수는 alpha 부호에 따라 1~2 개. 핵심: bucket 이 비어있지 않음 + bond_split
+    # attribution 이 False (single-pool path).
+    bond_picks = candidates.bucket_to_tickers["bond"]
+    assert len(bond_picks) >= 1
+    assert set(bond_picks).issubset({"A_TIPS1", "A_NOM1"})
 
 
 def test_relaxed_min_aum_admits_inflation_linked_etf():
@@ -402,6 +407,7 @@ def test_select_threads_clusters_for_within_group_impl():
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
         per_bucket_n=2, clusters=clusters,
+        require_positive_alpha=False,  # legacy cluster mechanism 검증 — alpha 부호 무시
     )
     chosen = cs.bucket_to_tickers["kr_equity"]
     # A2(작은 AUM) 탈락, A1 또는 B + 다른 그룹
@@ -432,5 +438,6 @@ def test_select_backward_compat_without_clusters():
     cs = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel, per_bucket_n=2,
+        require_positive_alpha=False,  # legacy n-fill mechanism 검증
     )
     assert len(cs.bucket_to_tickers["kr_equity"]) == 2
