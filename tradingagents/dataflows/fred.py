@@ -109,12 +109,26 @@ def fetch_fred_series(
     resolved = FRED_SERIES.get(series_id, series_id)
     series = _raw_fred_call(resolved, start, end, key)
 
+    # Backtest fix (2026-05-26): empty Series 에서 RangeIndex AttributeError 방지.
+    # FRED 일부 series (예: BAMLC0A0CM 은 2023-05-23 이후 데이터만) 가 historical
+    # 시점에 빈 결과 반환 → series.index 가 RangeIndex → `.date` AttributeError.
+    if series is None or series.empty:
+        return pd.Series(dtype=float, name=series_id)
+
     if as_of_date is not None:
         cutoff = _publication_cutoff(as_of_date, series_id)
-        series = series[series.index.date <= cutoff]
-        logger.debug(
-            "FRED %s point-in-time cutoff %s (as_of=%s, lag applied)",
-            series_id, cutoff, as_of_date,
-        )
+        # DatetimeIndex 검증 — 비정상 케이스 graceful 처리.
+        if hasattr(series.index, "date"):
+            series = series[series.index.date <= cutoff]
+            logger.debug(
+                "FRED %s point-in-time cutoff %s (as_of=%s, lag applied)",
+                series_id, cutoff, as_of_date,
+            )
+        else:
+            logger.warning(
+                "FRED %s returned non-DatetimeIndex (type=%s) — cutoff skip, return empty",
+                series_id, type(series.index).__name__,
+            )
+            return pd.Series(dtype=float, name=series_id)
 
     return series
