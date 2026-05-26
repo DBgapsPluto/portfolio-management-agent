@@ -38,18 +38,17 @@ logging.getLogger("tradingagents").setLevel(logging.ERROR)
 # ──────────────────────────────────────────────────────────────────────────
 
 def _check_env() -> dict[str, dict]:
-    """Required env vars 점검."""
+    """Required env vars 점검. 모든 키에 6자 preview 표시 (set 여부 + 값 확인용)."""
     out = {}
-    for var in ["FRED_API_KEY", "ECOS_API_KEY", "OPENAI_API_KEY"]:
+    for var in [
+        "FRED_API_KEY", "ECOS_API_KEY", "OPENAI_API_KEY",
+        "KRX_ID", "KRX_PW",
+    ]:
         v = os.environ.get(var)
         out[var] = {
             "set": bool(v),
             "value_preview": (v[:6] + "…" if v else None),
         }
-    # KRX (pykrx 일부 endpoint 만 사용)
-    for var in ["KRX_ID", "KRX_PW"]:
-        v = os.environ.get(var)
-        out[var] = {"set": bool(v), "value_preview": None}
     return out
 
 

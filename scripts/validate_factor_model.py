@@ -30,6 +30,14 @@ import logging
 from pathlib import Path
 from typing import Callable
 
+# .env auto-load (FRED_API_KEY 등). 다른 backtest 스크립트들과 동일 패턴.
+_ROOT = Path(__file__).resolve().parent.parent
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=_ROOT / ".env")
+except ImportError:
+    pass
+
 import numpy as np
 import pandas as pd
 
