@@ -194,6 +194,42 @@ def _solve_with_overlay(
         sector_lower = {k: max(0.0, v - _BUCKET_BAND) for k, v in target_map.items()}
         sector_upper = {k: min(1.0, v + _BUCKET_BAND) for k, v in target_map.items()}
 
+    # 2026-05-26 backtest follow-up #2 잔여 (constraint conflict fix):
+    # bucket 별 max achievable = (returns 에 있는 ticker 수) × SINGLE_ASSET_CAP
+    # 계산. universe data 결함 / 신규 ETF / dropna 누락 등으로 bucket 의 max <
+    # sector_lower 면 EF infeasible (예: cash_mmf 목표 37% 인데 returns 에 1 ticker
+    # 만 → max 20%). sector_lower 를 max 로 자동 완화하고 attribution 에 기록.
+    # 이게 4/5 historical 시점에서 overlay all-infeasible 의 root cause.
+    bucket_ticker_count: dict[str, int] = {b: 0 for b in target_map}
+    for t in returns.columns:
+        b = sector_mapper.get(t)
+        if b:
+            bucket_ticker_count[b] += 1
+    bucket_max_achievable = {
+        b: n * SINGLE_ASSET_CAP_OVERLAY for b, n in bucket_ticker_count.items()
+    }
+    short_buckets: list[str] = []
+    for b in list(sector_lower):
+        max_ach = bucket_max_achievable[b]
+        if sector_lower[b] > max_ach + 1e-6:
+            short_buckets.append(
+                f"{b}(target={sector_lower[b]:.3f},n_tickers={bucket_ticker_count[b]},"
+                f"max={max_ach:.3f})"
+            )
+            # lower 를 max 로 완화 — 부족한 분은 다른 bucket 으로 흘러감
+            sector_lower[b] = max_ach
+            # upper 도 max 이하라면 lower 와 같게 (degenerate but feasible)
+            if sector_upper[b] > max_ach + 1e-6:
+                sector_upper[b] = max_ach
+    if short_buckets:
+        logger.warning(
+            "Stage 4 overlay bucket 용량 부족 — %d bucket sector_lower 자동 완화 "
+            "(level=%d): %s",
+            len(short_buckets), drop_level, short_buckets,
+        )
+        if overlay_attr is not None:
+            overlay_attr["bucket_capacity_shortfall"] = short_buckets
+
     # HRP fallback → MV (EF 기반)
     if method == OptimizationMethod.HRP:
         method = OptimizationMethod.MIN_VARIANCE
@@ -301,6 +337,8 @@ def apply_risk_overlay(
             # 2026-05-26 backtest follow-up #3 — short-history ticker drop 가시화.
             "cov_excluded_tickers": [],
             "cov_final_obs": None,
+            # 2026-05-26 backtest follow-up #2 잔여 — bucket capacity shortfall 가시화.
+            "bucket_capacity_shortfall": [],
         }
     overlay_attr = attribution["overlay"] if attribution is not None else None
 
