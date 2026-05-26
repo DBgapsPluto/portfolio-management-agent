@@ -56,6 +56,10 @@ _SCENARIO_METHOD: dict[str, tuple[OptimizationMethod, str]] = {
                          "overheating (growth+inflation) → equity tilt + 분산, HRP"),
     "goldilocks":       (OptimizationMethod.HRP,
                          "goldilocks → 분산 친화, HRP"),
+    # 2026-05-26 #5 fix — late_cycle + sticky inflation cell.
+    # 신용 약세 + 인플레 잔존 → equity tilt 자제, risk parity 로 균형 분산.
+    "late_cycle":       (OptimizationMethod.RISK_PARITY,
+                         "late_cycle (sticky inflation + credit fatigue) → 균형 분산"),
     "ai_concentration": (OptimizationMethod.HRP,
                          "ai_concentration → narrow leadership 위험, HRP로 corr 감안"),
     "kr_boom":          (OptimizationMethod.HRP,

@@ -92,3 +92,38 @@ def test_empty_weights():
     returns = pd.DataFrame()
     n = compute_portfolio_numerics(wv, returns)
     assert n.n_assets == 1
+
+
+# ---- 2026-05-26 #7 fix: stressed CVaR ----
+
+
+def test_stressed_cvar_higher_than_normal():
+    """Stressed CVaR (corr=0.9) ≥ normal CVaR (낮은 corr) — diversification 효과 감소."""
+    import numpy as np
+    rng = np.random.default_rng(7)
+    n_obs = 252
+    # 자산 2개, 음의 상관 (분산효과 큼).
+    f = rng.normal(0, 0.01, n_obs)
+    r1 = f + rng.normal(0, 0.01, n_obs)
+    r2 = -f + rng.normal(0, 0.01, n_obs)
+    returns = pd.DataFrame({"A1": r1, "A2": r2}, index=pd.date_range("2024-01-01", periods=n_obs, freq="B"))
+    wv = WeightVector(method=OptimizationMethod.HRP, weights={"A1": 0.5, "A2": 0.5}, rationale="t")
+    n = compute_portfolio_numerics(wv, returns)
+    # Normal CVaR < stressed CVaR (negative corr 의 stress 시 + corr 로 변하면 vol↑).
+    assert n.cvar_95_1d_stress >= n.cvar_95_1d
+    assert n.cvar_stress_ratio >= 1.0
+
+
+def test_stressed_cvar_field_exists():
+    """schema 의 새 field 존재 검증."""
+    import numpy as np
+    rng = np.random.default_rng(0)
+    returns = pd.DataFrame(
+        {"A": rng.normal(0, 0.01, 300), "B": rng.normal(0, 0.01, 300)},
+        index=pd.date_range("2024-01-01", periods=300, freq="B"),
+    )
+    wv = WeightVector(method=OptimizationMethod.HRP, weights={"A": 0.6, "B": 0.4}, rationale="t")
+    n = compute_portfolio_numerics(wv, returns)
+    assert hasattr(n, "cvar_95_1d_stress")
+    assert hasattr(n, "cvar_stress_ratio")
+    assert n.cvar_95_1d_stress >= 0

@@ -461,6 +461,7 @@ def select_cluster_aware(
     returns: "pd.DataFrame | None",
     correlation_threshold: float = 0.85,
     selection_trace: dict | None = None,
+    underlying_lookup: dict[str, str] | None = None,
 ) -> list[str]:
     """Cluster-aware selection (Stage 3).
 
@@ -469,6 +470,11 @@ def select_cluster_aware(
     clusters 가 제공되면 그것으로 그룹화; cluster 멤버 아닌 ticker 는 singleton.
     clusters 가 None/빈이면 returns 의 pairwise corr 로 fallback grouping
     (이전 select_diverse 의미). returns 도 없으면 모든 eligible = singleton.
+
+    2026-05-26 #1 fix — underlying_lookup 추가: 동일 underlying_index 의 ETF (예:
+    S&P 500 추종 TIGER/KODEX/RISE 3사) 는 *강제 같은 group* 으로 통합. 기존
+    correlation cluster 는 top 5/카테고리 만 cover 해서 운영사 다른 동일 지수
+    ETF 가 분리되는 silent bug 가 있었음. underlying_lookup 이 ground truth.
 
     얇은 pool(그룹 수 < n)에서는 남은 ticker 를 alpha 순으로 패딩.
     """
@@ -499,6 +505,34 @@ def select_cluster_aware(
     else:
         groups = [[t] for t in elig]
 
+    # 2026-05-26 #1 fix — underlying_index 강제 cluster 통합 (post-grouping merge).
+    # 위 cluster grouping 후 동일 underlying_index 의 ETF (예: S&P 500 추종
+    # TIGER/KODEX/RISE 3사) 가 다른 group 에 분리됐으면 강제 merge. correlation
+    # cluster 는 top 5/카테고리 만 cover 라 운영사 다른 동일 지수 ETF 분리되는
+    # silent bug. underlying_index 가 ground truth.
+    if underlying_lookup:
+        ui_to_group_idx: dict[str, int] = {}
+        merged: list[list[str]] = []
+        for g in groups:
+            # 이 group 의 ticker 들 중 underlying 가 있는 것 (None/"" 제외).
+            uis = [underlying_lookup.get(t) for t in g if underlying_lookup.get(t)]
+            target_idx: int | None = None
+            for ui in uis:
+                if ui in ui_to_group_idx:
+                    target_idx = ui_to_group_idx[ui]
+                    break
+            if target_idx is not None:
+                merged[target_idx].extend(g)
+                # 이 group 의 모든 underlying 을 target_idx 로 매핑 (새 underlying 도 등록)
+                for ui in uis:
+                    ui_to_group_idx[ui] = target_idx
+            else:
+                merged.append(list(g))
+                new_idx = len(merged) - 1
+                for ui in uis:
+                    ui_to_group_idx[ui] = new_idx
+        groups = merged
+
     # 2. 각 그룹의 대표(impl 최고) + group alpha(멤버 alpha 최고)
     group_repr: list[tuple[float, str, list[str]]] = []
     for g in groups:
@@ -518,13 +552,29 @@ def select_cluster_aware(
                 "group_alpha":   g_alpha,
             }
 
-    # 3. 패딩 — 그룹 수 < n 이면 남은 ticker 를 alpha 순
+    # 3. 패딩 — 그룹 수 < n 이면 남은 ticker 를 alpha 순.
+    # 2026-05-26 #1 fix — padding 도 underlying-aware: 이미 chosen 에 있는
+    # underlying 의 ticker 는 padding 에서도 제외 (cluster 강제 merge 의 의도가
+    # 패딩에 의해 깨지지 않도록).
     if len(chosen) < n:
         seen = set(chosen)
+        chosen_underlyings: set[str] = set()
+        if underlying_lookup:
+            chosen_underlyings = {
+                underlying_lookup.get(t) for t in chosen
+                if underlying_lookup.get(t)
+            }
         remaining = [t for t in elig if t not in seen]
+        if chosen_underlyings:
+            remaining = [
+                t for t in remaining
+                if (underlying_lookup or {}).get(t) not in chosen_underlyings
+            ]
         remaining.sort(key=lambda t: alpha_scores.get(t, float("-inf")), reverse=True)
         for t in remaining:
             chosen.append(t)
+            if underlying_lookup and underlying_lookup.get(t):
+                chosen_underlyings.add(underlying_lookup[t])
             if selection_trace is not None:
                 selection_trace.setdefault(t, {})
                 selection_trace[t].update({

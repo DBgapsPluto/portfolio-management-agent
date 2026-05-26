@@ -138,6 +138,10 @@ def select_etf_candidates(
 
     universe = universe.tradable_at(as_of)
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    # 2026-05-26 #1 fix — underlying_index 매핑 (cluster_aware 의 강제 merge 용).
+    underlying_lookup = {
+        e.ticker: (e.underlying_index or "") for e in universe.etfs
+    }
 
     bucket_to_tickers: dict[str, list[str]] = {}
 
@@ -226,6 +230,7 @@ def select_etf_candidates(
                 returns=returns,
                 correlation_threshold=correlation_threshold,
                 selection_trace=sel_trace,
+                underlying_lookup=underlying_lookup,
             )
             if bucket_attr is not None:
                 bucket_attr["bond_split"] = False

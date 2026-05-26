@@ -258,3 +258,58 @@ def test_macro_lens_recession_medium_still_works():
         regime_quadrant="recession_inflation",
     )
     assert result.level == "medium", f"expected medium, got {result.level}"
+
+
+# ---- 2026-05-26 #6 fix: quant trigger (valuation level + late_cycle) ----
+
+
+def test_macro_late_cycle_medium_with_high_risk_weight():
+    """late_cycle scenario + 위험자산 45%+ → medium."""
+    c = run_macro_conditional_lens(
+        _wv_risk(0.50), _candidates(),
+        research_decision=_decision("late_cycle", conviction="medium"),
+        systemic_score=5.0,
+    )
+    assert c.level == "medium"
+
+
+def test_macro_late_cycle_none_with_low_risk_weight():
+    """late_cycle 이지만 위험자산 30% 면 trigger 안 함."""
+    c = run_macro_conditional_lens(
+        _wv_risk(0.30), _candidates(),
+        research_decision=_decision("late_cycle", conviction="medium"),
+        systemic_score=5.0,
+    )
+    assert c.level == "none"
+
+
+def test_macro_high_valuation_z_medium_with_risk():
+    """F8_valuation z ≥ +1.5 (extreme overvaluation) + 위험자산 30%+ → medium."""
+    from types import SimpleNamespace
+    rd = SimpleNamespace(
+        dominant_scenario="goldilocks",
+        conviction="medium",
+        factor_scores={"F8_valuation": 1.8},  # extreme high
+    )
+    c = run_macro_conditional_lens(
+        _wv_risk(0.35), _candidates(),
+        research_decision=rd,
+        systemic_score=4.0,
+    )
+    assert c.level == "medium"
+
+
+def test_macro_high_valuation_alone_does_not_trigger():
+    """valuation 단독 (low risk_weight) 은 trigger 안 함."""
+    from types import SimpleNamespace
+    rd = SimpleNamespace(
+        dominant_scenario="goldilocks",
+        conviction="medium",
+        factor_scores={"F8_valuation": 2.0},
+    )
+    c = run_macro_conditional_lens(
+        _wv_risk(0.15), _candidates(),
+        research_decision=rd,
+        systemic_score=4.0,
+    )
+    assert c.level == "none"

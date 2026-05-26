@@ -490,3 +490,59 @@ def test_cluster_aware_skips_ticker_without_alpha():
         ["A111111", "A222222"], alpha, impl, clusters=[], n=2, returns=None,
     )
     assert chosen == ["A111111"]
+
+
+# ---- 2026-05-26 #1 fix: underlying_index 강제 cluster 통합 ----
+
+
+def test_cluster_aware_underlying_index_forces_merge():
+    """동일 underlying_index 의 ETF 가 다른 cluster 였더라도 강제 merge.
+
+    S&P 500 추종 TIGER/KODEX/RISE 3 ETF 시나리오 (실제 backtest 버그).
+    correlation cluster 가 분리해도 underlying_lookup 으로 같은 group.
+    """
+    tickers = ["A360750", "A379800", "A379780", "B999999"]
+    alpha = {"A360750": 1.5, "A379800": 1.0, "A379780": 0.8, "B999999": 2.0}
+    impl = {"A360750": 1.0, "A379800": 0.8, "A379780": 0.6, "B999999": 1.0}
+    # cluster 가 분리 (S&P 500 3개가 singleton 으로 들어감 — 기존 silent bug 시나리오)
+    clusters = []  # 빈 cluster
+    underlying_lookup = {
+        "A360750": "S&P 500",
+        "A379800": "S&P 500",
+        "A379780": "S&P 500",
+        "B999999": "",  # 다른 ETF
+    }
+    chosen = select_cluster_aware(
+        tickers, alpha, impl, clusters, n=4, returns=None,
+        underlying_lookup=underlying_lookup,
+    )
+    # S&P 500 3개 중 1개만 + B999999 = 2개 선택 (n=4 padding 적용)
+    sp500_chosen = [t for t in chosen if t in ("A360750", "A379800", "A379780")]
+    assert len(sp500_chosen) == 1, f"expected 1 S&P 500 rep, got {sp500_chosen}"
+    assert "B999999" in chosen
+
+
+def test_cluster_aware_underlying_lookup_none_preserves_legacy():
+    """underlying_lookup=None 면 기존 동작 그대로 (regression 안전)."""
+    tickers = ["A111111", "A222222"]
+    alpha = {"A111111": 2.0, "A222222": 1.0}
+    impl = {"A111111": 1.0, "A222222": 1.0}
+    chosen = select_cluster_aware(
+        tickers, alpha, impl, clusters=[], n=2, returns=None,
+        underlying_lookup=None,
+    )
+    assert set(chosen) == {"A111111", "A222222"}
+
+
+def test_cluster_aware_underlying_empty_string_treated_as_unique():
+    """underlying_index 가 빈 문자열인 ticker 는 grouping 안 함 (singleton 유지)."""
+    tickers = ["A1", "A2", "A3"]
+    alpha = {"A1": 1.0, "A2": 1.0, "A3": 1.0}
+    impl = {"A1": 1.0, "A2": 1.0, "A3": 1.0}
+    underlying_lookup = {"A1": "", "A2": "", "A3": ""}  # 모두 빈 underlying
+    chosen = select_cluster_aware(
+        tickers, alpha, impl, clusters=[], n=3, returns=None,
+        underlying_lookup=underlying_lookup,
+    )
+    # 모두 unique → 3개 다 선택됨
+    assert set(chosen) == {"A1", "A2", "A3"}

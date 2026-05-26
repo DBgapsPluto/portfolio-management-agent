@@ -63,6 +63,20 @@ class PortfolioNumerics(StalenessAware):
         default=0.0,
         description="1-day CVaR 95% (양수=손실). VaR 초과 손실의 평균.",
     )
+    # 2026-05-26 #7 fix — stressed CVaR (correlation regime).
+    # 평시 CVaR 은 historical empirical. 시장 stress 시 모든 자산 상관 +1 로 수렴
+    # → 분산효과 사라짐 → 체감 손실은 평시의 2~3배. stressed_cvar 은 pairwise
+    # correlation 을 0.9 로 force 한 covariance 로 분석적 1-day 95% CVaR 계산.
+    cvar_95_1d_stress: float = Field(
+        default=0.0,
+        description="Stressed CVaR 95% — 모든 자산 pairwise corr=0.9 가정. "
+                    "평시 CVaR 대비 비율로 stress amplification 가시화.",
+    )
+    cvar_stress_ratio: float = Field(
+        default=1.0,
+        description="cvar_95_1d_stress / cvar_95_1d — 1.0 = 평시와 동일, "
+                    "≥2.5 = stress 시 손실 2.5배+ 우려 (분산효과 취약).",
+    )
 
     # 메타
     n_assets: int = Field(ge=0)
@@ -147,6 +161,36 @@ def compute_portfolio_numerics(
         var_95 = 0.0
         cvar_95 = 0.0
 
+    # 2026-05-26 #7 fix — stressed CVaR.
+    # 모든 자산 pairwise correlation = STRESS_CORR (default 0.9) 로 force 한 cov
+    # → 분석적 1-day 95% CVaR. normal CVaR 과 비교해 stress amplification 측정.
+    cvar_95_stress = 0.0
+    cvar_stress_ratio = 1.0
+    common = [t for t in weights if t in returns.columns]
+    if len(common) >= 2 and len(pf_ret_clean) >= MIN_OBS_CVAR:
+        try:
+            sub_returns = returns[common].dropna(how="any")
+            if len(sub_returns) >= MIN_OBS_CVAR:
+                std_vec = sub_returns.std().values  # per-asset daily std
+                w_arr = np.array([weights[t] for t in common])
+                # Stressed covariance: corr=0.9 for off-diagonal, 1.0 diagonal.
+                STRESS_CORR = 0.9
+                n = len(common)
+                stress_corr = np.full((n, n), STRESS_CORR)
+                np.fill_diagonal(stress_corr, 1.0)
+                stress_cov = stress_corr * np.outer(std_vec, std_vec)
+                # Portfolio std under stress.
+                pf_var_stress = float(w_arr @ stress_cov @ w_arr.T)
+                pf_std_stress = np.sqrt(max(pf_var_stress, 0.0))
+                # Analytical 1-day 95% CVaR = std × E[Z | Z > 1.645] ≈ std × 2.063
+                # (Normal tail expectation at 95% percentile).
+                cvar_95_stress = float(pf_std_stress * 2.063)
+                cvar_stress_ratio = (
+                    cvar_95_stress / cvar_95 if cvar_95 > 1e-9 else 1.0
+                )
+        except Exception as e:
+            logger.warning("stressed CVaR 계산 실패 (graceful skip): %s", e)
+
     last_date = returns.index[-1] if len(returns) > 0 else None
     source_date = (
         last_date.date() if hasattr(last_date, "date") else None
@@ -161,6 +205,8 @@ def compute_portfolio_numerics(
         realized_vol_60d=round(realized_vol_60d, 6),
         var_95_1d=round(var_95, 6),
         cvar_95_1d=round(cvar_95, 6),
+        cvar_95_1d_stress=round(cvar_95_stress, 6),
+        cvar_stress_ratio=round(cvar_stress_ratio, 3),
         n_assets=n_assets,
         source_date=source_date,
     )

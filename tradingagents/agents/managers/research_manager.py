@@ -12,7 +12,7 @@ Stage 2 추가 LLM 호출 0. macro_news_analyst 의 NewsReport structured field 
 """
 import logging
 from dataclasses import replace
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,58 @@ SCENARIO_CREDIT_THRESHOLD: float = 1.0   # F5 credit — global_credit upper gat
 # 나머지 6 factor 는 conviction 계산에 미반영 (개선 후보, Stage 2 audit followup).
 CONVICTION_HIGH_MAG: float = 4.0         # 평균 |z|≈0.44 (9 factor 모두 ~0.4σ)
 CONVICTION_MED_MAG: float = 2.0          # 평균 |z|≈0.22 (절반 factor 가 ~0.4σ)
+
+# 2026-05-26 #8 fix — regime confidence → bucket sizing mapping rule.
+# Stage 1 의 LLM regime classifier confidence (0~1) 가 Stage 3 bucket sizing 에
+# 명시적 영향. high confidence (≥0.8) 면 위험자산 신호 강화 (×1.05), low
+# confidence (<0.5) 면 약화 (×0.92). mandate cap (0.70) 은 여전히 enforce.
+# 평가의 핵심 architecture 비판 ("confidence 0.89 vs 위험자산 37.5% 불일치") 해소.
+REGIME_CONFIDENCE_HIGH: float = 0.8        # 이 이상이면 risk multiplier 1.05
+REGIME_CONFIDENCE_LOW: float = 0.5         # 미만이면 multiplier 0.92
+RISK_MULT_HIGH_CONF: float = 1.05
+RISK_MULT_LOW_CONF: float = 0.92
+RISK_MULT_NEUTRAL: float = 1.0
+
+
+def _confidence_risk_multiplier(confidence: float | None) -> float:
+    """regime confidence → 위험자산 multiplier (1.05 / 1.0 / 0.92)."""
+    if confidence is None:
+        return RISK_MULT_NEUTRAL
+    if confidence >= REGIME_CONFIDENCE_HIGH:
+        return RISK_MULT_HIGH_CONF
+    if confidence < REGIME_CONFIDENCE_LOW:
+        return RISK_MULT_LOW_CONF
+    return RISK_MULT_NEUTRAL
+
+
+def _apply_confidence_to_bucket(
+    bucket: dict[str, float], confidence: float | None,
+    risk_buckets: tuple[str, ...] = ("kr_equity", "global_equity", "fx_commodity"),
+    mandate_risk_cap: float = 0.70,
+) -> tuple[dict[str, float], float]:
+    """bucket 의 위험자산에 confidence multiplier 적용. mandate cap enforce.
+
+    Returns (new_bucket, applied_multiplier).
+    """
+    mult = _confidence_risk_multiplier(confidence)
+    if abs(mult - 1.0) < 1e-9:
+        return bucket, 1.0
+    risk_total = sum(bucket.get(b, 0.0) for b in risk_buckets)
+    new_risk = min(risk_total * mult, mandate_risk_cap)
+    if risk_total <= 0:
+        return bucket, mult
+    risk_factor = new_risk / risk_total
+    diff = new_risk - risk_total  # 음수면 위험자산 줄어듦, 양수면 늘어남
+    new_bucket = dict(bucket)
+    for b in risk_buckets:
+        new_bucket[b] = new_bucket.get(b, 0.0) * risk_factor
+    # diff 만큼 안전자산 (bond + cash_mmf) 에 비례 redistribute.
+    safe_total = new_bucket.get("bond", 0.0) + new_bucket.get("cash_mmf", 0.0)
+    if safe_total > 0:
+        bond_share = new_bucket.get("bond", 0.0) / safe_total
+        new_bucket["bond"] = new_bucket.get("bond", 0.0) - diff * bond_share
+        new_bucket["cash_mmf"] = new_bucket.get("cash_mmf", 0.0) - diff * (1 - bond_share)
+    return new_bucket, mult
 CONVICTION_HIGH_ALIGN: float = 0.6       # 3 중 2 동의 (3-factor sign vote)
 CONVICTION_MED_ALIGN: float = 0.3        # 3 중 1 동의
 
@@ -71,7 +123,12 @@ SCENARIO_PRIORITY: dict[str, int] = {
     "broad_recession": 4,
     "stagflation":     5,
     "overheating":     6,
-    "goldilocks":      7,   # default (가장 benign)
+    # 2026-05-26 #5 fix — late_cycle + sticky inflation cell 추가.
+    # 평가의 "변형된 골디락스" hedge 해소. F1 약양 (cycle threshold 못 넘는 약한
+    # 확장) + F2 인플레 잔존 (≥0.4) + F5 신용 약세 (≤-0.2) 의 특정 상태.
+    # stagflation 보다 약함 (growth 안 무너짐), overheating 보다 신용 약함.
+    "late_cycle":      7,
+    "goldilocks":      8,   # default (가장 benign)
 }
 
 
@@ -138,6 +195,14 @@ def _strict_classify_scenario(
         return "stagflation"
     if f1 < -cycle and f2 < -cycle:
         return "broad_recession"
+    # 2026-05-26 #5 fix — late_cycle + sticky inflation.
+    # overheating 진입 못 했지만 (F1 ≤ cycle) 인플레+신용 약세 결합 신호.
+    # F1 양수 (성장 무너지지 않음) + F2 ≥ 0.4 (인플레 잔존, cycle 보다 약간 낮은
+    # threshold) + F5 ≤ -0.2 (신용 약세) → late_cycle. offset 적용.
+    late_inflation = 0.4 + offset
+    late_credit = -0.2 - offset
+    if f1 > 0 and f2 > late_inflation and f5 < late_credit:
+        return "late_cycle"
     return "goldilocks"
 
 
@@ -269,6 +334,55 @@ def create_research_manager(deep_llm):
         bucket, tips_share, contributions, safety_diag = apply_factor_model_with_safety(
             factor_scores.to_dict()
         )
+
+        # 2026-05-26 #8 fix — regime confidence × bucket sizing mapping.
+        # Stage 1 의 LLM regime classifier confidence 를 bucket sizing 에 반영.
+        # macro_report.regime.confidence (있으면) → 위험자산 multiplier (1.05/1.0/0.92).
+        macro_report = state.get("macro_report")
+        regime = getattr(macro_report, "regime", None) if macro_report else None
+        regime_confidence = (
+            float(getattr(regime, "confidence", 0.0)) if regime else None
+        )
+        bucket, confidence_mult = _apply_confidence_to_bucket(
+            bucket, regime_confidence,
+        )
+        if abs(confidence_mult - 1.0) > 1e-9:
+            logger.info(
+                "research_manager: confidence (%.2f) → risk_multiplier %.2f applied to bucket",
+                regime_confidence or 0.0, confidence_mult,
+            )
+        safety_diag["regime_confidence"] = regime_confidence
+        safety_diag["confidence_risk_multiplier"] = confidence_mult
+
+        # 2026-05-26 #3 fix — component-level outlier signal extraction.
+        # factor aggregate z 는 (예: F6=+0.137) 가 묻히지만 그 안의 단일 component
+        # (예: foreign_flow_z 가 외국인 -43.8조 → z=-3+) 는 distribution-top 신호.
+        # 모든 9 factor 의 components 검사 → |z| ≥ 3 인 outlier 추출 → 운영자
+        # 가시화 (philosophy.md narrative + risk_judge 가 사용 가능).
+        extreme_components: list[dict[str, Any]] = []
+        for factor_name in (
+            "growth_surprise", "inflation_surprise", "real_rate",
+            "term_premium", "credit_cycle", "krw_regime",
+            "equity_vol_regime", "valuation", "liquidity_regime",
+        ):
+            fs = getattr(factor_scores, factor_name, None)
+            if fs is None:
+                continue
+            for comp_name, comp_z in (fs.components or {}).items():
+                if abs(float(comp_z)) >= 3.0:
+                    extreme_components.append({
+                        "factor": fs.name,
+                        "component": comp_name,
+                        "z": round(float(comp_z), 3),
+                        "factor_aggregate_z": round(float(fs.z_score), 3),
+                    })
+        if extreme_components:
+            logger.warning(
+                "research_manager: %d extreme component(s) detected — %s",
+                len(extreme_components),
+                [(c["factor"], c["component"], c["z"]) for c in extreme_components],
+            )
+        safety_diag["extreme_components"] = extreme_components
 
         # 4. Legacy compat fields — scenario hysteresis 적용 (backtest prep).
         prior_scenario = (

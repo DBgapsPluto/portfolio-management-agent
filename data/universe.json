@@ -8,7 +8,7 @@
       "underlying_index": "KRX 금현물지수",
       "bucket": "위험",
       "category": "FX 및 원자재",
-      "sub_category": "broad_commodity",
+      "sub_category": "gold",
       "listed_since": "2021-12-15",
       "delisted_at": null
     },
@@ -63,7 +63,7 @@
       "underlying_index": "엔선물지수",
       "bucket": "위험",
       "category": "FX 및 원자재",
-      "sub_category": "gold",
+      "sub_category": "jpy_fx",
       "listed_since": "2018-04-17",
       "delisted_at": null
     },

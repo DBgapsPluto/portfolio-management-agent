@@ -103,3 +103,39 @@ def test_all_valid_labels_have_no_overlap_across_buckets():
                 f"label {label} duplicated across buckets {seen[label]} and {bucket}"
             )
             seen[label] = bucket
+
+
+# ---- 2026-05-26 #4 fix: FX/원자재 의미 분류 ----
+
+
+def test_jpy_fx_in_valid_subcategories():
+    """엔선물 별도 분류 (이전엔 gold 로 잘못 라벨링)."""
+    from tradingagents.skills.portfolio.sub_category import VALID_SUB_CATEGORIES
+    assert "jpy_fx" in VALID_SUB_CATEGORIES["fx_commodity"]
+
+
+def test_fx_subcategory_group_classifies_inflation_hedge():
+    from tradingagents.skills.portfolio.sub_category import fx_subcategory_group
+    assert fx_subcategory_group("gold") == "inflation_hedge"
+    assert fx_subcategory_group("oil_energy") == "inflation_hedge"
+    assert fx_subcategory_group("agricultural") == "inflation_hedge"
+
+
+def test_fx_subcategory_group_classifies_safe_haven():
+    from tradingagents.skills.portfolio.sub_category import fx_subcategory_group
+    assert fx_subcategory_group("usd_fx") == "safe_haven"
+    assert fx_subcategory_group("jpy_fx") == "safe_haven"
+
+
+def test_fx_subcategory_group_returns_none_for_unknown():
+    from tradingagents.skills.portfolio.sub_category import fx_subcategory_group
+    assert fx_subcategory_group(None) is None
+    assert fx_subcategory_group("") is None
+    assert fx_subcategory_group("unknown_label") is None
+
+
+def test_jpy_fx_boost_present_in_systemic_tail():
+    """systemic tail 시 jpy_fx 도 boost (carry unwind)."""
+    from tradingagents.skills.portfolio.sub_category import BOOST_BY_TAIL
+    assert "jpy_fx" in BOOST_BY_TAIL["T"]
+    assert BOOST_BY_TAIL["T"]["jpy_fx"] > 1.0

@@ -35,6 +35,13 @@ HRP_WATER_FILL_MAX_ITERS: int = 20     # HRP per-bucket cap 보정 max 반복
 PRICE_LOOKBACK_DAYS_ALLOC: int = 365 * 3   # returns matrix fetch 윈도우
 CORRELATION_THRESHOLD_ALLOC: float = 0.85  # cluster-aware fallback corr cut
 
+# 2026-05-26 #2 fix — min weight threshold.
+# HRP/MIN_VAR 가 marginal contribution 자산에 0.17% (원유) 같은 micro-position
+# 부여 → PnL 영향 없는 "장식". 10억 원 portfolio 기준 1.5% = 1500만원 = MTS
+# 단위 매수 가능한 최소 의미. threshold 미만 weight 는 drop 후 같은 bucket 의
+# 다른 자산으로 비례 redistribute.
+MIN_POSITION_WEIGHT: float = 0.015
+
 
 def create_portfolio_allocator(
     quick_llm=None, deep_llm=None, cache_path: str | None = None,
@@ -499,6 +506,10 @@ def _optimize_with_bucket_constraints(
     except Exception as e:
         logger.warning("portfolio_performance failed: %s", e)
 
+    # 2026-05-26 #2 fix — min weight threshold.
+    weights = _apply_min_weight_threshold(
+        weights, candidates, attribution=attribution,
+    )
     return WeightVector(
         method=method,
         weights=weights,
@@ -509,6 +520,81 @@ def _optimize_with_bucket_constraints(
         expected_volatility=expected_vol,
         expected_sharpe=expected_sharpe,
     )
+
+
+def _apply_min_weight_threshold(
+    weights: dict[str, float],
+    candidates,
+    min_weight: float = MIN_POSITION_WEIGHT,
+    attribution: dict | None = None,
+) -> dict[str, float]:
+    """min_weight 미만 weight 는 drop + 같은 bucket 내 비례 redistribute.
+
+    2026-05-26 #2 fix.
+    같은 bucket 내 살아남은 자산이 없으면 dropped weight 는 *전체* 자산에 비례
+    redistribute (bucket 합 보존 위반 가능하지만 dust 수준이므로 무해).
+    """
+    if not weights:
+        return weights
+    bucket_of = {
+        t: b for b, ts in candidates.bucket_to_tickers.items() for t in ts
+    }
+    dropped: dict[str, float] = {}
+    survivors: dict[str, float] = {}
+    for t, w in weights.items():
+        if w < min_weight:
+            dropped[t] = w
+        else:
+            survivors[t] = w
+
+    if not dropped:
+        return weights
+    if not survivors:
+        # 전부 drop 대상 — 그대로 둠 (edge case)
+        logger.warning(
+            "min_weight threshold: all %d weights below %.3f — keeping as-is",
+            len(weights), min_weight,
+        )
+        return weights
+
+    # 각 dropped weight 를 같은 bucket 의 survivors 에 비례 redistribute.
+    # 같은 bucket survivor 없으면 전체 survivors 에 비례.
+    for dt, dw in dropped.items():
+        db = bucket_of.get(dt)
+        same_bucket_survivors = [
+            s for s in survivors if bucket_of.get(s) == db
+        ]
+        recipients = same_bucket_survivors if same_bucket_survivors else list(survivors)
+        sub_total = sum(survivors[r] for r in recipients)
+        if sub_total <= 0:
+            continue
+        for r in recipients:
+            survivors[r] += dw * (survivors[r] / sub_total)
+
+    logger.info(
+        "min_weight threshold (%.3f): dropped %d positions (%s), "
+        "redistributed to %d survivors",
+        min_weight, len(dropped), list(dropped),
+        len(survivors),
+    )
+    if attribution is not None:
+        attribution["min_weight_dropped"] = {
+            t: float(w) for t, w in dropped.items()
+        }
+        attribution["min_weight_threshold"] = float(min_weight)
+
+    # Single asset cap 재확인 (redistribute 후 cap 초과 위험은 미미하지만 safety).
+    for t, w in list(survivors.items()):
+        if w > SINGLE_ASSET_CAP + 1e-9:
+            excess = w - SINGLE_ASSET_CAP
+            survivors[t] = SINGLE_ASSET_CAP
+            # excess 는 다른 survivor 에 비례 분배 (drop 자산 제외)
+            others = [s for s in survivors if s != t]
+            other_total = sum(survivors[s] for s in others)
+            if other_total > 0:
+                for s in others:
+                    survivors[s] += excess * (survivors[s] / other_total)
+    return survivors
 
 
 def _hrp_per_bucket(
@@ -667,6 +753,10 @@ def _hrp_per_bucket(
         f"HRP-per-bucket post-condition: {SINGLE_ASSET_CAP*100:.0f}% cap violated: {violators}"
     )
 
+    # 2026-05-26 #2 fix — min weight threshold.
+    final = _apply_min_weight_threshold(
+        final, candidates, attribution=attribution,
+    )
     return WeightVector(
         method=OptimizationMethod.HRP,
         weights=final,
