@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import logging
 
+import numpy as np
 import pandas as pd
 from pypfopt import EfficientFrontier, expected_returns, risk_models
 
@@ -35,6 +36,49 @@ logger = logging.getLogger(__name__)
 
 _BUCKET_BAND = 0.05  # ±5%p (Stage 3 D4 retry 패턴과 동일)
 SINGLE_ASSET_CAP_OVERLAY: float = 0.20
+
+# 2026-05-26 backtest follow-up #2+#3:
+# Stage 4 overlay 5-level all-infeasible 의 root cause 2 개를 함께 해결.
+# (1) MIN_COV_OBS: portfolio_allocator.py 와 동일 60 (NaN-free row 최소).
+#     신규 상장 ETF 가 후보에 포함되면 dropna(any) 후 obs 6 까지 떨어짐
+#     (2024-08-14 사례). 짧은 history ticker 부터 점진 drop.
+# (2) COV_RIDGE_LAMBDA: covariance 에 λ·trace·I 추가하여 non-PSD 회피
+#     ("Eigenvalues did not converge" 해결). λ=1e-4 는 PyPortfolioOpt 의
+#     fix_nonpositive_semidefinite 기본보다 약함, 결과 왜곡 < 0.1bp.
+_MIN_COV_OBS_OVERLAY: int = 60
+_COV_RIDGE_LAMBDA: float = 1e-4
+
+
+def _filter_returns_for_cov(
+    returns: pd.DataFrame, min_obs: int,
+) -> tuple[pd.DataFrame, list[str]]:
+    """NaN-drop 후 row 수가 min_obs 미만이면 짧은 history ticker 부터 drop.
+
+    Returns (filtered_returns, excluded_ticker_list).
+    """
+    valid = list(returns.columns)
+    filtered = returns[valid].dropna(axis=0, how="any")
+    if len(filtered) >= min_obs:
+        return filtered, []
+
+    days_per_ticker = {
+        t: int(returns[t].dropna().shape[0]) for t in valid
+    }
+    order = sorted(days_per_ticker, key=lambda t: days_per_ticker[t])
+    excluded: list[str] = []
+    while len(filtered) < min_obs and len(valid) > 5:
+        drop = order.pop(0)
+        valid.remove(drop)
+        excluded.append(drop)
+        filtered = returns[valid].dropna(axis=0, how="any")
+    return filtered, excluded
+
+
+def _ridge_cov(returns: pd.DataFrame, lam: float) -> pd.DataFrame:
+    """sample_cov + λ·mean(diag)·I — PSD 보장 (numerical stability)."""
+    S = risk_models.sample_cov(returns)
+    ridge = lam * float(np.diag(S).mean())
+    return S + ridge * np.eye(len(S))
 
 # Stage 3 audit (2026-05-26, Task 4): 5 drop_level 의미 명시.
 # 운영자가 attribution 만 봐도 어느 제약이 풀려서 통과했는지 알 수 있게.
@@ -97,6 +141,7 @@ def _solve_with_overlay(
     overlay: RiskOverlay,
     clusters: list[Cluster],
     drop_level: int,
+    overlay_attr: dict | None = None,
 ) -> WeightVector:
     """drop_level 별 overlay 구성으로 EF 풀이. infeasible 시 raise.
 
@@ -113,7 +158,19 @@ def _solve_with_overlay(
             sector_mapper[t] = bucket
 
     valid = [t for t in returns.columns if t in sector_mapper]
-    returns = returns[valid].dropna(axis=0, how="any")
+    returns, excluded = _filter_returns_for_cov(
+        returns[valid], _MIN_COV_OBS_OVERLAY,
+    )
+    if excluded:
+        logger.warning(
+            "Stage 4 overlay cov 표본 부족 — %d ETF cov 계산에서 제외: %s "
+            "(남은 표본 %d row, level=%d)",
+            len(excluded), excluded, len(returns), drop_level,
+        )
+        if overlay_attr is not None:
+            # 동일 returns matrix 면 level 별 동일 결과 → 매 호출 overwrite 무해.
+            overlay_attr["cov_excluded_tickers"] = list(excluded)
+            overlay_attr["cov_final_obs"] = int(len(returns))
 
     # multiplier: level<=3 적용, level==4 면 1.0
     eff_multiplier = (
@@ -145,7 +202,7 @@ def _solve_with_overlay(
     ceilings = overlay.weight_ceilings if drop_level <= 1 else {}
     floors = overlay.tail_hedge_floor  # floor 는 항상 유지 (안전 신호)
 
-    S = risk_models.sample_cov(returns)
+    S = _ridge_cov(returns, _COV_RIDGE_LAMBDA)
     mu = expected_returns.mean_historical_return(returns, returns_data=True)
 
     ef = EfficientFrontier(mu, S, weight_bounds=(0, SINGLE_ASSET_CAP_OVERLAY))
@@ -241,6 +298,9 @@ def apply_risk_overlay(
             "infeasible_errors": [],
             "all_failed": False,
             "dropped_constraints": [],
+            # 2026-05-26 backtest follow-up #3 — short-history ticker drop 가시화.
+            "cov_excluded_tickers": [],
+            "cov_final_obs": None,
         }
     overlay_attr = attribution["overlay"] if attribution is not None else None
 
@@ -257,7 +317,7 @@ def apply_risk_overlay(
         try:
             wv = _solve_with_overlay(
                 method, returns, candidates, bucket_target, overlay,
-                clusters, drop_level=level,
+                clusters, drop_level=level, overlay_attr=overlay_attr,
             )
             logger.info(
                 "Stage 4 overlay 성공: drop_level=%d (%s) → %s",
