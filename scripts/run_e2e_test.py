@@ -14,6 +14,14 @@ import time
 from datetime import date
 from pathlib import Path
 
+# .env auto-load (FRED/ECOS/OPENAI/KRX keys). 다른 backtest 스크립트들과 동일 패턴.
+_ROOT = Path(__file__).resolve().parent.parent
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=_ROOT / ".env")
+except ImportError:
+    pass
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
@@ -38,8 +46,8 @@ def main() -> int:
     from tradingagents.graph.trading_graph import TradingAgentsGraph
 
     logger.info("=" * 70)
-    logger.info("E2E TEST — as_of=%s, capital=%,d KRW, preset=%s",
-                args.as_of, args.capital, args.preset)
+    logger.info("E2E TEST — as_of=%s, capital=%s KRW, preset=%s",
+                args.as_of, f"{args.capital:,}", args.preset)
     logger.info("=" * 70)
 
     t0 = time.time()
