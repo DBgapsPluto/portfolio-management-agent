@@ -60,6 +60,8 @@ FACTORS: Final[tuple[str, ...]] = (
     "F7_equity_vol_regime",
     "F8_valuation",
     "F9_liquidity_regime",
+    # 2026-05-27 — F10 신규. F9 가 cross-sectional dispersion, F10 가 systemic.
+    "F10_systemic_liquidity",
 )
 
 
@@ -138,6 +140,14 @@ INITIAL_BETA: Final[dict[tuple[str, str], float]] = {
     ("F9_liquidity_regime", "fx_commodity"): -0.011,
     ("F9_liquidity_regime", "bond"):          +0.0657,
     ("F9_liquidity_regime", "cash_mmf"):      +0.0575,
+    # F10 systemic_liquidity (2026-05-27 신규, expert prior).
+    # +z = tight FCI (stress) → broad risk-off (모든 위험자산 -, 안전자산 +).
+    # F9 (cross-sectional) 보다 위험자산 영향 더 균등 (특정 자산 집중 X).
+    ("F10_systemic_liquidity", "kr_equity"):     -0.060,
+    ("F10_systemic_liquidity", "global_equity"): -0.070,
+    ("F10_systemic_liquidity", "fx_commodity"):  -0.020,
+    ("F10_systemic_liquidity", "bond"):          +0.080,
+    ("F10_systemic_liquidity", "cash_mmf"):      +0.070,
 }
 
 # Bond TIPS share separate scalar regression (spec § 5.5)
@@ -152,6 +162,7 @@ INITIAL_TIPS_BETA: Final[dict[str, float]] = {
     "F7_equity_vol_regime": 0.0,
     "F8_valuation":         0.0,
     "F9_liquidity_regime": -0.03,
+    "F10_systemic_liquidity": +0.05,  # systemic stress 시 TIPS preference 약간 ↑
 }
 
 SignRestriction = Literal[
@@ -180,6 +191,11 @@ SIGN_RESTRICTION: Final[dict[tuple[str, str], SignRestriction]] = {
     # F8 valuation (+z = expensive → -equity)
     ("F8_valuation", "kr_equity"):     "negative",
     ("F8_valuation", "global_equity"): "negative",
+    # F10 systemic_liquidity (2026-05-27, +z = tight FCI = systemic stress)
+    ("F10_systemic_liquidity", "kr_equity"):     "negative",
+    ("F10_systemic_liquidity", "global_equity"): "negative",
+    ("F10_systemic_liquidity", "bond"):          "positive",
+    ("F10_systemic_liquidity", "cash_mmf"):      "positive",
 }
 
 

@@ -49,8 +49,8 @@ def test_risk_parity_weights_sum_to_one_and_inverse_to_vol() -> None:
 
 
 def test_hand_coded_beta_pr2a_pre_45_entries() -> None:
-    """45 entries (9 factors × 5 buckets)."""
-    assert len(HAND_CODED_BETA_PR2A_PRE) == 45
+    """50 entries (10 factors × 5 buckets) — 2026-05-27 F10 systemic_liquidity 추가."""
+    assert len(HAND_CODED_BETA_PR2A_PRE) == 50
     for f in FACTORS:
         for b in BUCKETS:
             assert (f, b) in HAND_CODED_BETA_PR2A_PRE

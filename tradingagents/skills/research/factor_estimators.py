@@ -116,10 +116,13 @@ class FactorScores:
     krw_regime: FactorScore
     equity_vol_regime: FactorScore
     valuation: FactorScore
-    liquidity_regime: FactorScore
+    liquidity_regime: FactorScore       # F9 — cross-sectional stress (실제 의미)
+    # 2026-05-27 — F10_systemic_liquidity 신규 추가. NFCI/Fed BS/SOFR/IG OAS 기반.
+    # F9 (cross-sectional) 와 직교: 같은 stress 라도 source 다른 axis.
+    systemic_liquidity: FactorScore | None = None
 
     def to_dict(self) -> dict[str, float]:
-        return {
+        out = {
             "F1_growth":            self.growth_surprise.z_score,
             "F2_inflation":         self.inflation_surprise.z_score,
             "F3_real_rate":         self.real_rate.z_score,
@@ -130,6 +133,9 @@ class FactorScores:
             "F8_valuation":         self.valuation.z_score,
             "F9_liquidity_regime":  self.liquidity_regime.z_score,
         }
+        if self.systemic_liquidity is not None:
+            out["F10_systemic_liquidity"] = self.systemic_liquidity.z_score
+        return out
 
 
 # ---------------------- enum maps ----------------------
@@ -707,7 +713,21 @@ def compute_valuation(stage1: Any, mode: FactorMode = "production") -> FactorSco
 
 
 def compute_liquidity_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
-    """F9 liquidity_regime — +z = liquidity stress.
+    """F9 liquidity_regime — +z = CROSS-SECTIONAL stress (not systemic).
+
+    *명칭 주의 (2026-05-27)*: 이 factor 의 이름은 'liquidity_regime' 이지만
+    실제 측정은 *cross-sectional risk concentration / dispersion* 임. 즉:
+      - 주식-채권 상관 (eq_bond_corr) — 분산효과 약화
+      - Sector dispersion — 시장 polarization (AI 같은 narrow leadership)
+      - Breadth — 시장 폭
+      - VRP — 옵션 시장 stress
+
+    *Systemic liquidity* (NFCI, Fed BS, SOFR, IG OAS) 는 별도 factor F10
+    (compute_systemic_liquidity) 에서 측정. 두 axis 는 *직교*: 2024 AI 랠리처럼
+    systemic OK + cross-sectional stress 인 경우 다른 신호 줌.
+
+    F9 +z = cross-sectional stress (자산간 분산 사라짐) → β 가 broad equity 줄임.
+    F10 +z = systemic stress (financial conditions tight) → β 가 모든 위험자산 줄임.
 
     PR0 hotfix (C1):
     - breadth: technical_report.breadth → risk_report.breadth_kr.advancing_pct
@@ -765,6 +785,59 @@ def compute_liquidity_regime(stage1: Any, mode: FactorMode = "production") -> Fa
     return _aggregate("F9_liquidity", components_raw, weights, mode=mode)
 
 
+# ---------------------- F10 systemic_liquidity ----------------------
+
+
+def compute_systemic_liquidity(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+    """F10 systemic_liquidity — +z = SYSTEMIC stress (tight financial conditions).
+
+    2026-05-27 추가. F9 (cross-sectional) 와 직교:
+    - F9: 자산간 분산 약화 (corr breakdown, sector polarization)
+    - F10: 시스템 차원 financial conditions (Fed, repo, credit funding)
+
+    같은 시점 (예: 2024 AI 랠리) 에 systemic OK + cross-sectional STRESS 가능.
+    별도 factor 가 정합 (한 z 로 압축 시 정보 손실).
+
+    Components:
+      - nfci: Chicago Fed NFCI. + = tight conditions (stress).
+      - anfci: Adjusted NFCI (macro 제거). 더 cleaner.
+      - fed_bs_yoy_pct: Fed balance sheet YoY %. - = QT (stress) → sign 뒤집어 + push.
+      - sofr_tbill_spread: SOFR - 3M Tbill. + = funding stress.
+      - aaa_oas: IG AAA OAS. + = IG stress.
+
+    +z = stress (F9 와 부호 일관). β matrix 가 broad risk-off 로 calibrate.
+    """
+    # 기존 schema 재사용 (새 snapshot 추가 X — surgical).
+    nfci = _safe_get(stage1, "macro_report", "financial_conditions", "nfci")
+    anfci = _safe_get(stage1, "macro_report", "financial_conditions", "anfci")
+    # Fed BS YoY — schema 부재 시 None (graceful skip, F10 가 다른 4 component 로 계산).
+    fed_bs_yoy = _safe_get(stage1, "macro_report", "financial_conditions", "fed_bs_yoy_pct")
+    # fed_bs +YoY = 확장적 (stress 완화) → sign 뒤집어 -YoY 가 stress 신호
+    fed_bs_signal = None if fed_bs_yoy is None else -float(fed_bs_yoy)
+    # funding_stress.spread_bps (SOFR - 3M Tbill, bps). bps → percent (0.01 단위) 변환.
+    sofr_tbill_bps = _safe_get(stage1, "risk_report", "funding_stress", "spread_bps")
+    sofr_tbill = None if sofr_tbill_bps is None else float(sofr_tbill_bps)
+    # AAA OAS bps → percent.
+    aaa_oas_bps = _safe_get(stage1, "risk_report", "credit_quality", "aaa_oas_bps")
+    aaa_oas = None if aaa_oas_bps is None else float(aaa_oas_bps) / 100.0
+
+    components_raw: dict[str, float | None] = {
+        "nfci":              nfci,
+        "anfci":             anfci,
+        "fed_bs_signal":     fed_bs_signal,
+        "sofr_tbill_spread": sofr_tbill,
+        "aaa_oas":           aaa_oas,
+    }
+    weights: dict[str, float] = {
+        "nfci":              0.30,
+        "anfci":             0.20,
+        "fed_bs_signal":     0.15,
+        "sofr_tbill_spread": 0.20,
+        "aaa_oas":           0.15,
+    }
+    return _aggregate("F10_systemic_liquidity", components_raw, weights, mode=mode)
+
+
 # ---------------------- compute_all_factors ----------------------
 
 
@@ -789,6 +862,9 @@ def compute_all_factors(
         equity_vol_regime=compute_equity_vol_regime(stage1, mode=mode),
         valuation=compute_valuation(stage1, mode=mode),
         liquidity_regime=compute_liquidity_regime(stage1, mode=mode),
+        # 2026-05-27 — F10 신규 추가. systemic_liquidity_snapshot 부재 시 None
+        # 으로 graceful skip (downstream FactorScores.to_dict 에서 누락).
+        systemic_liquidity=compute_systemic_liquidity(stage1, mode=mode),
     )
 
 
@@ -804,6 +880,7 @@ __all__: Final = [
     "compute_inflation_surprise",
     "compute_krw_regime",
     "compute_liquidity_regime",
+    "compute_systemic_liquidity",
     "compute_real_rate",
     "compute_term_premium",
     "compute_valuation",

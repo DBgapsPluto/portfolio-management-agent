@@ -82,7 +82,9 @@ def test_research_decision_has_factor_scores():
     state = _full_state()
     result = node(state)
     rd = result["research_decision"]
-    assert len(rd.factor_scores) == 9
+    # 2026-05-27 — F10 추가. fixture 에 systemic_liquidity components 있으면 10,
+    # 없으면 9 (graceful skip). 9 이상 보장.
+    assert len(rd.factor_scores) >= 9
     assert "F1_growth" in rd.factor_scores
 
 
@@ -121,7 +123,7 @@ def test_research_decision_has_factor_contributions():
     state = _full_state()
     result = node(state)
     rd = result["research_decision"]
-    assert len(rd.factor_contributions) == 9
+    assert len(rd.factor_contributions) >= 9
     assert "kr_equity" in rd.factor_contributions["F1_growth"]
 
 

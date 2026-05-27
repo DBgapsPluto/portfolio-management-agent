@@ -381,14 +381,19 @@ def test_compute_liquidity_baseline_z_zero(_pe, _krw):
 @patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
 @patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
 def test_compute_all_factors_returns_9(_pe, _krw):
+    """2026-05-27 — F10 신규 추가. F10 component 가 fixture 에 모두 None 이면
+    None 으로 graceful skip → to_dict() 에 F10 키 없음. 기존 9 factor 만 검증.
+    """
     s = compute_all_factors(_full_stage1_baseline())
     assert isinstance(s, FactorScores)
     d = s.to_dict()
-    expected_keys = {
+    base_keys = {
         "F1_growth", "F2_inflation", "F3_real_rate", "F4_term_premium",
         "F5_credit_cycle", "F6_krw_regime", "F7_equity_vol_regime",
         "F8_valuation", "F9_liquidity_regime",
     }
-    assert set(d.keys()) == expected_keys
+    # F10 은 fixture 에 systemic_liquidity components (nfci, funding_stress 등)
+    # 가 있으면 포함, 없으면 graceful skip. base_keys 는 항상 존재.
+    assert base_keys.issubset(set(d.keys()))
     for v in d.values():
         assert -3.0 <= v <= 3.0

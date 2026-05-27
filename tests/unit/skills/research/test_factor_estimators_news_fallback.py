@@ -155,13 +155,15 @@ def test_factor_all_news_tiers_missing(_pe, _krw):
 @patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
 @patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
 def test_compute_all_factors_returns_9(_pe, _krw):
+    """2026-05-27 — F10 추가. fixture 에 systemic_liquidity components 없으면
+    9 keys 만, 있으면 10. base 9 keys 항상 존재."""
     s1 = _full_stage1()
     fs = compute_all_factors(s1)
     d = fs.to_dict()
-    assert len(d) == 9
-    expected_keys = {
+    assert len(d) >= 9
+    base_keys = {
         "F1_growth", "F2_inflation", "F3_real_rate", "F4_term_premium",
         "F5_credit_cycle", "F6_krw_regime", "F7_equity_vol_regime",
         "F8_valuation", "F9_liquidity_regime",
     }
-    assert set(d.keys()) == expected_keys
+    assert base_keys.issubset(set(d.keys()))

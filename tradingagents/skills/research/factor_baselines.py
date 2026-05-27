@@ -112,6 +112,14 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F9_liquidity", "breadth"):            (0.55, 0.15),
     ("F9_liquidity", "event_cluster"):      (1.5, 1.5),
     ("F9_liquidity", "rising_signal"):      (0.5, 0.5),
+
+    # === F10 systemic_liquidity (2026-05-27 신규) ===
+    # +z = tight financial conditions (stress).
+    ("F10_systemic_liquidity", "nfci"):              (-0.4, 0.5),    # NFCI long-run mean ~ -0.4 (easy), sd 0.5
+    ("F10_systemic_liquidity", "anfci"):             (0.0, 0.5),     # adjusted — mean ~ 0
+    ("F10_systemic_liquidity", "fed_bs_signal"):     (5.0, 10.0),    # -YoY% (sign 뒤집힘) — 평균 -5% YoY 가정 → signal=+5
+    ("F10_systemic_liquidity", "sofr_tbill_spread"): (5.0, 10.0),    # SOFR-Tbill bp 평균 ~5bp, sd 10bp
+    ("F10_systemic_liquidity", "aaa_oas"):           (0.6, 0.3),     # IG AAA OAS 평균 60bp = 0.6%, sd 30bp
 }
 
 

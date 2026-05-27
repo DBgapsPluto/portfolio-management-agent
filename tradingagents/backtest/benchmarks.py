@@ -77,6 +77,12 @@ HAND_CODED_BETA_PR2A_PRE: Final[dict[tuple[str, str], float]] = {
     ("F9_liquidity_regime", "fx_commodity"):  -0.01,
     ("F9_liquidity_regime", "bond"):          +0.04,
     ("F9_liquidity_regime", "cash_mmf"):      +0.05,
+    # F10 systemic_liquidity (2026-05-27 신규)
+    ("F10_systemic_liquidity", "kr_equity"):     -0.04,
+    ("F10_systemic_liquidity", "global_equity"): -0.05,
+    ("F10_systemic_liquidity", "fx_commodity"):  -0.01,
+    ("F10_systemic_liquidity", "bond"):          +0.05,
+    ("F10_systemic_liquidity", "cash_mmf"):      +0.05,
 }
 
 
