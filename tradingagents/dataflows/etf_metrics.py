@@ -176,10 +176,33 @@ def compute_tracking_error_12m(
 
     우선순위:
       1. KRX 공시 tracking_rate (% 단위) std (60일 이상 필요)
-      2. fallback: market_price daily returns vs index_returns std of difference ×√252×100
-      3. 데이터 부족 시 None
+      2. fallback: market_price daily returns vs index_returns 의 std×√252×100
+      3. 부족 시 None
     """
-    raise NotImplementedError
+    if ticker not in metrics.index.get_level_values("ticker"):
+        return None
+    sub = metrics.xs(ticker, level="ticker")
+    if sub.empty:
+        return None
+
+    # 1순위: tracking_rate 의 std (pp)
+    if "tracking_rate" in sub.columns:
+        rates = sub["tracking_rate"].dropna()
+        if len(rates) >= 60:
+            recent = rates.tail(252)
+            return float(recent.std())
+
+    # 2순위: market_price vs index_returns
+    if index_returns is None:
+        return None
+    fund_returns = sub["market_price"].pct_change().dropna()
+    if len(fund_returns) < 60:
+        return None
+    aligned_fund, aligned_idx = fund_returns.align(index_returns, join="inner")
+    diff = (aligned_fund - aligned_idx).dropna()
+    if len(diff) < 60:
+        return None
+    return float(diff.std() * np.sqrt(252) * 100.0)
 
 
 def compute_premium_discount_median(
