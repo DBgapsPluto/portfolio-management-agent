@@ -5,12 +5,16 @@ Reference: Asness 2003 FAJ, Campbell-Shiller 1988 RFS.
 """
 from __future__ import annotations
 
+import io
 import logging
 import urllib.request
 from datetime import date
 from typing import Final
 
 import pandas as pd
+from tenacity import (
+    retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,15 +31,27 @@ def _decimal_year_to_date(dy: float) -> pd.Timestamp:
     return pd.Timestamp(year=year, month=month, day=1)
 
 
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+)
+def _raw_shiller_fetch() -> bytes:
+    """Download raw xls bytes from Yale. Separately mockable + retriable."""
+    req = urllib.request.Request(SHILLER_URL, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.read()
+
+
 def fetch_shiller_cape(as_of: date | None = None) -> pd.Series:
     """Monthly Shiller CAPE (cyclically adjusted P/E10).
 
     Returns pd.Series indexed by month-start Timestamp, dtype float, name='cape'.
     Drops NaN (early years before 10y rolling enough).
     """
-    req = urllib.request.Request(SHILLER_URL, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=30) as r:
-        df = pd.read_excel(r, sheet_name="Data", skiprows=7)
+    data = _raw_shiller_fetch()
+    df = pd.read_excel(io.BytesIO(data), sheet_name="Data", skiprows=7)
     cape_col = "CAPE" if "CAPE" in df.columns else "TR CAPE"
     df["_date"] = df["Date"].apply(_decimal_year_to_date)
     df = df.dropna(subset=[cape_col, "_date"]).set_index("_date")

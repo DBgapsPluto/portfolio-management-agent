@@ -1,4 +1,4 @@
-import io, pytest
+import pytest
 from unittest.mock import patch
 from datetime import date
 import pandas as pd
@@ -13,13 +13,13 @@ def test_decimal_year_conversion():
     assert _decimal_year_to_date(2026.12) == pd.Timestamp(2026, 12, 1)
 
 
-def test_fetch_shiller_cape_parses_excel(monkeypatch):
-    """Mock urllib + verify CAPE column extracted, decimal year converted."""
+def test_fetch_shiller_cape_parses_excel():
+    """Mock _raw_shiller_fetch + verify CAPE column extracted, decimal year converted."""
     fake_df = pd.DataFrame({
         "Date": [2020.01, 2020.02, 2020.03],
         "CAPE": [30.5, 31.2, 28.7],
     })
-    with patch("tradingagents.dataflows.shiller_cape.urllib.request.urlopen"), \
+    with patch("tradingagents.dataflows.shiller_cape._raw_shiller_fetch", return_value=b""), \
          patch("tradingagents.dataflows.shiller_cape.pd.read_excel", return_value=fake_df):
         result = fetch_shiller_cape(as_of=date(2020, 3, 31))
     assert len(result) == 3
@@ -28,15 +28,16 @@ def test_fetch_shiller_cape_parses_excel(monkeypatch):
     assert result.index[0].year == 2020
 
 
-def test_fetch_shiller_cape_as_of_truncates(monkeypatch):
+def test_fetch_shiller_cape_as_of_truncates():
     fake_df = pd.DataFrame({
         "Date": [2020.01, 2020.02, 2020.03],
         "CAPE": [30.5, 31.2, 28.7],
     })
-    with patch("tradingagents.dataflows.shiller_cape.urllib.request.urlopen"), \
+    with patch("tradingagents.dataflows.shiller_cape._raw_shiller_fetch", return_value=b""), \
          patch("tradingagents.dataflows.shiller_cape.pd.read_excel", return_value=fake_df):
         result = fetch_shiller_cape(as_of=date(2020, 2, 15))
-    assert len(result) <= 2  # Jan + Feb only
+    assert len(result) == 2  # exactly 2 (Jan + Feb)
+    assert result.index[-1] <= pd.Timestamp(2020, 2, 15)
 
 
 @pytest.mark.network
