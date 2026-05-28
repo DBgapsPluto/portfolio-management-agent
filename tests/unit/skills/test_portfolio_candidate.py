@@ -458,3 +458,65 @@ def test_eligibility_no_aum_filter():
     eligible = list_eligible_tickers(universe, bt, as_of=date(2026, 5, 28))
     assert "A111111" in eligible["kr_equity"]
     assert "A222222" in eligible["kr_equity"]  # 100억도 통과
+
+
+def test_bond_split_path_populates_bucket_alpha_scores():
+    """_select_bond_with_tips_quota 후 attribution['buckets']['bond']['alpha_scores']
+    가 sub_pool 들의 alpha 를 통합해 채워져 있어야 함 (cash_spillover 의존)."""
+    from datetime import date
+    import pandas as pd
+    import numpy as np
+
+    from tradingagents.dataflows.universe import ETFEntry, Universe
+    from tradingagents.schemas.portfolio import BucketTarget
+    from tradingagents.skills.portfolio.candidate_selector import select_etf_candidates
+    from tradingagents.skills.portfolio.factor_scorer import FactorPanel
+
+    # bond bucket 후보: TIPS 1개 + nominal 2개
+    etfs = [
+        ETFEntry(
+            ticker="A_TIPS01", name="TIPS01", aum_krw=10_000_000_000,
+            underlying_index="ICE TIPS", bucket="안전", category="해외채권_종합",
+            sub_category="inflation_linked",
+        ),
+        ETFEntry(
+            ticker="A_NOM01", name="NOM01", aum_krw=50_000_000_000,
+            underlying_index="KIS A", bucket="안전", category="국내채권_종합",
+            sub_category="nominal",
+        ),
+        ETFEntry(
+            ticker="A_NOM02", name="NOM02", aum_krw=30_000_000_000,
+            underlying_index="KIS B", bucket="안전", category="국내채권_종합",
+            sub_category="nominal",
+        ),
+    ]
+    universe = Universe(version="test", etfs=etfs)
+    bt = BucketTarget(
+        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
+        bond=0.7, cash_mmf=0.3, bond_tips_share=0.3,
+        rationale="test",
+    )
+    # 가짜 returns + factor_panel
+    rng = np.random.default_rng(7)
+    returns = pd.DataFrame(
+        rng.normal(0, 0.01, size=(252, 3)),
+        columns=["A_TIPS01", "A_NOM01", "A_NOM02"],
+    )
+    factor_panel = {
+        t: FactorPanel(
+            skip1m_mom_3m=0.0, skip1m_mom_6m=0.0, skip1m_mom_12m=0.0,
+            realized_vol_60d=0.05, sharpe_60d=0.5,
+            log_aum=np.log(50_000_000_000),
+        )
+        for t in ["A_TIPS01", "A_NOM01", "A_NOM02"]
+    }
+    attribution: dict = {}
+    select_etf_candidates(
+        universe, bt, as_of=date(2026, 5, 28),
+        returns=returns, factor_panel=factor_panel,
+        per_bucket_n=3, attribution=attribution,
+    )
+    bond_attr = attribution["buckets"]["bond"]
+    assert "alpha_scores" in bond_attr
+    # TIPS + nominal 모든 ticker 가 통합 alpha_scores 에 포함
+    assert set(bond_attr["alpha_scores"].keys()) >= {"A_TIPS01", "A_NOM01", "A_NOM02"}

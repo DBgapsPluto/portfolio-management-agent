@@ -331,6 +331,16 @@ def _select_bond_with_tips_quota(
         breakdown_out["selection_traces"] = sub_pool_traces
         breakdown_out["tips_picks"] = tips_picks
         breakdown_out["nominal_picks"] = nominal_picks
+        # NEW: bucket level merged alpha_scores — cash_spillover._collect_alpha_scores_per_bucket 가 사용
+        merged_alpha: dict[str, float] = {}
+        for label, sp in sub_pool_breakdowns.items():
+            per_t = sp.get("per_ticker") or {}
+            for t, info in per_t.items():
+                score = info.get("final_score")
+                if score is None:
+                    score = info.get("base_score", 0.0)
+                merged_alpha[t] = float(score)
+        breakdown_out["alpha_scores"] = merged_alpha
 
     return tips_picks + nominal_picks
 
