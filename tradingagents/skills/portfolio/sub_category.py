@@ -51,6 +51,9 @@ VALID_SUB_CATEGORIES: dict[str, list[str]] = {
         "agricultural",
         "broad_commodity",
         "usd_fx",
+        # 2026-05-26 #4 fix — 엔선물 (디플레/캐리 통화) 별도 분류. 기존엔
+        # "gold" 로 잘못 라벨링되어 인플레 헤지 weight 받았음.
+        "jpy_fx",
     ],
     "bond": [
         "kr_treasury",         # 한국 국고채
@@ -120,7 +123,10 @@ BOOST_BY_TAIL: dict[str, dict[str, float]] = {
         "us_high_yield": 0.4, "em_bond": 0.6,
         "mmf_kr": 1.3, "mmf_usd": 1.3, "short_kr_bond": 1.2,
         "short_duration": 1.4,
-        "gold": 1.3,  # tail flight to gold
+        "gold": 1.3,             # tail flight to gold
+        # 2026-05-26 #4 fix — 캐리 통화 unwind (USD/JPY 약세) 시 안전자산 flight.
+        "usd_fx": 1.2,           # 달러 강세 (안전자산 dollar smile)
+        "jpy_fx": 1.2,           # 엔 강세 (carry unwind)
     },
 }
 
@@ -170,6 +176,10 @@ _LEGACY_SCENARIO_TO_AXES: dict[str, tuple[str, str, str]] = {
     "global_credit":    ("C", "T", "F"),
     "kr_boom":          ("A", "N", "boom"),
     "kr_stress":        ("A", "N", "stress"),
+    # 2026-05-26 #5 fix — late_cycle + sticky inflation.
+    # B cycle (growth+inflation) 의 약화 버전. inflation_hedge 자산 boost
+    # (stagflation 보다 약함). F5 약세 반영.
+    "late_cycle":       ("B", "N", "F"),
 }
 
 
@@ -286,3 +296,31 @@ def classify_batch_via_llm(
                 continue
             result[item["ticker"]] = label
     return result
+
+
+# 2026-05-26 #4 fix — FX/원자재 bucket 의미 분류 (inflation_hedge vs safe_haven).
+# 평가의 핵심 비판: "FX/원자재 17.7% 인플레 헤지" 라벨링 인데 실제로는 엔선물
+# 11% (디플레 통화) 가 차지 → 라벨 사기. sub_category 의 *기능 그룹* 매핑.
+FX_COMMODITY_GROUP: dict[str, str] = {
+    # inflation hedge
+    "gold":            "inflation_hedge",
+    "silver_precious": "inflation_hedge",
+    "oil_energy":      "inflation_hedge",
+    "agricultural":    "inflation_hedge",
+    "broad_commodity": "inflation_hedge",
+    "materials_energy": "inflation_hedge",
+    # safe haven (캐리 unwind / dollar smile)
+    "usd_fx":          "safe_haven",
+    "jpy_fx":          "safe_haven",
+}
+
+
+def fx_subcategory_group(sub_category: str | None) -> str | None:
+    """fx_commodity bucket 내 자산의 기능 그룹 반환.
+
+    Returns 'inflation_hedge' | 'safe_haven' | None (분류 안 됨).
+    F2_inflation z + 면 inflation_hedge 선호, F5 약세 면 safe_haven 선호 신호.
+    """
+    if not sub_category:
+        return None
+    return FX_COMMODITY_GROUP.get(sub_category)

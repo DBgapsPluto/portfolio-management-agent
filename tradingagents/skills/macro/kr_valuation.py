@@ -39,7 +39,10 @@ def compute_kospi_valuation(as_of: date) -> KRValuationSnapshot | None:
     """
     try:
         date_str = as_of.strftime("%Y%m%d")
-        df = stock.get_market_fundamental(date_str, market="KOSPI200")
+        # Backtest fix (2026-05-26): pykrx 의 최신 버전이 market="KOSPI200" 옵션
+        # 미지원 (KeyError). market="KOSPI" 만 받음. KOSPI 200 이 KOSPI 시총 ~80%+
+        # 차지하므로 PBR/PER 평균은 거의 동일 (오차 <5%).
+        df = stock.get_market_fundamental(date_str, market="KOSPI")
         if df is None or df.empty:
             logger.warning(
                 "KOSPI valuation: pykrx returned empty for %s — F8 valuation component skipped",

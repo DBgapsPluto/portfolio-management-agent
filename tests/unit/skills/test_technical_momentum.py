@@ -1,7 +1,9 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from tradingagents.dataflows.universe import Universe, ETFEntry
+from tradingagents.skills.portfolio.factor_scorer import compute_factor_panel
 from tradingagents.skills.technical.momentum_ranker import rank_momentum
 
 
@@ -33,3 +35,42 @@ def test_rank_momentum_groups_by_category():
     assert "국내주식_지수" in rankings
     assert "해외주식_지수" in rankings
     assert all(r.rank_in_category == 1 for cat in rankings.values() for r in cat[:1])
+
+
+@pytest.mark.parametrize("window_label,window", [
+    ("3m", 63), ("6m", 126), ("12m", 252),
+])
+def test_skip1m_definition_matches_across_stages(window_label, window):
+    """Regression: Stage 1 momentum_ranker and Stage 3 factor_scorer must
+    produce the same skip-1m momentum for the same series + window.
+
+    Stage 1 uses close-ratio: close[t-21] / close[t-21-window] - 1
+    Stage 3 uses return-product over the matching slice of daily returns.
+    With no missing data, these are mathematically equivalent.
+    """
+    rng = np.random.default_rng(7)
+    n = 320  # > 252 + 21 buffer
+    daily_returns = rng.normal(0.0005, 0.01, n)
+    close = 100.0 * np.cumprod(1.0 + daily_returns)
+    dates = pd.date_range("2023-01-02", periods=n, freq="B")
+    close_series = pd.Series(close, index=dates)
+    return_series = close_series.pct_change().dropna()
+
+    # Stage 1 convention (anchor-based price ratio)
+    anchor = float(close_series.iloc[-22])
+    base = float(close_series.iloc[-22 - window])
+    ranker_mom = anchor / base - 1.0
+
+    # Stage 3 convention (return-product over same slice)
+    panel = compute_factor_panel(return_series, aum_krw=1e12)
+    scorer_mom = {
+        63: panel.skip1m_mom_3m,
+        126: panel.skip1m_mom_6m,
+        252: panel.skip1m_mom_12m,
+    }[window]
+
+    assert scorer_mom is not None, f"{window_label} returned None"
+    assert ranker_mom == pytest.approx(scorer_mom, abs=1e-9), (
+        f"{window_label} mismatch: ranker={ranker_mom:.10f} "
+        f"scorer={scorer_mom:.10f} (diff={ranker_mom - scorer_mom:.2e})"
+    )

@@ -101,6 +101,13 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "breadth":            "medium",   # narrow AI rally distortion
     "event_cluster":      "high",
     "rising_signal":      "medium",
+
+    # ----- F10 systemic_liquidity (2026-05-27 신규) -----
+    "nfci":               "high",     # Chicago Fed NFCI, weekly, FRED 직접
+    "anfci":              "high",
+    "fed_bs_signal":      "high",     # WALCL FRED, weekly
+    "sofr_tbill_spread":  "high",     # SOFR + DTB3 FRED, daily
+    "aaa_oas":            "high",     # IG AAA OAS FRED (BAA10Y fallback)
 }
 
 

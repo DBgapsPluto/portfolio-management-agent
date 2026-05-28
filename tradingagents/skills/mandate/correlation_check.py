@@ -4,10 +4,16 @@ from tradingagents.schemas.technical import Cluster
 from tradingagents.skills.registry import register_skill
 
 
+# Stage 5 audit (2026-05-26, Task 1): named const.
+# DB GAPS 룰북 + Stage 4 책임 분리 (Stage 4 concentration_lens 가 더 strict cap 추가).
+DEFAULT_CLUSTER_CAP: float = 0.25
+FLOAT_TOLERANCE: float = 1e-6
+
+
 @register_skill(name="validate_correlation_concentration", category="mandate")
 def validate_correlation_concentration(
     weights: WeightVector, clusters: list[Cluster],
-    cluster_cap: float = 0.25,
+    cluster_cap: float = DEFAULT_CLUSTER_CAP,
 ) -> ValidationReport:
     """Single correlation cluster (e.g., AI/semi) sum should ≤ cluster_cap.
 
@@ -18,7 +24,7 @@ def validate_correlation_concentration(
     violations = []
     for cluster in clusters:
         cluster_sum = sum(weights.weights.get(t, 0) for t in cluster.members)
-        if cluster_sum > cluster_cap + 1e-6:
+        if cluster_sum > cluster_cap + FLOAT_TOLERANCE:
             violations.append(Violation(
                 rule="correlation_concentration",
                 description=(

@@ -9,6 +9,7 @@ import pytest
 
 from tradingagents.agents.allocator.portfolio_allocator import (
     create_portfolio_allocator, _hrp_per_bucket, _build_sector_mapper_and_bounds,
+    _apply_min_weight_threshold, _apply_subcategory_cap,
 )
 from tradingagents.dataflows.universe import sync_from_xlsx
 from tradingagents.schemas.portfolio import (
@@ -225,3 +226,129 @@ def test_hrp_per_bucket_enforces_bond_tips_split():
     # bond_tips_share=0.50 of bond 40% = 20% TIPS
     assert tips_sum == pytest.approx(0.20, abs=0.03), f"TIPS sum {tips_sum} != 0.20"
     assert nom_sum == pytest.approx(0.20, abs=0.03), f"nominal sum {nom_sum} != 0.20"
+
+
+# ---- 2026-05-26 #2 fix: min weight threshold ----
+
+
+def _candidate_set_two_bucket():
+    return CandidateSet(
+        bucket_to_tickers={
+            "fx_commodity": ["A_FX1", "A_FX2", "A_GOLD"],
+            "bond": ["A_BOND1", "A_BOND2", "A_BOND3", "A_BOND4", "A_BOND5"],
+        },
+        selection_criteria="t", total_candidates=8,
+    )
+
+
+def test_min_weight_threshold_drops_dust_position():
+    """0.17% (원유 케이스) 같은 dust 는 drop + 같은 bucket 재분배.
+
+    Input precondition: 모든 weight ≤ SINGLE_ASSET_CAP (0.20).
+    """
+    weights = {
+        "A_FX1": 0.18, "A_FX2": 0.165, "A_GOLD": 0.005,  # gold dust
+        "A_BOND1": 0.16, "A_BOND2": 0.165, "A_BOND3": 0.16,
+        "A_BOND4": 0.16, "A_BOND5": 0.005,  # A_BOND5 도 dust (bond bucket)
+    }
+    assert sum(weights.values()) == pytest.approx(1.0, abs=1e-6)
+    cs = _candidate_set_two_bucket()
+    attribution: dict = {}
+    new_w = _apply_min_weight_threshold(weights, cs, attribution=attribution)
+    assert "A_GOLD" not in new_w, "fx dust not dropped"
+    assert "A_BOND5" not in new_w, "bond dust not dropped"
+    assert "min_weight_dropped" in attribution
+    assert "A_GOLD" in attribution["min_weight_dropped"]
+    assert "A_BOND5" in attribution["min_weight_dropped"]
+    # Sum 보존 (1.0)
+    assert sum(new_w.values()) == pytest.approx(1.0, abs=1e-6)
+    # 같은 bucket 의 survivors 가 dust 흡수
+    assert new_w["A_FX1"] > 0.18
+    assert new_w["A_FX2"] > 0.165
+    assert new_w["A_BOND1"] > 0.16
+
+
+def test_min_weight_threshold_no_op_when_all_above():
+    """모든 weight 가 threshold 이상이면 no-op."""
+    weights = {"A_FX1": 0.18, "A_FX2": 0.18, "A_BOND1": 0.18,
+               "A_BOND2": 0.18, "A_BOND3": 0.18, "A_BOND4": 0.10}
+    cs = _candidate_set_two_bucket()
+    new_w = _apply_min_weight_threshold(weights, cs)
+    assert new_w == weights
+
+
+def test_min_weight_threshold_redistributes_to_global_when_bucket_empty():
+    """같은 bucket 의 survivors 없으면 전체 survivors 에 비례 redistribute."""
+    weights = {
+        "A_FX1": 0.005, "A_FX2": 0.005, "A_GOLD": 0.005,  # 전 fx bucket dust
+        "A_BOND1": 0.197, "A_BOND2": 0.197, "A_BOND3": 0.197,
+        "A_BOND4": 0.197, "A_BOND5": 0.197,
+    }
+    cs = _candidate_set_two_bucket()
+    new_w = _apply_min_weight_threshold(weights, cs)
+    assert "A_FX1" not in new_w
+    assert "A_GOLD" not in new_w
+    assert sum(new_w.values()) == pytest.approx(1.0, abs=1e-6)
+
+
+# ---- 2026-05-26 fix-A: sub_category cap ----
+
+
+def _candidate_set_fx_test():
+    return CandidateSet(
+        bucket_to_tickers={
+            "fx_commodity": ["A_JPY", "A_USD", "A_GOLD", "A_OIL"],
+        },
+        selection_criteria="t", total_candidates=4,
+    )
+
+
+def test_subcategory_cap_reduces_dominant_subcat():
+    """단일 sub_category 가 bucket 50% 초과 → cap + 다른 sub_cat 으로 redistribute."""
+    weights = {
+        "A_JPY": 0.13,   # jpy_fx — 13%, bucket 19% 의 68%
+        "A_USD": 0.03,   # usd_fx
+        "A_GOLD": 0.02,  # gold
+        "A_OIL": 0.01,   # oil
+    }
+    # bucket fx 합 = 0.19, jpy_fx 합 0.13 > 0.50 × 0.19 = 0.095
+    sub_lookup = {
+        "A_JPY": "jpy_fx", "A_USD": "usd_fx",
+        "A_GOLD": "gold", "A_OIL": "oil_energy",
+    }
+    cs = _candidate_set_fx_test()
+    attribution: dict = {}
+    new_w = _apply_subcategory_cap(
+        weights, cs, sub_category_lookup=sub_lookup, attribution=attribution,
+    )
+    # A_JPY 가 capped (bucket 19% × 50% = 9.5%)
+    assert new_w["A_JPY"] == pytest.approx(0.19 * 0.5, abs=1e-6)
+    # Sum 보존
+    assert sum(new_w.values()) == pytest.approx(sum(weights.values()), abs=1e-6)
+    # 다른 sub_cat 자산이 증가
+    assert new_w["A_USD"] > 0.03
+    assert new_w["A_GOLD"] > 0.02
+    # attribution 기록
+    assert "subcategory_capped" in attribution
+
+
+def test_subcategory_cap_no_op_when_balanced():
+    """모든 sub_category 가 50% 이하면 no-op."""
+    weights = {
+        "A_JPY": 0.05, "A_USD": 0.05, "A_GOLD": 0.05, "A_OIL": 0.04,
+    }
+    sub_lookup = {
+        "A_JPY": "jpy_fx", "A_USD": "usd_fx",
+        "A_GOLD": "gold", "A_OIL": "oil_energy",
+    }
+    cs = _candidate_set_fx_test()
+    new_w = _apply_subcategory_cap(weights, cs, sub_category_lookup=sub_lookup)
+    assert new_w == weights
+
+
+def test_subcategory_cap_no_lookup_returns_unchanged():
+    """sub_category_lookup=None 또는 빈 dict 면 변경 없음."""
+    weights = {"A_JPY": 0.13, "A_USD": 0.06}
+    cs = _candidate_set_fx_test()
+    assert _apply_subcategory_cap(weights, cs, sub_category_lookup=None) == weights
+    assert _apply_subcategory_cap(weights, cs, sub_category_lookup={}) == weights

@@ -70,6 +70,13 @@ def main() -> int:
         help="PnL CSV (columns: equity 필수). 일별 equity 시계열",
     )
     parser.add_argument(
+        "--transactions-csv", type=Path, default=None,
+        help=(
+            "MTS 거래내역 CSV (columns: 거래일자, 거래금액). "
+            "회전율 §3.2 (월별 10% floor) 평가용 — optional"
+        ),
+    )
+    parser.add_argument(
         "--as-of-date", type=str, required=True,
         help="YYYY-MM-DD — runs/{date}/ archive 위치 + monthly.md 위치 결정",
     )
@@ -93,6 +100,9 @@ def main() -> int:
     if not args.pnl_csv.exists():
         logger.error("pnl-csv not found: %s", args.pnl_csv)
         return 1
+    if args.transactions_csv is not None and not args.transactions_csv.exists():
+        logger.error("transactions-csv not found: %s", args.transactions_csv)
+        return 1
 
     # State 복원
     run_dir = resolve_run_dir(args.as_of_date)
@@ -112,9 +122,16 @@ def main() -> int:
     out_path = args.out or (run_dir / "monthly.md")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # 생성
-    write_monthly(state, args.pnl_csv, args.month, llm, out_path)
-    logger.info("Written: %s", out_path)
+    # capital_krw가 state에 없으면 reports.monthly의 fallback (1B) 사용.
+    # as_of_date는 _restore_state_from_archive가 이미 설정.
+    write_monthly(
+        state, args.pnl_csv, args.month, llm, out_path,
+        transactions_csv=args.transactions_csv,
+    )
+    logger.info(
+        "Written: %s (transactions_csv=%s)",
+        out_path, args.transactions_csv,
+    )
     return 0
 
 

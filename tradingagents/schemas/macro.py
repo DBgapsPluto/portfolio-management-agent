@@ -38,14 +38,16 @@ class InflationSnapshot(StalenessAware):
     accelerating: bool = Field(description="True if 3mo > 6mo > 12mo (CPI)")
     # 2026-05 보강: Fed 공식 inflation 타겟은 PCE. CPI는 시장이 보지만 정책
     # 결정 anchor는 PCE (특히 Core PCE). 두 다 노출하여 LLM이 균형 판단.
-    pce_yoy: float = Field(
-        default=0.0, description="PCE YoY % — Fed 공식 inflation 타겟",
+    # 2026-05 fix: 결측(fetch 실패) 시 None — 이전엔 default=0.0 이라 "PCE 0%"
+    # (디플레) 와 데이터 부재 가 동일 값으로 LLM 에 들어가 구분 불가능했음.
+    pce_yoy: float | None = Field(
+        default=None, description="PCE YoY % — Fed 공식 inflation 타겟. None=fetch 실패.",
     )
-    core_pce_yoy: float = Field(
-        default=0.0, description="Core PCE YoY % — Fed 핵심 모니터링 (ex food/energy)",
+    core_pce_yoy: float | None = Field(
+        default=None, description="Core PCE YoY % — Fed 핵심 모니터링. None=fetch 실패.",
     )
-    pce_momentum_3mo: float = Field(
-        default=0.0, description="Core PCE 3-month annualized — Powell이 자주 인용",
+    pce_momentum_3mo: float | None = Field(
+        default=None, description="Core PCE 3-month annualized — Powell이 자주 인용. None=결측.",
     )
 
 
@@ -169,7 +171,8 @@ class InflationExpectationsSnapshot(StalenessAware):
         description="True if 5Y5Y ∈ [1.5, 3.0] AND Michigan 1y ∈ [2.0, 4.0]"
     )
     unanchored_direction: Literal["upside", "downside", "none"] = Field(
-        description="upside if breakeven>3 or michigan>4; downside if breakeven<1.5"
+        description="upside if breakeven>3 or michigan>4; "
+                    "downside if breakeven<1.5 or michigan<2.0"
     )
 
 
@@ -205,7 +208,8 @@ class RiskAppetiteSnapshot(StalenessAware):
     copper_price: float = Field(description="COMEX copper futures (HG=F), USD/lb")
     gold_price: float = Field(description="COMEX gold futures (GC=F), USD/oz")
     ratio: float = Field(description="copper / gold * 100 for readability")
-    ratio_percentile_1y: float = Field(ge=0, le=1, description="1-year percentile rank")
+    # 2026-05 rename: 실제 window 가 5y. field name 이 1y 라 LLM/reader misled.
+    ratio_percentile_5y: float = Field(ge=0, le=1, description="5-year percentile rank of Cu/Au ratio")
     signal: Literal["risk_on", "risk_off", "neutral"] = Field(
         description="risk_on if percentile>0.7, risk_off if <0.3"
     )

@@ -11,45 +11,56 @@ Threshold (보수적 초기값, Phase 3 calibration):
   none:     else
 
 Overlay template per level (preset, deterministic):
-  critical: multiplier=0.6, tail_hedge_floor cash_mmf=0.05
-  high:     multiplier=0.75
-  medium:   multiplier=0.9
+  critical: multiplier=MULTIPLIER_CRITICAL=0.6
+  high:     multiplier=MULTIPLIER_HIGH=0.75
+  medium:   multiplier=MULTIPLIER_MEDIUM=0.9
   low/none: empty
 """
+import logging
+
 from tradingagents.skills.risk.portfolio_metrics import PortfolioNumerics
 from tradingagents.schemas.risk_overlay import LensConcern, RiskOverlayDelta
 
+logger = logging.getLogger(__name__)
 
-_CRITICAL_CVAR = 0.04
-_HIGH_CVAR = 0.03
-_MEDIUM_CVAR = 0.025
-_LOW_CVAR = 0.02
 
-_CRITICAL_SYSTEMIC = 9.0
-_HIGH_SYSTEMIC = 8.0
-_MEDIUM_SYSTEMIC = 7.0
-_LOW_SYSTEMIC = 6.0
+# Stage 4 audit (2026-05-26, Task 2): named constants — Phase 3 backtest
+# calibration 시 한 곳에서 튜닝. _ prefix 제거 (외부 test 가 검증).
+CRITICAL_CVAR: float = 0.04        # 1-day 95% CVaR 4% — tail event 정의
+HIGH_CVAR: float = 0.03
+MEDIUM_CVAR: float = 0.025
+LOW_CVAR: float = 0.02
+
+CRITICAL_SYSTEMIC: float = 9.0     # Stage 1 systemic_score 0-10 척도
+HIGH_SYSTEMIC: float = 8.0
+MEDIUM_SYSTEMIC: float = 7.0
+LOW_SYSTEMIC: float = 6.0
+
+# Preset overlay multiplier per level (위험자산 배율; <1.0 = 보수적).
+MULTIPLIER_CRITICAL: float = 0.6   # 위험 60% 로 축소
+MULTIPLIER_HIGH: float = 0.75
+MULTIPLIER_MEDIUM: float = 0.9
 
 
 def _level_from_inputs(
     cvar: float, systemic: float, vix_backwardation: bool, funding_stress: bool,
 ) -> str:
     if (
-        cvar >= _CRITICAL_CVAR
-        or systemic >= _CRITICAL_SYSTEMIC
+        cvar >= CRITICAL_CVAR
+        or systemic >= CRITICAL_SYSTEMIC
         or (vix_backwardation and funding_stress)
     ):
         return "critical"
     if (
-        cvar >= _HIGH_CVAR
-        or systemic >= _HIGH_SYSTEMIC
+        cvar >= HIGH_CVAR
+        or systemic >= HIGH_SYSTEMIC
         or vix_backwardation
         or funding_stress
     ):
         return "high"
-    if cvar >= _MEDIUM_CVAR or systemic >= _MEDIUM_SYSTEMIC:
+    if cvar >= MEDIUM_CVAR or systemic >= MEDIUM_SYSTEMIC:
         return "medium"
-    if cvar >= _LOW_CVAR or systemic >= _LOW_SYSTEMIC:
+    if cvar >= LOW_CVAR or systemic >= LOW_SYSTEMIC:
         return "low"
     return "none"
 
@@ -59,11 +70,11 @@ def _overlay_for_level(level: str) -> RiskOverlayDelta:
     여기서는 multiplier만, floor는 risk_judge가 cash_mmf 후보 ticker로 채움.
     """
     if level == "critical":
-        return RiskOverlayDelta(risk_asset_multiplier=0.6)
+        return RiskOverlayDelta(risk_asset_multiplier=MULTIPLIER_CRITICAL)
     if level == "high":
-        return RiskOverlayDelta(risk_asset_multiplier=0.75)
+        return RiskOverlayDelta(risk_asset_multiplier=MULTIPLIER_HIGH)
     if level == "medium":
-        return RiskOverlayDelta(risk_asset_multiplier=0.9)
+        return RiskOverlayDelta(risk_asset_multiplier=MULTIPLIER_MEDIUM)
     return RiskOverlayDelta()
 
 
@@ -87,6 +98,10 @@ def run_tail_risk_lens(
 
     level = _level_from_inputs(cvar, systemic_score, vix_bw, funding_s)
     overlay = _overlay_for_level(level)
+    logger.debug(
+        "tail_risk_lens: CVaR=%.4f, systemic=%.1f, vix_bw=%s, funding_s=%s → %s",
+        cvar, systemic_score, vix_bw, funding_s, level,
+    )
 
     evidence = (
         f"CVaR_95_1d={cvar*100:.2f}%, systemic_score={systemic_score:.1f}, "

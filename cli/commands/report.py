@@ -43,10 +43,12 @@ def philosophy_cmd(portfolio, out):
 @group.command("monthly")
 @click.option("--month", type=int, required=True)
 @click.option("--actual", required=True, type=click.Path(exists=True),
-              help="P&L CSV from MTS")
+              help="P&L CSV from MTS (equity 시계열)")
+@click.option("--transactions-csv", default=None, type=click.Path(exists=True),
+              help="MTS 거래내역 CSV (거래일자/거래금액) — 회전율 §3.2 평가용")
 @click.option("--state-json", default=None)
 @click.option("--out", default=None)
-def monthly_cmd(month, actual, state_json, out):
+def monthly_cmd(month, actual, transactions_csv, state_json, out):
     """월간 운용보고서 (3섹션)."""
     deep = create_llm_client(
         provider=DEFAULT_CONFIG["llm_provider"],
@@ -58,7 +60,10 @@ def monthly_cmd(month, actual, state_json, out):
     )
     out_path = Path(out or f"artifacts/monthly_report_{month}.md")
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    write_monthly(state, Path(actual), month, deep, out_path)
+    write_monthly(
+        state, Path(actual), month, deep, out_path,
+        transactions_csv=Path(transactions_csv) if transactions_csv else None,
+    )
     click.echo(f"✓ Wrote {out_path}")
 
 

@@ -1,317 +1,310 @@
-"""Walk-forward Sharpe maximization for factor model β.
+"""Walk-forward calibration + shrinkage grid + acceptance gate (PR2a C6/C7).
+
+Replaces the PR1 synthetic-data script. PR2a 의 samples.parquet (C5 산출) 를
+input 으로 받아 5 shrinkage × 7 fold = 35 calibration runs 실행 + acceptance
+gate (Critical 3 strict-default 5-condition) 평가.
+
+End-to-end:
+1. Load samples.parquet → HistoricalSample list
+2. Walk-forward (initial_train=80, test=7) → 7 folds
+3. Shrinkage grid loop {0.1, 0.3, 0.5, 1.0, 2.0} × 7 folds = 35 runs
+4. Prior baseline OOS Sharpe (no-fit walk-forward)
+5. Equi-weight β=0 baseline OOS Sharpe (informational, M3)
+6. Vintage sanity (latest-vintage β 와 비교) — opt-in if 2nd samples 제공
+7. Learning sensitivity diagnostic |β_0.1 - β_2.0|_avg (M2)
+8. Best shrinkage selection (mean_oos - 0.25 × std_oos, M5)
+9. Acceptance gate evaluation → validation_report.json
 
 Usage:
-    uv run python scripts/calibrate_factor_model.py --sample-window full
-    uv run python scripts/calibrate_factor_model.py --shrinkage-grid
-
-Outputs to artifacts/2026-05-22/factor_calibration/:
-  - coefficient_table.json       Final β + baseline + selected shrinkage
-  - walk_forward_results.csv     Per-fold (β subset, in-sample, OOS sharpe)
-  - shrinkage_grid.csv           Shrinkage 별 median OOS sharpe
-  - validation_report.md         Acceptance criteria check
-  - historical_data.json         Cached synthetic samples (audit trail)
+    uv run python scripts/calibrate_factor_model.py \\
+        --samples backtest/historical/samples.parquet \\
+        --output-dir artifacts/<run-date>/calibration_runs \\
+        [--latest-vintage-samples backtest/historical/samples_latest_vintage.parquet]
 """
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import logging
-from datetime import date
 from pathlib import Path
 
-import numpy as np
+# .env auto-load (FRED_API_KEY 등). 다른 backtest 스크립트들과 동일 패턴.
+_ROOT = Path(__file__).resolve().parent.parent
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=_ROOT / ".env")
+except ImportError:
+    pass
 
+import numpy as np
+import pandas as pd
+
+from tradingagents.backtest.acceptance import evaluate_acceptance
 from tradingagents.skills.research.factor_calibration import (
-    HistoricalSample,
-    aggregate_median_beta,
-    benchmark_60_40_returns,
-    compute_sharpe,
-    simulate_portfolio_returns,
-    walk_forward,
+    HistoricalSample, aggregate_median_beta, compute_sharpe,
+    simulate_portfolio_returns, walk_forward,
 )
 from tradingagents.skills.research.factor_to_bucket import (
-    INITIAL_BASELINE,
-    INITIAL_BETA,
+    BUCKETS, FACTORS, INITIAL_BETA,
 )
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def load_historical_data(
-    sample: str = "full",
-    cache_path: Path | None = None,
-) -> list[HistoricalSample]:
-    """Load or fetch 1991-2024 quarterly historical.
+SHRINKAGE_GRID: list[float] = [0.1, 0.3, 0.5, 1.0, 2.0]
 
-    PR1: 가능한 source 에서 fetch — FRED, yfinance, pykrx. cache to local file.
-    Failure mode: 데이터 부족 시 *synthetic* (mean=baseline, sd=1) 으로 fallback —
-    calibration 인프라 자체 가 working 임을 보장 (실측 β 는 production 운영 후 update).
+# samples.parquet 의 column 이름 (FactorScores dataclass field 명) →
+# factor_to_bucket.FACTORS constant 의 key 이름 mapping.
+# Stage 1 의 `compute_all_factors` 출력 dataclass field 는 `growth_surprise`,
+# `inflation_surprise`, ... 인데, `factor_to_bucket.apply_factor_model` 의
+# factor_z 는 `F1_growth`, `F2_inflation`, ... key 를 기대.
+_PARQUET_TO_FACTOR_KEY: dict[str, str] = {
+    "growth_surprise": "F1_growth",
+    "inflation_surprise": "F2_inflation",
+    "real_rate": "F3_real_rate",
+    "term_premium": "F4_term_premium",
+    "credit_cycle": "F5_credit_cycle",
+    "krw_regime": "F6_krw_regime",
+    "equity_vol_regime": "F7_equity_vol_regime",
+    "valuation": "F8_valuation",
+    "liquidity_regime": "F9_liquidity_regime",
+}
+
+
+def load_samples_from_parquet(path: Path) -> list[HistoricalSample]:
+    """samples.parquet → list[HistoricalSample].
+
+    - parquet field name (growth_surprise 등) → FACTORS constant key (F1_growth 등) mapping
+    - NaN bucket return (pre-1996 kr_equity 등) → 0.0 (해당 quarter 에서 그 bucket 의
+      기여를 0 으로 처리). Plan 의 KRW basis design 에 따라 pre-1996 kr_equity
+      NaN, pre-2006 fx_commodity NaN 은 허용된 trade-off.
     """
-    if cache_path is None:
-        cache_path = Path("artifacts/2026-05-22/factor_calibration/historical_data.json")
-    if cache_path.exists():
-        logger.info("Loading cached historical from %s", cache_path)
-        raw = json.loads(cache_path.read_text(encoding="utf-8"))
-        samples = [HistoricalSample(**s) for s in raw]
-    else:
-        logger.warning(
-            "No cached historical — generating synthetic (calibration infrastructure validation only). "
-            "Production calibration requires real FRED + yfinance + pykrx fetch."
-        )
-        samples = _synthetic_samples(n_quarters=135)
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(
-            json.dumps([s.__dict__ for s in samples], indent=2),
-            encoding="utf-8",
-        )
-
-    if sample == "post_gm":
-        samples = [s for s in samples if s.date >= "2010-01-01"]
-    elif sample == "post_covid":
-        samples = [s for s in samples if s.date >= "2020-01-01"]
-    return samples
-
-
-def _synthetic_samples(n_quarters: int = 135) -> list[HistoricalSample]:
-    """Synthetic historical for infrastructure validation.
-
-    Each quarter: factor_z ~ N(0, 1), bucket_returns ~ correlated with factors.
-    Designed so factor model 이 60/40 보다 *약간* 우수 — infrastructure smoke test.
-    """
-    np.random.seed(42)
-    from tradingagents.skills.research.factor_to_bucket import FACTORS
-
+    df = pd.read_parquet(path)
     samples = []
-    start_year = 1991
-    for q in range(n_quarters):
-        year = start_year + q // 4
-        month = (q % 4) * 3 + 1
-        d = f"{year:04d}-{month:02d}-01"
-
-        factor_z = {f: float(np.random.normal(0, 1)) for f in FACTORS}
-
-        # Synthetic returns: factor effect + noise
-        # gl_eq positively correlated with F1 (growth), negatively with F5 (credit), F7 (vol)
-        bucket_returns = {
-            "kr_equity": 0.02
-            + 0.03 * factor_z["F1_growth"]
-            - 0.02 * factor_z["F5_credit_cycle"]
-            + float(np.random.normal(0, 0.06)),
-            "global_equity": 0.02
-            + 0.04 * factor_z["F1_growth"]
-            - 0.03 * factor_z["F5_credit_cycle"]
-            + float(np.random.normal(0, 0.05)),
-            "fx_commodity": 0.005
-            + 0.03 * factor_z["F2_inflation"]
-            + float(np.random.normal(0, 0.05)),
-            "bond": 0.01
-            - 0.02 * factor_z["F1_growth"]
-            - 0.02 * factor_z["F2_inflation"]
-            + float(np.random.normal(0, 0.02)),
-            "cash_mmf": 0.005
-            + 0.01 * factor_z["F3_real_rate"]
-            + float(np.random.normal(0, 0.003)),
-        }
-        samples.append(
-            HistoricalSample(
-                date=d, factor_z=factor_z, bucket_returns_next=bucket_returns,
-            )
-        )
+    for idx, row in df.iterrows():
+        date_str = idx.strftime("%Y-%m-%d") if hasattr(idx, "strftime") else str(idx)
+        factor_z: dict[str, float] = {}
+        for parquet_col, factor_key in _PARQUET_TO_FACTOR_KEY.items():
+            if parquet_col in row and not pd.isna(row[parquet_col]):
+                factor_z[factor_key] = float(row[parquet_col])
+        bucket_returns_next: dict[str, float] = {}
+        for b in BUCKETS:
+            v = row.get(f"next_{b}", np.nan)
+            bucket_returns_next[b] = 0.0 if pd.isna(v) else float(v)
+        if all(v == 0.0 for v in bucket_returns_next.values()):
+            continue
+        samples.append(HistoricalSample(
+            date=date_str,
+            factor_z=factor_z,
+            bucket_returns_next=bucket_returns_next,
+        ))
+    logger.info("Loaded %s samples", len(samples))
     return samples
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--sample-window",
-        choices=["full", "post_gm", "post_covid"],
-        default="full",
-    )
-    parser.add_argument("--shrinkage-grid", action="store_true")
-    parser.add_argument(
-        "--out-dir", default="artifacts/2026-05-22/factor_calibration"
-    )
-    args = parser.parse_args()
+def compute_prior_baseline_oos(samples, initial_train_size=80, test_window=7):
+    """Hand-coded INITIAL_BETA 의 walk-forward OOS Sharpe (no fitting)."""
+    n = len(samples)
+    oos_sharpes = []
+    for end in range(initial_train_size, n - test_window + 1, test_window):
+        test = samples[end : end + test_window]
+        test_returns = simulate_portfolio_returns(test, INITIAL_BETA)
+        oos_sharpes.append(compute_sharpe(test_returns))
+    return float(np.mean(oos_sharpes)), oos_sharpes
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
-    )
 
-    out = Path(args.out_dir)
-    out.mkdir(parents=True, exist_ok=True)
+def compute_equi_weight_baseline_oos(samples, initial_train_size=80, test_window=7):
+    """β=0 (all weight 0, factor model returns baseline only) 의 OOS Sharpe."""
+    zero_beta = {k: 0.0 for k in INITIAL_BETA.keys()}
+    n = len(samples)
+    oos_sharpes = []
+    for end in range(initial_train_size, n - test_window + 1, test_window):
+        test = samples[end : end + test_window]
+        test_returns = simulate_portfolio_returns(test, zero_beta)
+        oos_sharpes.append(compute_sharpe(test_returns))
+    return float(np.mean(oos_sharpes)), oos_sharpes
 
-    # Load
-    samples = load_historical_data(
-        args.sample_window, cache_path=out / "historical_data.json"
-    )
-    logger.info(
-        "Loaded %d quarterly samples (window=%s)", len(samples), args.sample_window
-    )
 
-    # Walk-forward calibration
-    shrinkages = [0.1, 0.3, 0.5, 0.7, 1.0] if args.shrinkage_grid else [0.5]
-    grid_results = []
-    for shr in shrinkages:
-        logger.info("Walk-forward with shrinkage=%.2f", shr)
-        folds = walk_forward(samples, shrinkage=shr)
-        median_oos = (
-            float(np.median([f.oos_sharpe for f in folds])) if folds else 0.0
+def run_shrinkage_grid(
+    samples, output_dir: Path,
+    initial_train_size: int = 80, test_window: int = 7,
+):
+    """5 shrinkage × N fold runs."""
+    per_fold_dir = output_dir / "per_fold"
+    per_fold_dir.mkdir(parents=True, exist_ok=True)
+
+    per_shrinkage_results = {}
+    for s in SHRINKAGE_GRID:
+        logger.info("Shrinkage %s: running walk-forward", s)
+        folds = walk_forward(
+            samples, initial_train_size=initial_train_size,
+            test_window=test_window, shrinkage=s, prior_beta=INITIAL_BETA,
         )
-        median_is = (
-            float(np.median([f.in_sample_sharpe for f in folds])) if folds else 0.0
-        )
-        grid_results.append(
-            {
-                "shrinkage": shr,
-                "median_oos_sharpe": median_oos,
-                "median_in_sample_sharpe": median_is,
-                "n_folds": len(folds),
-                "folds": folds,
-            }
-        )
-        logger.info(
-            "  shrinkage=%.2f → median OOS Sharpe %.3f (folds=%d)",
-            shr,
-            median_oos,
-            len(folds),
-        )
+        for fold in folds:
+            with open(per_fold_dir / f"shrinkage_{s}_fold_{fold.fold_idx}.json", "w") as f:
+                json.dump({
+                    "shrinkage": s, "fold_idx": fold.fold_idx,
+                    "train_end_idx": fold.train_end_idx,
+                    "test_start_idx": fold.test_start_idx,
+                    "test_end_idx": fold.test_end_idx,
+                    "in_sample_sharpe": fold.in_sample_sharpe,
+                    "oos_sharpe": fold.oos_sharpe,
+                    "beta": {f"{k[0]}_{k[1]}": v for k, v in fold.beta.items()},
+                }, f, indent=2)
+        median_beta = aggregate_median_beta(folds)
+        per_shrinkage_results[str(s)] = {
+            "median_beta": {f"{k[0]}_{k[1]}": v for k, v in median_beta.items()},
+            "median_beta_tuples": median_beta,
+            "mean_is": float(np.mean([f.in_sample_sharpe for f in folds])),
+            "mean_oos": float(np.mean([f.oos_sharpe for f in folds])),
+            "std_oos": float(np.std([f.oos_sharpe for f in folds], ddof=1)) if len(folds) > 1 else 0.0,
+            "per_fold_oos": [f.oos_sharpe for f in folds],
+            "per_fold_is": [f.in_sample_sharpe for f in folds],
+            "folds": folds,
+        }
 
-    # Select best shrinkage (highest median OOS)
-    best = max(grid_results, key=lambda r: r["median_oos_sharpe"])
-    final_beta = aggregate_median_beta(best["folds"])
+    serializable = {}
+    for s_key, r in per_shrinkage_results.items():
+        serializable[s_key] = {
+            k: v for k, v in r.items()
+            if k not in ("median_beta_tuples", "folds")
+        }
+    with open(output_dir / "per_shrinkage_summary.json", "w") as f:
+        json.dump(serializable, f, indent=2)
+    return per_shrinkage_results
 
-    # Benchmark: 60/40
-    bench_returns = benchmark_60_40_returns(samples)
-    bench_sharpe = compute_sharpe(bench_returns)
 
-    # Final β backtest (on full sample, for reference)
-    final_returns = simulate_portfolio_returns(samples, final_beta)
-    final_sharpe = compute_sharpe(final_returns)
-    initial_returns = simulate_portfolio_returns(samples, INITIAL_BETA)
-    initial_sharpe = compute_sharpe(initial_returns)
+def select_best_shrinkage(per_shrinkage_results):
+    """Best by mean_oos - 0.25 × std_oos (M5). Tie-break: smaller |IS-OOS|."""
+    scores = {}
+    for s_str, r in per_shrinkage_results.items():
+        score = r["mean_oos"] - 0.25 * r["std_oos"]
+        tiebreak = -abs(r["mean_is"] - r["mean_oos"])
+        scores[s_str] = (score, tiebreak)
+    best = max(scores, key=lambda k: scores[k])
+    return best, per_shrinkage_results[best]
 
-    # Save coefficient table
-    (out / "coefficient_table.json").write_text(
-        json.dumps(
-            {
-                "baseline": INITIAL_BASELINE,
-                "beta": {f"{f}__{b}": v for (f, b), v in final_beta.items()},
-                "selected_shrinkage": best["shrinkage"],
-                "sample_window": args.sample_window,
-                "calibration_date": date.today().isoformat(),
-                "synthetic_data": True,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
+
+def compute_learning_sensitivity(per_shrinkage_results):
+    """|β_0.1 - β_2.0|_avg (M2)."""
+    b1 = per_shrinkage_results["0.1"]["median_beta_tuples"]
+    b2 = per_shrinkage_results["2.0"]["median_beta_tuples"]
+    diffs = [abs(b1[k] - b2[k]) for k in b1.keys() if k in b2]
+    return float(np.mean(diffs)) if diffs else 0.0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--samples", required=True)
+    ap.add_argument("--output-dir", required=True)
+    ap.add_argument("--latest-vintage-samples", default=None)
+    ap.add_argument("--initial-train-size", type=int, default=80)
+    ap.add_argument("--test-window", type=int, default=7)
+    args = ap.parse_args()
+
+    samples = load_samples_from_parquet(Path(args.samples))
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Running shrinkage grid: %s × test_window=%s",
+                SHRINKAGE_GRID, args.test_window)
+    results = run_shrinkage_grid(samples, output_dir,
+                                  initial_train_size=args.initial_train_size,
+                                  test_window=args.test_window)
+
+    logger.info("Computing prior baseline OOS Sharpe")
+    prior_oos_mean, prior_per_fold = compute_prior_baseline_oos(
+        samples, args.initial_train_size, args.test_window,
     )
 
-    # Walk-forward results CSV
-    with (out / "walk_forward_results.csv").open(
-        "w", newline="", encoding="utf-8"
-    ) as f:
-        w = csv.writer(f)
-        w.writerow(
-            ["fold_idx", "shrinkage", "train_end_idx", "in_sample_sharpe", "oos_sharpe"]
-        )
-        for r in grid_results:
-            for fold in r["folds"]:
-                w.writerow(
-                    [
-                        fold.fold_idx,
-                        r["shrinkage"],
-                        fold.train_end_idx,
-                        f"{fold.in_sample_sharpe:.4f}",
-                        f"{fold.oos_sharpe:.4f}",
-                    ]
-                )
-
-    # Shrinkage grid CSV
-    with (out / "shrinkage_grid.csv").open(
-        "w", newline="", encoding="utf-8"
-    ) as f:
-        w = csv.writer(f)
-        w.writerow(
-            ["shrinkage", "median_oos_sharpe", "median_in_sample_sharpe", "n_folds"]
-        )
-        for r in grid_results:
-            w.writerow(
-                [
-                    r["shrinkage"],
-                    f"{r['median_oos_sharpe']:.4f}",
-                    f"{r['median_in_sample_sharpe']:.4f}",
-                    r["n_folds"],
-                ]
-            )
-
-    # Validation report
-    delta_vs_initial = final_sharpe - initial_sharpe
-    delta_vs_60_40 = final_sharpe - bench_sharpe
-    pass_initial = delta_vs_initial > 0.05
-    pass_60_40 = final_sharpe >= bench_sharpe
-    overall_pass = pass_initial and pass_60_40
-
-    validation_md = f"""# Factor Model Calibration — Validation Report
-
-**Date**: {date.today().isoformat()}
-**Sample window**: {args.sample_window} (n={len(samples)} quarters)
-**Selected shrinkage**: {best['shrinkage']:.2f}
-**Data source**: synthetic (infrastructure validation only)
-
-## Sharpe ratios (annualized)
-
-| Strategy | Sharpe | Δ vs initial |
-|---|---|---|
-| INITIAL_BETA (hand-coded) | {initial_sharpe:.3f} | baseline |
-| Calibrated β | {final_sharpe:.3f} | {delta_vs_initial:+.3f} |
-| 60/40 KR-tilted | {bench_sharpe:.3f} | {final_sharpe - bench_sharpe:+.3f} vs final |
-
-## Acceptance criteria (plan §0 D5)
-
-- [{'x' if pass_initial else ' '}] OOS Sharpe > INITIAL +0.05: Δ {delta_vs_initial:+.3f} (need > +0.05)
-- [{'x' if pass_60_40 else ' '}] OOS Sharpe ≥ 60/40: Δ {delta_vs_60_40:+.3f} (need ≥ 0)
-
-**Overall**: {'PASS' if overall_pass else 'FAIL'}
-
-## Shrinkage grid
-
-| shrinkage | median_oos_sharpe | n_folds |
-|---|---|---|
-"""
-    for r in grid_results:
-        validation_md += (
-            f"| {r['shrinkage']:.2f} | {r['median_oos_sharpe']:.3f} | {r['n_folds']} |\n"
-        )
-
-    validation_md += f"""
-
-## Notes
-
-- 본 calibration 은 *synthetic data fallback* 으로 실행됨 (실측 FRED + yfinance + pykrx fetch
-  가 가능해질 때 production calibration 필요).
-- 결정된 β 가 INITIAL_BETA 와 *유사* 면 hand-coded prior 의 합리성 부분 검증됨.
-- Δ vs 60/40 가 positive 가 *true OOS superiority* 의 *necessary not sufficient* 조건.
-- C7 단계 에서 실 운영 fixture 로 sanity 검증.
-
-## Next steps
-
-- {('INITIAL_BETA 를 calibrated β 로 교체 권장 (단, synthetic 결과 이므로 real fetch 후 재실행 필수)' if overall_pass else 'Acceptance 불통과 — calibration 재검토 또는 hand-coded prior 유지')}
-- Real historical data fetch (Stage 1 backlog Issue #18)
-- 6m 주기 재calibration
-"""
-    (out / "validation_report.md").write_text(validation_md, encoding="utf-8")
-
-    logger.info("=" * 60)
-    logger.info("Calibration complete.")
-    logger.info("  Final Sharpe (calibrated): %.3f", final_sharpe)
-    logger.info(
-        "  vs INITIAL Sharpe: %.3f (Δ %+.3f)", initial_sharpe, delta_vs_initial
+    logger.info("Computing equi-weight (β=0) baseline OOS Sharpe")
+    equi_oos_mean, equi_per_fold = compute_equi_weight_baseline_oos(
+        samples, args.initial_train_size, args.test_window,
     )
-    logger.info("  vs 60/40 Sharpe: %.3f (Δ %+.3f)", bench_sharpe, delta_vs_60_40)
-    logger.info("  Validation: %s", "PASS" if overall_pass else "FAIL")
-    logger.info("Artifacts: %s", out)
+    with open(output_dir / "equi_weight_baseline.json", "w") as f:
+        json.dump({
+            "mean_oos_sharpe": equi_oos_mean,
+            "per_fold_oos": equi_per_fold,
+        }, f, indent=2)
+
+    best_shr, best_result = select_best_shrinkage(results)
+    logger.info("Best shrinkage: %s (score %.4f)", best_shr,
+                best_result["mean_oos"] - 0.25 * best_result["std_oos"])
+    with open(output_dir / "best_shrinkage.json", "w") as f:
+        json.dump({
+            "shrinkage": float(best_shr),
+            "mean_is_sharpe": best_result["mean_is"],
+            "mean_oos_sharpe": best_result["mean_oos"],
+            "std_oos_sharpe": best_result["std_oos"],
+            "median_beta": best_result["median_beta"],
+        }, f, indent=2)
+
+    vintage_sanity = {"pass": True, "skipped": True,
+                      "reason": "no latest-vintage samples provided"}
+    if args.latest_vintage_samples:
+        logger.info("Vintage sanity check")
+        lv_samples = load_samples_from_parquet(Path(args.latest_vintage_samples))
+        lv_results = run_shrinkage_grid(
+            lv_samples, output_dir / "vintage_latest",
+            args.initial_train_size, args.test_window,
+        )
+        _, lv_best = select_best_shrinkage(lv_results)
+        b_vintage = best_result["median_beta_tuples"]
+        b_latest = lv_best["median_beta_tuples"]
+        diffs = [abs(b_vintage[k] - b_latest[k]) for k in b_vintage.keys() if k in b_latest]
+        avg_diff = float(np.mean(diffs)) if diffs else 0.0
+        vintage_sanity = {
+            "pass": avg_diff < 0.05,
+            "avg_abs_diff": avg_diff,
+            "skipped": False,
+        }
+    with open(output_dir / "vintage_sanity.json", "w") as f:
+        json.dump(vintage_sanity, f, indent=2)
+
+    sens = compute_learning_sensitivity(results)
+    with open(output_dir / "learning_sensitivity.json", "w") as f:
+        json.dump({
+            "avg_abs_diff_shrinkage_0.1_vs_2.0": sens,
+            "warning_if_below": 0.01,
+            "warning_triggered": sens < 0.01,
+        }, f, indent=2)
+
+    logger.info("Evaluating acceptance gate")
+    verdict = evaluate_acceptance(
+        calibrated_beta=best_result["median_beta_tuples"],
+        calibrated_folds=best_result["folds"],
+        prior_oos_per_fold=prior_per_fold,
+        prior_oos_mean=prior_oos_mean,
+        equi_oos_mean=equi_oos_mean,
+        vintage_sanity=vintage_sanity,
+        learning_sensitivity=sens,
+    )
+    with open(output_dir / "validation_report.json", "w") as f:
+        json.dump({
+            "pass": verdict["pass"],
+            "conditions": verdict["conditions"],
+            "best_shrinkage": float(best_shr),
+            "mean_is_sharpe": verdict["mean_is_sharpe"],
+            "mean_oos_sharpe": verdict["mean_oos_sharpe"],
+            "prior_oos_sharpe": prior_oos_mean,
+            "equi_weight_oos_sharpe": equi_oos_mean,
+            "improvement_delta": verdict["mean_oos_sharpe"] - prior_oos_mean,
+            "paired_t_p": verdict["paired_t_p"],
+            "diagnostic": verdict["diagnostic"],
+            "calibrated_beta": {f"{k[0]}_{k[1]}": v
+                                for k, v in best_result["median_beta_tuples"].items()},
+        }, f, indent=2)
+
+    print(json.dumps({
+        "pass": verdict["pass"],
+        "best_shrinkage": float(best_shr),
+        "mean_oos_sharpe": verdict["mean_oos_sharpe"],
+        "prior_oos_sharpe": prior_oos_mean,
+        "improvement_delta": verdict["mean_oos_sharpe"] - prior_oos_mean,
+    }, indent=2))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

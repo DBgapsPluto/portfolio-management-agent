@@ -45,7 +45,7 @@ _TIER_DEFAULTS = dict(
         regime="neutral",
     ),
     risk_appetite=RiskAppetiteSnapshot(
-        copper_price=4.0, gold_price=2000.0, ratio=0.2, ratio_percentile_1y=0.5,
+        copper_price=4.0, gold_price=2000.0, ratio=0.2, ratio_percentile_5y=0.5,
         signal="neutral",
     ),
     china_leading=ChinaLeadingSnapshot(
@@ -86,7 +86,7 @@ _TIER_DEFAULTS_DICT = dict(
     },
     risk_appetite={
         "copper_price": 4.0, "gold_price": 2000.0, "ratio": 0.2,
-        "ratio_percentile_1y": 0.5, "signal": "neutral",
+        "ratio_percentile_5y": 0.5, "signal": "neutral",
     },
     china_leading={"cli_value": 100.0, "change_3mo": 0, "phase": "expansion"},
     foreign_flow={"net_5d_krw": 0, "net_20d_krw": 0, "signal": "neutral"},

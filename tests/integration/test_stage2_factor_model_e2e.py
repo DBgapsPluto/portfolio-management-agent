@@ -60,7 +60,7 @@ def _mock_state_2026_05_15_like():
     s["risk_report"].vix.current_value = 18.4
     s["risk_report"].vix.zscore_30d = -0.15
     s["risk_report"].vix_term.ratio = 1.21
-    s["risk_report"].equity_bond_corr.correlation_60d = 0.20
+    s["risk_report"].equity_bond_corr.correlation_120d = 0.20
     s["risk_report"].real_yields.tips_10y = 1.5  # real_yields moved here
     s["risk_report"].breadth_kr.advancing_pct = 0.50
 

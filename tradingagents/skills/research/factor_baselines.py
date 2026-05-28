@@ -85,7 +85,13 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     # (delta / hand-coded sd=5.0). Use (0, 1) so factor-level z passes through.
     ("F7_equity_vol", "skew_change"):          (0.0, 1.0),
     ("F7_equity_vol", "sentiment_dispersion"): (0.3, 0.15),
-    ("F7_equity_vol", "geopolitical_surge"):   (0.0, 1.0),
+    # 2026-05-26 F7 saturate fix (#1): raw 는 count delta (24h - 7d_avg).
+    # 실측 5 backtest 시점에서 raw=25 일관 (NEWS_WINDOW 가 24h cover →
+    # prev_7d_avg=0, recent≈25 → delta≈25 정수 범위). baseline (0, 1) 는 ±1
+    # 변동 가정 — 실제 raw 분포 (0~30+) 와 단위 mismatch → z=25 outlier 가
+    # F7 raw_avg 를 단독 cap 까지 끌고 감. (5, 10) 으로 raw 분포에 맞춤:
+    # z(25)=(25-5)/10=2.0 정상 magnitude.
+    ("F7_equity_vol", "geopolitical_surge"):   (5.0, 10.0),
 
     # === F8 valuation ===
     ("F8_valuation", "sp_pe"):           (18.0, 6.0),
@@ -106,6 +112,14 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F9_liquidity", "breadth"):            (0.55, 0.15),
     ("F9_liquidity", "event_cluster"):      (1.5, 1.5),
     ("F9_liquidity", "rising_signal"):      (0.5, 0.5),
+
+    # === F10 systemic_liquidity (2026-05-27 신규) ===
+    # +z = tight financial conditions (stress).
+    ("F10_systemic_liquidity", "nfci"):              (-0.4, 0.5),    # NFCI long-run mean ~ -0.4 (easy), sd 0.5
+    ("F10_systemic_liquidity", "anfci"):             (0.0, 0.5),     # adjusted — mean ~ 0
+    ("F10_systemic_liquidity", "fed_bs_signal"):     (5.0, 10.0),    # -YoY% (sign 뒤집힘) — 평균 -5% YoY 가정 → signal=+5
+    ("F10_systemic_liquidity", "sofr_tbill_spread"): (5.0, 10.0),    # SOFR-Tbill bp 평균 ~5bp, sd 10bp
+    ("F10_systemic_liquidity", "aaa_oas"):           (0.6, 0.3),     # IG AAA OAS 평균 60bp = 0.6%, sd 30bp
 }
 
 

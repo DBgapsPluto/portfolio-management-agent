@@ -33,10 +33,13 @@ Audit:
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Final, Literal
 
 import numpy as np
 from scipy.optimize import minimize
+
+logger = logging.getLogger(__name__)
 
 
 BUCKETS: Final[tuple[str, ...]] = (
@@ -57,6 +60,8 @@ FACTORS: Final[tuple[str, ...]] = (
     "F7_equity_vol_regime",
     "F8_valuation",
     "F9_liquidity_regime",
+    # 2026-05-27 — F10 신규. F9 가 cross-sectional dispersion, F10 가 systemic.
+    "F10_systemic_liquidity",
 )
 
 
@@ -69,63 +74,80 @@ INITIAL_BASELINE: Final[dict[str, float]] = {
 }
 # Σ = 1.0, 위험자산 = 0.47 (mandate 0.70 의 67%)
 
-# Each factor row's β sums to 0 across buckets (adjustment preserves total)
-# Spec section 5.4 hand-coded prior
+# INITIAL_BETA — PR2a 2026-05-24 calibrated.
+#
+# Replaced hand-coded prior with walk-forward calibrated β.
+# Calibration: scripts/calibrate_factor_model.py on backtest/historical/
+# samples.parquet (133 samples, 1991-Q2 → 2024-Q2 with graceful per-factor
+# degradation by era).
+# Best shrinkage = 2.0. Mean OOS Sharpe 1.171 vs prior (hand-coded) 0.829
+# (+41% Sharpe gain, paired-t p=0.080 < 0.20). 4/5 strict acceptance
+# conditions PASS; 1 marginal sign noise (F7×kr_equity β=+0.0009) absorbed
+# by tolerance 1e-3 (grill-me #3 decision).
+# Full results: artifacts/2026-05-24/calibration_runs/validation_report.json.
 INITIAL_BETA: Final[dict[tuple[str, str], float]] = {
-    # F1 growth (+z = growth → +equity, -bond)
-    ("F1_growth", "kr_equity"):     +0.04,
-    ("F1_growth", "global_equity"): +0.06,
-    ("F1_growth", "fx_commodity"):  +0.01,
-    ("F1_growth", "bond"):          -0.08,
-    ("F1_growth", "cash_mmf"):      -0.03,
+    # F1 growth
+    ("F1_growth", "kr_equity"):     +0.0203,
+    ("F1_growth", "global_equity"): +0.0668,
+    ("F1_growth", "fx_commodity"):  -0.0304,
+    ("F1_growth", "bond"):          -0.0739,
+    ("F1_growth", "cash_mmf"):      -0.0309,
     # F2 inflation
-    ("F2_inflation", "kr_equity"):     -0.02,
-    ("F2_inflation", "global_equity"): -0.03,
-    ("F2_inflation", "fx_commodity"):  +0.07,
-    ("F2_inflation", "bond"):          -0.05,
-    ("F2_inflation", "cash_mmf"):      +0.03,
-    # F3 real_rate (+z = high real → -long bond, +cash)
-    ("F3_real_rate", "kr_equity"):     -0.02,
-    ("F3_real_rate", "global_equity"): -0.03,
-    ("F3_real_rate", "fx_commodity"):  -0.01,
-    ("F3_real_rate", "bond"):          -0.05,
-    ("F3_real_rate", "cash_mmf"):      +0.11,
-    # F4 term_premium (+z = steep curve → +long bond, +equity)
-    ("F4_term_premium", "kr_equity"):     +0.02,
-    ("F4_term_premium", "global_equity"): +0.03,
-    ("F4_term_premium", "fx_commodity"):  0.0,
-    ("F4_term_premium", "bond"):          +0.02,
-    ("F4_term_premium", "cash_mmf"):      -0.07,
-    # F5 credit_cycle (+z = credit stress → -equity, -credit bond, +cash)
-    ("F5_credit_cycle", "kr_equity"):     -0.05,
-    ("F5_credit_cycle", "global_equity"): -0.06,
-    ("F5_credit_cycle", "fx_commodity"):  +0.01,
-    ("F5_credit_cycle", "bond"):          -0.02,
-    ("F5_credit_cycle", "cash_mmf"):      +0.12,
-    # F6 krw_regime (+z = weak KRW → +global, -kr)
-    ("F6_krw_regime", "kr_equity"):     -0.05,
-    ("F6_krw_regime", "global_equity"): +0.04,
-    ("F6_krw_regime", "fx_commodity"):  +0.03,
-    ("F6_krw_regime", "bond"):          -0.01,
-    ("F6_krw_regime", "cash_mmf"):      -0.01,
-    # F7 equity_vol_regime (+z = high vol → -risk, +cash)
-    ("F7_equity_vol_regime", "kr_equity"):     -0.04,
-    ("F7_equity_vol_regime", "global_equity"): -0.06,
-    ("F7_equity_vol_regime", "fx_commodity"):  -0.02,
-    ("F7_equity_vol_regime", "bond"):          +0.04,
-    ("F7_equity_vol_regime", "cash_mmf"):      +0.08,
-    # F8 valuation (+z = expensive (sp_pe 우세) → -equity)
-    ("F8_valuation", "kr_equity"):     -0.03,
-    ("F8_valuation", "global_equity"): -0.04,
-    ("F8_valuation", "fx_commodity"):  +0.01,
-    ("F8_valuation", "bond"):          +0.04,
-    ("F8_valuation", "cash_mmf"):      +0.02,
-    # F9 liquidity_regime (+z = liquidity stress → -risk, +cash)
-    ("F9_liquidity_regime", "kr_equity"):     -0.03,
-    ("F9_liquidity_regime", "global_equity"): -0.05,
-    ("F9_liquidity_regime", "fx_commodity"):  -0.01,
-    ("F9_liquidity_regime", "bond"):          +0.04,
-    ("F9_liquidity_regime", "cash_mmf"):      +0.05,
+    ("F2_inflation", "kr_equity"):     -0.1153,
+    ("F2_inflation", "global_equity"): -0.0371,
+    ("F2_inflation", "fx_commodity"):  +0.0445,
+    ("F2_inflation", "bond"):          -0.0016,
+    ("F2_inflation", "cash_mmf"):      +0.0754,
+    # F3 real_rate
+    ("F3_real_rate", "kr_equity"):     +0.0385,
+    ("F3_real_rate", "global_equity"): -0.0732,
+    ("F3_real_rate", "fx_commodity"):  -0.0204,
+    ("F3_real_rate", "bond"):          -0.0868,
+    ("F3_real_rate", "cash_mmf"):      +0.1075,
+    # F4 term_premium
+    ("F4_term_premium", "kr_equity"):     +0.004,
+    ("F4_term_premium", "global_equity"): +0.0548,
+    ("F4_term_premium", "fx_commodity"):  -0.0842,
+    ("F4_term_premium", "bond"):          +0.122,
+    ("F4_term_premium", "cash_mmf"):      -0.041,
+    # F5 credit_cycle
+    ("F5_credit_cycle", "kr_equity"):     -0.104,
+    ("F5_credit_cycle", "global_equity"): -0.0118,
+    ("F5_credit_cycle", "fx_commodity"):  -0.0041,
+    ("F5_credit_cycle", "bond"):          +0.0385,
+    ("F5_credit_cycle", "cash_mmf"):      +0.1998,
+    # F6 krw_regime
+    ("F6_krw_regime", "kr_equity"):     -0.0148,
+    ("F6_krw_regime", "global_equity"): +0.0976,
+    ("F6_krw_regime", "fx_commodity"):  +0.0503,
+    ("F6_krw_regime", "bond"):          +0.0976,
+    ("F6_krw_regime", "cash_mmf"):      +0.0976,
+    # F7 equity_vol_regime
+    ("F7_equity_vol_regime", "kr_equity"):     +0.0009,  # marginal noise, expected negative
+    ("F7_equity_vol_regime", "global_equity"): -0.0954,
+    ("F7_equity_vol_regime", "fx_commodity"):  -0.0062,
+    ("F7_equity_vol_regime", "bond"):          +0.0011,
+    ("F7_equity_vol_regime", "cash_mmf"):      +0.0386,
+    # F8 valuation
+    ("F8_valuation", "kr_equity"):     -0.0593,
+    ("F8_valuation", "global_equity"): -0.0357,
+    ("F8_valuation", "fx_commodity"):  +0.0213,
+    ("F8_valuation", "bond"):          +0.0437,
+    ("F8_valuation", "cash_mmf"):      +0.0162,
+    # F9 liquidity_regime
+    ("F9_liquidity_regime", "kr_equity"):     -0.0723,
+    ("F9_liquidity_regime", "global_equity"): -0.0755,
+    ("F9_liquidity_regime", "fx_commodity"): -0.011,
+    ("F9_liquidity_regime", "bond"):          +0.0657,
+    ("F9_liquidity_regime", "cash_mmf"):      +0.0575,
+    # F10 systemic_liquidity (2026-05-27 신규, expert prior).
+    # +z = tight FCI (stress) → broad risk-off (모든 위험자산 -, 안전자산 +).
+    # F9 (cross-sectional) 보다 위험자산 영향 더 균등 (특정 자산 집중 X).
+    ("F10_systemic_liquidity", "kr_equity"):     -0.060,
+    ("F10_systemic_liquidity", "global_equity"): -0.070,
+    ("F10_systemic_liquidity", "fx_commodity"):  -0.020,
+    ("F10_systemic_liquidity", "bond"):          +0.080,
+    ("F10_systemic_liquidity", "cash_mmf"):      +0.070,
 }
 
 # Bond TIPS share separate scalar regression (spec § 5.5)
@@ -140,6 +162,7 @@ INITIAL_TIPS_BETA: Final[dict[str, float]] = {
     "F7_equity_vol_regime": 0.0,
     "F8_valuation":         0.0,
     "F9_liquidity_regime": -0.03,
+    "F10_systemic_liquidity": +0.05,  # systemic stress 시 TIPS preference 약간 ↑
 }
 
 SignRestriction = Literal[
@@ -168,6 +191,11 @@ SIGN_RESTRICTION: Final[dict[tuple[str, str], SignRestriction]] = {
     # F8 valuation (+z = expensive → -equity)
     ("F8_valuation", "kr_equity"):     "negative",
     ("F8_valuation", "global_equity"): "negative",
+    # F10 systemic_liquidity (2026-05-27, +z = tight FCI = systemic stress)
+    ("F10_systemic_liquidity", "kr_equity"):     "negative",
+    ("F10_systemic_liquidity", "global_equity"): "negative",
+    ("F10_systemic_liquidity", "bond"):          "positive",
+    ("F10_systemic_liquidity", "cash_mmf"):      "positive",
 }
 
 
@@ -294,6 +322,7 @@ def project_to_mandate_qp(
     else:
         x0 = np.ones_like(target) / len(target)
 
+    fail_msg: str | None = None
     try:
         result = minimize(
             objective,
@@ -305,17 +334,30 @@ def project_to_mandate_qp(
             options={"maxiter": 200, "ftol": 1e-9},
         )
         success = bool(result.success)
+        if not success:
+            fail_msg = f"SLSQP non-success: status={result.status}, message={result.message}"
         w_raw = np.asarray(result.x, dtype=float)
-    except Exception:  # pragma: no cover - defensive
+    except Exception as e:  # pragma: no cover - defensive
         success = False
+        fail_msg = f"SLSQP raised: {e}"
         w_raw = np.zeros_like(target)
 
     if not success:
+        # Stage 2 audit (Task 2): silent → logger.warning. fallback 발동 visible.
+        logger.warning(
+            "project_to_mandate_qp: optimizer failed → INITIAL_BASELINE fallback (%s). "
+            "factor intent 손상 — narrative 에 명시 권장. target=%s",
+            fail_msg, bucket_target,
+        )
         return dict(INITIAL_BASELINE)
 
     w = np.maximum(w_raw, 0.0)
     s = float(w.sum())
     if s <= 0.0:
+        logger.warning(
+            "project_to_mandate_qp: w.sum=0 post-clip → INITIAL_BASELINE fallback. "
+            "target=%s w_raw=%s", bucket_target, w_raw.tolist(),
+        )
         return dict(INITIAL_BASELINE)
     w = w / s
     return {k: float(w[i]) for i, k in enumerate(keys)}
@@ -334,20 +376,38 @@ def apply_factor_model_with_safety(
 
     Returns 4-tuple ``(bucket_projected, tips, contributions, diagnostics)``.
 
-    Diagnostics keys:
-        - pre_projection_risk_asset (float)
-        - pre_projection_negatives (list[str])
-        - pre_projection_sum (float)
-        - mandate_violated_pre_projection (bool)
-        - extreme_factor_active (bool)
-        - projection_l2_distance (float)
-        - projection_intervened (bool) — l2 > 0.01
+    Diagnostics keys (Stage 2 audit Task 2 — 외부 노출용 의미 명시):
+      - pre_projection_risk_asset (float): projection 전 위험자산 합. 0.70 초과면 mandate 위반.
+      - pre_projection_negatives (list[str]): projection 전 weight<0 bucket — factor intent 가
+        baseline 을 넘어 음수 영역까지 보내려 함. projection 으로 0 으로 clip 됨.
+      - pre_projection_sum (float): projection 전 sum. β rows sum to 0 + cap 으로 약간 ≠ 1.0
+        가능. projection 이 sum=1 회복.
+      - mandate_violated_pre_projection (bool): pre_risk > 0.70 + ε. projection 강제 발동.
+      - extreme_factor_active (bool): 어느 factor 의 |z| ≥ 2.5. tail event 가능성 — 운영자
+        리뷰 권장.
+      - projection_l2_distance (float): bucket_projected vs bucket_raw 의 L2 거리.
+        0.01 미만 = projection 거의 무동작, 큰 값 = factor intent 가 mandate 와 충돌.
+      - projection_intervened (bool): l2_dist > 0.01.
+      - cap_hits (int): per-factor-bucket β·z 가 ±0.10 cap 에 닿은 (factor, bucket) 페어 수.
+        많을수록 single factor 가 single bucket 을 dominate 하려 한 정도 — diversification
+        보호 발동 빈도.
+      - cap_hits_detail (list[tuple[str, str, float]]): 각 cap hit 의 (factor, bucket,
+        capped_value) — debugging.
     """
     bucket_raw, tips, contributions = apply_factor_model(factor_z, **kwargs)
 
     pre_risk = sum(bucket_raw.get(b, 0.0) for b in RISK_BUCKETS)
     pre_negatives = [b for b, w in bucket_raw.items() if w < -1e-9]
     pre_sum = float(sum(bucket_raw.values()))
+
+    # Stage 2 audit (Task 2): cap_hits — 어느 (factor, bucket) 페어가 cap 에 닿았나.
+    # contributions[f][b] 가 정확히 ±PER_FACTOR_BUCKET_CONTRIB_CAP 면 cap 발동.
+    cap_eps = 1e-12
+    cap_hits_detail: list[tuple[str, str, float]] = []
+    for f, fmap in contributions.items():
+        for b, c in fmap.items():
+            if abs(abs(c) - PER_FACTOR_BUCKET_CONTRIB_CAP) < cap_eps:
+                cap_hits_detail.append((f, b, c))
 
     bucket_projected = project_to_mandate_qp(bucket_raw)
 
@@ -367,6 +427,8 @@ def apply_factor_model_with_safety(
         "extreme_factor_active": bool(extreme_active),
         "projection_l2_distance": l2_dist,
         "projection_intervened": bool(l2_dist > 0.01),
+        "cap_hits": len(cap_hits_detail),
+        "cap_hits_detail": cap_hits_detail,
     }
 
     return bucket_projected, tips, contributions, diagnostics

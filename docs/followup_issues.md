@@ -612,11 +612,69 @@ Medium (cleanup) — production 운영 전 권장.
 
 ## Issue #18 — factor model β 의 real historical fetch + production calibration
 
-### Problem
+### Status (PR2b 완료, 2026-05-25) — **VERIFIED with caveat**
+
+PR2b 의 5-strategy benchmark 비교 + NBER regime decomposition + sensitivity
+sweep + 2026-05-15 production regen 모두 완료. Calibrated INITIAL_BETA 가
+모든 benchmark 를 이김 (1위) — 단 60-40 대비 우위 statistically not
+significant.
+
+**5-strategy comparison** (49 OOS samples, 1991-2024):
+- calibrated: mean OOS Sharpe **1.229** ← 1위
+- 60_40_kr_tilted: 1.179 (Δ=+0.05, p=**0.717** ⚠️)
+- hand_coded_prior: 0.829 (Δ=+0.40, p=0.075)
+- equal_weight: 0.818 (Δ=+0.41, p=0.060)
+- risk_parity: 0.782 (Δ=+0.45, p=0.035 ✓)
+
+**Sensitivity findings**:
+- Era split (pre/post 2010): |β_pre - β_post|_avg = 0.036 (MODERATE DRIFT)
+- Robustness penalty: SENSITIVE (0.25 → 0.50 shrinkage 2.0 → 0.1)
+- Sample quality: 분류 불가 (모든 sample confidence = 0.7233, baseline-fallback)
+
+**Production regen** (2026-05-15):
+- KR equity: 16.1% → 26.3% (+10pp)
+- Bond: 37.3% → 25.0% (-12pp)
+- Global equity: 4.8% → 0.3% (extreme factor signal effect, not β 책임)
+- Validation passed, mandate compliance OK.
+
+**Caveat (4건)**:
+1. 60-40 대비 not statistically significant (p=0.717)
+2. β era moderate drift
+3. Robustness penalty sensitive
+4. Extreme factor signal 환경에서 bucket 극단 reposition
+
+**다음 단계 (PR2c+ 영역)**:
+- Quarterly re-calibration cadence (era drift monitoring)
+- 새 factor 추가 (momentum, quality 등) for 더 명확한 차별성
+- 시간 경과로 sample N 증가 → 통계 power 자연 증가
+
+Full validation: artifacts/2026-05-25/validation/validation_report.md +
+sensitivity_report.md + regen/diff_report.md.
+
+### Status (PR2a 완료, 2026-05-24) — RESOLVED (historical)
+
+PR2a 의 walk-forward calibration acceptance gate PASS. INITIAL_BETA 가
+data-driven 으로 교체됨 (commit C9, 2d81a7b).
+
+- Improvement Δ: **+0.342 OOS Sharpe** (prior 0.829 → calibrated 1.171, +41%)
+- Paired-t p: 0.080 (< 0.20 threshold)
+- 5/5 acceptance conditions PASS (sign tolerance 1e-3, grill-me #3 결정)
+- Best shrinkage: 2.0
+
+산출물:
+- backtest/historical/samples.parquet: 133Q × 23 col (1991-Q2 ~ 2024-Q2)
+- artifacts/2026-05-24/calibration_runs/validation_report.json
+- tradingagents/skills/research/factor_to_bucket.py: INITIAL_BETA = 45
+  data-driven entries.
+
+다음 단계: PR2b 의 benchmark 비교 (24-cell / 60-40 / 1-N / risk parity) +
+empirical superiority 통계 검증 + 2026-05-15 산출물 regen.
+
+### (Historical) Problem
 PR1 의 C6 calibration 은 *synthetic data* 으로 infrastructure 검증만. real INITIAL_BETA
 update 가 *Stage 1 real fetch + walk-forward Sharpe* 필요.
 
-### Proposed approach
+### (Historical) Proposed approach
 1. Historical fetch script:
    - FRED quarterly (1991-2024): CPI, GDP, NFCI, CFNAI, yield curve, TIPS, fed funds
    - yfinance quarterly: S&P 500, KOSPI, IEF, DJP, ^IRX
@@ -625,15 +683,6 @@ update 가 *Stage 1 real fetch + walk-forward Sharpe* 필요.
 3. `scripts/calibrate_factor_model.py --shrinkage-grid` 재실행
 4. validation_report 확인 — acceptance criteria PASS 시 INITIAL_BETA 교체
 5. Acceptance 미통과 시 design 재검토 (factor weights, sample window, etc.)
-
-### Effort
-~25-40시간 (fetch + cache + calibration)
-
-### Priority
-High — 본 PR 의 *empirical superiority* 검증의 단일 path.
-
-### Dependencies
-Issue #12, #14, #15 의 일부 (factor estimator 의 input source 가 production grade 후)
 
 ---
 

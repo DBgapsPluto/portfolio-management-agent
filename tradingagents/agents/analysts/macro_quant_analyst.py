@@ -53,13 +53,32 @@ from tradingagents.skills.macro.yield_curve import compute_yield_curve, compute_
 logger = logging.getLogger(__name__)
 
 
+# Stage 1 audit (2026-05-26, Task 2): named lookback windows.
+MACRO_LOOKBACK_DAYS: int = 365 * 5      # 5y FRED/ECOS macro series
+COMMODITY_LOOKBACK_DAYS: int = 400      # ~1y trading buffer for copper/gold/iron ore
+GDPNOW_LOOKBACK_DAYS: int = 90          # quarter window for nowcast
+USDCNH_LOOKBACK_DAYS: int = 120         # 4mo for real-time China proxy
+IRON_ORE_LOOKBACK_DAYS: int = 200       # 6-7mo for momentum proxy
+FOREIGN_FLOW_LOOKBACK_DAYS: int = 60    # 2mo for 20d net buy aggregate
+CALENDAR_LOOKAHEAD_DAYS: int = 90       # CB calendar horizon
+
+# Backtest prep (2026-05-26, #2): sentinel ratio gate for classify_regime LLM.
+# 입력 snapshot 의 절반 이상이 sentinel(staleness=99) 이면 LLM 호출 자체 skip +
+# 안전 default regime (low confidence, staleness=99 마킹) 반환.
+# Historical backtest 시 데이터 결측이 많은 분기에 LLM 이 placeholder 값 (BSI=100,
+# CFNAI=0 등)으로 잘못된 regime 결정하는 것 방지.
+SENTINEL_RATIO_SKIP_LLM: float = 0.5    # 50% 이상 sentinel → LLM skip
+DEGRADED_REGIME_DEFAULT: str = "growth_disinflation"  # neutral default (다른 분기로 silent 이동 방지)
+DEGRADED_REGIME_CONFIDENCE: float = 0.1   # 매우 낮은 confidence — method_picker 가 보수적 결정 유도
+
+
 NARRATIVE_PROMPT = """\
 You are summarizing a macro snapshot for an asset-allocation team.
 
 Data:
 - Regime: {regime_quadrant} (confidence {confidence:.2f})
 - 10y-2y spread: {spread_2y_bps:.1f} bps (inverted {inverted_days} days)
-- CPI YoY: {cpi:.1f}% (accelerating: {accelerating}); Core PCE YoY: {core_pce:.1f}% (3m ann: {pce_m3:.1f}%) — Fed 타겟
+- CPI YoY: {cpi:.1f}% (accelerating: {accelerating}); Core PCE YoY: {core_pce}% (3m ann: {pce_m3}%) — Fed 타겟 ("n/a" = fetch 결측)
 - Unemployment: {ur:.1f}% (Sahm: {sahm}); JOLTS Openings 3m avg {jolts_open:.0f}k, Quits rate {jolts_quits:.1f}% (6m chg {jolts_quits_chg:+.2f})
 - KR export YoY: {kr_export_yoy:.1f}% (accelerating: {kr_export_acc})
 - KR leading index: {kr_cli:.1f} ({kr_phase})
@@ -146,7 +165,7 @@ def _sentinel_fx(as_of: date) -> FXSnapshot:
 def _sentinel_risk_appetite(as_of: date) -> RiskAppetiteSnapshot:
     return RiskAppetiteSnapshot(
         copper_price=0.0, gold_price=0.0, ratio=0.0,
-        ratio_percentile_1y=0.5, signal="neutral",
+        ratio_percentile_5y=0.5, signal="neutral",
         source_date=as_of, staleness_days=99,
     )
 
@@ -182,7 +201,8 @@ def _sentinel_tail_risk(as_of: date) -> TailRiskSnapshot:
 def create_macro_quant_analyst(quick_llm, deep_llm):
     def node(state):
         as_of = date.fromisoformat(state["as_of_date"])
-        start_macro = as_of - timedelta(days=365 * 5)
+        start_macro = as_of - timedelta(days=MACRO_LOOKBACK_DAYS)
+        logger.info("macro_quant start: as_of=%s, lookback=%dd", as_of, MACRO_LOOKBACK_DAYS)
 
         # All fetchers receive as_of_date for point-in-time truncation (D13)
         s_10y = fetch_fred_series_skill("us_10y", start_macro, as_of, as_of_date=as_of)
@@ -267,21 +287,24 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         try:
             kr_exp_series = fetch_ecos_series_skill("kr_export", start_macro, as_of, as_of_date=as_of)
             kr_export = compute_kr_export_trend(kr_exp_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_export fetch failed → sentinel: %s", e)
             kr_export = _sentinel_kr_export(as_of)
 
         # Tier-1: KR leading index (선행지수 순환변동치)
         try:
             kr_cli_series = fetch_ecos_series_skill("kr_cli", start_macro, as_of, as_of_date=as_of)
             kr_leading = compute_kr_leading_index(kr_cli_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_leading fetch failed → sentinel: %s", e)
             kr_leading = _sentinel_kr_leading(as_of)
 
         # Tier-1: KR BSI (제조업 업황)
         try:
             kr_bsi_series = fetch_ecos_series_skill("kr_bsi_mfg", start_macro, as_of, as_of_date=as_of)
             kr_bsi = compute_kr_business_survey(kr_bsi_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_bsi fetch failed → sentinel: %s", e)
             kr_bsi = _sentinel_kr_bsi(as_of)
 
         # Tier-1: US CFNAI (Chicago Fed National Activity Index)
@@ -289,16 +312,18 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             cfnai = fetch_fred_series_skill("us_cfnai", start_macro, as_of, as_of_date=as_of)
             cfnai_ma3 = fetch_fred_series_skill("us_cfnai_ma3", start_macro, as_of, as_of_date=as_of)
             us_leading = compute_us_leading_index(cfnai, cfnai_ma3, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("us_leading (CFNAI) fetch failed → sentinel: %s", e)
             us_leading = _sentinel_us_leading(as_of)
 
         # Tier-1: Atlanta Fed GDPNow
         try:
             gdpnow_series = fetch_fred_series_skill(
-                "us_gdp_nowcast", as_of - timedelta(days=90), as_of, as_of_date=as_of,
+                "us_gdp_nowcast", as_of - timedelta(days=GDPNOW_LOOKBACK_DAYS), as_of, as_of_date=as_of,
             )
             gdp_nowcast = compute_gdp_nowcast(gdpnow_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("gdp_nowcast fetch failed → sentinel: %s", e)
             gdp_nowcast = _sentinel_gdp_nowcast(as_of)
 
         # Tier-2: Chicago Fed NFCI (financial conditions, weekly)
@@ -306,7 +331,8 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             nfci = fetch_fred_series_skill("us_nfci", start_macro, as_of, as_of_date=as_of)
             anfci = fetch_fred_series_skill("us_anfci", start_macro, as_of, as_of_date=as_of)
             fci = compute_financial_conditions(nfci, anfci, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("fci (NFCI/ANFCI) fetch failed → sentinel: %s", e)
             fci = _sentinel_fci(as_of)
 
         # 2026-05-23 C3 — CFNAI fold-in for factor model F1 growth_surprise.
@@ -337,7 +363,8 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
                 "us_michigan_1y", start_macro, as_of, as_of_date=as_of,
             )
             inflation_exp = compute_inflation_expectations(breakeven, michigan, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("inflation_expectations fetch failed → sentinel: %s", e)
             inflation_exp = _sentinel_inflexp(as_of)
 
         # Tier-2: Fed path implied (DGS2 - DFF proxy for futures-implied path)
@@ -345,7 +372,8 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             dgs2 = fetch_fred_series_skill("us_2y", start_macro, as_of, as_of_date=as_of)
             dff = fetch_fred_series_skill("us_policy_rate", start_macro, as_of, as_of_date=as_of)
             fed_path = compute_fed_path(dff, dgs2, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("fed_path fetch failed → sentinel: %s", e)
             fed_path = _sentinel_fed_path(as_of)
 
         # Tier-3: FX overlay (USD/KRW + DXY)
@@ -353,15 +381,17 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             krw = fetch_fred_series_skill("usd_krw", start_macro, as_of, as_of_date=as_of)
             dxy = fetch_fred_series_skill("dxy", start_macro, as_of, as_of_date=as_of)
             fx = compute_fx_overlay(krw, dxy, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("fx (USD/KRW + DXY) fetch failed → sentinel: %s", e)
             fx = _sentinel_fx(as_of)
 
         # Tier-3: Risk appetite (Copper/Gold via yfinance)
         try:
-            copper = fetch_commodity_close("copper", as_of - timedelta(days=400), as_of)
-            gold = fetch_commodity_close("gold", as_of - timedelta(days=400), as_of)
+            copper = fetch_commodity_close("copper", as_of - timedelta(days=COMMODITY_LOOKBACK_DAYS), as_of)
+            gold = fetch_commodity_close("gold", as_of - timedelta(days=COMMODITY_LOOKBACK_DAYS), as_of)
             risk_appetite = compute_risk_appetite(copper, gold, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("risk_appetite (Cu/Au) fetch failed → sentinel: %s", e)
             risk_appetite = _sentinel_risk_appetite(as_of)
 
         # Tier-3: China leading (OECD CLI + 2026-05 보강 USDCNH/iron ore 실시간).
@@ -370,19 +400,22 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             china_cli_series = fetch_fred_series_skill(
                 "china_cli", start_macro, as_of, as_of_date=as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("china_cli fetch failed (sub-fetch): %s", e)
             china_cli_series = None
         try:
             usdcnh_series = fetch_equity_index_close(
-                "usdcnh", as_of - timedelta(days=120), as_of,
+                "usdcnh", as_of - timedelta(days=USDCNH_LOOKBACK_DAYS), as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("usdcnh fetch failed (sub-fetch): %s", e)
             usdcnh_series = None
         try:
             iron_ore_series = fetch_equity_index_close(
-                "iron_ore", as_of - timedelta(days=200), as_of,
+                "iron_ore", as_of - timedelta(days=IRON_ORE_LOOKBACK_DAYS), as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("iron_ore fetch failed (sub-fetch): %s", e)
             iron_ore_series = None
         try:
             if china_cli_series is not None:
@@ -392,17 +425,20 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
                     iron_ore_series=iron_ore_series,
                 )
             else:
+                logger.warning("china_leading: cli series missing → sentinel")
                 china_leading = _sentinel_china_leading(as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("china_leading compute failed → sentinel: %s", e)
             china_leading = _sentinel_china_leading(as_of)
 
         # Tier-3: Foreign flow (KRX 외국인 KOSPI 순매수)
         try:
             foreign_series = fetch_foreign_flow(
-                as_of - timedelta(days=60), as_of, market="KOSPI",
+                as_of - timedelta(days=FOREIGN_FLOW_LOOKBACK_DAYS), as_of, market="KOSPI",
             )
             foreign_flow = compute_foreign_flow(foreign_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("foreign_flow fetch failed → sentinel: %s", e)
             foreign_flow = _sentinel_foreign_flow(as_of)
 
         # Tier-4: Policy uncertainty (US + Global EPU) — 2026-05 DEPRECATED.
@@ -415,10 +451,11 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
 
         # Tier-4: Tail risk (VVIX + MOVE via yfinance — FRED VVIXCLS/MOVE was retired)
         try:
-            vvix = fetch_equity_index_close("vvix", as_of - timedelta(days=400), as_of)
-            move = fetch_equity_index_close("move", as_of - timedelta(days=400), as_of)
+            vvix = fetch_equity_index_close("vvix", as_of - timedelta(days=COMMODITY_LOOKBACK_DAYS), as_of)
+            move = fetch_equity_index_close("move", as_of - timedelta(days=COMMODITY_LOOKBACK_DAYS), as_of)
             tail_risk = compute_tail_risk(vvix, move, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("tail_risk (VVIX/MOVE) fetch failed → sentinel: %s", e)
             tail_risk = _sentinel_tail_risk(as_of)
 
         # 2026-05-23 C5 — KR equity valuation (KOSPI PBR/PER/DivYield) for F8.
@@ -434,66 +471,121 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             logger.warning("KR valuation skill failed (factor F8 affected): %s", e)
             kr_valuation_snapshot = None
 
-        events = fetch_central_bank_calendar_skill(as_of, days=90)
+        events = fetch_central_bank_calendar_skill(as_of, days=CALENDAR_LOOKAHEAD_DAYS)
 
-        regime: RegimeClassification = classify_regime(
-            quick_llm, deep_llm,
-            spread_10y_2y_bps=yc.spread_10y_2y_bps,
-            inverted_days_count=yc.inverted_days_count,
-            cpi_yoy=infl.cpi_yoy,
-            momentum_3mo=infl.momentum_3mo,
-            accelerating=infl.accelerating,
-            core_pce_yoy=infl.core_pce_yoy,
-            core_pce_3mo_ann=infl.pce_momentum_3mo,
-            unemployment_rate=emp.unemployment_rate,
-            sahm_rule_triggered=emp.sahm_rule_triggered,
-            jolts_openings_3mo=emp.job_openings_3mo_avg,
-            jolts_quits_rate=emp.quits_rate,
-            jolts_quits_change_6mo=emp.quits_rate_change_6mo,
-            # Tier-1 신규 inputs
-            kr_export_yoy=kr_export.yoy_pct,
-            kr_export_accelerating=kr_export.accelerating,
-            kr_cli_value=kr_leading.cli_value,
-            kr_cli_phase=kr_leading.phase,
-            kr_bsi_mfg=kr_bsi.mfg_bsi,
-            kr_bsi_contraction=kr_bsi.contraction_signal,
-            us_cfnai_ma3=us_leading.cfnai_ma3,
-            us_recession_signal=us_leading.recession_signal,
-            us_gdp_nowcast=gdp_nowcast.nowcast_pct,
-            # Tier-2 신규 inputs
-            us_nfci=fci.nfci,
-            us_nfci_regime=fci.regime,
-            us_nfci_tightening=fci.tightening,
-            us_breakeven_5y5y=inflation_exp.breakeven_5y5y,
-            us_michigan_1y=inflation_exp.michigan_1y,
-            us_inflation_anchored=inflation_exp.anchored,
-            fed_path_bps=fed_path.path_bps,
-            fed_market_view=fed_path.market_view,
-            # Tier-3 신규 inputs
-            usd_krw=fx.usd_krw,
-            krw_change_1m=fx.krw_change_1m_pct,
-            fx_regime=fx.regime,
-            copper_gold_signal=risk_appetite.signal,
-            copper_gold_percentile=risk_appetite.ratio_percentile_1y,
-            china_cli_value=china_leading.cli_value,
-            china_cli_phase=china_leading.phase,
-            china_usdcnh=china_leading.usdcnh,
-            china_usdcnh_change_1m=china_leading.usdcnh_change_1m_pct,
-            china_iron_ore_change_3m=china_leading.iron_ore_change_3m_pct,
-            china_realtime_signal=china_leading.realtime_signal,
-            foreign_flow_20d_krw=foreign_flow.net_20d_krw,
-            foreign_flow_signal=foreign_flow.signal,
-            # Tier-4 신규 inputs (EPU 2026-05 DEPRECATED — VIX/credit/SKEW이 우월)
-            vvix=tail_risk.vvix,
-            move=tail_risk.move,
-            tail_risk_signal=tail_risk.signal,
-        )
+        # Stage 1 audit (Task 2): sentinel inventory before regime classification.
+        # 어느 snapshot이 fetch 실패로 sentinel인지 카운트 → narrative summary 로 노출.
+        # classify_regime LLM은 sentinel을 정상값으로 흡수할 수 있으므로 (예: kr_bsi=100.0
+        # 평균치) debugger가 어느 신호가 실제 데이터인지 알 수 있어야 함.
+        _sentinel_inventory = {
+            name: getattr(snap, "staleness_days", 0) >= 99
+            for name, snap in [
+                ("yc", yc), ("infl", infl), ("emp", emp), ("kr_divergence", div),
+                ("kr_export", kr_export), ("kr_leading", kr_leading), ("kr_bsi", kr_bsi),
+                ("us_leading", us_leading), ("gdp_nowcast", gdp_nowcast),
+                ("fci", fci), ("inflation_exp", inflation_exp), ("fed_path", fed_path),
+                ("fx", fx), ("risk_appetite", risk_appetite),
+                ("china_leading", china_leading), ("foreign_flow", foreign_flow),
+                ("tail_risk", tail_risk),
+            ]
+        }
+        n_sentinels = sum(_sentinel_inventory.values())
+        total_snapshots = len(_sentinel_inventory)
+        sentinel_ratio = n_sentinels / total_snapshots if total_snapshots else 0.0
+        if n_sentinels > 0:
+            stale_names = [k for k, v in _sentinel_inventory.items() if v]
+            logger.warning(
+                "macro_quant: %d/%d snapshots are sentinels (ratio=%.2f, fetch failed): %s — "
+                "regime classifier may interpret placeholder values as live data",
+                n_sentinels, total_snapshots, sentinel_ratio, stale_names,
+            )
+
+        # Backtest prep (2026-05-26, #2): sentinel ratio ≥ 임계값이면 LLM skip.
+        # historical 데이터 결측이 많은 분기에 LLM 이 placeholder 값으로 잘못된
+        # regime 결정 방지. Stage 3 audit Task 0 의 degraded_inputs 와 연계 —
+        # regime.staleness=99 마킹 시 systemic 도 함께 degraded 면 strict MIN_VAR.
+        if sentinel_ratio >= SENTINEL_RATIO_SKIP_LLM:
+            logger.warning(
+                "macro_quant: sentinel_ratio=%.2f ≥ %.2f → classify_regime LLM skip, "
+                "safe default regime='%s' (confidence=%.2f, staleness=99)",
+                sentinel_ratio, SENTINEL_RATIO_SKIP_LLM,
+                DEGRADED_REGIME_DEFAULT, DEGRADED_REGIME_CONFIDENCE,
+            )
+            regime = RegimeClassification(
+                quadrant=DEGRADED_REGIME_DEFAULT,
+                confidence=DEGRADED_REGIME_CONFIDENCE,
+                drivers=[
+                    f"sentinel_ratio={sentinel_ratio:.2f} ≥ {SENTINEL_RATIO_SKIP_LLM}",
+                    f"LLM skip — {n_sentinels}/{total_snapshots} snapshots fetch failed",
+                ],
+                reasoning=(
+                    f"degraded run: {n_sentinels}/{total_snapshots} sentinel snapshots. "
+                    f"safe default to {DEGRADED_REGIME_DEFAULT}, low confidence."
+                )[:300],
+                source_date=as_of,
+                staleness_days=99,
+            )
+        else:
+            regime: RegimeClassification = classify_regime(
+                quick_llm, deep_llm,
+                spread_10y_2y_bps=yc.spread_10y_2y_bps,
+                inverted_days_count=yc.inverted_days_count,
+                cpi_yoy=infl.cpi_yoy,
+                momentum_3mo=infl.momentum_3mo,
+                accelerating=infl.accelerating,
+                # PCE 는 결측 시 None — LLM 에 "n/a" 로 전달해 0.0 (디플레) 와 구분.
+                core_pce_yoy=infl.core_pce_yoy if infl.core_pce_yoy is not None else "n/a",
+                core_pce_3mo_ann=infl.pce_momentum_3mo if infl.pce_momentum_3mo is not None else "n/a",
+                unemployment_rate=emp.unemployment_rate,
+                sahm_rule_triggered=emp.sahm_rule_triggered,
+                jolts_openings_3mo=emp.job_openings_3mo_avg,
+                jolts_quits_rate=emp.quits_rate,
+                jolts_quits_change_6mo=emp.quits_rate_change_6mo,
+                # Tier-1 신규 inputs
+                kr_export_yoy=kr_export.yoy_pct,
+                kr_export_accelerating=kr_export.accelerating,
+                kr_cli_value=kr_leading.cli_value,
+                kr_cli_phase=kr_leading.phase,
+                kr_bsi_mfg=kr_bsi.mfg_bsi,
+                kr_bsi_contraction=kr_bsi.contraction_signal,
+                us_cfnai_ma3=us_leading.cfnai_ma3,
+                us_recession_signal=us_leading.recession_signal,
+                us_gdp_nowcast=gdp_nowcast.nowcast_pct,
+                # Tier-2 신규 inputs
+                us_nfci=fci.nfci,
+                us_nfci_regime=fci.regime,
+                us_nfci_tightening=fci.tightening,
+                us_breakeven_5y5y=inflation_exp.breakeven_5y5y,
+                us_michigan_1y=inflation_exp.michigan_1y,
+                us_inflation_anchored=inflation_exp.anchored,
+                fed_path_bps=fed_path.path_bps,
+                fed_market_view=fed_path.market_view,
+                # Tier-3 신규 inputs
+                usd_krw=fx.usd_krw,
+                krw_change_1m=fx.krw_change_1m_pct,
+                fx_regime=fx.regime,
+                copper_gold_signal=risk_appetite.signal,
+                copper_gold_percentile=risk_appetite.ratio_percentile_5y,
+                china_cli_value=china_leading.cli_value,
+                china_cli_phase=china_leading.phase,
+                china_usdcnh=china_leading.usdcnh,
+                china_usdcnh_change_1m=china_leading.usdcnh_change_1m_pct,
+                china_iron_ore_change_3m=china_leading.iron_ore_change_3m_pct,
+                china_realtime_signal=china_leading.realtime_signal,
+                foreign_flow_20d_krw=foreign_flow.net_20d_krw,
+                foreign_flow_signal=foreign_flow.signal,
+                # Tier-4 신규 inputs (EPU 2026-05 DEPRECATED — VIX/credit/SKEW이 우월)
+                vvix=tail_risk.vvix,
+                move=tail_risk.move,
+                tail_risk_signal=tail_risk.signal,
+            )
 
         narrative_prompt = NARRATIVE_PROMPT.format(
             regime_quadrant=regime.quadrant, confidence=regime.confidence,
             spread_2y_bps=yc.spread_10y_2y_bps, inverted_days=yc.inverted_days_count,
             cpi=infl.cpi_yoy, accelerating=infl.accelerating,
-            core_pce=infl.core_pce_yoy, pce_m3=infl.pce_momentum_3mo,
+            core_pce=f"{infl.core_pce_yoy:.1f}" if infl.core_pce_yoy is not None else "n/a",
+            pce_m3=f"{infl.pce_momentum_3mo:.1f}" if infl.pce_momentum_3mo is not None else "n/a",
             ur=emp.unemployment_rate, sahm=emp.sahm_rule_triggered,
             jolts_open=emp.job_openings_3mo_avg, jolts_quits=emp.quits_rate,
             jolts_quits_chg=emp.quits_rate_change_6mo,
@@ -507,7 +599,7 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             anchored=inflation_exp.anchored,
             fed_bps=fed_path.path_bps, fed_view=fed_path.market_view,
             usd_krw=fx.usd_krw, krw_chg=fx.krw_change_1m_pct, fx_regime=fx.regime,
-            cu_signal=risk_appetite.signal, cu_pct=risk_appetite.ratio_percentile_1y,
+            cu_signal=risk_appetite.signal, cu_pct=risk_appetite.ratio_percentile_5y,
             china_cli=china_leading.cli_value, china_phase=china_leading.phase,
             usdcnh=china_leading.usdcnh, usdcnh_chg=china_leading.usdcnh_change_1m_pct,
             iron=china_leading.iron_ore, iron_chg=china_leading.iron_ore_change_3m_pct,
@@ -519,12 +611,19 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             events=", ".join(f"{e.event_date} {e.bank}" for e in events[:3]) or "none",
         )
         narrative = quick_llm.invoke(narrative_prompt).content[:500]
+        sentinel_line = (
+            f"Sentinels: {n_sentinels}/{len(_sentinel_inventory)} "
+            f"({', '.join(k for k, v in _sentinel_inventory.items() if v)})\n"
+            if n_sentinels > 0 else ""
+        )
         summary = (
             f"## Macro\n"
+            f"{sentinel_line}"
             f"Regime: **{regime.quadrant}** ({regime.confidence:.2f})\n"
             f"YC 10y-2y: {yc.spread_10y_2y_bps:.0f}bps, inverted {yc.inverted_days_count}d\n"
             f"CPI: {infl.cpi_yoy:.1f}% YoY ({'↑' if infl.accelerating else '↓'})\n"
-            f"Core PCE: {infl.core_pce_yoy:.1f}% YoY (3m ann {infl.pce_momentum_3mo:.1f}%) — Fed 타겟\n"
+            f"Core PCE: {f'{infl.core_pce_yoy:.1f}%' if infl.core_pce_yoy is not None else 'n/a'} YoY "
+            f"(3m ann {f'{infl.pce_momentum_3mo:.1f}%' if infl.pce_momentum_3mo is not None else 'n/a'}) — Fed 타겟\n"
             f"UR: {emp.unemployment_rate:.1f}% (Sahm: {emp.sahm_rule_triggered}) "
             f"JOLTS: openings {emp.job_openings_3mo_avg/1000:.1f}M, quits {emp.quits_rate:.1f}% "
             f"({emp.quits_rate_change_6mo:+.2f}/6m)\n"
@@ -537,7 +636,7 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             f"Mich1y={inflation_exp.michigan_1y:.2f}% ({'anchored' if inflation_exp.anchored else inflation_exp.unanchored_direction})\n"
             f"Fed path: {fed_path.path_bps:+.0f}bps → {fed_path.market_view}\n"
             f"FX: USD/KRW {fx.usd_krw:.0f} ({fx.krw_change_1m_pct:+.1f}%/1m, {fx.regime})\n"
-            f"Cu/Au: {risk_appetite.signal} (pct {risk_appetite.ratio_percentile_1y:.0%})\n"
+            f"Cu/Au: {risk_appetite.signal} (5y pct {risk_appetite.ratio_percentile_5y:.0%})\n"
             f"China CLI: {china_leading.cli_value:.1f} ({china_leading.phase}) "
             f"| USDCNH {china_leading.usdcnh:.3f} ({china_leading.usdcnh_change_1m_pct:+.1f}%/1m), "
             f"iron {china_leading.iron_ore:.0f} ({china_leading.iron_ore_change_3m_pct:+.1f}%/3m) "

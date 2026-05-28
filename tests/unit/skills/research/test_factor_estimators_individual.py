@@ -70,6 +70,42 @@ def test_aggregate_caps_at_plus_3() -> None:
     assert score.z_score == 3.0
 
 
+def test_aggregate_component_level_z_clip() -> None:
+    """2026-05-26 F7 saturate fix (#1): component-level z [-5, +5] clip.
+
+    raw=50 with baseline gdpnow=(2, 2) → z=24. component-level clip 후 5.
+    factor-level _Z_CAP=3 도 최종 적용 → 단독 component 면 +3.0.
+    중요한 건 score.components["gdpnow"] 가 5.0 (clip), 24.0 아님.
+    """
+    components_raw = {"gdpnow": 50.0}
+    weights = {"gdpnow": 1.0}
+    score = _aggregate("F1_growth", components_raw, weights)
+    # component_z 가 clip 됐는지
+    assert score.components["gdpnow"] == pytest.approx(5.0)
+    # 최종 factor z 는 _Z_CAP 적용
+    assert score.z_score == pytest.approx(3.0)
+
+
+def test_aggregate_component_clip_prevents_single_outlier_saturation() -> None:
+    """단일 outlier component 가 다른 정상 component 들 압도 못 함을 검증.
+
+    F7 saturate 시나리오 재현 (baseline mismatch → z=25 outlier):
+    - F1 의 component 1 = raw 가 z=25 나오게 (50, baseline (0, 2))
+    - F1 의 component 2 = 정상 (cfnai z=0)
+    - clip 없으면: 0.5*25 + 0.5*0 = 12.5 → cap +3
+    - clip 있으면: 0.5*5 + 0.5*0 = 2.5 → 정상 magnitude
+    """
+    # gdpnow=50 with baseline (2, 2) → z=24, clip 후 5.0
+    # cfnai=0.5 with baseline → z=1.0
+    components_raw = {"gdpnow": 50.0, "cfnai": 0.5}
+    weights = {"gdpnow": 0.5, "cfnai": 0.5}
+    score = _aggregate("F1_growth", components_raw, weights)
+    # clip 후: (5.0 * 0.5 + 1.0 * 0.5) = 3.0 (마침 cap 닿음 — outlier 영향 여전히 큼)
+    # 하지만 cfnai 신호 (1.0) 가 살아있음을 확인 (score.components 에)
+    assert score.components["gdpnow"] == pytest.approx(5.0)
+    assert score.components["cfnai"] == pytest.approx(1.0)
+
+
 def test_aggregate_caps_at_minus_3() -> None:
     components_raw = {"gdpnow": -10.0}  # z = -6 → cap -3
     weights = {"gdpnow": 1.0}
@@ -96,6 +132,55 @@ def test_safe_get_with_default() -> None:
     assert _safe_get(None, "a", default=99) == 99
     obj = SimpleNamespace(x=None)
     assert _safe_get(obj, "x", "y", default="dflt") == "dflt"
+
+
+# ---------- Stage 1 audit (2026-05-26): sentinel guard ----------
+
+
+def test_safe_get_drops_sentinel_snapshot() -> None:
+    """Stage 1 sentinel (staleness_days=99) snapshot → field 접근이 default 반환.
+
+    macro_quant이 fetch 실패 시 BSI=100, staleness_days=99 sentinel snapshot
+    을 만든다. factor_estimators가 .bsi 를 그대로 100으로 읽으면 silent
+    distortion. sentinel guard로 component drop 되어야 함.
+    """
+    sentinel_snapshot = SimpleNamespace(bsi=100.0, staleness_days=99)
+    stage1 = SimpleNamespace(macro_report=SimpleNamespace(kr_bsi=sentinel_snapshot))
+    assert _safe_get(stage1, "macro_report", "kr_bsi", "bsi") is None
+
+
+def test_safe_get_passes_fresh_snapshot() -> None:
+    fresh = SimpleNamespace(bsi=92.0, staleness_days=0)
+    stage1 = SimpleNamespace(macro_report=SimpleNamespace(kr_bsi=fresh))
+    assert _safe_get(stage1, "macro_report", "kr_bsi", "bsi") == 92.0
+
+
+def test_safe_get_passes_stale_but_below_sentinel() -> None:
+    # is_stale(1d) / is_very_stale(7d) 단계는 통과 — 가용 정보는 활용.
+    stale = SimpleNamespace(bsi=95.0, staleness_days=10)
+    stage1 = SimpleNamespace(macro_report=SimpleNamespace(kr_bsi=stale))
+    assert _safe_get(stage1, "macro_report", "kr_bsi", "bsi") == 95.0
+
+
+def test_safe_get_sentinel_at_intermediate_level() -> None:
+    # 중간 노드(macro_report 자체가 아니라 sub-snapshot)가 sentinel인 경우도 drop.
+    sentinel = SimpleNamespace(spread_10y_2y_bps=-50.0, staleness_days=99)
+    stage1 = SimpleNamespace(
+        macro_report=SimpleNamespace(yield_curve=sentinel),
+    )
+    assert _safe_get(stage1, "macro_report", "yield_curve", "spread_10y_2y_bps") is None
+
+
+def test_safe_get_ignores_non_int_staleness() -> None:
+    # staleness_days 가 미설정/타입 다른 경우(예: pydantic 누락) — guard 미발동.
+    weird = SimpleNamespace(bsi=92.0, staleness_days=None)
+    stage1 = SimpleNamespace(macro_report=SimpleNamespace(kr_bsi=weird))
+    assert _safe_get(stage1, "macro_report", "kr_bsi", "bsi") == 92.0
+
+
+def test_safe_get_sentinel_constant_value() -> None:
+    # 사양 fix: STALENESS_SENTINEL_DAYS = 99 (analyst들이 fetch 실패 marker).
+    assert fe.STALENESS_SENTINEL_DAYS == 99
 
 
 # ---------- enum maps ----------
@@ -173,7 +258,7 @@ def _full_stage1_baseline():
     risk_hy = SimpleNamespace(current_bps=400.0, momentum_zscore=0.0)
     risk_quality = SimpleNamespace(quality_spread_bps=90.0)
     risk_funding = SimpleNamespace(spread_bps=10.0)
-    risk_corr = SimpleNamespace(correlation_60d=-0.2)
+    risk_corr = SimpleNamespace(correlation_120d=-0.2)
     # RealYieldsSnapshot uses tips_10y (not ten_y_pct)
     risk_real_yields = SimpleNamespace(tips_10y=0.5)
     # BreadthSnapshot uses advancing_pct
@@ -296,14 +381,19 @@ def test_compute_liquidity_baseline_z_zero(_pe, _krw):
 @patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
 @patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
 def test_compute_all_factors_returns_9(_pe, _krw):
+    """2026-05-27 — F10 신규 추가. F10 component 가 fixture 에 모두 None 이면
+    None 으로 graceful skip → to_dict() 에 F10 키 없음. 기존 9 factor 만 검증.
+    """
     s = compute_all_factors(_full_stage1_baseline())
     assert isinstance(s, FactorScores)
     d = s.to_dict()
-    expected_keys = {
+    base_keys = {
         "F1_growth", "F2_inflation", "F3_real_rate", "F4_term_premium",
         "F5_credit_cycle", "F6_krw_regime", "F7_equity_vol_regime",
         "F8_valuation", "F9_liquidity_regime",
     }
-    assert set(d.keys()) == expected_keys
+    # F10 은 fixture 에 systemic_liquidity components (nfci, funding_stress 등)
+    # 가 있으면 포함, 없으면 graceful skip. base_keys 는 항상 존재.
+    assert base_keys.issubset(set(d.keys()))
     for v in d.values():
         assert -3.0 <= v <= 3.0

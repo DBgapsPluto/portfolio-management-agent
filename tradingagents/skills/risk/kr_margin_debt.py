@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Literal
 
 import pandas as pd
 
@@ -7,25 +8,30 @@ from tradingagents.skills.registry import register_skill
 
 
 # 신용잔고 signal 임계
-# euphoria: 1년 percentile > 0.85 AND 20일 변화 > +10%  (과열, peak signal)
-# deleveraging: 20일 변화 < -15% (forced selling, 위기 신호)
+# euphoria:     1년 percentile > 0.85 AND 20일 변화 > +10%  (과열, peak signal)
+# deleveraging: 20일 변화의 1년 percentile < 0.10  OR  20일 변화 < -15%
+#               (둘 다 fire 하면 forced selling — historical 절대 임계 + base-shift
+#                흡수 percentile 의 OR 조합 으로 false-negative 보완)
 #
-# ⚠️ HARDCODED CAVEAT (#6, 2026-05 audit):
-#   임계 (0.85 pct + 10% change / -15% change)는 **2021년 1월 retail euphoria peak
-#   single observation 캘리브레이션**. 다른 historical 사례 부족 (한국 신용잔고
-#   data 자체가 2007+ 단기 시리즈, 그중 euphoria event는 2021이 거의 유일).
-#   → false-negative 가능성 (다른 형태의 peak이 이 임계를 안 건드릴 수 있음).
-#   다른 시기 calibration 필요. percentile 기반 (예: deleveraging도 percentile<0.15)
-#   으로 변환 가능하나 single observation으론 보수적 임계 유지.
+# 2026-05 fix (#6, single observation calibration → dual gate):
+#   기존: deleveraging = (change_20d < -15%) 절대 임계 단독.
+#   문제: 2021년 1월 peak single observation 기반이라 다른 형태의 peak 에서
+#         false-negative 가능. 또한 KR 신용잔고 시계열 자체가 2007+ 짧고
+#         euphoria event 사례 부족.
+#   변경: change_20d 의 1y rolling percentile < 0.10 추가 — base shift 자동 흡수.
+#         절대 임계 -15% 와 OR 결합 (둘 중 하나라도 발화 → 보수적 trigger).
 EUPHORIA_PCT = 0.85
 EUPHORIA_CHANGE = 10.0
-DELEVERAGING_CHANGE = -15.0
+DELEVERAGING_CHANGE_PCT = 0.10   # 20d 변화의 1y 하위 10%
+DELEVERAGING_CHANGE = -15.0      # 절대 임계 (legacy backstop)
 
 
-def _classify_signal(percentile: float, change_20d: float) -> str:
+def _classify_signal(
+    percentile: float, change_20d: float, change_20d_percentile: float,
+) -> Literal["euphoria", "deleveraging", "normal"]:
     if percentile > EUPHORIA_PCT and change_20d > EUPHORIA_CHANGE:
         return "euphoria"
-    if change_20d < DELEVERAGING_CHANGE:
+    if change_20d_percentile < DELEVERAGING_CHANGE_PCT or change_20d < DELEVERAGING_CHANGE:
         return "deleveraging"
     return "normal"
 
@@ -57,10 +63,24 @@ def compute_kr_margin_debt(
     last_1y = margin_series.tail(252)
     percentile = float((last_1y < current).sum() / max(len(last_1y), 1))
 
+    # 20d 변화율의 1y rolling percentile — base-shift 흡수 deleveraging gate.
+    # 데이터 < 1년 + 20일 이면 0.5 neutral (절대 임계 단독 의존).
+    if len(margin_series) >= 21 + 252:
+        rolling_20d = (margin_series / margin_series.shift(21) - 1) * 100
+        last_1y_chg = rolling_20d.tail(252).dropna()
+        if len(last_1y_chg) >= 50:
+            change_20d_percentile = float(
+                (last_1y_chg < change_20d).sum() / len(last_1y_chg)
+            )
+        else:
+            change_20d_percentile = 0.5
+    else:
+        change_20d_percentile = 0.5
+
     return KRMarginDebtSnapshot(
         balance_krw=current,
         change_20d_pct=change_20d,
         percentile_1y=percentile,
-        signal=_classify_signal(percentile, change_20d),
+        signal=_classify_signal(percentile, change_20d, change_20d_percentile),
         source_date=as_of,
     )

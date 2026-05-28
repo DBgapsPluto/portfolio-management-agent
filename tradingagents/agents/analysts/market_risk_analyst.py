@@ -19,7 +19,7 @@ from tradingagents.schemas.reports import RiskReport
 from tradingagents.schemas.risk import (
     CreditQualitySnapshot, EquityBondCorrelationSnapshot, FundingStressSnapshot,
     KRCorpSpreadSnapshot, KRMarginDebtSnapshot, KRMarketTierSnapshot,
-    KRYieldCurveSnapshot, RealYieldsSnapshot,
+    KRYieldCurveSnapshot, PCASnapshot, RealYieldsSnapshot,
     SentimentSnapshot, SkewSnapshot, VIXTermStructureSnapshot, VxnSnapshot,
 )
 from tradingagents.skills.macro.ecos_fetcher import fetch_ecos_series_skill
@@ -122,7 +122,7 @@ def _sentinel_kr_tier(as_of: date) -> KRMarketTierSnapshot:
 
 def _sentinel_equity_bond_corr(as_of: date) -> EquityBondCorrelationSnapshot:
     return EquityBondCorrelationSnapshot(
-        correlation_60d=-0.3, change_3m=0.0, regime="normal_hedge",
+        correlation_120d=-0.3, change_3m=0.0, regime="normal_hedge",
         source_date=as_of, staleness_days=99,
     )
 
@@ -130,8 +130,19 @@ def _sentinel_equity_bond_corr(as_of: date) -> EquityBondCorrelationSnapshot:
 def create_market_risk_analyst(quick_llm, deep_llm):
     def node(state):
         as_of = date.fromisoformat(state["as_of_date"])
-        start_vol = as_of - timedelta(days=400)
-        start_5y = as_of - timedelta(days=365 * 5 + 30)
+        # Stage 1 audit (Task 3): named lookback windows.
+        VOL_LOOKBACK_DAYS = 400        # ~1y trading buffer for vol/skew series
+        FIVE_Y_LOOKBACK_DAYS = 365 * 5 + 30
+        PCA_LOOKBACK_DAYS = 365
+        CREDIT_BALANCE_LOOKBACK_DAYS = 400
+        MARKET_TIER_LOOKBACK_DAYS = 60
+        REALIZED_VOL_LOOKBACK_PERIOD = "120d"
+        SECTOR_DISP_HIST_PERIOD = "65d"
+        MEGA_CAP_HIST_PERIOD = "400d"
+
+        start_vol = as_of - timedelta(days=VOL_LOOKBACK_DAYS)
+        start_5y = as_of - timedelta(days=FIVE_Y_LOOKBACK_DAYS)
+        logger.info("market_risk start: as_of=%s", as_of)
 
         vix = fetch_volatility_index("VIX", as_of)
         vkospi = fetch_volatility_index("VKOSPI", as_of)
@@ -160,7 +171,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             sector_returns_60d: dict[str, float] = {}
             for ticker in SECTOR_ETFS:
                 try:
-                    h = yf.Ticker(ticker).history(period="65d", interval="1d")
+                    h = yf.Ticker(ticker).history(period=SECTOR_DISP_HIST_PERIOD, interval="1d")
                     if h.empty or len(h) < 60:
                         continue
                     ret_60d = (h["Close"].iloc[-1] / h["Close"].iloc[-60]) - 1.0
@@ -175,25 +186,55 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         except Exception as e:
             logger.warning("Sector dispersion fetch failed (F9 affected): %s", e)
 
-        # Tier-4: Real cross-asset PCA (SPY/QQQ/TLT/GLD/EWY via yfinance)
+        # ★ NEW (2026-05 mega-cap blindspot fix) — RSP/SPY ratio 1y percentile.
+        # SP500 sector breadth 가 mega-cap 분산 매수로 narrow rally invisible —
+        # equal-weight vs cap-weight 직접 비교로 보완.
+        # D7 fold-in + D8 (fetch 실패 → None) + D9 (no cache).
+        try:
+            import yfinance as yf
+
+            from tradingagents.skills.risk.mega_cap_concentration import (
+                compute_mega_cap_concentration,
+            )
+
+            rsp_hist = yf.Ticker("RSP").history(period=MEGA_CAP_HIST_PERIOD, interval="1d")
+            spy_hist = yf.Ticker("SPY").history(period=MEGA_CAP_HIST_PERIOD, interval="1d")
+            mega_cap_pct = compute_mega_cap_concentration(
+                rsp_hist["Close"] if not rsp_hist.empty else None,
+                spy_hist["Close"] if not spy_hist.empty else None,
+                as_of=as_of,
+            )
+            if mega_cap_pct is not None and breadth_us is not None:
+                breadth_us = breadth_us.model_copy(update={
+                    "mega_cap_concentration_pct": mega_cap_pct,
+                })
+        except Exception as e:
+            logger.warning("Mega-cap concentration fetch failed: %s", e)
+
+        # Tier-4: Real cross-asset PCA (SPY/QQQ/TLT/GLD/EWY via yfinance).
+        # Stage 1 audit (Task 3, 2026-05-26): synthetic-data fallback 제거.
+        # 이전 코드는 fetch 실패 시 hardcoded 5-day-pattern × 50 으로 PCA 계산 →
+        # fabricated correlation structure 가 snapshot 에 들어감. Task 0 의 _safe_get
+        # sentinel guard 가 downstream (factor_estimators) 은 막아주지만,
+        # snapshot 자체가 의미 없는 PC1 share 를 담아 LLM/디버그가 혼동.
+        # 명시적 PCASnapshot sentinel 로 교체.
         try:
             returns_matrix = fetch_cross_asset_returns(
-                start=as_of - timedelta(days=365), end=as_of,
+                start=as_of - timedelta(days=PCA_LOOKBACK_DAYS), end=as_of,
             )
             if returns_matrix.empty:
                 raise ValueError("empty cross-asset returns")
             pca = compute_correlation_concentration(returns_matrix, as_of)
-        except Exception:
-            # Fallback: 기존 synthetic (degraded mode)
-            synthetic = pd.DataFrame({
-                "spy": [0.002, -0.001, 0.002, 0.0, 0.001] * 50,
-                "qqq": [0.003, -0.002, 0.003, 0.0, 0.001] * 50,
-                "tlt": [-0.001, 0.001, -0.002, 0.001, 0.0] * 50,
-                "gld": [0.0, 0.001, 0.0, -0.001, 0.001] * 50,
-                "ewy": [0.001, -0.002, 0.003, -0.001, 0.002] * 50,
-            })
-            pca = compute_correlation_concentration(synthetic, as_of)
-            pca = pca.model_copy(update={"staleness_days": 99})
+        except Exception as e:
+            logger.warning(
+                "cross-asset PCA fetch failed → explicit sentinel (no synthetic): %s", e,
+            )
+            pca = PCASnapshot(
+                first_eigenvalue_share=0.0,
+                n_assets_analyzed=2,         # schema min 충족용 placeholder
+                is_concentrated=False,
+                source_date=as_of, staleness_days=99,
+            )
             returns_matrix = pd.DataFrame()
 
         # Tier-4: Equity-bond correlation (SPY-TLT 60d)
@@ -204,8 +245,12 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                     returns_matrix["SPY"], returns_matrix["TLT"], as_of=as_of,
                 )
             else:
+                logger.warning(
+                    "eq_bd_corr: SPY/TLT not in returns_matrix → sentinel",
+                )
                 eq_bd_corr = _sentinel_equity_bond_corr(as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("eq_bd_corr compute failed → sentinel: %s", e)
             eq_bd_corr = _sentinel_equity_bond_corr(as_of)
 
         # Skip-with-note for fear_greed (D5 tier3)
@@ -227,14 +272,16 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             vix_term = compute_vix_term_structure(
                 vix_front_series.dropna(), vix_3m_series.dropna(), as_of=as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("vix_term fetch failed → sentinel: %s", e)
             vix_term = _sentinel_vix_term(as_of)
 
         # Tier-1: SKEW (yfinance ^SKEW)
         try:
-            skew_series = fetch_equity_index_close("skew", as_of - timedelta(days=400), as_of)
+            skew_series = fetch_equity_index_close("skew", as_of - timedelta(days=VOL_LOOKBACK_DAYS), as_of)
             skew = compute_skew_index(skew_series, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("skew fetch failed → sentinel: %s", e)
             skew_series = None
             skew = _sentinel_skew(as_of)
 
@@ -260,7 +307,8 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 "vix_close", start_5y, as_of, as_of_date=as_of,
             )
             vxn = compute_vxn(vxn_series.dropna(), vix_series_for_spread.dropna(), as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("vxn fetch failed → sentinel: %s", e)
             vxn = _sentinel_vxn(as_of)
 
         # Tier-2: TIPS 실질금리 (DFII10, DFII5)
@@ -272,7 +320,8 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 "us_tips_5y", start_5y, as_of, as_of_date=as_of,
             ).dropna()
             real_yields = compute_real_yields(tips_10, tips_5, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("real_yields (TIPS) fetch failed → sentinel: %s", e)
             real_yields = _sentinel_real_yields(as_of)
 
         # Tier-2: Funding stress (SOFR vs 3m T-bill)
@@ -284,7 +333,8 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 "us_3m_tbill", start_5y, as_of, as_of_date=as_of,
             ).dropna()
             funding_stress = compute_funding_stress(sofr, tbill, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("funding_stress (SOFR/T-bill) fetch failed → sentinel: %s", e)
             funding_stress = _sentinel_funding(as_of)
 
         # Tier-2: Credit quality (AAA vs BBB)
@@ -296,7 +346,8 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 "us_bbb_oas", start_5y, as_of, as_of_date=as_of,
             ).dropna()
             credit_quality = compute_credit_quality(aaa, bbb, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("credit_quality (AAA/BBB OAS) fetch failed → sentinel: %s", e)
             credit_quality = _sentinel_credit_quality(as_of)
 
         # Tier-3: KR yield curve (ECOS 국고채 3y/10y)
@@ -308,7 +359,8 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 "kr_treasury_10y", start_5y, as_of, freq="D", as_of_date=as_of,
             ).dropna()
             kr_yield_curve = compute_kr_yield_curve(kr_3y, kr_10y, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_yield_curve (KTB 3y/10y) fetch failed → sentinel: %s", e)
             kr_yield_curve = _sentinel_kr_yield_curve(as_of)
 
         # Tier-3: KR corporate spread (AA- 3y vs 국고채 3y)
@@ -321,26 +373,29 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 kr_corp, kr_3y if not kr_yield_curve.staleness_days >= 99 else pd.Series(dtype=float),
                 as_of=as_of,
             )
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_corp_spread fetch failed → sentinel: %s", e)
             kr_corp_spread = _sentinel_kr_corp_spread(as_of)
 
         # Tier-3: KR 신용잔고 (KRX pykrx)
         try:
-            margin = fetch_credit_balance(as_of - timedelta(days=400), as_of)
+            margin = fetch_credit_balance(as_of - timedelta(days=CREDIT_BALANCE_LOOKBACK_DAYS), as_of)
             kr_margin = compute_kr_margin_debt(margin, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_margin (credit balance) fetch failed → sentinel: %s", e)
             kr_margin = _sentinel_kr_margin(as_of)
 
         # Tier-3: KOSPI vs KOSDAQ (pykrx index)
         try:
             kospi_idx = fetch_market_index(
-                "1001", as_of - timedelta(days=60), as_of,
+                "1001", as_of - timedelta(days=MARKET_TIER_LOOKBACK_DAYS), as_of,
             )
             kosdaq_idx = fetch_market_index(
-                "2001", as_of - timedelta(days=60), as_of,
+                "2001", as_of - timedelta(days=MARKET_TIER_LOOKBACK_DAYS), as_of,
             )
             kr_market_tier = compute_kr_market_tier(kospi_idx, kosdaq_idx, as_of=as_of)
-        except Exception:
+        except Exception as e:
+            logger.warning("kr_market_tier (KOSPI/KOSDAQ) fetch failed → sentinel: %s", e)
             kr_market_tier = _sentinel_kr_tier(as_of)
 
         # 2026-05-23 C6 — SPY realized vol (60d/20d) + VRP for factor model F7 + F9.
@@ -351,7 +406,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         try:
             import yfinance as yf
             spy = yf.Ticker("SPY")
-            hist = spy.history(period="120d", interval="1d")
+            hist = spy.history(period=REALIZED_VOL_LOOKBACK_PERIOD, interval="1d")
             if not hist.empty:
                 daily_returns = hist["Close"].pct_change().dropna()
             else:
@@ -361,6 +416,26 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         except Exception as e:
             logger.warning("Realized vol fetch failed (factor F7/F9 affected): %s", e)
             real_vol = None
+
+        # Stage 1 audit (Task 3): sentinel inventory.
+        _sentinel_inventory = {
+            name: getattr(snap, "staleness_days", 0) >= 99
+            for name, snap in [
+                ("pca", pca), ("eq_bd_corr", eq_bd_corr), ("fg", fg),
+                ("vix_term", vix_term), ("skew", skew), ("vxn", vxn),
+                ("real_yields", real_yields), ("funding_stress", funding_stress),
+                ("credit_quality", credit_quality),
+                ("kr_yield_curve", kr_yield_curve), ("kr_corp_spread", kr_corp_spread),
+                ("kr_margin", kr_margin), ("kr_market_tier", kr_market_tier),
+            ]
+        }
+        n_sentinels = sum(_sentinel_inventory.values())
+        if n_sentinels > 0:
+            stale_names = [k for k, v in _sentinel_inventory.items() if v]
+            logger.warning(
+                "market_risk: %d/%d snapshots are sentinels (fetch failed): %s",
+                n_sentinels, len(_sentinel_inventory), stale_names,
+            )
 
         systemic = score_systemic_risk(
             quick_llm, deep_llm,
@@ -374,6 +449,11 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             fg_label=fg.label, fg_value=fg.current_value,
             breadth_kr_adv=breadth_kr.advancing_pct,
             breadth_us_adv=breadth_us.advancing_pct,
+            mega_cap_concentration_pct=(
+                breadth_us.mega_cap_concentration_pct
+                if breadth_us.mega_cap_concentration_pct is not None
+                else "n/a"
+            ),
             pca_first_share=pca.first_eigenvalue_share,
             pca_concentrated=pca.is_concentrated,
             # Tier-1 신규 inputs
@@ -388,6 +468,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             credit_quality_regime=credit_quality.regime,
             # Tier-3 신규 inputs (KR-specific)
             kr_yc_spread_bps=kr_yield_curve.spread_10y_3y_bps,
+            kr_yc_pct=kr_yield_curve.percentile_5y,
             kr_yc_inverted=kr_yield_curve.inverted,
             kr_yc_regime=kr_yield_curve.regime,
             kr_corp_spread_bps=kr_corp_spread.spread_bps,
@@ -397,7 +478,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             kr_tier_relative_perf=kr_market_tier.relative_perf_pct,
             kr_tier_signal=kr_market_tier.signal,
             # Tier-4 신규 inputs (cross-asset positioning)
-            equity_bond_corr_60d=eq_bd_corr.correlation_60d,
+            equity_bond_corr_120d=eq_bd_corr.correlation_120d,
             equity_bond_corr_regime=eq_bd_corr.regime,
         )
 
@@ -408,24 +489,31 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             f"SKEW {skew.skew_value:.0f} ({skew.tail_hedge_signal}), "
             f"drivers: {systemic.drivers}"
         ).content[:500]
+        sentinel_line = (
+            f"Sentinels: {n_sentinels}/{len(_sentinel_inventory)} "
+            f"({', '.join(k for k, v in _sentinel_inventory.items() if v)})\n"
+            if n_sentinels > 0 else ""
+        )
         summary = (
-            f"## Risk\nScore: **{systemic.score:.1f}/10** ({systemic.regime})\n"
+            f"## Risk\n{sentinel_line}Score: **{systemic.score:.1f}/10** ({systemic.regime})\n"
             f"VIX: {vix.current_value:.1f} (z={vix.zscore_30d:.2f}, 4w {vix.change_4w:+.1f})\n"
             f"VKOSPI: {vkospi.current_value:.1f} (4w {vkospi.change_4w:+.1f})\n"
             f"VIX term: ratio {vix_term.ratio:.2f} ({vix_term.regime})\n"
             f"SKEW: {skew.skew_value:.0f} ({skew.tail_hedge_signal})\n"
             f"VXN: {vxn.current_value:.1f} (spread vs VIX {vxn.spread_vs_vix:+.1f})\n"
             f"HY OAS: {hy.current_bps:.0f}bps {'(widening)' if hy.widening else ''} (mom z {hy.momentum_zscore:+.2f})\n"
-            f"Breadth KR: {breadth_kr.advancing_pct:.0%}, US: {breadth_us.advancing_pct:.0%}\n"
+            f"Breadth KR: {breadth_kr.advancing_pct:.0%}, US: {breadth_us.advancing_pct:.0%}"
+            f"{f' (mega-cap pct {breadth_us.mega_cap_concentration_pct:.0%})' if breadth_us.mega_cap_concentration_pct is not None else ''}\n"
             f"PCA 1st: {pca.first_eigenvalue_share:.2f} {'(concentrated)' if pca.is_concentrated else ''}\n"
             f"TIPS 10y: {real_yields.tips_10y:.2f}% ({real_yields.regime})\n"
             f"Funding: SOFR-Tbill {funding_stress.spread_bps:+.0f}bps ({funding_stress.regime})\n"
             f"Credit quality: BBB-AAA {credit_quality.quality_spread_bps:.0f}bps ({credit_quality.regime})\n"
-            f"KR yield curve: 10y-3y {kr_yield_curve.spread_10y_3y_bps:+.0f}bps ({kr_yield_curve.regime})\n"
+            f"KR yield curve: 10y-3y {kr_yield_curve.spread_10y_3y_bps:+.0f}bps "
+            f"(5y pct {kr_yield_curve.percentile_5y:.0%}, {kr_yield_curve.regime})\n"
             f"KR corp spread: {kr_corp_spread.spread_bps:+.0f}bps ({kr_corp_spread.regime})\n"
             f"KR margin: 20d {kr_margin.change_20d_pct:+.1f}% ({kr_margin.signal})\n"
             f"KR tier: KOSDAQ-KOSPI {kr_market_tier.relative_perf_pct:+.1f}% ({kr_market_tier.signal})\n"
-            f"Equity-bond corr 60d: {eq_bd_corr.correlation_60d:+.2f} ({eq_bd_corr.regime})\n"
+            f"Equity-bond corr 120d: {eq_bd_corr.correlation_120d:+.2f} ({eq_bd_corr.regime})\n"
         )[:2000]
 
         report = RiskReport(

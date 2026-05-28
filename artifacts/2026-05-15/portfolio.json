@@ -1,123 +1,125 @@
 {
   "as_of_date": "2026-05-15",
   "capital_krw": 1000000000,
-  "method": "min_variance",
+  "method": "hrp",
   "bucket_target": {
-    "kr_equity": 0.16066483595656372,
-    "global_equity": 0.047981383724097604,
-    "fx_commodity": 0.05413074861617962,
-    "bond": 0.37286485674697756,
-    "cash_mmf": 0.36435817495618145,
-    "rationale": "Factor model: dominant_scenario=kr_boom, conviction=medium. Top contributors: F6_krw_regime=-3.00, F7_equity_vol_regime=+2.45, F3_real_rate=+0.79",
-    "bond_tips_share": 0.35715953317386645
+    "kr_equity": 0.2630783197751339,
+    "global_equity": 0.002784619827132197,
+    "fx_commodity": 0.11998968287591219,
+    "bond": 0.2502589385776857,
+    "cash_mmf": 0.363888438944136,
+    "rationale": "Factor model: dominant_scenario=kr_boom, conviction=medium. Top contributors: F6_krw_regime=-3.00, F7_equity_vol_regime=+3.00, F3_real_rate=+0.79",
+    "bond_tips_share": 0.3201624505968629
   },
   "weights": {
-    "A0061Z0": 0.16499835001649985,
-    "A102110": 0.04558954410455895,
-    "A133690": 0.007229927700722992,
-    "A144600": 0.02523974760252397,
-    "A273130": 0.041629583704162955,
-    "A360750": 0.020369796302036978,
-    "A385540": 0.055259447405525935,
-    "A395270": 0.02768972310276897,
-    "A411060": 0.028889711102888967,
-    "A423160": 0.04238957610423895,
-    "A455890": 0.15479845201547981,
-    "A456600": 0.02037979620203798,
-    "A459580": 0.002179978200217998,
-    "A468370": 0.11096889031109688,
-    "A487240": 0.0873891261087389,
-    "A488770": 0.16499835001649985
+    "A091160": 0.05102594130613782,
+    "A229200": 0.10206457648795511,
+    "A395160": 0.05245598982113362,
+    "A487240": 0.05753181215990735,
+    "A379800": 0.0013076148909852553,
+    "A381180": 0.00015457586508586476,
+    "A458730": 0.0012355888750935167,
+    "A487230": 8.684019596756016e-05,
+    "A144600": 0.026629154515793525,
+    "A411060": 0.09336052836011867,
+    "A468370": 0.08012351505880165,
+    "A0061Z0": 0.16993968832738338,
+    "A385540": 0.0001460933760881767,
+    "A453850": 4.9641815412529546e-05,
+    "A423160": 0.030872111664760137,
+    "A455890": 0.1390329667903258,
+    "A459580": 0.037406275103534295,
+    "A488770": 0.15657708538551574
   },
-  "rationale": "Stage 4 overlay applied (strength=0.70, mult=1.00). critical 1 → 70% strength (conservative initial)",
+  "rationale": "HRP within each bucket × bucket_target weight. 위험자산 target 38.6%, single-asset cap 20%.",
   "expected_volatility": null,
   "expected_sharpe": null,
   "research_decision": {
     "bucket_target": {
-      "kr_equity": 0.16066483595656372,
-      "global_equity": 0.047981383724097604,
-      "fx_commodity": 0.05413074861617962,
-      "bond": 0.37286485674697756,
-      "cash_mmf": 0.36435817495618145,
-      "rationale": "Factor model: dominant_scenario=kr_boom, conviction=medium. Top contributors: F6_krw_regime=-3.00, F7_equity_vol_regime=+2.45, F3_real_rate=+0.79",
-      "bond_tips_share": 0.35715953317386645
+      "kr_equity": 0.2630783197751339,
+      "global_equity": 0.002784619827132197,
+      "fx_commodity": 0.11998968287591219,
+      "bond": 0.2502589385776857,
+      "cash_mmf": 0.363888438944136,
+      "rationale": "Factor model: dominant_scenario=kr_boom, conviction=medium. Top contributors: F6_krw_regime=-3.00, F7_equity_vol_regime=+3.00, F3_real_rate=+0.79",
+      "bond_tips_share": 0.3201624505968629
     },
     "conviction": "medium",
     "dominant_scenario": "kr_boom",
     "factor_scores": {
-      "F1_growth": 0.253779005641559,
-      "F2_inflation": 0.42772464986357916,
+      "F1_growth": 0.1308795502258486,
+      "F2_inflation": 0.4510579831969125,
       "F3_real_rate": 0.7929411764705884,
       "F4_term_premium": -0.048947368421052836,
       "F5_credit_cycle": -0.3715382684654878,
       "F6_krw_regime": -3.0,
-      "F7_equity_vol_regime": 2.4531619705590497,
-      "F8_valuation": 0.0,
-      "F9_liquidity_regime": -0.6547619047619049
+      "F7_equity_vol_regime": 3.0,
+      "F8_valuation": -0.31970414594182617,
+      "F9_liquidity_regime": 0.5291973110009193
     },
     "factor_contributions": {
       "F1_growth": {
-        "kr_equity": 0.01015116022566236,
-        "global_equity": 0.015226740338493538,
-        "fx_commodity": 0.00253779005641559,
-        "bond": -0.02030232045132472,
-        "cash_mmf": -0.007613370169246769
+        "kr_equity": 0.0026568548695847264,
+        "global_equity": 0.008742753955086686,
+        "fx_commodity": -0.003978738326865797,
+        "bond": -0.00967199876169021,
+        "cash_mmf": -0.004044178101978722
       },
       "F2_inflation": {
-        "kr_equity": -0.008554492997271583,
-        "global_equity": -0.012831739495907374,
-        "fx_commodity": 0.029940725490450546,
-        "bond": -0.02138623249317896,
-        "cash_mmf": 0.012831739495907374
+        "kr_equity": -0.05200698546260401,
+        "global_equity": -0.016734251176605455,
+        "fx_commodity": 0.020072080252262606,
+        "bond": -0.00072169277311506,
+        "cash_mmf": 0.034009771933047196
       },
       "F3_real_rate": {
-        "kr_equity": -0.01585882352941177,
-        "global_equity": -0.02378823529411765,
-        "fx_commodity": -0.007929411764705884,
-        "bond": -0.039647058823529424,
-        "cash_mmf": 0.08722352941176473
+        "kr_equity": 0.03052823529411765,
+        "global_equity": -0.05804329411764707,
+        "fx_commodity": -0.016176000000000003,
+        "bond": -0.06882729411764707,
+        "cash_mmf": 0.08524117647058825
       },
       "F4_term_premium": {
-        "kr_equity": -0.0009789473684210567,
-        "global_equity": -0.001468421052631585,
-        "fx_commodity": -0.0,
-        "bond": -0.0009789473684210567,
-        "cash_mmf": 0.0034263157894736987
+        "kr_equity": -0.00019578947368421135,
+        "global_equity": -0.0026823157894736954,
+        "fx_commodity": 0.004121368421052649,
+        "bond": -0.005971578947368446,
+        "cash_mmf": 0.0020068421052631662
       },
       "F5_credit_cycle": {
-        "kr_equity": 0.01857691342327439,
-        "global_equity": 0.02229229610792927,
-        "fx_commodity": -0.003715382684654878,
-        "bond": 0.007430765369309756,
-        "cash_mmf": -0.04458459221585854
+        "kr_equity": 0.03863997992041073,
+        "global_equity": 0.0043841515678927565,
+        "fx_commodity": 0.0015233069007085003,
+        "bond": -0.014304223335921282,
+        "cash_mmf": -0.07423334603940447
       },
       "F6_krw_regime": {
-        "kr_equity": 0.1,
+        "kr_equity": 0.0444,
         "global_equity": -0.1,
-        "fx_commodity": -0.09,
-        "bond": 0.03,
-        "cash_mmf": 0.03
+        "fx_commodity": -0.1,
+        "bond": -0.1,
+        "cash_mmf": -0.1
       },
       "F7_equity_vol_regime": {
-        "kr_equity": -0.09812647882236199,
+        "kr_equity": 0.0027,
         "global_equity": -0.1,
-        "fx_commodity": -0.049063239411180994,
-        "bond": 0.09812647882236199,
+        "fx_commodity": -0.0186,
+        "bond": 0.0033,
         "cash_mmf": 0.1
       },
       "F8_valuation": {
-        "kr_equity": -0.0,
-        "global_equity": -0.0,
-        "fx_commodity": 0.0,
-        "bond": 0.0,
-        "cash_mmf": 0.0
+        "kr_equity": 0.01895845585435029,
+        "global_equity": 0.011413438010123195,
+        "fx_commodity": -0.006809698308560898,
+        "bond": -0.013971071177657805,
+        "cash_mmf": -0.005179207164257584
       },
       "F9_liquidity_regime": {
-        "kr_equity": 0.019642857142857146,
-        "global_equity": 0.03273809523809525,
-        "fx_commodity": 0.006547619047619049,
-        "bond": -0.026190476190476195,
-        "cash_mmf": -0.03273809523809525
+        "kr_equity": -0.038260965585366465,
+        "global_equity": -0.03995439698056941,
+        "fx_commodity": -0.005821170421010112,
+        "bond": 0.034768263332760396,
+        "cash_mmf": 0.03042884538255286
       }
     },
     "baseline_bucket": {
@@ -128,61 +130,64 @@
       "cash_mmf": 0.2
     },
     "safety_diagnostics": {
-      "pre_projection_risk_asset": 0.21533902465013233,
-      "pre_projection_negatives": [],
-      "pre_projection_sum": 0.920936760588819,
+      "pre_projection_risk_asset": 0.09887701940320269,
+      "pre_projection_negatives": [
+        "global_equity"
+      ],
+      "pre_projection_sum": 0.521707328208374,
       "mandate_violated_pre_projection": false,
       "extreme_factor_active": true,
-      "projection_l2_distance": 0.03535815556894823,
+      "projection_l2_distance": 0.2138989854532144,
       "projection_intervened": true
     }
   },
   "method_choice": {
     "method": "hrp",
     "params": {},
-    "reasoning": "scenario=kr_boom, conviction=medium: kr_boom → KR 호황 분산, HRP"
+    "reasoning": "scenario=kr_boom, conviction=medium: kr_boom → KR 호황 분산, HRP",
+    "rule_fired": "scenario_mapping",
+    "rule_index": 2,
+    "inputs": {
+      "regime_quadrant": "growth_inflation",
+      "regime_confidence": 0.9,
+      "systemic_score": 4.0,
+      "systemic_regime": "neutral",
+      "dominant_scenario": "kr_boom",
+      "conviction": "medium",
+      "feedback_present": false
+    }
   },
   "risk_overlay": {
     "staleness_days": 0,
     "source_date": "2026-05-15",
-    "weight_ceilings": {
-      "A0061Z0": 0.165,
-      "A488770": 0.165
-    },
-    "cluster_caps": {
-      "cluster_1": 0.42600000000000005
-    },
+    "weight_ceilings": {},
+    "cluster_caps": {},
     "risk_asset_multiplier": 1.0,
     "tail_hedge_floor": {},
-    "severity_decision": "critical 1 → 70% strength (conservative initial)",
-    "strength_applied": 0.7,
+    "severity_decision": "low/single medium/none → archive only",
+    "strength_applied": 0.0,
     "lens_concerns": [
       {
         "lens": "tail_risk",
-        "level": "none",
+        "level": "low",
         "proposed_overlay": {
           "weight_ceilings": {},
           "cluster_caps": {},
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "CVaR_95_1d=1.21%, systemic_score=4.0, vix_term=contango, funding=calm"
+        "evidence": "CVaR_95_1d=2.10%, systemic_score=4.0, vix_term=contango, funding=calm"
       },
       {
         "lens": "concentration",
-        "level": "critical",
+        "level": "low",
         "proposed_overlay": {
-          "weight_ceilings": {
-            "A0061Z0": 0.15,
-            "A488770": 0.15
-          },
-          "cluster_caps": {
-            "cluster_1": 0.18
-          },
+          "weight_ceilings": {},
+          "cluster_caps": {},
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "HHI=0.114, top1=20.0%, top3_sum=49.6%, max_cluster=13.3% (4 clusters)"
+        "evidence": "HHI=0.110, top1=17.0%, top3_sum=46.6%, max_cluster=12.0% (4 clusters)"
       },
       {
         "lens": "macro_conditional",
@@ -193,26 +198,27 @@
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "risk_asset_weight=26.3%, scenario=kr_boom, conviction=medium, systemic=4.0, regime=growth_inflation"
+        "evidence": "risk_asset_weight=38.6%, scenario=kr_boom, conviction=medium, systemic=4.0, regime=growth_inflation"
       }
-    ]
+    ],
+    "overlay_apply_outcome": "primary_success"
   },
   "portfolio_numerics": {
     "staleness_days": 0,
     "source_date": "2026-05-15",
-    "hhi": 0.11442,
-    "top1_weight": 0.2,
-    "top3_weight_sum": 0.495992,
+    "hhi": 0.110009,
+    "top1_weight": 0.16994,
+    "top3_weight_sum": 0.46555,
     "cluster_exposure": {
-      "cluster_1": 0.133172,
-      "cluster_12": 0.054131,
-      "cluster_14": 0.006288,
-      "cluster_15": 0.064904
+      "cluster_1": 0.080124,
+      "cluster_12": 0.11999,
+      "cluster_14": 0.000241,
+      "cluster_15": 0.108558
     },
-    "max_cluster_exposure": 0.133172,
-    "realized_vol_60d": 0.00692,
-    "var_95_1d": 0.006687,
-    "cvar_95_1d": 0.012083,
+    "max_cluster_exposure": 0.11999,
+    "realized_vol_60d": 0.011796,
+    "var_95_1d": 0.011935,
+    "cvar_95_1d": 0.020974,
     "n_assets": 18
   },
   "validation_report": {

@@ -1,0 +1,63 @@
+{
+  "anchor_id": "2024-08_yen_carry",
+  "as_of_date": "2024-08-09",
+  "title": "엔 캐리 청산 / 단기 systemic tail / VIX spike",
+  "description": "2024-08-05 닛케이 -12.4% (역대 최대 낙폭), VIX 65 spike. BoJ 25bps hike + Fed dovish ↑ → JPY carry trade 강제 청산. 일주일 안에 회복되었지만 그 당시는 systemic risk 격발. forward guidance 신뢰 약화.",
+
+  "consensus_reasoning": "단기적이긴 했지만 명확한 systemic tail 이벤트. 자산배분 합의:\n- 듀레이션 매수 (flight to quality, US Treasury 강세)\n- gold 헷지 (tail risk anchor)\n- equity 줄이되 panic sell은 X (회복 빠를 가능성)\n- credit spread widening 회피 (HY/EM bond underweight)\n- cash/MMF 늘려서 변동성 대비\n실제로 2주 안에 reverse 됐지만 이건 사후. 그 시점에서 'tail risk regime'으로 분류했어야 함.",
+
+  "sources": [
+    "Howard Marks Q3 2024 memo on volatility regimes",
+    "BIS Quarterly Review Sep 2024: 'carry trade unwind dynamics'",
+    "BlackRock Investment Institute 8월 노트: 'temporary but real tail event'",
+    "El-Erian (FT, 2024-08-08): 'liquidity stress, not solvency'"
+  ],
+
+  "stage1": {
+    "regime": {
+      "quadrant": "growth_disinflation",
+      "confidence": 0.55
+    },
+    "systemic": {
+      "score": 7.5,
+      "regime": "risk_off"
+    }
+  },
+
+  "stage2": {
+    "dominant_cell": "A_T_F",
+    "dominant_scenario_legacy": "global_credit",
+    "conviction": "medium",
+    "bucket_target": {
+      "kr_equity":       0.08,
+      "global_equity":   0.17,
+      "fx_commodity":    0.15,
+      "bond":            0.30,
+      "cash_mmf":        0.30,
+      "bond_tips_share": 0.25
+    }
+  },
+
+  "expected_stage3": {
+    "acceptable_methods": ["min_variance", "risk_parity"],
+    "min_sub_category_weights": {
+      "mmf_kr": 0.10
+    },
+    "max_sub_category_weights": {
+      "us_high_yield": 0.0,
+      "em_bond":       0.02
+    },
+    "required_sub_categories": [],
+    "required_substitute_groups": [
+      {
+        "name": "flight_to_quality",
+        "description": "Systemic tail event 시 quality 자산 — US/KR treasury OR gold (tail flight) OR short duration.",
+        "any_of": ["us_treasury", "kr_treasury", "gold", "short_duration", "us_aggregate"],
+        "min_total_weight": 0.08
+      }
+    ],
+    "forbidden_sub_categories": ["us_high_yield"],
+    "min_unique_sub_categories": 6,
+    "risk_asset_max": 0.45
+  }
+}

@@ -15,6 +15,8 @@ You are a market risk analyst quantifying systemic risk on a 0-10 scale.
 ==== Breadth ====
 - KR advancing = {breadth_kr_adv} (KOSPI200)
 - US advancing = {breadth_us_adv} (SP500 11 섹터 ETF proxy)
+- US mega-cap concentration (RSP/SPY 1y pct) = {mega_cap_concentration_pct}
+  ("n/a" = fetch 실패. <0.20 mega-cap heavy narrow rally / ~0.50 balanced / >0.80 equal-weight 우위)
 
 ==== Concentration ====
 - PCA 1st eigenvalue share = {pca_first_share} (concentrated = {pca_concentrated})
@@ -36,8 +38,9 @@ You are a market risk analyst quantifying systemic risk on a 0-10 scale.
   (percentile 기준 calm/elevated/stress. 확대 = flight to quality)
 
 ==== Tier-3 확장: KR-specific risk ====
-- KR yield curve: (10y-3y) = {kr_yc_spread_bps} bps, inverted = {kr_yc_inverted}, regime = {kr_yc_regime}
-  (>+50bps normal, -10~+50 flat, <-10 inverted. 한국 BOK 사이클이 미국과 dis-correlate 가능)
+- KR yield curve: (10y-3y) = {kr_yc_spread_bps} bps (5y pct {kr_yc_pct}), inverted = {kr_yc_inverted}, regime = {kr_yc_regime}
+  (percentile-based: >0.5 normal / 0.15~0.5 flat / <0.15 inverted. 절대 spread 도 함께 노출.
+   한국 BOK 사이클이 미국과 dis-correlate 가능)
 - KR 회사채 spread: AA- 3y vs 국고채 3y = {kr_corp_spread_bps} bps, regime = {kr_corp_regime}
   (확대 = 한국 기업 신용 stress, 2022 레고랜드 같은 KR-specific 신용 위기 신호)
 - KR 신용잔고 20일 변화 = {kr_margin_change_20d}%, signal = {kr_margin_signal}
@@ -46,7 +49,7 @@ You are a market risk analyst quantifying systemic risk on a 0-10 scale.
   (small_cap_risk_on = 중소형 outperform; large_cap_risk_off = 대형주 flight-to-quality)
 
 ==== Tier-4 확장: Cross-asset positioning ====
-- Equity-bond correlation 60일 = {equity_bond_corr_60d}, regime = {equity_bond_corr_regime}
+- Equity-bond correlation 120일 = {equity_bond_corr_120d}, regime = {equity_bond_corr_regime}
   (<-0.3 normal_hedge / -0.3~0 weakening / 0~+0.3 positive_flip / >+0.3 extreme_positive)
   positive flip = stagflation/inflation regime; 60/40 portfolio의 hedge 효과 소실
   → 채권 비중 늘려도 분산 안 됨, KR ETF 배분 시 채권 비중 감소 고려

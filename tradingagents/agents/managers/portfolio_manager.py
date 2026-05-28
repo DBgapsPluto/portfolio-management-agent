@@ -24,6 +24,15 @@ from tradingagents.reports.trade_plan import write_trade_plan
 logger = logging.getLogger(__name__)
 
 
+# Stage 6 audit (2026-05-26, Task 3): named const.
+PHILOSOPHY_MIN_CHARS: int = 4000   # philosophy.md 최소 길이 — 미달 시 retry (philosophy.py)
+PHILOSOPHY_MAX_RETRIES: int = 1    # retry 횟수 한도
+
+# Warning reason 분류 (Task 3) — operator 가 root cause 즉시 파악.
+WARN_REASON_PRICE_FETCH_FAILED: str = "PRICE_FETCH_FAILED"
+WARN_REASON_PRICE_ZERO: str = "PRICE_ZERO"
+
+
 def _fetch_current_prices(as_of: date) -> dict[str, float]:
     """Best-effort: pykrx snapshot → {ticker_with_A_prefix: close}. Empty on failure."""
     try:
@@ -52,7 +61,12 @@ def _serialize_for_json(value: Any) -> Any:
 
 
 def _build_full_trace_portfolio(state: dict) -> dict:
-    """Stage 6 정리 ①: portfolio.json에 Stage 1-5 산출물 통합 (full trace)."""
+    """Stage 6 정리 ①: portfolio.json에 Stage 1-5 산출물 통합 (full trace).
+
+    Stage 5+6 audit (2026-05-26, Task 2): Stage 3+4+5 의 attribution dict 도
+    full_trace 에 포함 → Stage 6 narrative 가 어느 결정 근거가 어떻게 흘렀는지
+    추적 가능. portfolio.json 한 파일만 봐도 전체 pipeline trace.
+    """
     weights = state["weight_vector"]
     bucket = state.get("bucket_target")
 
@@ -76,6 +90,18 @@ def _build_full_trace_portfolio(state: dict) -> dict:
         # Stage 5 — Validation (어떤 룰 통과/위반 + rebalance_mode)
         "validation_report": _serialize_for_json(state.get("validation_report")),
         "rebalance_mode": state.get("rebalance_mode"),
+        # Stage 5+6 audit (Task 2): per-stage attribution thread.
+        # Stage 3 audit 의 allocation_attribution, Stage 4 audit 의
+        # risk_judge_attribution, Stage 5 audit 의 mandate_validator_attribution.
+        "allocation_attribution": _serialize_for_json(
+            state.get("allocation_attribution"),
+        ),
+        "risk_judge_attribution": _serialize_for_json(
+            state.get("risk_judge_attribution"),
+        ),
+        "mandate_validator_attribution": _serialize_for_json(
+            state.get("mandate_validator_attribution"),
+        ),
     }
 
 
@@ -85,6 +111,10 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
         capital = state["capital_krw"]
         as_of_str = state["as_of_date"]
         as_of = date.fromisoformat(as_of_str)
+        logger.info(
+            "portfolio_manager start: as_of=%s, capital_krw=%s, n_positions=%d",
+            as_of_str, capital, len(weights.weights),
+        )
 
         out_dir = Path(artifacts_dir) / as_of_str
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -95,6 +125,7 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
             for e in universe.etfs
         }
         current_prices = _fetch_current_prices(as_of)
+        price_fetch_failed = len(current_prices) == 0
 
         # 1. portfolio.json (full trace, no LLM)
         portfolio = _build_full_trace_portfolio(state)
@@ -102,6 +133,16 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
         portfolio_path.write_text(
             json.dumps(portfolio, indent=2, ensure_ascii=False, default=str),
             encoding="utf-8",
+        )
+        logger.info(
+            "portfolio.json written: %s (n_positions=%d, attribution_keys=%s)",
+            portfolio_path, len(weights.weights),
+            [
+                k for k in (
+                    "allocation_attribution", "risk_judge_attribution",
+                    "mandate_validator_attribution",
+                ) if portfolio.get(k) is not None
+            ],
         )
 
         # 2. trade_plan.csv (MTS-input, qty=0 warning row 포함)
@@ -116,16 +157,38 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
 
         warnings_out = list(state.get("warnings", []) or [])
         if zero_qty_tickers:
+            # Stage 6 audit Task 3: warning reason 분류 (operator root cause).
+            reason = (
+                WARN_REASON_PRICE_FETCH_FAILED if price_fetch_failed
+                else WARN_REASON_PRICE_ZERO
+            )
             warning_msg = (
-                f"trade_plan: {len(zero_qty_tickers)} ticker(s) have qty=0 "
-                f"(current_prices fetch failed): {zero_qty_tickers[:5]}"
+                f"trade_plan [{reason}]: {len(zero_qty_tickers)} ticker(s) "
+                f"have qty=0: {zero_qty_tickers[:5]}"
             )
             warnings_out.append(warning_msg)
             logger.warning(warning_msg)
+        logger.info(
+            "trade_plan.csv written: %s (zero_qty=%d/%d)",
+            trade_plan_path, len(zero_qty_tickers), len(weights.weights),
+        )
 
         # 3. philosophy.md (LLM-driven, 6 sections, Stage 1-5 명시 매핑)
         philosophy_path = out_dir / "philosophy.md"
         write_philosophy(state, deep_llm, philosophy_path)
+        # philosophy.md 의 길이 / retry 발동은 write_philosophy 내부에서 처리.
+        philosophy_chars = (
+            philosophy_path.stat().st_size if philosophy_path.exists() else 0
+        )
+        logger.info(
+            "philosophy.md written: %s (size=%d bytes, min=%d)",
+            philosophy_path, philosophy_chars, PHILOSOPHY_MIN_CHARS,
+        )
+
+        logger.info(
+            "portfolio_manager complete: 3 artifacts in %s, warnings=%d",
+            out_dir, len(warnings_out),
+        )
 
         return {
             "final_portfolio_path": str(portfolio_path),

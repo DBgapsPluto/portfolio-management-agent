@@ -1,0 +1,5 @@
+{
+  "error": "sample_quality has too few unique values for 4 quartiles",
+  "unique_count": 1,
+  "mean_quality": 0.7233333333333336
+}

@@ -59,3 +59,24 @@ def test_overlay_strength_in_range():
     RiskOverlay(strength_applied=1.0)
     with pytest.raises(ValidationError):
         RiskOverlay(strength_applied=1.5)
+
+
+def test_risk_overlay_has_outcome_field_with_default():
+    """RiskOverlay 에 overlay_apply_outcome 신규 필드, default='primary_success'."""
+    from tradingagents.schemas.risk_overlay import RiskOverlay
+
+    overlay = RiskOverlay.no_concerns()
+    assert overlay.overlay_apply_outcome == "primary_success"
+
+    overlay2 = RiskOverlay(overlay_apply_outcome="relax_band")
+    assert overlay2.overlay_apply_outcome == "relax_band"
+
+
+def test_risk_overlay_outcome_literal_validation():
+    """overlay_apply_outcome 은 정해진 5 값만 허용."""
+    import pytest
+    from pydantic import ValidationError
+    from tradingagents.schemas.risk_overlay import RiskOverlay
+
+    with pytest.raises(ValidationError):
+        RiskOverlay(overlay_apply_outcome="invalid_value")

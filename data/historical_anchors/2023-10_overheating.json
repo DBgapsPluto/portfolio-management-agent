@@ -1,0 +1,63 @@
+{
+  "anchor_id": "2023-10_overheating",
+  "as_of_date": "2023-10-16",
+  "title": "Rates-stay-higher / Treasury 약세 / 명목성장 강세",
+  "description": "10Y UST yield 5% 돌파, CPI 정체(3.7%), Fed pause but hawkish. equity 부진(SPY -8% from peak), commodity (oil $90+) 강세. 'higher for longer' 컨센서스 굳어진 시점.",
+
+  "consensus_reasoning": "성장은 살아있는데 인플레이션 cooling이 멈춤 = overheating quadrant (growth + inflation 잔존). 이 환경의 자산배분 합의:\n- 듀레이션 회피 (Treasury 약세 진행 중)\n- 실물자산/commodity overweight (oil, gold strong)\n- equity는 유지하되 quality/dividend 쪽 (growth 비싸짐)\n- TIPS, short duration 선호\nMagic of compounding이 깨진 시기 — risk asset 베타가 안 통하는 환경.",
+
+  "sources": [
+    "Howard Marks 'Easy Money' memo (2023-09): 'low-rate era is over'",
+    "Bridgewater All-Weather Q3 2023 commentary: '60/40 dead in higher-for-longer'",
+    "BoFA Global Fund Manager Survey Oct 2023: cash overweight, bond underweight",
+    "El-Erian FT column (2023-10): 'inflation stickier than market priced'"
+  ],
+
+  "stage1": {
+    "regime": {
+      "quadrant": "growth_inflation",
+      "confidence": 0.70
+    },
+    "systemic": {
+      "score": 5.5,
+      "regime": "neutral"
+    }
+  },
+
+  "stage2": {
+    "dominant_cell": "B_N_F",
+    "dominant_scenario_legacy": "overheating",
+    "conviction": "medium",
+    "bucket_target": {
+      "kr_equity":       0.10,
+      "global_equity":   0.20,
+      "fx_commodity":    0.25,
+      "bond":            0.20,
+      "cash_mmf":        0.25,
+      "bond_tips_share": 0.50
+    }
+  },
+
+  "expected_stage3": {
+    "acceptable_methods": ["hrp", "risk_parity"],
+    "min_sub_category_weights": {
+      "mmf_kr": 0.05
+    },
+    "max_sub_category_weights": {
+      "us_high_yield": 0.03,
+      "em_bond":       0.05
+    },
+    "required_sub_categories": [],
+    "required_substitute_groups": [
+      {
+        "name": "inflation_hedge",
+        "description": "Sticky inflation 환경 — commodity, oil, TIPS 어느 형태로든 hedge 확보.",
+        "any_of": ["broad_commodity", "oil_energy", "inflation_linked", "gold", "materials_energy"],
+        "min_total_weight": 0.08
+      }
+    ],
+    "forbidden_sub_categories": [],
+    "min_unique_sub_categories": 7,
+    "risk_asset_max": 0.60
+  }
+}

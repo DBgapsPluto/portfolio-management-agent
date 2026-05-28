@@ -65,6 +65,23 @@ FRED_SERIES = {
     "us_3m_tbill": "DTB3",             # 3-month Treasury bill yield (%)
     "us_aaa_oas": "BAMLC0A1CAAA",      # ICE BofA AAA Corporate OAS (%)
     "us_bbb_oas": "BAMLC0A4CBBB",      # ICE BofA BBB Corporate OAS (%)
+    # Backtest fallback (2026-05-26): ICE BofA 4 OAS series 가 FRED 의 "3-year-only"
+    # 정책 (2026-04~) 으로 2023-05-23 부터만 가용. 이전 시점 backtest 위해 Moody's
+    # BAA - 10Y Treasury spread 사용 (1986-, daily, FRED 무료, 단위 % 동일).
+    # IG/HY/BBB 모두 같은 BAA10Y 사용 — 의미상 비슷 (모두 credit spread 측정).
+    # AAA 도 sentinel 대비 BAA10Y 가 더 나은 proxy.
+    # backtest/data.py:24 와 같은 패턴.
+    "us_credit_proxy": "BAA10Y",       # Moody's BAA - 10Y, daily 1986-
+}
+
+
+# Backtest fix (2026-05-26): historical 시점 (2023-05 이전) FRED 빈 결과 시 fallback.
+# fetch_fred_series 가 자동 시도. caller 코드 변경 불필요.
+FRED_FALLBACK_CHAIN: dict[str, str] = {
+    "us_ig_oas": "us_credit_proxy",    # BAMLC0A0CM → BAA10Y
+    "us_hy_oas": "us_credit_proxy",    # BAMLH0A0HYM2 → BAA10Y (HY proxy 약간 약함)
+    "us_aaa_oas": "us_credit_proxy",   # BAMLC0A1CAAA → BAA10Y (proxy)
+    "us_bbb_oas": "us_credit_proxy",   # BAMLC0A4CBBB → BAA10Y (BBB ≈ BAA 동급)
 }
 
 
@@ -109,12 +126,45 @@ def fetch_fred_series(
     resolved = FRED_SERIES.get(series_id, series_id)
     series = _raw_fred_call(resolved, start, end, key)
 
+    # Backtest fallback (2026-05-26): empty Series + fallback 가능한 series 면
+    # FRED_FALLBACK_CHAIN 으로 자동 대체. caller 코드 변경 없이 historical 시점
+    # 정상 동작 (BAMLC0A0CM 등 FRED 3-year 정책 회피).
+    if (series is None or series.empty) and series_id in FRED_FALLBACK_CHAIN:
+        fallback_id = FRED_FALLBACK_CHAIN[series_id]
+        fallback_resolved = FRED_SERIES.get(fallback_id, fallback_id)
+        logger.warning(
+            "FRED %s (%s) empty (likely 3-year policy or retired) → fallback %s (%s)",
+            series_id, resolved, fallback_id, fallback_resolved,
+        )
+        try:
+            series = _raw_fred_call(fallback_resolved, start, end, key)
+        except Exception as e:
+            logger.warning(
+                "FRED fallback %s also failed: %s — returning empty",
+                fallback_id, e,
+            )
+            series = None
+
+    # Backtest fix (2026-05-26): empty Series 에서 RangeIndex AttributeError 방지.
+    # FRED 일부 series (예: BAMLC0A0CM 은 2023-05-23 이후 데이터만) 가 historical
+    # 시점에 빈 결과 반환 → series.index 가 RangeIndex → `.date` AttributeError.
+    if series is None or series.empty:
+        return pd.Series(dtype=float, name=series_id)
+
     if as_of_date is not None:
         cutoff = _publication_cutoff(as_of_date, series_id)
-        series = series[series.index.date <= cutoff]
-        logger.debug(
-            "FRED %s point-in-time cutoff %s (as_of=%s, lag applied)",
-            series_id, cutoff, as_of_date,
-        )
+        # DatetimeIndex 검증 — 비정상 케이스 graceful 처리.
+        if hasattr(series.index, "date"):
+            series = series[series.index.date <= cutoff]
+            logger.debug(
+                "FRED %s point-in-time cutoff %s (as_of=%s, lag applied)",
+                series_id, cutoff, as_of_date,
+            )
+        else:
+            logger.warning(
+                "FRED %s returned non-DatetimeIndex (type=%s) — cutoff skip, return empty",
+                series_id, type(series.index).__name__,
+            )
+            return pd.Series(dtype=float, name=series_id)
 
     return series

@@ -4,29 +4,63 @@ LLM-free deterministic. Stage 3는 시나리오로부터 weight를 *생성*. 이
 생성된 weight가 *현재 macro/risk 상태*에 맞는지 사후 검증.
 
 Mismatch 케이스:
-  - dominant_scenario=global_credit인데 위험자산 > 0.30 → high concern
-  - dominant_scenario=broad_recession + systemic_score>7인데 위험자산 > 0.45 → medium
-  - conviction=low이고 위험자산 > 0.60 → medium (불확실하면 보수)
-  - regime=recession_disinflation인데 위험자산 > 0.50 → medium
+  - global_credit + risk_weight > GLOBAL_CREDIT_CRITICAL=0.30 → critical
+  - global_credit + risk_weight > GLOBAL_CREDIT_HIGH=0.20 → high
+  - broad_recession/kr_stress + systemic > RECESSION_SYSTEMIC=7.0 + risk > RECESSION_HIGH=0.45 → high
+  - broad_recession/kr_stress + risk_weight > RECESSION_MEDIUM=0.50 → medium
+  - conviction=low + risk_weight > LOW_CONVICTION_MEDIUM=0.60 → medium
+  - regime=recession_* + risk_weight > RECESSION_REGIME_HIGH=0.65 → high
+  - regime=recession_* + risk_weight > RECESSION_REGIME_MEDIUM=0.55 → medium
 
-Overlay:
-  critical: risk_asset_multiplier = 0.65 (강한 defensive)
-  high:     risk_asset_multiplier = 0.80
-  medium:   risk_asset_multiplier = 0.92
+Overlay (위험자산 multiplier):
+  critical: MULTIPLIER_CRITICAL=0.65
+  high:     MULTIPLIER_HIGH=0.80
+  medium:   MULTIPLIER_MEDIUM=0.92
   low/none: empty
 """
+import logging
+
 from tradingagents.schemas.portfolio import WeightVector
 from tradingagents.schemas.risk_overlay import LensConcern, RiskOverlayDelta
+
+logger = logging.getLogger(__name__)
+
+
+# Stage 4 audit (2026-05-26, Task 2): scenario × risk_weight threshold.
+GLOBAL_CREDIT_CRITICAL: float = 0.30   # global_credit 위험자산 critical
+GLOBAL_CREDIT_HIGH: float = 0.20
+RECESSION_SYSTEMIC: float = 7.0        # broad_recession/kr_stress + systemic gate
+RECESSION_HIGH: float = 0.45           # high concern under stressed systemic
+RECESSION_MEDIUM: float = 0.50
+LOW_CONVICTION_MEDIUM: float = 0.60    # conviction low + 60% 초과 위험
+RECESSION_REGIME_HIGH: float = 0.65    # macro regime quadrant recession_*
+RECESSION_REGIME_MEDIUM: float = 0.55
+
+# 2026-05-26 #6 fix — quantitative trigger: F8_valuation z 가 +1.5 이상이면
+# extreme valuation (S&P PE 30+ 같은 level risk). 평가의 "수준 risk 누락" 비판.
+# z >= 1.5 == 표준편차 1.5σ — historical 분포의 상위 ~7% 영역.
+VALUATION_HIGH_Z: float = 1.5
+VALUATION_HIGH_RISK_WEIGHT: float = 0.30   # valuation+risk_weight 동반 시 high
+
+# 2026-05-26 #6 fix — late_cycle scenario 에서도 valuation level 가중.
+LATE_CYCLE_MEDIUM_RISK_WEIGHT: float = 0.45
+
+# Preset multiplier per level.
+MULTIPLIER_CRITICAL: float = 0.65
+MULTIPLIER_HIGH: float = 0.80
+MULTIPLIER_MEDIUM: float = 0.92
+
+# Risk bucket 정의 (factor_to_bucket 의 RISK_BUCKETS 와 일치).
+RISK_BUCKETS_MC: frozenset[str] = frozenset({"kr_equity", "global_equity", "fx_commodity"})
 
 
 def _portfolio_risk_weight(wv: WeightVector, candidate_set) -> float:
     """위험자산(kr/global eq + fx_comm) bucket의 weight 합."""
     if candidate_set is None:
         return 0.0
-    risk_buckets = {"kr_equity", "global_equity", "fx_commodity"}
     risk_tickers = {
         t for bucket, tickers in candidate_set.bucket_to_tickers.items()
-        for t in tickers if bucket in risk_buckets
+        for t in tickers if bucket in RISK_BUCKETS_MC
     }
     return sum(w for t, w in wv.weights.items() if t in risk_tickers)
 
@@ -34,37 +68,53 @@ def _portfolio_risk_weight(wv: WeightVector, candidate_set) -> float:
 def _classify(
     risk_weight: float, dominant_scenario: str | None, conviction: str | None,
     systemic_score: float, regime_quadrant: str | None,
+    valuation_z: float | None = None,
 ) -> str:
-    if dominant_scenario == "global_credit" and risk_weight > 0.30:
+    if dominant_scenario == "global_credit" and risk_weight > GLOBAL_CREDIT_CRITICAL:
         return "critical"
-    if dominant_scenario == "global_credit" and risk_weight > 0.20:
+    if dominant_scenario == "global_credit" and risk_weight > GLOBAL_CREDIT_HIGH:
         return "high"
 
     if dominant_scenario in ("broad_recession", "kr_stress"):
-        if systemic_score > 7.0 and risk_weight > 0.45:
+        if systemic_score > RECESSION_SYSTEMIC and risk_weight > RECESSION_HIGH:
             return "high"
-        if risk_weight > 0.50:
+        if risk_weight > RECESSION_MEDIUM:
             return "medium"
 
-    if conviction == "low" and risk_weight > 0.60:
+    if conviction == "low" and risk_weight > LOW_CONVICTION_MEDIUM:
         return "medium"
 
     if regime_quadrant in ("recession_disinflation", "recession_inflation"):
-        if risk_weight > 0.55:
-            return "medium"
-        if risk_weight > 0.65:
+        if risk_weight > RECESSION_REGIME_HIGH:
             return "high"
+        if risk_weight > RECESSION_REGIME_MEDIUM:
+            return "medium"
+
+    # 2026-05-26 #6 fix — late_cycle + sticky inflation: 신용 약세 + 인플레 잔존
+    # 환경에서 위험자산 45%+ 면 medium concern.
+    if dominant_scenario == "late_cycle" and risk_weight > LATE_CYCLE_MEDIUM_RISK_WEIGHT:
+        return "medium"
+
+    # 2026-05-26 #6 fix — extreme valuation level (F8_valuation z ≥ +1.5).
+    # cross-section vol calm 이지만 PE 30+ 같은 level risk. 위험자산도 함께 높으면
+    # medium concern. valuation 단독은 trigger 안 함 (overlay 무분별 발동 방지).
+    if (
+        valuation_z is not None
+        and valuation_z >= VALUATION_HIGH_Z
+        and risk_weight > VALUATION_HIGH_RISK_WEIGHT
+    ):
+        return "medium"
 
     return "none"
 
 
 def _overlay_for_level(level: str) -> RiskOverlayDelta:
     if level == "critical":
-        return RiskOverlayDelta(risk_asset_multiplier=0.65)
+        return RiskOverlayDelta(risk_asset_multiplier=MULTIPLIER_CRITICAL)
     if level == "high":
-        return RiskOverlayDelta(risk_asset_multiplier=0.80)
+        return RiskOverlayDelta(risk_asset_multiplier=MULTIPLIER_HIGH)
     if level == "medium":
-        return RiskOverlayDelta(risk_asset_multiplier=0.92)
+        return RiskOverlayDelta(risk_asset_multiplier=MULTIPLIER_MEDIUM)
     return RiskOverlayDelta()
 
 
@@ -80,16 +130,29 @@ def run_macro_conditional_lens(
 
     dominant = getattr(research_decision, "dominant_scenario", None)
     conviction = getattr(research_decision, "conviction", None)
+    # 2026-05-26 #6 fix — F8_valuation z 추출 (level risk 신호).
+    factor_scores = (
+        getattr(research_decision, "factor_scores", None) or {}
+        if research_decision is not None else {}
+    )
+    valuation_z = factor_scores.get("F8_valuation")
 
     level = _classify(
         risk_weight, dominant, conviction, systemic_score, regime_quadrant,
+        valuation_z=valuation_z,
     )
     overlay = _overlay_for_level(level)
+    logger.debug(
+        "macro_conditional_lens: risk_weight=%.3f, scenario=%s, conviction=%s, "
+        "systemic=%.1f, regime=%s, valuation_z=%s → %s",
+        risk_weight, dominant, conviction, systemic_score, regime_quadrant,
+        valuation_z, level,
+    )
 
     evidence = (
         f"risk_asset_weight={risk_weight*100:.1f}%, scenario={dominant}, "
         f"conviction={conviction}, systemic={systemic_score:.1f}, "
-        f"regime={regime_quadrant}"
+        f"regime={regime_quadrant}, valuation_z={valuation_z}"
     )[:300]
 
     return LensConcern(

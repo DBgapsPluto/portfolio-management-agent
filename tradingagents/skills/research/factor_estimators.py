@@ -44,8 +44,11 @@ Each factor weight dict re-normalized to sum=1.0 (D11 plan default).
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any, Final, Literal
+
+logger = logging.getLogger(__name__)
 
 from tradingagents.skills.research.external_fetchers import (
     fetch_krw_usd_level,
@@ -53,6 +56,41 @@ from tradingagents.skills.research.external_fetchers import (
 )
 from tradingagents.skills.research.factor_baselines import z_score
 from tradingagents.skills.research.factor_reliability_audit import get_weight_cap
+
+
+# ---------------------- Critical 2 (PR2a) — historical mode ----------------------
+#
+# Set of components_raw keys that are sourced from `news_report`. In
+# `mode="historical"`, these are dropped at the entry of `_aggregate` (their
+# weights are removed from the renormalization pool, and the surviving
+# *quant* components carry the full weight after renorm).
+#
+# Rationale: historical backtest reconstructs Stage 1 from quarterly indicator
+# data — news/LLM-derived state cannot be replayed. Setting news weights to 0
+# (via mode='historical') keeps the factor z magnitude on the same scale as
+# production, where news components do exist.
+#
+# Default mode='production' → 100% identical behavior to pre-PR2a.
+NEWS_DERIVED_COMPONENTS: Final[frozenset[str]] = frozenset({
+    # F1
+    "release_surprise", "hawkish_bias", "macro_sent", "risk_regime_overnight",
+    # F2 (release_hawkish is F2's specific name for what F1 calls hawkish_bias)
+    "release_hawkish",
+    # F3
+    "fed_voting_balance",
+    # F4 (fed_voting_balance also appears here; included above)
+    "fed_tone_balance",
+    # F5
+    "corporate_distress", "dovish_bias",
+    # F6
+    "krw_overnight_pct", "bok_tone_balance",
+    # F7
+    "sentiment_dispersion", "geopolitical_surge",
+    # F9
+    "event_cluster", "rising_signal",
+})
+
+FactorMode = Literal["production", "historical"]
 
 
 # ---------------------- schema ----------------------
@@ -78,10 +116,13 @@ class FactorScores:
     krw_regime: FactorScore
     equity_vol_regime: FactorScore
     valuation: FactorScore
-    liquidity_regime: FactorScore
+    liquidity_regime: FactorScore       # F9 — cross-sectional stress (실제 의미)
+    # 2026-05-27 — F10_systemic_liquidity 신규 추가. NFCI/Fed BS/SOFR/IG OAS 기반.
+    # F9 (cross-sectional) 와 직교: 같은 stress 라도 source 다른 axis.
+    systemic_liquidity: FactorScore | None = None
 
     def to_dict(self) -> dict[str, float]:
-        return {
+        out = {
             "F1_growth":            self.growth_surprise.z_score,
             "F2_inflation":         self.inflation_surprise.z_score,
             "F3_real_rate":         self.real_rate.z_score,
@@ -92,6 +133,9 @@ class FactorScores:
             "F8_valuation":         self.valuation.z_score,
             "F9_liquidity_regime":  self.liquidity_regime.z_score,
         }
+        if self.systemic_liquidity is not None:
+            out["F10_systemic_liquidity"] = self.systemic_liquidity.z_score
+        return out
 
 
 # ---------------------- enum maps ----------------------
@@ -111,8 +155,23 @@ _RISK_REGIME_MAP: Final[dict[str, float]] = {
 
 _Z_CAP: Final[float] = 3.0
 
+# 2026-05-26 F7 saturate fix (#1): component-level z clip.
+# baseline (mean, sd) 가 raw 분포와 단위 mismatch 시 단일 component z 가 25+
+# 같은 outlier 가 나와서 factor raw_avg 를 단독으로 cap 까지 끌고 감 (예:
+# geopolitical_surge baseline (0,1) vs raw=25 → z=25, F7 raw_avg=+3.75 단독).
+# 모든 9 factor 의 모든 component 에 적용되는 보호 layer. ±5 는 _Z_CAP=±3 보다
+# 한 단계 넓어 정상 신호는 통과 (정상 z 는 |z|<2 가 99% 이상), outlier 만 차단.
+_COMPONENT_Z_CLIP: Final[float] = 5.0
+
 
 # ---------------------- helpers ----------------------
+
+
+# Stage 1 sentinel marker — analyst가 fetch 실패 fallback snapshot을 만들 때
+# staleness_days=99로 설정한다. Stage 2 factor estimator는 그 snapshot의 field를
+# raw 값으로 사용하면 silent distortion이 생기므로(예: BSI=100 sentinel을 정상
+# 평균치로 해석) component drop 한다. 정상 stale(1-7d) 데이터는 통과.
+STALENESS_SENTINEL_DAYS: Final[int] = 99
 
 
 def _safe_get(obj: Any, *path: str, default: Any = None) -> Any:
@@ -120,10 +179,19 @@ def _safe_get(obj: Any, *path: str, default: Any = None) -> Any:
 
     Each step uses ``getattr`` then dict ``__getitem__``; any exception
     or a ``None`` intermediate yields ``default``.
+
+    Stage 1 audit (2026-05-26, Task 0): walk 중 만난 StalenessAware snapshot이
+    sentinel(staleness_days >= STALENESS_SENTINEL_DAYS)이면 default 반환 →
+    factor_estimators._aggregate가 None component를 자동 drop + weight 재정규화.
+    이로써 fetch 실패 snapshot의 placeholder 값이 silent하게 factor z에 흡수되는
+    blackbox 위험을 차단.
     """
     cur: Any = obj
     for key in path:
         if cur is None:
+            return default
+        stale = getattr(cur, "staleness_days", None)
+        if isinstance(stale, int) and stale >= STALENESS_SENTINEL_DAYS:
             return default
         try:
             cur = getattr(cur, key)
@@ -143,11 +211,27 @@ def _aggregate(
     factor_name: str,
     components_raw: dict[str, float | None],
     weights: dict[str, float],
+    mode: FactorMode = "production",
 ) -> FactorScore:
     """Convert raw component values → final FactorScore.
 
     See module docstring for the 4-step recipe.
+
+    Args:
+        mode: "production" (default, full behavior) or "historical" (Critical 2,
+            PR2a) — drops NEWS_DERIVED_COMPONENTS at entry so historical
+            backtest's quant-only Stage 1 reconstructions yield z magnitudes
+            on the same scale as production.
     """
+    # Critical 2 (PR2a): in historical mode, drop news-derived components
+    # before any z-score / weight processing. Surviving quant weights are
+    # renormalized by the existing Step 4 logic.
+    if mode == "historical":
+        components_raw = {
+            k: v for k, v in components_raw.items()
+            if k not in NEWS_DERIVED_COMPONENTS
+        }
+
     # Step 1+2: drop None, look up z-score via baseline.
     component_z: dict[str, float] = {}
     used_original_weights: dict[str, float] = {}
@@ -160,6 +244,9 @@ def _aggregate(
         z = z_score(float(raw), factor_name, name)
         if z is None:
             continue
+        # 2026-05-26 F7 saturate fix (#1): component-level outlier clip.
+        # 단일 component 가 25+ z 같은 outlier 로 raw_avg 단독 cap 못 끌게.
+        z = max(-_COMPONENT_Z_CLIP, min(_COMPONENT_Z_CLIP, z))
         component_z[name] = z
         used_original_weights[name] = w
 
@@ -233,7 +320,7 @@ def _interpretation(factor_name: str, z: float) -> str:
 # ---------------------- F1 growth_surprise ----------------------
 
 
-def compute_growth_surprise(stage1: Any) -> FactorScore:
+def compute_growth_surprise(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F1 growth_surprise — +z = stronger growth, -z = recession.
 
     PR0 hotfix (2026-05-23 C1): paths fixed to real MacroReport schema.
@@ -289,13 +376,13 @@ def compute_growth_surprise(stage1: Any) -> FactorScore:
         "release_surprise": 0.18, "hawkish_bias": 0.05,
         "macro_sent": 0.05, "risk_regime_overnight": 0.07,
     }
-    return _aggregate("F1_growth", components_raw, weights)
+    return _aggregate("F1_growth", components_raw, weights, mode=mode)
 
 
 # ---------------------- F2 inflation_surprise ----------------------
 
 
-def compute_inflation_surprise(stage1: Any) -> FactorScore:
+def compute_inflation_surprise(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F2 inflation_surprise — +z = higher inflation, -z = disinflation.
 
     PR0 hotfix (C1): cpi.* → inflation.*; inflation_exp.* →
@@ -346,13 +433,13 @@ def compute_inflation_surprise(stage1: Any) -> FactorScore:
         "real_yield_inv": 0.08, "fed_path_bps": 0.08,
         "release_hawkish": 0.07, "macro_sent": 0.07,
     }
-    return _aggregate("F2_inflation", components_raw, weights)
+    return _aggregate("F2_inflation", components_raw, weights, mode=mode)
 
 
 # ---------------------- F3 real_rate ----------------------
 
 
-def compute_real_rate(stage1: Any) -> FactorScore:
+def compute_real_rate(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F3 real_rate — +z = high real rate (tight policy).
 
     PR0 hotfix (C1): tips_yield는 risk_report.real_yields.tips_10y;
@@ -370,13 +457,13 @@ def compute_real_rate(stage1: Any) -> FactorScore:
     weights: dict[str, float] = {
         "tips_yield": 0.55, "fed_voting_balance": 0.35, "fed_path_implied": 0.10,
     }
-    return _aggregate("F3_real_rate", components_raw, weights)
+    return _aggregate("F3_real_rate", components_raw, weights, mode=mode)
 
 
 # ---------------------- F4 term_premium ----------------------
 
 
-def compute_term_premium(stage1: Any) -> FactorScore:
+def compute_term_premium(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F4 term_premium — +z = steeper curve.
 
     PR0 hotfix (C1): slope_2_10y_bps → spread_10y_2y_bps.
@@ -408,13 +495,13 @@ def compute_term_premium(stage1: Any) -> FactorScore:
         "slope_5_30y": 0.20,   # C8 activated
         "fed_tone_balance": 0.30, "fed_voting_balance": 0.25,
     }
-    return _aggregate("F4_term_premium", components_raw, weights)
+    return _aggregate("F4_term_premium", components_raw, weights, mode=mode)
 
 
 # ---------------------- F5 credit_cycle ----------------------
 
 
-def compute_credit_cycle(stage1: Any) -> FactorScore:
+def compute_credit_cycle(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F5 credit_cycle — +z = credit stress.
 
     PR0 hotfix (C1): hy_oas momentum field 명은 momentum_zscore
@@ -468,13 +555,13 @@ def compute_credit_cycle(stage1: Any) -> FactorScore:
         "credit_quality_bps": 0.15, "funding_bps": 0.10,
         "corporate_distress": 0.15, "dovish_bias": 0.05,
     }
-    return _aggregate("F5_credit_cycle", components_raw, weights)
+    return _aggregate("F5_credit_cycle", components_raw, weights, mode=mode)
 
 
 # ---------------------- F6 krw_regime ----------------------
 
 
-def compute_krw_regime(stage1: Any) -> FactorScore:
+def compute_krw_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F6 krw_regime — +z = weaker KRW.
 
     PR0 hotfix (C1):
@@ -484,10 +571,19 @@ def compute_krw_regime(stage1: Any) -> FactorScore:
       에 net_flow_z 없음, 20d 누적 순매수액을 proxy 로 사용)
     - krw_level: macro_report.fx.usd_krw 우선 사용, 없으면 external fetch.
     """
-    # macro_report.fx (FXSnapshot) 의 usd_krw 우선
+    # macro_report.fx (FXSnapshot) 의 usd_krw 우선. None 일 때 external fetch.
+    # Stage 2 audit (Task 3): None 의 원인 (sentinel guard 작동 or fx field 결측)
+    # 을 logger.info 로 trace — yfinance 우회 경로 가시화.
     krw_level = _safe_get(stage1, "macro_report", "fx", "usd_krw")
     if krw_level is None:
+        logger.info(
+            "compute_krw_regime: Stage 1 fx.usd_krw missing/sentinel → external yfinance fallback"
+        )
         krw_level = fetch_krw_usd_level()  # external fallback
+        if krw_level is None:
+            logger.warning(
+                "compute_krw_regime: external fallback also failed → krw_level component drop"
+            )
 
     components_raw: dict[str, float | None] = {
         "krw_overnight_pct": _safe_get(
@@ -512,13 +608,13 @@ def compute_krw_regime(stage1: Any) -> FactorScore:
         "kr_us_rate_diff": 0.15, "foreign_flow_z": 0.20,
         "kr_exports_yoy": 0.10, "bok_tone_balance": 0.15,
     }
-    return _aggregate("F6_krw_regime", components_raw, weights)
+    return _aggregate("F6_krw_regime", components_raw, weights, mode=mode)
 
 
 # ---------------------- F7 equity_vol_regime ----------------------
 
 
-def compute_equity_vol_regime(stage1: Any) -> FactorScore:
+def compute_equity_vol_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F7 equity_vol_regime — +z = high vol.
 
     PR0 hotfix (C1):
@@ -569,13 +665,13 @@ def compute_equity_vol_regime(stage1: Any) -> FactorScore:
         "skew_change": 0.07,        # C8 activated (C7.5)
         "sentiment_dispersion": 0.10, "geopolitical_surge": 0.15,
     }
-    return _aggregate("F7_equity_vol", components_raw, weights)
+    return _aggregate("F7_equity_vol", components_raw, weights, mode=mode)
 
 
 # ---------------------- F8 valuation ----------------------
 
 
-def compute_valuation(stage1: Any) -> FactorScore:
+def compute_valuation(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F8 valuation — +z = more expensive.
 
     PR0 hotfix (C1):
@@ -610,14 +706,28 @@ def compute_valuation(stage1: Any) -> FactorScore:
         "sp_pe": 0.20, "earnings_yield": 0.25, "erp": 0.30,
         "kospi_pbr": 0.25,   # C8 activated
     }
-    return _aggregate("F8_valuation", components_raw, weights)
+    return _aggregate("F8_valuation", components_raw, weights, mode=mode)
 
 
 # ---------------------- F9 liquidity_regime ----------------------
 
 
-def compute_liquidity_regime(stage1: Any) -> FactorScore:
-    """F9 liquidity_regime — +z = liquidity stress.
+def compute_liquidity_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+    """F9 liquidity_regime — +z = CROSS-SECTIONAL stress (not systemic).
+
+    *명칭 주의 (2026-05-27)*: 이 factor 의 이름은 'liquidity_regime' 이지만
+    실제 측정은 *cross-sectional risk concentration / dispersion* 임. 즉:
+      - 주식-채권 상관 (eq_bond_corr) — 분산효과 약화
+      - Sector dispersion — 시장 polarization (AI 같은 narrow leadership)
+      - Breadth — 시장 폭
+      - VRP — 옵션 시장 stress
+
+    *Systemic liquidity* (NFCI, Fed BS, SOFR, IG OAS) 는 별도 factor F10
+    (compute_systemic_liquidity) 에서 측정. 두 axis 는 *직교*: 2024 AI 랠리처럼
+    systemic OK + cross-sectional stress 인 경우 다른 신호 줌.
+
+    F9 +z = cross-sectional stress (자산간 분산 사라짐) → β 가 broad equity 줄임.
+    F10 +z = systemic stress (financial conditions tight) → β 가 모든 위험자산 줄임.
 
     PR0 hotfix (C1):
     - breadth: technical_report.breadth → risk_report.breadth_kr.advancing_pct
@@ -655,7 +765,7 @@ def compute_liquidity_regime(stage1: Any) -> FactorScore:
     components_raw: dict[str, float | None] = {
         "vrp": vrp,  # C8 activated
         "eq_bond_corr": _safe_get(
-            stage1, "risk_report", "equity_bond_corr", "correlation_60d"
+            stage1, "risk_report", "equity_bond_corr", "correlation_120d"
         ),
         "sector_dispersion": sector_dispersion,  # C8 activated
         # breadth 는 risk_report.breadth_kr (BreadthSnapshot.advancing_pct 사용)
@@ -672,29 +782,97 @@ def compute_liquidity_regime(stage1: Any) -> FactorScore:
         "event_cluster": 0.15,
         "rising_signal": 0.15,
     }
-    return _aggregate("F9_liquidity", components_raw, weights)
+    return _aggregate("F9_liquidity", components_raw, weights, mode=mode)
+
+
+# ---------------------- F10 systemic_liquidity ----------------------
+
+
+def compute_systemic_liquidity(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+    """F10 systemic_liquidity — +z = SYSTEMIC stress (tight financial conditions).
+
+    2026-05-27 추가. F9 (cross-sectional) 와 직교:
+    - F9: 자산간 분산 약화 (corr breakdown, sector polarization)
+    - F10: 시스템 차원 financial conditions (Fed, repo, credit funding)
+
+    같은 시점 (예: 2024 AI 랠리) 에 systemic OK + cross-sectional STRESS 가능.
+    별도 factor 가 정합 (한 z 로 압축 시 정보 손실).
+
+    Components:
+      - nfci: Chicago Fed NFCI. + = tight conditions (stress).
+      - anfci: Adjusted NFCI (macro 제거). 더 cleaner.
+      - fed_bs_yoy_pct: Fed balance sheet YoY %. - = QT (stress) → sign 뒤집어 + push.
+      - sofr_tbill_spread: SOFR - 3M Tbill. + = funding stress.
+      - aaa_oas: IG AAA OAS. + = IG stress.
+
+    +z = stress (F9 와 부호 일관). β matrix 가 broad risk-off 로 calibrate.
+    """
+    # 기존 schema 재사용 (새 snapshot 추가 X — surgical).
+    nfci = _safe_get(stage1, "macro_report", "financial_conditions", "nfci")
+    anfci = _safe_get(stage1, "macro_report", "financial_conditions", "anfci")
+    # Fed BS YoY — schema 부재 시 None (graceful skip, F10 가 다른 4 component 로 계산).
+    fed_bs_yoy = _safe_get(stage1, "macro_report", "financial_conditions", "fed_bs_yoy_pct")
+    # fed_bs +YoY = 확장적 (stress 완화) → sign 뒤집어 -YoY 가 stress 신호
+    fed_bs_signal = None if fed_bs_yoy is None else -float(fed_bs_yoy)
+    # funding_stress.spread_bps (SOFR - 3M Tbill, bps). bps → percent (0.01 단위) 변환.
+    sofr_tbill_bps = _safe_get(stage1, "risk_report", "funding_stress", "spread_bps")
+    sofr_tbill = None if sofr_tbill_bps is None else float(sofr_tbill_bps)
+    # AAA OAS bps → percent.
+    aaa_oas_bps = _safe_get(stage1, "risk_report", "credit_quality", "aaa_oas_bps")
+    aaa_oas = None if aaa_oas_bps is None else float(aaa_oas_bps) / 100.0
+
+    components_raw: dict[str, float | None] = {
+        "nfci":              nfci,
+        "anfci":             anfci,
+        "fed_bs_signal":     fed_bs_signal,
+        "sofr_tbill_spread": sofr_tbill,
+        "aaa_oas":           aaa_oas,
+    }
+    weights: dict[str, float] = {
+        "nfci":              0.30,
+        "anfci":             0.20,
+        "fed_bs_signal":     0.15,
+        "sofr_tbill_spread": 0.20,
+        "aaa_oas":           0.15,
+    }
+    return _aggregate("F10_systemic_liquidity", components_raw, weights, mode=mode)
 
 
 # ---------------------- compute_all_factors ----------------------
 
 
-def compute_all_factors(stage1: Any) -> FactorScores:
+def compute_all_factors(
+    stage1: Any, mode: FactorMode = "production",
+) -> FactorScores:
+    """Compute all 9 factors.
+
+    Args:
+        mode: "production" (default) or "historical" (Critical 2, PR2a).
+            In "historical" mode, NEWS_DERIVED_COMPONENTS are dropped from each
+            factor's component pool (news_report is not LLM-reproducible in
+            backtest); surviving quant weights are renormalized.
+    """
     return FactorScores(
-        growth_surprise=compute_growth_surprise(stage1),
-        inflation_surprise=compute_inflation_surprise(stage1),
-        real_rate=compute_real_rate(stage1),
-        term_premium=compute_term_premium(stage1),
-        credit_cycle=compute_credit_cycle(stage1),
-        krw_regime=compute_krw_regime(stage1),
-        equity_vol_regime=compute_equity_vol_regime(stage1),
-        valuation=compute_valuation(stage1),
-        liquidity_regime=compute_liquidity_regime(stage1),
+        growth_surprise=compute_growth_surprise(stage1, mode=mode),
+        inflation_surprise=compute_inflation_surprise(stage1, mode=mode),
+        real_rate=compute_real_rate(stage1, mode=mode),
+        term_premium=compute_term_premium(stage1, mode=mode),
+        credit_cycle=compute_credit_cycle(stage1, mode=mode),
+        krw_regime=compute_krw_regime(stage1, mode=mode),
+        equity_vol_regime=compute_equity_vol_regime(stage1, mode=mode),
+        valuation=compute_valuation(stage1, mode=mode),
+        liquidity_regime=compute_liquidity_regime(stage1, mode=mode),
+        # 2026-05-27 — F10 신규 추가. systemic_liquidity_snapshot 부재 시 None
+        # 으로 graceful skip (downstream FactorScores.to_dict 에서 누락).
+        systemic_liquidity=compute_systemic_liquidity(stage1, mode=mode),
     )
 
 
 __all__: Final = [
     "FactorScore",
     "FactorScores",
+    "FactorMode",
+    "NEWS_DERIVED_COMPONENTS",
     "compute_all_factors",
     "compute_credit_cycle",
     "compute_equity_vol_regime",
@@ -702,6 +880,7 @@ __all__: Final = [
     "compute_inflation_surprise",
     "compute_krw_regime",
     "compute_liquidity_regime",
+    "compute_systemic_liquidity",
     "compute_real_rate",
     "compute_term_premium",
     "compute_valuation",

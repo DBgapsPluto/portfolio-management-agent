@@ -1,6 +1,18 @@
 """Technical Analyst — orchestrates technical skills, composes TechnicalReport."""
+import logging
 from datetime import date, timedelta
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Stage 1 audit (2026-05-26, Task 1): named constants — Stage 3 cluster-aware
+# selection이 cluster 멤버십을 그룹 정의로 사용하므로 threshold가 직접 영향.
+# 0.7 = correlation_cluster의 default와 일치 (find_correlation_clusters).
+CORRELATION_CLUSTER_THRESHOLD: float = 0.7
+MIN_HISTORY_DAYS_TA: int = 200      # ta_indicators (MA50/MA200) 필요 최소.
+MIN_HISTORY_DAYS_LONG: int = 252    # 1y window (trend_quant, risk_adjusted).
+PRICE_LOOKBACK_DAYS: int = 365 * 3 + 30   # 3y + buffer
+TOP_RANK_THRESHOLD: int = 5         # rank_in_category ≤ 이면 ta_indicators 적용
 
 
 def _summarize_extended(panels: dict) -> str:
@@ -49,8 +61,20 @@ from tradingagents.skills.technical.universe_breadth import compute_universe_bre
 
 
 def _benchmark_for_category(category: str) -> str:
-    """국내_* → KOSPI200, 그 외 → SPY."""
-    return "KOSPI200" if category.startswith("국내") else "SPY"
+    """ETF 카테고리 → dual-momentum benchmark label.
+
+    - 국내주식_* → KOSPI200
+    - 해외주식_* → SPY
+    - 채권/현금성/원자재 → "none" (주식 벤치마크 dual-momentum 무의미)
+
+    Stage 1 audit (Task 1): 이전엔 모든 국내_* 를 KOSPI200으로 매핑 →
+    국내채권_*, 금리연계형/초단기채권 의 momentum_*_rel 가 noise. 명시 분리.
+    """
+    if category.startswith("국내주식") or category == "국내주식_지수" or category == "국내주식_섹터":
+        return "KOSPI200"
+    if category.startswith("해외주식"):
+        return "SPY"
+    return "none"
 
 
 def _summarize_risk_adjusted(metrics: dict) -> str:
@@ -118,11 +142,26 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
         as_of = date.fromisoformat(state["as_of_date"])
         universe = load_universe(Path(state["universe_path"]))
         tickers = [e.ticker for e in universe.etfs]
+        logger.info(
+            "technical analyst start: %d ETF universe, as_of=%s", len(tickers), as_of,
+        )
 
-        start = as_of - timedelta(days=365 * 3 + 30)
+        # Per-tier failure counters → narrative debug, blackbox 제거.
+        failures: dict[str, int] = {
+            "trend_states": 0, "extended_indicators": 0, "trend_quant": 0,
+            "universe_breadth": 0, "sector_rotation": 0, "risk_adjusted": 0,
+        }
+
+        start = as_of - timedelta(days=PRICE_LOOKBACK_DAYS)
         prices = fetch_etf_price_batch(tickers, start, as_of, cache_path=cache_path)
         if prices.empty:
             raise RuntimeError("No price data fetched")
+        logger.info(
+            "technical: prices fetched (%d ticker × dates), date range %s..%s",
+            prices["ticker"].nunique(),
+            prices["date"].min().date() if not prices.empty else "n/a",
+            prices["date"].max().date() if not prices.empty else "n/a",
+        )
 
         rankings = rank_momentum(prices, universe)
 
@@ -144,19 +183,21 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
         # (rank_in_category uses competition ranking, so ties share rank)
         top_tickers: list[str] = []
         for cat_rankings in rankings.values():
-            top_tickers.extend([r.ticker for r in cat_rankings if r.rank_in_category <= 5])
+            top_tickers.extend([r.ticker for r in cat_rankings if r.rank_in_category <= TOP_RANK_THRESHOLD])
         top_tickers = list(set(top_tickers))
 
         trend_states = {}
         for t in top_tickers:
             sub = prices[prices["ticker"] == t]
-            if len(sub) < 200:
+            if len(sub) < MIN_HISTORY_DAYS_TA:
                 continue
             try:
                 panel = compute_ta_indicators(prices, t)
                 current_price = float(sub["close"].iloc[-1])
                 trend_states[t] = detect_trend_state(panel, current_price)
-            except Exception:
+            except Exception as e:
+                failures["trend_states"] += 1
+                logger.debug("trend_state failed for %s: %s", t, e)
                 continue
 
         # Correlation clusters from top-tier returns
@@ -165,17 +206,26 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
         returns_top = returns[[c for c in returns.columns if c in top_tickers]].dropna(axis=1, how="any")
 
         name_lookup = {e.ticker: e.name for e in universe.etfs}
-        clusters = find_correlation_clusters(returns_top, threshold=0.7, universe_lookup=name_lookup)
+        clusters = find_correlation_clusters(
+            returns_top, threshold=CORRELATION_CLUSTER_THRESHOLD,
+            universe_lookup=name_lookup,
+        )
+        logger.info(
+            "technical: %d correlation clusters (threshold=%.2f, top pool=%d ETF)",
+            len(clusters), CORRELATION_CLUSTER_THRESHOLD, returns_top.shape[1],
+        )
 
         # Tier-1: extended indicators for every ETF with sufficient history.
         extended_indicators = {}
         for t in returns_full.columns:
             sub = prices[prices["ticker"] == t]
-            if len(sub) < 200:
+            if len(sub) < MIN_HISTORY_DAYS_TA:
                 continue
             try:
                 extended_indicators[t] = compute_extended_indicators(prices, t)
-            except Exception:
+            except Exception as e:
+                failures["extended_indicators"] += 1
+                logger.debug("extended_indicators failed for %s: %s", t, e)
                 continue
 
         ext_summary = _summarize_extended(extended_indicators)
@@ -194,17 +244,24 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
         trend_quant = {}
         for t in returns_full.columns:
             sub = prices[prices["ticker"] == t]
-            if len(sub) < 252:
+            if len(sub) < MIN_HISTORY_DAYS_LONG:
                 continue
             label = _benchmark_for_category(cat_lookup.get(t, ""))
-            bench_close = bench_kospi if label == "KOSPI200" else bench_spy
-            if bench_close is None or bench_close.empty:
+            if label == "KOSPI200":
+                bench_close = bench_kospi
+            elif label == "SPY":
+                bench_close = bench_spy
+            else:
+                bench_close = None  # 채권/현금성/원자재 — dual-momentum 미적용
+            if label != "none" and (bench_close is None or bench_close.empty):
                 bench_close, label = None, "none"
             try:
                 trend_quant[t] = quantify_trend(
                     prices, t, benchmark_close=bench_close, benchmark_label=label,
                 )
-            except Exception:
+            except Exception as e:
+                failures["trend_quant"] += 1
+                logger.debug("trend_quant failed for %s: %s", t, e)
                 continue
 
         trend_quant_summary = _summarize_trend_quant(trend_quant)
@@ -223,7 +280,9 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
                 f"(z {universe_breadth.universe_vol_z:+.2f})\n"
                 f"  Regime: {universe_breadth.regime}\n"
             )
-        except Exception:
+        except Exception as e:
+            failures["universe_breadth"] += 1
+            logger.warning("universe_breadth failed: %s", e)
             universe_breadth = None
             breadth_summary = ""
 
@@ -248,7 +307,9 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
                 f"(Δ {sector_rotation.correlation_change:+.2f}, "
                 f"{sector_rotation.correlation_regime})\n"
             )
-        except Exception:
+        except Exception as e:
+            failures["sector_rotation"] += 1
+            logger.warning("sector_rotation failed: %s", e)
             sector_rotation = None
             sr_summary = ""
 
@@ -256,16 +317,29 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
         risk_adjusted: dict = {}
         for t in returns_full.columns:
             sub = prices[prices["ticker"] == t]
-            if len(sub) < 252:
+            if len(sub) < MIN_HISTORY_DAYS_LONG:
                 continue
             try:
                 risk_adjusted[t] = compute_risk_adjusted(
                     prices, t, ext_panel=extended_indicators.get(t),
                 )
-            except Exception:
+            except Exception as e:
+                failures["risk_adjusted"] += 1
+                logger.debug("risk_adjusted failed for %s: %s", t, e)
                 continue
 
         ra_summary = _summarize_risk_adjusted(risk_adjusted)
+
+        # Per-tier failure 요약 — debugger 가 어느 tier 가 데이터 부족인지 즉시 확인.
+        total_failures = sum(failures.values())
+        if total_failures > 0:
+            logger.info(
+                "technical: tier failures (computed for %d ETF in universe): %s",
+                len(returns_full.columns), failures,
+            )
+        failure_summary = (
+            f"Per-tier failures: {failures}\n" if total_failures > 0 else ""
+        )
 
         narrative = quick_llm.invoke(
             f"Summarize 188-ETF technical scan in ≤500 Korean chars. "
@@ -276,11 +350,15 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             max(clusters, key=lambda x: len(x.members)).category_label
             if clusters else "none"
         )
+        from tradingagents.schemas.technical import TrendState
+        uptrend_states = {TrendState.STRONG_UPTREND, TrendState.UPTREND}
+        n_uptrend = sum(1 for v in trend_states.values() if v in uptrend_states)
         summary = (
             f"## Technical\n"
             f"Categories scanned: {len(rankings)}\n"
-            f"Trend states: {sum(1 for v in trend_states.values() if 'uptrend' in v.value)} uptrending of {len(trend_states)}\n"
+            f"Trend states: {n_uptrend} uptrending of {len(trend_states)}\n"
             f"Clusters: {len(clusters)} (largest: {largest_cluster_label})\n"
+            f"{failure_summary}"
             f"{ext_summary}"
             f"{trend_quant_summary}"
             f"{breadth_summary}"

@@ -29,6 +29,12 @@ from pydantic import BaseModel
 # - recession_inflation (stagflation): defensive → heavy low-vol + quality
 # - recession_disinflation (deflationary recession): defensive → heaviest low-vol
 # - unknown / low confidence: equal weight (no view)
+# Stage 3 cluster-aware selection — timing overlay constants.
+# 신호당 가감점 δ + 양방향 bound. backtest 튜닝 대상이라 named const로 노출.
+TIMING_DELTA: float = 0.1
+TIMING_CAP: float = 0.3
+
+
 REGIME_FACTOR_WEIGHTS: dict[str, dict[str, float]] = {
     "growth_disinflation":    {"mom": 0.50, "lowvol": 0.10, "qual": 0.25, "size": 0.15},
     "growth_inflation":       {"mom": 0.30, "lowvol": 0.15, "qual": 0.30, "size": 0.25},
@@ -80,10 +86,12 @@ def compute_factor_panel(
     n = len(r)
 
     def _skip1m_mom(window: int) -> float | None:
-        # cumulative return from t-window to t-21 (skip last 21 trading days)
-        if n < window + 1:
+        # Jegadeesh-Titman skip-1m: cumulative return over `window` daily returns
+        # ending at t-21. Matches `momentum_ranker.py` (Stage 1 technical) which
+        # computes close[t-21]/close[t-21-window] - 1. Need window+21 returns.
+        if n < window + 21:
             return None
-        sub = r.iloc[-window:-21] if window > 21 else r.iloc[-window:]
+        sub = r.iloc[-(window + 21):-21]
         if sub.empty:
             return None
         return float((1.0 + sub).prod() - 1.0)
@@ -112,7 +120,13 @@ def compute_factor_panel(
 
 
 def _zscore(values: dict[str, float | None]) -> dict[str, float]:
-    """Z-score across tickers; tickers with None get 0 (neutral)."""
+    """Z-score across tickers; tickers with None get 0 (neutral).
+
+    Range is unbounded (extreme outliers can have z > +3). This causes
+    "size dominance" in heterogeneous baskets where one factor's
+    distribution is much wider than others. Use `_rank_normalize` for
+    bounded, scale-invariant normalization.
+    """
     arr = np.array(
         [v for v in values.values() if v is not None and not math.isnan(v)],
         dtype=float,
@@ -132,20 +146,71 @@ def _zscore(values: dict[str, float | None]) -> dict[str, float]:
     return out
 
 
-def score_candidates(
+def _rank_normalize(values: dict[str, float | None]) -> dict[str, float]:
+    """Rank-based percentile normalization → uniform [-0.5, +0.5].
+
+    Worst value → -0.5, best value → +0.5. Ties get average rank.
+    None / NaN tickers get 0 (median position — neutral).
+
+    Compared to z-score:
+      - Bounded range (∈ [-0.5, +0.5]) prevents extreme outliers from dominating
+      - Scale-invariant: distributions with different spreads end up uniform
+      - Loses information about magnitude (only relative order matters)
+
+    Resolves the "size dominance" problem where one factor's z-range is
+    much wider than others. With rank, all factors contribute equally
+    per the weights — no implicit weighting via spread.
+    """
+    valid_items = [
+        (k, float(v)) for k, v in values.items()
+        if v is not None and not (isinstance(v, float) and math.isnan(v))
+    ]
+    if len(valid_items) < 2:
+        return {k: 0.0 for k in values}
+
+    # pandas rank with 'average' method handles ties gracefully
+    s = pd.Series({k: v for k, v in valid_items})
+    ranks = s.rank(method="average")
+    n = len(ranks)
+    # ranks ∈ [1, n] → normalize to [-0.5, +0.5]
+    percentile = (ranks - 1) / (n - 1) - 0.5
+
+    out: dict[str, float] = {k: 0.0 for k in values}
+    for k in percentile.index:
+        out[k] = float(percentile[k])
+    return out
+
+
+def score_candidates_with_components(
     panels: dict[str, FactorPanel],
     regime_quadrant: str | None,
     regime_confidence: float,
-) -> dict[str, float]:
-    """Compute composite score per ticker. Higher = better.
+    normalization: str = "rank_percentile",
+    *,
+    risk_adjusted: dict | None = None,
+    trend_quant: dict | None = None,
+    extended: dict | None = None,
+    etf_states: dict | None = None,
+) -> tuple[dict[str, float], dict[str, dict], dict[str, float]]:
+    """Same as score_candidates but also returns per-ticker breakdown + weights.
 
-    Z-scores are computed across the input ticker set (typically one bucket's
-    eligible pool), so scores are *relative* within the bucket.
+    Args:
+        normalization: "rank_percentile" (default, bounded ∈ [-0.5, +0.5],
+            scale-invariant — recommended) or "zscore" (legacy, unbounded).
+        risk_adjusted, trend_quant, extended, etf_states: Stage 1 technical
+            panels (optional). 미제공 시 현행 4-family score와 수학적으로 동일.
+            제공 시 qual = mean(z(sharpe), z(sortino), z(calmar), z(-maxdd));
+            mom = mean(z(skip1m), z(trend_strength), z(accel)); + timing overlay.
+
+    Returns:
+        scores:     ticker → composite base_score (+ timing overlay if extended/states)
+        breakdown:  ticker → dict with raw values, normalized values, contributions, timing
+        weights:    factor → blended regime weight (4 keys: mom/lowvol/qual/size)
     """
     if not panels:
-        return {}
+        return {}, {}, blend_regime_weights(regime_quadrant, regime_confidence)
 
-    # Composite momentum = mean of three skip-1m windows (where available)
+    # momentum core: mean of skip1m windows (현행).
     mom_values: dict[str, float | None] = {}
     for t, p in panels.items():
         windows = [p.skip1m_mom_3m, p.skip1m_mom_6m, p.skip1m_mom_12m]
@@ -156,22 +221,417 @@ def score_candidates(
     sharpe_values = {t: p.sharpe_60d for t, p in panels.items()}
     size_values: dict[str, float | None] = {t: p.log_aum for t, p in panels.items()}
 
-    z_mom = _zscore(mom_values)
-    z_vol = _zscore(vol_values)  # higher vol = higher z; we'll negate below
-    z_qual = _zscore(sharpe_values)
-    z_size = _zscore(size_values)
+    if normalization == "rank_percentile":
+        normalize = _rank_normalize
+    elif normalization == "zscore":
+        normalize = _zscore
+    else:
+        raise ValueError(
+            f"unknown normalization {normalization!r} (expected 'rank_percentile' or 'zscore')"
+        )
+
+    n_mom_core = normalize(mom_values)
+    n_vol = normalize(vol_values)
+    n_qual_core = normalize(sharpe_values)
+    n_size = normalize(size_values)
+
+    # Stage 3: family enrichment — sub-composite = mean(normalized sub-signals).
+    # 신호 누락(None) 시 해당 sub-signal 만 제외 후 mean.
+    extra_qual: dict[str, list[float]] = {t: [] for t in panels}
+    extra_mom: dict[str, list[float]] = {t: [] for t in panels}
+    if risk_adjusted:
+        n_sortino = normalize({
+            t: getattr(risk_adjusted.get(t), "sortino_60d", None) for t in panels
+        })
+        n_calmar = normalize({
+            t: getattr(risk_adjusted.get(t), "calmar_12m", None) for t in panels
+        })
+        n_neg_maxdd = normalize({
+            t: (-getattr(risk_adjusted.get(t), "max_drawdown_12m", None)
+                if risk_adjusted.get(t) is not None else None)
+            for t in panels
+        })
+        for t in panels:
+            extra_qual[t].extend([n_sortino[t], n_calmar[t], n_neg_maxdd[t]])
+    if trend_quant:
+        n_trend_strength = normalize({
+            t: getattr(trend_quant.get(t), "trend_strength_score", None) for t in panels
+        })
+        n_accel = normalize({
+            t: getattr(trend_quant.get(t), "momentum_acceleration", None) for t in panels
+        })
+        for t in panels:
+            extra_mom[t].extend([n_trend_strength[t], n_accel[t]])
+
+    n_mom: dict[str, float] = {
+        t: float(np.mean([n_mom_core[t], *extra_mom[t]])) for t in panels
+    }
+    n_qual: dict[str, float] = {
+        t: float(np.mean([n_qual_core[t], *extra_qual[t]])) for t in panels
+    }
 
     weights = blend_regime_weights(regime_quadrant, regime_confidence)
 
     scores: dict[str, float] = {}
+    breakdown: dict[str, dict] = {}
     for t in panels:
-        scores[t] = (
-            weights["mom"]    * z_mom[t]
-            + weights["lowvol"] * (-z_vol[t])     # low vol = high score
-            + weights["qual"]   * z_qual[t]
-            + weights["size"]   * z_size[t]
-        )
+        contribs = {
+            "mom":    weights["mom"]    * n_mom[t],
+            "lowvol": weights["lowvol"] * (-n_vol[t]),
+            "qual":   weights["qual"]   * n_qual[t],
+            "size":   weights["size"]   * n_size[t],
+        }
+        base = sum(contribs.values())
+
+        ext_t = extended.get(t) if extended else None
+        timing = _timing_overlay(t, ext_t, etf_states, risk_adjusted)
+        final_base = base + timing
+
+        scores[t] = final_base
+        breakdown[t] = {
+            "raw": {
+                "mom_value":    mom_values[t],
+                "vol_value":    vol_values[t],
+                "sharpe_value": sharpe_values[t],
+                "size_value":   size_values[t],
+            },
+            "normalization": normalization,
+            "normalized": {
+                "mom":  n_mom[t],
+                "vol":  n_vol[t],
+                "qual": n_qual[t],
+                "size": n_size[t],
+                "mom_core": n_mom_core[t],
+                "qual_core": n_qual_core[t],
+                "mom_extras": extra_mom[t],
+                "qual_extras": extra_qual[t],
+            },
+            "contributions": contribs,
+            "timing": timing,
+            "base_score":    base,
+        }
+    return scores, breakdown, weights
+
+
+def score_candidates(
+    panels: dict[str, FactorPanel],
+    regime_quadrant: str | None,
+    regime_confidence: float,
+    normalization: str = "rank_percentile",
+    *,
+    risk_adjusted: dict | None = None,
+    trend_quant: dict | None = None,
+    extended: dict | None = None,
+    etf_states: dict | None = None,
+) -> dict[str, float]:
+    """Compute composite score per ticker. Higher = better.
+
+    Normalized values are computed across the input ticker set (typically one
+    bucket's eligible pool), so scores are *relative* within the bucket.
+
+    Optional Stage 1 technical panels enrich qual/mom families + apply timing
+    overlay (Stage 3 cluster-aware selection). 미제공 시 현행과 동일.
+    """
+    scores, _, _ = score_candidates_with_components(
+        panels, regime_quadrant, regime_confidence, normalization=normalization,
+        risk_adjusted=risk_adjusted, trend_quant=trend_quant,
+        extended=extended, etf_states=etf_states,
+    )
     return scores
+
+
+def compute_impl_score(
+    panels: dict[str, FactorPanel],
+    *,
+    adv: dict[str, float | None] | None = None,
+    deviation: dict[str, float | None] | None = None,
+    tracking_error: dict[str, float | None] | None = None,
+    normalization: str = "rank_percentile",
+) -> dict[str, float]:
+    """Implementation-quality score (Stage 3 cluster-aware selection).
+
+    "대체재 중 최선 vehicle" — 그룹 내 선택에 사용. 높을수록 좋음.
+    - Phase 1: log_aum (큰 ETF = 더 유동, 좁은 spread proxy)
+    - Phase 2 (optional): + ADV↑, |괴리율|↓, 추적오차율↓
+    미제공 신호는 neutral(0 기여). normalization은 alpha와 동일 기본값.
+    """
+    if not panels:
+        return {}
+
+    if normalization == "rank_percentile":
+        normalize = _rank_normalize
+    elif normalization == "zscore":
+        normalize = _zscore
+    else:
+        raise ValueError(
+            f"unknown normalization {normalization!r} (expected 'rank_percentile' or 'zscore')"
+        )
+
+    parts: list[dict[str, float]] = [
+        normalize({t: p.log_aum for t, p in panels.items()})
+    ]
+    if adv is not None:
+        parts.append(normalize({t: adv.get(t) for t in panels}))
+    if deviation is not None:
+        parts.append(normalize({
+            t: (-abs(deviation[t]) if deviation.get(t) is not None else None)
+            for t in panels
+        }))
+    if tracking_error is not None:
+        parts.append(normalize({
+            t: (-tracking_error[t] if tracking_error.get(t) is not None else None)
+            for t in panels
+        }))
+    return {t: float(np.mean([p[t] for p in parts])) for t in panels}
+
+
+def _timing_overlay(
+    ticker: str,
+    extended,
+    etf_states,
+    risk_adjusted,
+) -> float:
+    """Bounded soft 가감점 (Stage 3 cluster-aware selection).
+
+    누락 데이터는 0 기여. 반환 ∈ [-TIMING_CAP, +TIMING_CAP].
+    - rsi/macd divergence: bearish 페널티 / bullish 보너스
+    - bb_percent_b>1.0 OR mfi>80 OR stoch_k>80 → overbought 페널티
+    - trend state ∈ {breakdown, downtrend} 페널티
+    - is_mean_reversion_candidate 보너스
+    """
+    d = TIMING_DELTA
+    score = 0.0
+    if extended is not None:
+        if extended.rsi_divergence == "bearish":
+            score -= d
+        elif extended.rsi_divergence == "bullish":
+            score += d
+        if extended.macd_divergence == "bearish":
+            score -= d
+        elif extended.macd_divergence == "bullish":
+            score += d
+        if (
+            extended.bb_percent_b > 1.0
+            or extended.mfi > 80.0
+            or extended.stoch_k > 80.0
+        ):
+            score -= d
+    if etf_states is not None:
+        st = etf_states.get(ticker)
+        st_val = getattr(st, "value", st)
+        if st_val in ("breakdown", "downtrend"):
+            score -= d
+    if risk_adjusted is not None:
+        ra = risk_adjusted.get(ticker)
+        if ra is not None and getattr(ra, "is_mean_reversion_candidate", False):
+            score += d
+    return max(-TIMING_CAP, min(TIMING_CAP, score))
+
+
+def _corr_groups(
+    elig: list[str], returns: "pd.DataFrame", threshold: float,
+) -> list[list[str]]:
+    """Greedy corr 그룹화 (cluster_aware fallback).
+
+    각 ticker 를 순회하며 |corr| ≥ threshold 면 기존 그룹의 head 와 같은 그룹으로
+    배정, 아니면 새 그룹. 이전 `select_diverse` 의 의미와 동등.
+    """
+    groups: list[list[str]] = []
+    for t in elig:
+        placed = False
+        for g in groups:
+            head = g[0]
+            if t in returns.columns and head in returns.columns:
+                c = returns[t].corr(returns[head])
+                if pd.notna(c) and abs(float(c)) >= threshold:
+                    g.append(t)
+                    placed = True
+                    break
+        if not placed:
+            groups.append([t])
+    return groups
+
+
+def select_cluster_aware(
+    eligible: list[str],
+    alpha_scores: dict[str, float],
+    impl_scores: dict[str, float],
+    clusters: list | None,
+    n: int,
+    returns: "pd.DataFrame | None",
+    correlation_threshold: float = 0.85,
+    selection_trace: dict | None = None,
+    underlying_lookup: dict[str, str] | None = None,
+    require_positive_alpha: bool = True,
+) -> list[str]:
+    """Cluster-aware selection (Stage 3).
+
+    그룹 간(다른 노출/sector) = alpha 랭킹. 그룹 내(대체재) = impl 랭킹.
+
+    clusters 가 제공되면 그것으로 그룹화; cluster 멤버 아닌 ticker 는 singleton.
+    clusters 가 None/빈이면 returns 의 pairwise corr 로 fallback grouping
+    (이전 select_diverse 의미). returns 도 없으면 모든 eligible = singleton.
+
+    2026-05-26 #1 fix — underlying_lookup 추가: 동일 underlying_index 의 ETF (예:
+    S&P 500 추종 TIGER/KODEX/RISE 3사) 는 *강제 같은 group* 으로 통합. 기존
+    correlation cluster 는 top 5/카테고리 만 cover 해서 운영사 다른 동일 지수
+    ETF 가 분리되는 silent bug 가 있었음. underlying_lookup 이 ground truth.
+
+    2026-05-26 fix-C — require_positive_alpha: alpha 음수 group 자동 제외.
+    이전엔 cluster-aware 가 group 4 개면 alpha 음수여도 padding 으로 chosen 에
+    들어감 (자리 채움). 결과: HRP 가 vol 낮은 alpha-음수 자산에 큰 weight 부여
+    (엔선물 13% 사례). True 이면 alpha > 0 인 group 만 chosen + padding.
+    단 모든 alpha 가 음수면 (특수 case) 최소 1개는 keep (bucket 비울 수 없음).
+
+    얇은 pool(그룹 수 < n)에서는 남은 ticker 를 alpha 순으로 패딩.
+    """
+    if n <= 0 or not eligible:
+        return []
+    elig = [t for t in eligible if t in alpha_scores]
+    if not elig:
+        return []
+
+    # 1. 그룹화
+    groups: list[list[str]]
+    if clusters:
+        member_to_cluster: dict[str, str] = {}
+        for c in clusters:
+            for m in getattr(c, "members", []):
+                member_to_cluster.setdefault(m, getattr(c, "cluster_id"))
+        groups = []
+        by_cluster: dict[str, list[str]] = {}
+        for t in elig:
+            cid = member_to_cluster.get(t)
+            if cid is None:
+                groups.append([t])
+            else:
+                by_cluster.setdefault(cid, []).append(t)
+        groups.extend(by_cluster.values())
+    elif returns is not None and not returns.empty:
+        groups = _corr_groups(elig, returns, correlation_threshold)
+    else:
+        groups = [[t] for t in elig]
+
+    # 2026-05-26 #1 fix — underlying_index 강제 cluster 통합 (post-grouping merge).
+    # 위 cluster grouping 후 동일 underlying_index 의 ETF (예: S&P 500 추종
+    # TIGER/KODEX/RISE 3사) 가 다른 group 에 분리됐으면 강제 merge. correlation
+    # cluster 는 top 5/카테고리 만 cover 라 운영사 다른 동일 지수 ETF 분리되는
+    # silent bug. underlying_index 가 ground truth.
+    if underlying_lookup:
+        ui_to_group_idx: dict[str, int] = {}
+        merged: list[list[str]] = []
+        for g in groups:
+            # 이 group 의 ticker 들 중 underlying 가 있는 것 (None/"" 제외).
+            uis = [underlying_lookup.get(t) for t in g if underlying_lookup.get(t)]
+            target_idx: int | None = None
+            for ui in uis:
+                if ui in ui_to_group_idx:
+                    target_idx = ui_to_group_idx[ui]
+                    break
+            if target_idx is not None:
+                merged[target_idx].extend(g)
+                # 이 group 의 모든 underlying 을 target_idx 로 매핑 (새 underlying 도 등록)
+                for ui in uis:
+                    ui_to_group_idx[ui] = target_idx
+            else:
+                merged.append(list(g))
+                new_idx = len(merged) - 1
+                for ui in uis:
+                    ui_to_group_idx[ui] = new_idx
+        groups = merged
+
+    # 2. 각 그룹의 대표(impl 최고) + group alpha(멤버 alpha 최고)
+    group_repr: list[tuple[float, str, list[str]]] = []
+    for g in groups:
+        rep = max(g, key=lambda t: impl_scores.get(t, 0.0))
+        g_alpha = max(alpha_scores.get(t, float("-inf")) for t in g)
+        group_repr.append((g_alpha, rep, g))
+    group_repr.sort(key=lambda x: x[0], reverse=True)
+
+    # 2026-05-26 fix-C — alpha 음수 group 제외 (require_positive_alpha=True).
+    # 단 bucket cap 부족 (Stage 3 solver infeasible) 방지 위해 최소 chosen 수
+    # 보장: 양수 group 이 충분하면 양수만, 부족하면 음수로 fill (alpha 순 top).
+    # 최소 보장 수 = max(1, n // 2) — bucket 의 단일 자산 cap 20% 고려하면 평균
+    # 50% target 도달 가능.
+    if require_positive_alpha:
+        positive_groups = [(a, r, g) for (a, r, g) in group_repr if a > 0]
+        min_required = max(1, n // 2)
+        if len(positive_groups) >= min_required:
+            group_repr_filtered = positive_groups
+        elif group_repr:
+            # 양수 group 부족 — 음수도 top 순으로 fill (덜 나쁜 것부터)
+            negative_groups = [(a, r, g) for (a, r, g) in group_repr if a <= 0]
+            shortfall = min_required - len(positive_groups)
+            group_repr_filtered = (
+                positive_groups + negative_groups[:shortfall]
+            )
+        else:
+            group_repr_filtered = []
+    else:
+        group_repr_filtered = group_repr
+
+    chosen: list[str] = [rep for _a, rep, _g in group_repr_filtered[:n]]
+
+    if selection_trace is not None:
+        chosen_set = set(chosen)
+        for g_alpha, rep, g in group_repr:
+            is_in_chosen = rep in chosen_set
+            reason = f"cluster-aware (group_alpha={g_alpha:.4f}, group_size={len(g)})"
+            if require_positive_alpha and not is_in_chosen and g_alpha <= 0:
+                reason += " [excluded: alpha ≤ 0]"
+            selection_trace[rep] = {
+                "selected":  is_in_chosen,
+                "reason":    reason,
+                "group_members": list(g),
+                "group_alpha":   g_alpha,
+            }
+
+    # 3. 패딩 — 그룹 수 < n 이면 남은 ticker 를 alpha 순.
+    # 2026-05-26 #1 fix — padding 도 underlying-aware: 이미 chosen 에 있는
+    # underlying 의 ticker 는 padding 에서도 제외 (cluster 강제 merge 의 의도가
+    # 패딩에 의해 깨지지 않도록).
+    if len(chosen) < n:
+        seen = set(chosen)
+        chosen_underlyings: set[str] = set()
+        if underlying_lookup:
+            chosen_underlyings = {
+                underlying_lookup.get(t) for t in chosen
+                if underlying_lookup.get(t)
+            }
+        remaining = [t for t in elig if t not in seen]
+        if chosen_underlyings:
+            remaining = [
+                t for t in remaining
+                if (underlying_lookup or {}).get(t) not in chosen_underlyings
+            ]
+        remaining.sort(key=lambda t: alpha_scores.get(t, float("-inf")), reverse=True)
+        # 2026-05-26 fix-C — padding 도 alpha 양수 우선. 단 chosen 이 min_required
+        # (n//2) 미만이면 음수도 fill (bucket cap 보장).
+        if require_positive_alpha:
+            min_required_total = max(1, n // 2)
+            positive_remaining = [
+                t for t in remaining if alpha_scores.get(t, float("-inf")) > 0
+            ]
+            if len(chosen) + len(positive_remaining) >= min_required_total:
+                # 양수만으로 충분 → 음수 제외
+                remaining = positive_remaining
+            # else: 양수 부족 → remaining 그대로 (alpha 순 정렬됨, 음수 포함)
+        for t in remaining:
+            chosen.append(t)
+            if underlying_lookup and underlying_lookup.get(t):
+                chosen_underlyings.add(underlying_lookup[t])
+            if selection_trace is not None:
+                selection_trace.setdefault(t, {})
+                selection_trace[t].update({
+                    "selected": True,
+                    "reason": (
+                        f"padding fallback (alpha={alpha_scores.get(t, 0.0):.4f}, "
+                        f"was: {selection_trace.get(t, {}).get('reason', 'not-rep')})"
+                    ),
+                })
+            if len(chosen) >= n:
+                break
+    return chosen[:n]
 
 
 def select_diverse(
@@ -179,28 +639,47 @@ def select_diverse(
     returns: pd.DataFrame,
     n: int,
     correlation_threshold: float = 0.85,
+    selection_trace: dict | None = None,
 ) -> list[str]:
     """Greedy correlation-aware selection.
 
     Walk down `ranked_tickers` (best first); accept a ticker only if its
     correlation with every already-accepted ticker is below threshold.
     Pad with remaining ranked tickers if fewer than n pass the filter.
+
+    If `selection_trace` dict is provided, mutates it in place to record
+    {ticker: {selected, reason, corr_max, corr_with}} for every walked ticker.
     """
     if n <= 0:
         return []
     selected: list[str] = []
+    rejected_by_corr: set[str] = set()
+
+    def _record(ticker, *, selected_flag, reason, corr_max=None, corr_with=None):
+        if selection_trace is None:
+            return
+        selection_trace[ticker] = {
+            "selected":  selected_flag,
+            "reason":    reason,
+            "corr_max":  corr_max,
+            "corr_with": corr_with or [],
+        }
+
     for ticker in ranked_tickers:
         if len(selected) >= n:
             break
         if not selected:
             selected.append(ticker)
+            _record(ticker, selected_flag=True, reason="first pick")
             continue
         if ticker not in returns.columns:
-            # No correlation data — accept (treated as orthogonal).
             selected.append(ticker)
+            _record(ticker, selected_flag=True,
+                    reason="no return data — treated as orthogonal")
             continue
         max_corr = 0.0
-        too_correlated = False
+        too_correlated_with: str | None = None
+        corr_with: list[tuple[str, float]] = []
         for s in selected:
             if s not in returns.columns:
                 continue
@@ -208,17 +687,34 @@ def select_diverse(
             if pd.isna(c):
                 continue
             ac = abs(float(c))
+            corr_with.append((s, ac))
             if ac >= correlation_threshold:
-                too_correlated = True
+                too_correlated_with = s
+                max_corr = ac
                 break
             max_corr = max(max_corr, ac)
-        if not too_correlated:
+        if too_correlated_with is None:
             selected.append(ticker)
+            _record(ticker, selected_flag=True,
+                    reason=f"passed corr filter (max={max_corr:.3f})",
+                    corr_max=max_corr, corr_with=corr_with)
+        else:
+            rejected_by_corr.add(ticker)
+            _record(ticker, selected_flag=False,
+                    reason=f"corr {max_corr:.3f} ≥ {correlation_threshold:.3f} with {too_correlated_with}",
+                    corr_max=max_corr, corr_with=corr_with)
 
     if len(selected) < n:
         for ticker in ranked_tickers:
             if ticker not in selected:
                 selected.append(ticker)
+                if selection_trace is not None and ticker in selection_trace:
+                    prev = selection_trace[ticker]
+                    prev["selected"] = True
+                    prev["reason"] = f"padding fallback (was: {prev['reason']})"
+                else:
+                    _record(ticker, selected_flag=True,
+                            reason="padding fallback (mandate-priority)")
                 if len(selected) >= n:
                     break
 

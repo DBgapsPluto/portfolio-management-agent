@@ -4,8 +4,17 @@ Runs the E2E pipeline for each as_of date, saves artifacts, and emits a
 side-by-side comparison summary (regime classification, bucket target, method,
 expected vol/Sharpe, validation status).
 
+Two modes:
+- **Default (independent)**: each as_of run 은 previous_portfolio=None →
+  rebalance_mode="initial" 으로 검증 (turnover floor 0.80). 5 historical regime
+  spot check 에 적합 (regime 별 portfolio 비교).
+- **--chained**: 각 as_of run 의 portfolio.json 을 다음 run 의 previous_portfolio
+  로 전달 → rebalance_mode="monthly" (turnover floor 0.10). continuous
+  rebalance 평가에 적합.
+
 Usage:
-    python scripts/run_backtest.py
+    python scripts/run_backtest.py            # independent (default)
+    python scripts/run_backtest.py --chained  # continuous rebalance
 """
 from __future__ import annotations
 
@@ -15,6 +24,14 @@ import sys
 import time
 from datetime import date
 from pathlib import Path
+
+# .env auto-load (FRED/ECOS/OPENAI/KRX 키). 다른 backtest 스크립트들과 동일 패턴.
+_ROOT = Path(__file__).resolve().parent.parent
+try:
+    from dotenv import load_dotenv
+    load_dotenv(dotenv_path=_ROOT / ".env")
+except ImportError:
+    pass
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,12 +59,19 @@ def _safe_round(val, digits: int = 2):
         return None
 
 
-def run_one(as_of: str) -> dict | None:
-    """Run pipeline for one date. Return summary dict or None on failure."""
+def run_one(as_of: str, previous_portfolio: dict | None = None) -> dict | None:
+    """Run pipeline for one date. Return summary dict or None on failure.
+
+    previous_portfolio: chained 모드 — 이전 run 의 portfolio.json 의 weights dict.
+    None 이면 initial rebalance_mode (default spot check 모드).
+    """
     from tradingagents.graph.trading_graph import TradingAgentsGraph
 
     logger.info("=" * 70)
-    logger.info("RUNNING as_of=%s", as_of)
+    logger.info(
+        "RUNNING as_of=%s (rebalance_mode=%s)",
+        as_of, "monthly (chained)" if previous_portfolio else "initial",
+    )
     logger.info("=" * 70)
 
     t0 = time.time()
@@ -58,7 +82,11 @@ def run_one(as_of: str) -> dict | None:
         return None
 
     try:
-        result = graph.run(as_of_date=as_of, capital_krw=1_000_000_000)
+        result = graph.run(
+            as_of_date=as_of,
+            capital_krw=1_000_000_000,
+            previous_portfolio=previous_portfolio,
+        )
     except Exception as e:
         logger.exception("Pipeline run failed for %s: %s", as_of, e)
         return None
@@ -149,22 +177,62 @@ def format_table(rows: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _load_prev_portfolio(as_of: str) -> dict | None:
+    """artifacts/<as_of>/portfolio.json 에서 weights 추출. 없으면 None."""
+    p = Path(f"artifacts/{as_of}/portfolio.json")
+    if not p.exists():
+        return None
+    try:
+        pf = json.loads(p.read_text(encoding="utf-8"))
+        weights = pf.get("weights")
+        if not isinstance(weights, dict) or not weights:
+            return None
+        return {"weights": weights}
+    except Exception as e:
+        logger.warning("Failed to load prev portfolio for %s: %s", as_of, e)
+        return None
+
+
 def main() -> int:
+    import argparse
+
     # Sys.path setup so module imports work without pip install -e .
     project_root = Path(__file__).resolve().parent.parent
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
+    parser = argparse.ArgumentParser(description="DB GAPS pipeline backtest.")
+    parser.add_argument(
+        "--chained", action="store_true",
+        help=(
+            "이전 run 의 portfolio.json 을 다음 run 의 previous_portfolio 로 전달 "
+            "→ continuous monthly rebalance 평가 모드 (turnover floor 0.10). "
+            "기본 (off) 은 independent spot check (turnover floor 0.80)."
+        ),
+    )
+    args = parser.parse_args()
+
+    if args.chained:
+        logger.info("CHAINED mode: each as_of uses previous as_of's portfolio.json")
+
     rows: list[dict] = []
+    prev_portfolio: dict | None = None
+
     for as_of, label in REGIMES:
         existing_summary = Path(f"artifacts/{as_of}/backtest_summary.json")
         if existing_summary.exists():
             logger.info("Loading cached summary for %s", as_of)
             rows.append(json.loads(existing_summary.read_text(encoding="utf-8")))
+            # cached run 에서도 chained 모드면 portfolio.json 로드.
+            if args.chained:
+                prev_portfolio = _load_prev_portfolio(as_of) or prev_portfolio
             continue
 
         logger.info("Regime label: %s", label)
-        summary = run_one(as_of)
+        summary = run_one(
+            as_of,
+            previous_portfolio=prev_portfolio if args.chained else None,
+        )
         if summary is None:
             logger.error("Skipping %s — failed", as_of)
             continue
@@ -175,12 +243,22 @@ def main() -> int:
         out_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
         logger.info("Wrote %s", out_path)
 
+        # Chained 모드: 다음 run 을 위해 prev_portfolio 갱신.
+        if args.chained:
+            prev_portfolio = _load_prev_portfolio(as_of) or prev_portfolio
+
     text = format_table(rows)
     print(text)
 
-    combined = Path("artifacts/backtest_summary.json")
+    combined = Path(
+        "artifacts/backtest_summary_chained.json" if args.chained
+        else "artifacts/backtest_summary.json"
+    )
     combined.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    Path("artifacts/backtest_summary.txt").write_text(text, encoding="utf-8")
+    Path(
+        "artifacts/backtest_summary_chained.txt" if args.chained
+        else "artifacts/backtest_summary.txt"
+    ).write_text(text, encoding="utf-8")
     logger.info("Combined summary → %s", combined)
 
     return 0
