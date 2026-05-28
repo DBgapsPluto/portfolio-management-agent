@@ -56,7 +56,45 @@ def compute_bucket_conviction(
     returns: pd.DataFrame,
 ) -> ConvictionResult:
     """Bucket conviction = (mean_alpha/threshold) × (ENB_equal_weight/√N)."""
-    raise NotImplementedError
+    threshold = _threshold_for(bucket)
+
+    if not chosen:
+        return ConvictionResult(
+            bucket=bucket, n_chosen=0, mean_alpha=0.0, enb=0.0,
+            threshold=threshold, conviction=0.0, spillover_ratio=1.0,
+        )
+
+    available = [t for t in chosen if t in returns.columns]
+    if not available:
+        return ConvictionResult(
+            bucket=bucket, n_chosen=0, mean_alpha=0.0, enb=0.0,
+            threshold=threshold, conviction=0.0, spillover_ratio=1.0,
+        )
+
+    # mean alpha 는 chosen 전부에 대해 (returns 누락 종목도 포함)
+    alphas = [alpha_scores.get(t, 0.0) for t in chosen]
+    mean_alpha = float(np.mean(alphas))
+
+    n = len(available)
+    if n == 1:
+        enb = 1.0
+    else:
+        sub_returns = returns[available].dropna(axis=0, how="any")
+        if sub_returns.empty or len(sub_returns) < 2:
+            enb = float(n)  # cov 계산 불가 → equal split fallback
+        else:
+            sigma = sub_returns.cov()
+            equal_w = {t: 1.0 / n for t in available}
+            enb = compute_enb(equal_w, sigma, method="minimum_torsion")
+
+    conviction = (mean_alpha / threshold) * (enb / np.sqrt(n))
+    spillover_ratio = max(0.0, min(1.0, 1.0 - conviction))
+
+    return ConvictionResult(
+        bucket=bucket, n_chosen=n, mean_alpha=mean_alpha, enb=float(enb),
+        threshold=threshold, conviction=float(conviction),
+        spillover_ratio=float(spillover_ratio),
+    )
 
 
 def adjust_bucket_targets(
