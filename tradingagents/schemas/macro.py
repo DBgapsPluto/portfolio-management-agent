@@ -28,6 +28,11 @@ class YieldCurveSnapshot(StalenessAware):
         default=0.0,
         description="30Y - 5Y in basis points. Long-end curve — F4 term_premium component.",
     )
+    # === Tier 0 — F4 reform — ACM term premium (NY Fed) ===
+    acm_term_premium_10y_pct: float | None = Field(
+        default=None,
+        description="NY Fed ACM 10y term premium (THREEFYTP10, %). None=fetch fail.",
+    )
 
 
 class InflationSnapshot(StalenessAware):

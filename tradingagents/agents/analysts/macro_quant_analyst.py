@@ -255,6 +255,22 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         except Exception as e:
             logger.warning("slope_5_30y fetch failed (factor F4 affected): %s", e)
 
+        # Tier 0 — F4 reform: ACM 10y term premium (NY Fed THREEFYTP10, 1990+, daily).
+        # Adrian-Crump-Moench 2013 RFS. Best-effort; None on fetch fail.
+        try:
+            from tradingagents.dataflows.fred import fetch_fred_series
+            acm_series = fetch_fred_series(
+                "us_acm_term_premium_10y",
+                as_of - timedelta(days=30),
+                as_of,
+                as_of_date=as_of,
+            )
+            acm_tp = float(acm_series.iloc[-1]) if not acm_series.empty else None
+            if acm_tp is not None:
+                yc = yc.model_copy(update={"acm_term_premium_10y_pct": acm_tp})
+        except Exception as e:
+            logger.warning("ACM term premium fetch failed (F4 acm_tp=None): %s", e)
+
         cpi = fetch_fred_series_skill("us_cpi", start_macro, as_of, as_of_date=as_of)
         core_cpi = fetch_fred_series_skill("us_core_cpi", start_macro, as_of, as_of_date=as_of)
         # PCE — Fed 공식 inflation 타겟 (2026-05 추가). 두 series 다 best-effort.

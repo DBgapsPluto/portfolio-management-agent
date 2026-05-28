@@ -494,36 +494,44 @@ def compute_real_rate(stage1: Any, mode: FactorMode = "production") -> FactorSco
 
 
 def compute_term_premium(stage1: Any, mode: FactorMode = "production") -> FactorScore:
-    """F4 term_premium — +z = steeper curve.
+    """F4 term_premium — +z = steeper / higher term premium.
+
+    Tier 0 reform (2026-05-28): ACM term premium added (NY Fed THREEFYTP10).
+    Reference: Adrian-Crump-Moench 2013 RFS.
 
     PR0 hotfix (C1): slope_2_10y_bps → spread_10y_2y_bps.
-    slope_5_30y: PLACEHOLDER (weight=0) — C8 activation after PR1 adds
-    YieldCurveSnapshot.spread_30y_5y_bps.
+    C8 activation (2026-05-24): slope_5_30y activated.
     """
     slope_2_10 = _safe_get(
         stage1, "macro_report", "yield_curve", "spread_10y_2y_bps"
     )
-
-    # C8 activation (2026-05-24): PR1 C4 added YieldCurveSnapshot.spread_30y_5y_bps.
     slope_5_30 = _safe_get(
         stage1, "macro_report", "yield_curve", "spread_30y_5y_bps"
     )
+    acm_tp = _safe_get(
+        stage1, "macro_report", "yield_curve", "acm_term_premium_10y_pct"
+    )
 
     components_raw: dict[str, float | None] = {
-        "slope_2_10y": slope_2_10,
-        "slope_5_30y": slope_5_30,  # C8 activated
-        "fed_tone_balance": _safe_get(
+        "slope_2_10y":          slope_2_10,
+        "slope_5_30y":          slope_5_30,
+        "acm_term_premium_10y": acm_tp,
+        "fed_tone_balance":     _safe_get(
             stage1, "news_report", "cb_speakers", "fed_tone_balance"
         ),
-        "fed_voting_balance": _safe_get(
+        "fed_voting_balance":   _safe_get(
             stage1, "news_report", "cb_speakers", "fed_voting_balance"
         ),
     }
-    # C8 weight rebalance (D11 plan default; sum=1.00):
+    # Tier 0 weight rebalance (sum=1.00):
+    # acm_term_premium_10y 0.30 (pure term premium — most direct measure);
+    # slope 두 개 합 0.25 (stylized facts proxy); Fed tone 합 0.45 (policy signal).
     weights: dict[str, float] = {
-        "slope_2_10y": 0.25,
-        "slope_5_30y": 0.20,   # C8 activated
-        "fed_tone_balance": 0.30, "fed_voting_balance": 0.25,
+        "slope_2_10y":          0.15,
+        "slope_5_30y":          0.10,
+        "acm_term_premium_10y": 0.30,   # NEW — pure term premium
+        "fed_tone_balance":     0.25,
+        "fed_voting_balance":   0.20,
     }
     return _aggregate("F4_term_premium", components_raw, weights, mode=mode)
 
@@ -533,6 +541,9 @@ def compute_term_premium(stage1: Any, mode: FactorMode = "production") -> Factor
 
 def compute_credit_cycle(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F5 credit_cycle — +z = credit stress.
+
+    Tier 0 reform (2026-05-28): GZ EBP (Gilchrist-Zakrajsek 2012 AER) +
+    KR corporate spread added. Weights rebalanced.
 
     PR0 hotfix (C1): hy_oas momentum field 명은 momentum_zscore
     (SpreadSnapshot), 기존 momentum_z 는 잘못된 이름.
@@ -564,6 +575,10 @@ def compute_credit_cycle(stage1: Any, mode: FactorMode = "production") -> Factor
     else:
         dovish_bias = None
 
+    # NEW Tier 0 components:
+    gz_ebp = _safe_get(stage1, "risk_report", "excess_bond_premium", "ebp")
+    kr_corp_spread = _safe_get(stage1, "risk_report", "kr_corp_spread", "spread_bps")
+
     components_raw: dict[str, float | None] = {
         "hy_oas_bps": _safe_get(
             stage1, "risk_report", "credit_spread_us_hy", "current_bps"
@@ -577,13 +592,23 @@ def compute_credit_cycle(stage1: Any, mode: FactorMode = "production") -> Factor
         "funding_bps": _safe_get(
             stage1, "risk_report", "funding_stress", "spread_bps"
         ),
+        "gz_ebp":             gz_ebp,
+        "kr_corp_spread_bps": kr_corp_spread,
         "corporate_distress": corporate_distress,
-        "dovish_bias": dovish_bias,
+        "dovish_bias":        dovish_bias,
     }
+    # Tier 0 weight rebalance (sum=1.00):
+    # gz_ebp 0.20 (pure excess premium — GZ 2012); kr_corp_spread 0.10 (KR coverage).
+    # hy_oas/momentum reduced from 0.30/0.25 → 0.20/0.15 to accommodate new components.
     weights: dict[str, float] = {
-        "hy_oas_bps": 0.30, "hy_oas_momentum": 0.25,
-        "credit_quality_bps": 0.15, "funding_bps": 0.10,
-        "corporate_distress": 0.15, "dovish_bias": 0.05,
+        "hy_oas_bps":         0.20,   # was 0.30
+        "hy_oas_momentum":    0.15,   # was 0.25
+        "credit_quality_bps": 0.10,   # was 0.15
+        "funding_bps":        0.10,
+        "gz_ebp":             0.20,   # NEW
+        "kr_corp_spread_bps": 0.10,   # NEW (KR coverage)
+        "corporate_distress": 0.10,   # was 0.15
+        "dovish_bias":        0.05,
     }
     return _aggregate("F5_credit_cycle", components_raw, weights, mode=mode)
 

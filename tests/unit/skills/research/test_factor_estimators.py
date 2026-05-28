@@ -113,3 +113,49 @@ def test_f1_responds_to_indpro_real_pce():
     )
     score = compute_growth_surprise(state, mode="historical")
     assert score.z_score > 0.3  # positive growth signal
+
+
+def test_f4_uses_acm_term_premium():
+    """ACM TP component contributes to F4."""
+    from tradingagents.skills.research.factor_estimators import compute_term_premium
+
+    class _Obj:
+        def __init__(self, **d): self.__dict__.update(d)
+
+    state = _Obj(
+        macro_report=_Obj(
+            yield_curve=_Obj(
+                spread_10y_2y_bps=80.0,
+                spread_30y_5y_bps=80.0,
+                acm_term_premium_10y_pct=2.0,  # +1.5σ from baseline (mean=0.5, sd=1.0)
+                staleness_days=0,
+            ),
+        ),
+        news_report=None,
+    )
+    score = compute_term_premium(state, mode="historical")
+    # ACM z=+1.5, renormalized weight among 3 present components → z_score > 0.2
+    assert score.z_score > 0.2  # ACM +1.5σ drives positive F4
+
+
+def test_f5_uses_gz_ebp_and_kr_corp_spread():
+    """GZ EBP and KR corp spread contribute to F5."""
+    from tradingagents.skills.research.factor_estimators import compute_credit_cycle
+
+    class _Obj:
+        def __init__(self, **d): self.__dict__.update(d)
+
+    state = _Obj(
+        macro_report=None,
+        risk_report=_Obj(
+            excess_bond_premium=_Obj(ebp=1.0, staleness_days=0),       # +2σ
+            kr_corp_spread=_Obj(spread_bps=140.0, staleness_days=0),    # +2σ
+            credit_spread_us_hy=_Obj(current_bps=400.0, momentum_zscore=0.0, staleness_days=0),
+            credit_quality=_Obj(quality_spread_bps=90.0, staleness_days=0),
+            funding_stress=_Obj(spread_bps=10.0, staleness_days=0),
+        ),
+        news_report=None,
+    )
+    score = compute_credit_cycle(state, mode="historical")
+    # gz_ebp z=+2.0, kr_corp z=+2.0; renormalized among 6 present components → z > 0.25
+    assert score.z_score > 0.25  # gz_ebp + kr_corp_spread drive credit stress signal

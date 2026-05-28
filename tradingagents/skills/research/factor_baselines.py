@@ -53,6 +53,9 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F4_term_premium", "slope_2_10y"):         (80.0, 80.0),
     # C8 (2026-05-24): 5y30y slope long-run mean ~80bps, sd ~50bps (post-2010 sample).
     ("F4_term_premium", "slope_5_30y"):         (80.0, 50.0),
+    # Tier 0 (2026-05-28): ACM 10y term premium — Adrian-Crump-Moench 2013 RFS.
+    # NY Fed THREEFYTP10 (1990+). Long-run mean ~0.5%, sd ~1.0%.
+    ("F4_term_premium", "acm_term_premium_10y"): (0.5, 1.0),
     ("F4_term_premium", "fed_tone_balance"):    (0.0, 0.5),
     ("F4_term_premium", "fed_voting_balance"):  (0.0, 0.5),
 
@@ -61,6 +64,12 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F5_credit_cycle", "hy_oas_momentum"):    (0.0, 1.0),
     ("F5_credit_cycle", "credit_quality_bps"): (90.0, 40.0),
     ("F5_credit_cycle", "funding_bps"):        (10.0, 20.0),
+    # Tier 0 (2026-05-28): GZ Excess Bond Premium (Gilchrist-Zakrajsek 2012 AER).
+    # Mean ~0%, sd ~0.5%. Positive = elevated credit risk premium.
+    ("F5_credit_cycle", "gz_ebp"):             (0.0, 0.5),
+    # Tier 0 (2026-05-28): KR corporate spread (3y AA- benchmark, bps).
+    # Long-run mean ~60bps, sd ~40bps.
+    ("F5_credit_cycle", "kr_corp_spread_bps"): (60.0, 40.0),
     ("F5_credit_cycle", "corporate_distress"): (0.0, 1.0),
     ("F5_credit_cycle", "dovish_bias"):        (0.0, 0.5),
 
