@@ -1,0 +1,41 @@
+{
+  "as_of": "2025-04-15",
+  "elapsed_sec": null,
+  "dominant_cycle": "A",
+  "dominant_cycle_prob": 0.53,
+  "conviction": "medium",
+  "conviction_beta": 1.69,
+  "dominant_cell": {
+    "cycle": "A",
+    "tail": "N",
+    "kr": "F"
+  },
+  "dominant_cell_prob": 0.333,
+  "tail_marginals": {
+    "N": 0.841,
+    "T": 0.16
+  },
+  "kr_marginals": {
+    "F": 0.727,
+    "boom": 0.058,
+    "stress": 0.216
+  },
+  "bucket_target": {
+    "kr_equity": 0.141,
+    "global_equity": 0.359,
+    "fx_commodity": 0.098,
+    "bond": 0.339,
+    "cash_mmf": 0.064,
+    "bond_tips_share": 0.253
+  },
+  "method": "hrp",
+  "method_reasoning": "scenario=goldilocks, conviction=medium: goldilocks → 분산 친화, HRP",
+  "expected_volatility_pct": null,
+  "expected_sharpe": null,
+  "n_assets": 17,
+  "hhi": 0.106,
+  "max_cluster_exposure": 0.2,
+  "validation_passed": true,
+  "rebalance_mode": "initial",
+  "regime_label": "Tariff shock / Trump 25%"
+}

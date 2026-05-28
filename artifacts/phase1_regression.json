@@ -1,0 +1,90 @@
+[
+  {
+    "as_of": "2025-04-15",
+    "weight_jaccard": 1.0,
+    "weight_l1": 0.0,
+    "sharpe_baseline": null,
+    "sharpe_new": null,
+    "sharpe_ratio": null,
+    "vol_baseline": null,
+    "vol_new": null,
+    "vol_ratio": null,
+    "bucket_delta": {
+      "kr_equity": 0.0,
+      "global_equity": 0.0,
+      "fx_commodity": 0.0,
+      "bond": 0.0,
+      "cash_mmf": 0.0
+    },
+    "tickers_added": [],
+    "tickers_removed": [],
+    "cash_spillover_present": false,
+    "enb_value": null,
+    "fx_bucket_baseline": 0.09757222660710144,
+    "fx_bucket_new": 0.09757222660710144,
+    "fx_chosen_all_positive": true,
+    "acceptance": {
+      "(a) sharpe": true,
+      "(b) volatility": true,
+      "(c) attribution": false,
+      "(d) fx_commodity": true
+    }
+  },
+  {
+    "as_of": "2026-05-15",
+    "weight_jaccard": 0.1724137931034483,
+    "weight_l1": 1.2624758855526237,
+    "sharpe_baseline": null,
+    "sharpe_new": null,
+    "sharpe_ratio": null,
+    "vol_baseline": null,
+    "vol_new": null,
+    "vol_ratio": null,
+    "bucket_delta": {
+      "kr_equity": -0.07651121335589922,
+      "global_equity": 0.16087226336796046,
+      "fx_commodity": -0.0377701248175257,
+      "bond": 0.07447215058647044,
+      "cash_mmf": -0.12106307578100586
+    },
+    "tickers_added": [
+      "A133690",
+      "A139240",
+      "A139250",
+      "A157450",
+      "A261220",
+      "A272560",
+      "A278530",
+      "A360750",
+      "A381170",
+      "A462010",
+      "A465580"
+    ],
+    "tickers_removed": [
+      "A091160",
+      "A229200",
+      "A379800",
+      "A381180",
+      "A385540",
+      "A395160",
+      "A423160",
+      "A453850",
+      "A458730",
+      "A459580",
+      "A487230",
+      "A487240",
+      "A488770"
+    ],
+    "cash_spillover_present": true,
+    "enb_value": 5.041750226436043,
+    "fx_bucket_baseline": 0.11998968287591219,
+    "fx_bucket_new": 0.08221955805838649,
+    "fx_chosen_all_positive": true,
+    "acceptance": {
+      "(a) sharpe": true,
+      "(b) volatility": true,
+      "(c) attribution": true,
+      "(d) fx_commodity": false
+    }
+  }
+]
