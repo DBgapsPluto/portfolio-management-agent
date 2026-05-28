@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Final, Literal
 
 logger = logging.getLogger(__name__)
@@ -247,6 +248,8 @@ def _aggregate(
     components_raw: dict[str, float | None],
     weights: dict[str, float],
     mode: FactorMode = "production",
+    as_of_date: date | None = None,         # NEW (Tier 0)
+    use_dynamic_baseline: bool = False,     # NEW (Tier 0)
 ) -> FactorScore:
     """Convert raw component values → final FactorScore.
 
@@ -257,6 +260,10 @@ def _aggregate(
             PR2a) — drops NEWS_DERIVED_COMPONENTS at entry so historical
             backtest's quant-only Stage 1 reconstructions yield z magnitudes
             on the same scale as production.
+
+    Tier 0: when use_dynamic_baseline=True + as_of_date given, uses expanding-window
+    z-baseline from factor_baselines_dynamic.compute_expanding_baseline instead of
+    static LONG_RUN_BASELINE (Pesaran-Timmermann 1995 — eliminates look-ahead bias).
     """
     # Critical 2 (PR2a): in historical mode, drop news-derived components
     # and live-only quant components before any z-score / weight processing.
@@ -277,7 +284,20 @@ def _aggregate(
         w = weights.get(name, 0.0)
         if w <= 0.0:
             continue
-        z = z_score(float(raw), factor_name, name)
+        # === Tier 0: dynamic baseline option ===
+        if use_dynamic_baseline and as_of_date is not None:
+            from tradingagents.skills.research.factor_baselines_dynamic import compute_expanding_baseline
+            baseline = compute_expanding_baseline(name, factor_name, as_of_date)
+            if baseline is not None:
+                mean, sd = baseline
+                if sd <= 0:
+                    z = None
+                else:
+                    z = (float(raw) - mean) / sd
+            else:
+                z = z_score(float(raw), factor_name, name)  # static fallback
+        else:
+            z = z_score(float(raw), factor_name, name)
         if z is None:
             continue
         # 2026-05-26 F7 saturate fix (#1): component-level outlier clip.
@@ -356,7 +376,11 @@ def _interpretation(factor_name: str, z: float) -> str:
 # ---------------------- F1 growth_surprise ----------------------
 
 
-def compute_growth_surprise(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_growth_surprise(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F1 growth_surprise — +z = stronger growth.
 
     Tier 0 reform (2026-05-28):
@@ -406,13 +430,18 @@ def compute_growth_surprise(stage1: Any, mode: FactorMode = "production") -> Fac
         "macro_sent":            0.05,
         "risk_regime_overnight": 0.10,
     }
-    return _aggregate("F1_growth", components_raw, weights, mode=mode)
+    return _aggregate("F1_growth", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F2 inflation_surprise ----------------------
 
 
-def compute_inflation_surprise(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_inflation_surprise(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F2 inflation_surprise — +z = higher inflation, -z = disinflation.
 
     PR0 hotfix (C1): cpi.* → inflation.*; inflation_exp.* →
@@ -463,13 +492,18 @@ def compute_inflation_surprise(stage1: Any, mode: FactorMode = "production") -> 
         "real_yield_inv": 0.08, "fed_path_bps": 0.08,
         "release_hawkish": 0.07, "macro_sent": 0.07,
     }
-    return _aggregate("F2_inflation", components_raw, weights, mode=mode)
+    return _aggregate("F2_inflation", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F3 real_rate ----------------------
 
 
-def compute_real_rate(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_real_rate(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F3 real_rate — +z = high real rate (tight policy).
 
     PR0 hotfix (C1): tips_yield는 risk_report.real_yields.tips_10y;
@@ -487,13 +521,18 @@ def compute_real_rate(stage1: Any, mode: FactorMode = "production") -> FactorSco
     weights: dict[str, float] = {
         "tips_yield": 0.55, "fed_voting_balance": 0.35, "fed_path_implied": 0.10,
     }
-    return _aggregate("F3_real_rate", components_raw, weights, mode=mode)
+    return _aggregate("F3_real_rate", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F4 term_premium ----------------------
 
 
-def compute_term_premium(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_term_premium(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F4 term_premium — +z = steeper / higher term premium.
 
     Tier 0 reform (2026-05-28): ACM term premium added (NY Fed THREEFYTP10).
@@ -533,13 +572,18 @@ def compute_term_premium(stage1: Any, mode: FactorMode = "production") -> Factor
         "fed_tone_balance":     0.25,
         "fed_voting_balance":   0.20,
     }
-    return _aggregate("F4_term_premium", components_raw, weights, mode=mode)
+    return _aggregate("F4_term_premium", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F5 credit_cycle ----------------------
 
 
-def compute_credit_cycle(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_credit_cycle(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F5 credit_cycle — +z = credit stress.
 
     Tier 0 reform (2026-05-28): GZ EBP (Gilchrist-Zakrajsek 2012 AER) +
@@ -610,13 +654,18 @@ def compute_credit_cycle(stage1: Any, mode: FactorMode = "production") -> Factor
         "corporate_distress": 0.10,   # was 0.15
         "dovish_bias":        0.05,
     }
-    return _aggregate("F5_credit_cycle", components_raw, weights, mode=mode)
+    return _aggregate("F5_credit_cycle", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F6 krw_regime ----------------------
 
 
-def compute_krw_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_krw_regime(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F6 krw_regime — +z = weaker KRW.
 
     Tier 0 reform (Engel-West 2005 random walk fix):
@@ -646,13 +695,18 @@ def compute_krw_regime(stage1: Any, mode: FactorMode = "production") -> FactorSc
         "kr_exports_yoy":          0.05,
         "bok_tone_balance":        0.10,
     }
-    return _aggregate("F6_krw_regime", components_raw, weights, mode=mode)
+    return _aggregate("F6_krw_regime", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F7 equity_vol_regime ----------------------
 
 
-def compute_equity_vol_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_equity_vol_regime(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F7 equity_vol_regime — +z = high vol.
 
     Tier 0 reform: geopolitical_surge (news count delta) → Caldara-Iacoviello GPR (quant).
@@ -681,13 +735,18 @@ def compute_equity_vol_regime(stage1: Any, mode: FactorMode = "production") -> F
         "gpr_index_zscore":     0.15,   # NEW (replaces geopolitical_surge)
         "sentiment_dispersion": 0.10,
     }
-    return _aggregate("F7_equity_vol", components_raw, weights, mode=mode)
+    return _aggregate("F7_equity_vol", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F8 valuation ----------------------
 
 
-def compute_valuation(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_valuation(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F8 valuation — +z = expensive.
 
     Tier 0 reform: US:KR 50:55:45 balance via Shiller CAPE + KOSPI PER/Div Yield activated.
@@ -723,13 +782,18 @@ def compute_valuation(stage1: Any, mode: FactorMode = "production") -> FactorSco
         "kospi_per":       0.15,
         "kospi_div_yield": 0.10,
     }
-    return _aggregate("F8_valuation", components_raw, weights, mode=mode)
+    return _aggregate("F8_valuation", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F9 market_dispersion (renamed from liquidity_regime) ----------------------
 
 
-def compute_market_dispersion(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_market_dispersion(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F9 market_dispersion — +z = CROSS-SECTIONAL stress (not systemic).
 
     Tier 0 rename (2026-05-28): compute_liquidity_regime → compute_market_dispersion.
@@ -801,13 +865,18 @@ def compute_market_dispersion(stage1: Any, mode: FactorMode = "production") -> F
         "event_cluster": 0.15,
         "rising_signal": 0.15,
     }
-    return _aggregate("F9_market_dispersion", components_raw, weights, mode=mode)
+    return _aggregate("F9_market_dispersion", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F10 systemic_liquidity ----------------------
 
 
-def compute_systemic_liquidity(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_systemic_liquidity(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F10 systemic_liquidity — +z = SYSTEMIC stress (tight financial conditions).
 
     2026-05-27 추가. F9 (cross-sectional) 와 직교:
@@ -854,13 +923,18 @@ def compute_systemic_liquidity(stage1: Any, mode: FactorMode = "production") -> 
         "sofr_tbill_spread": 0.20,
         "aaa_oas":           0.15,
     }
-    return _aggregate("F10_systemic_liquidity", components_raw, weights, mode=mode)
+    return _aggregate("F10_systemic_liquidity", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F11 earnings_revision ----------------------
 
 
-def compute_earnings_revision(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+def compute_earnings_revision(
+    stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore:
     """F11 earnings_revision — +z = upward revisions dominate. Tier 0 NEW (staggered 2010+)."""
     sp = _safe_get(stage1, "macro_report", "earnings_revision", "sp500_net_revision")
     ks = _safe_get(stage1, "macro_report", "earnings_revision", "kospi200_net_revision")
@@ -872,7 +946,8 @@ def compute_earnings_revision(stage1: Any, mode: FactorMode = "production") -> F
         "sp500_net_revision":    0.50,
         "kospi200_net_revision": 0.50,
     }
-    return _aggregate("F11_earnings_revision", components_raw, weights, mode=mode)
+    return _aggregate("F11_earnings_revision", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- F12 china_credit_impulse ----------------------
@@ -880,6 +955,8 @@ def compute_earnings_revision(stage1: Any, mode: FactorMode = "production") -> F
 
 def compute_china_credit_impulse_factor(
     stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
 ) -> FactorScore:
     """F12 china_credit_impulse — +z = accelerating credit. Tier 0 NEW."""
     impulse = _safe_get(stage1, "macro_report", "china_credit_impulse", "credit_impulse")
@@ -895,16 +972,22 @@ def compute_china_credit_impulse_factor(
         "credit_yoy_pct":   0.30,
         "iron_ore_3m_pct":  0.10,
     }
-    return _aggregate("F12_china_credit_impulse", components_raw, weights, mode=mode)
+    return _aggregate("F12_china_credit_impulse", components_raw, weights, mode=mode,
+                       as_of_date=as_of_date, use_dynamic_baseline=use_dynamic_baseline)
 
 
 # ---------------------- _safely helper ----------------------
 
 
-def _safely(fn, stage1: Any, mode: FactorMode) -> FactorScore | None:
+def _safely(
+    fn, stage1: Any, mode: FactorMode,
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
+) -> FactorScore | None:
     """Run factor compute; None on hard failure (snapshot absent etc.)."""
     try:
-        score = fn(stage1, mode=mode)
+        score = fn(stage1, mode=mode, as_of_date=as_of_date,
+                   use_dynamic_baseline=use_dynamic_baseline)
         # If confidence=0 (all components missing), treat as None for to_dict skip
         return score if score.confidence > 0 else None
     except Exception as e:
@@ -917,6 +1000,8 @@ def _safely(fn, stage1: Any, mode: FactorMode) -> FactorScore | None:
 
 def compute_all_factors(
     stage1: Any, mode: FactorMode = "production",
+    as_of_date: date | None = None,
+    use_dynamic_baseline: bool = False,
 ) -> FactorScores:
     """Compute all 12 factors. Returns FactorScores with None for unavailable (e.g. F11 pre-2010).
 
@@ -926,23 +1011,28 @@ def compute_all_factors(
             LIVE_ONLY_QUANT_COMPONENTS are dropped from each factor's
             component pool (news/LLM-derived state cannot be replayed;
             live-only quant components have insufficient backtest history).
+        as_of_date: evaluation date for expanding-window baseline (Tier 0).
+        use_dynamic_baseline: if True + as_of_date set, uses expanding-window
+            z-baseline (Pesaran-Timmermann 1995) instead of static LONG_RUN_BASELINE.
     """
+    kwargs = {"mode": mode, "as_of_date": as_of_date,
+              "use_dynamic_baseline": use_dynamic_baseline}
     return FactorScores(
-        growth_surprise=compute_growth_surprise(stage1, mode=mode),
-        inflation_surprise=compute_inflation_surprise(stage1, mode=mode),
-        real_rate=compute_real_rate(stage1, mode=mode),
-        term_premium=compute_term_premium(stage1, mode=mode),
-        credit_cycle=compute_credit_cycle(stage1, mode=mode),
-        krw_regime=compute_krw_regime(stage1, mode=mode),
-        equity_vol_regime=compute_equity_vol_regime(stage1, mode=mode),
-        valuation=compute_valuation(stage1, mode=mode),
-        market_dispersion=compute_market_dispersion(stage1, mode=mode),
+        growth_surprise=compute_growth_surprise(stage1, **kwargs),
+        inflation_surprise=compute_inflation_surprise(stage1, **kwargs),
+        real_rate=compute_real_rate(stage1, **kwargs),
+        term_premium=compute_term_premium(stage1, **kwargs),
+        credit_cycle=compute_credit_cycle(stage1, **kwargs),
+        krw_regime=compute_krw_regime(stage1, **kwargs),
+        equity_vol_regime=compute_equity_vol_regime(stage1, **kwargs),
+        valuation=compute_valuation(stage1, **kwargs),
+        market_dispersion=compute_market_dispersion(stage1, **kwargs),
         # 2026-05-27 — F10 신규 추가. systemic_liquidity_snapshot 부재 시 None
         # 으로 graceful skip (downstream FactorScores.to_dict 에서 누락).
-        systemic_liquidity=compute_systemic_liquidity(stage1, mode=mode),
+        systemic_liquidity=compute_systemic_liquidity(stage1, **kwargs),
         # F11/F12 — staggered (2010+ / China data); confidence=0 → None via _safely.
-        earnings_revision=_safely(compute_earnings_revision, stage1, mode),
-        china_credit_impulse=_safely(compute_china_credit_impulse_factor, stage1, mode),
+        earnings_revision=_safely(compute_earnings_revision, stage1, mode, as_of_date, use_dynamic_baseline),
+        china_credit_impulse=_safely(compute_china_credit_impulse_factor, stage1, mode, as_of_date, use_dynamic_baseline),
     )
 
 

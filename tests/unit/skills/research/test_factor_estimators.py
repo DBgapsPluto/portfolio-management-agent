@@ -309,3 +309,62 @@ def test_safely_returns_none_on_zero_confidence():
     state = _Obj(macro_report=None, risk_report=None, news_report=None)
     result = _safely(compute_earnings_revision, state, "historical")
     assert result is None
+
+
+# === Task 8.3: _aggregate dynamic baseline wiring ===
+
+def test_aggregate_uses_dynamic_baseline_when_enabled():
+    """When use_dynamic_baseline=True + as_of_date given, _aggregate uses expanding baseline."""
+    from unittest.mock import patch
+    from datetime import date
+    from tradingagents.skills.research.factor_estimators import _aggregate
+
+    def mock_dynamic(name, factor, as_of):
+        if name == "cfnai":
+            return (5.0, 2.0)  # mock expanding baseline
+        return None
+
+    with patch("tradingagents.skills.research.factor_baselines_dynamic.compute_expanding_baseline",
+               side_effect=mock_dynamic):
+        result = _aggregate(
+            "F1_growth",
+            components_raw={"cfnai": 7.0},
+            weights={"cfnai": 1.0},
+            mode="historical",
+            as_of_date=date(2020, 1, 1),
+            use_dynamic_baseline=True,
+        )
+    # z = (7 - 5) / 2 = 1.0
+    assert abs(result.z_score - 1.0) < 0.1
+
+
+def test_aggregate_static_baseline_default():
+    """Default use_dynamic_baseline=False → static baseline (backward compat)."""
+    from tradingagents.skills.research.factor_estimators import _aggregate
+
+    result = _aggregate(
+        "F1_growth",
+        components_raw={"cfnai": 0.0},
+        weights={"cfnai": 1.0},
+        mode="historical",
+    )
+    # cfnai baseline (0.0, 0.5) → z = (0 - 0) / 0.5 = 0.0
+    assert abs(result.z_score - 0.0) < 0.05
+
+
+def test_compute_all_factors_accepts_dynamic_baseline_params():
+    """compute_all_factors passes as_of_date + use_dynamic_baseline without error."""
+    from datetime import date
+    from tradingagents.skills.research.factor_estimators import compute_all_factors
+
+    class _Obj:
+        def __init__(self, **d): self.__dict__.update(d)
+
+    state = _Obj(macro_report=None, risk_report=None, news_report=None)
+    # Should not raise; dynamic baseline fetch will silently fall back to static
+    fs = compute_all_factors(
+        state, mode="historical",
+        as_of_date=date(2020, 1, 1),
+        use_dynamic_baseline=False,  # False → no real fetches triggered
+    )
+    assert "F1_growth" in fs.to_dict()
