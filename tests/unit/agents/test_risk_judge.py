@@ -25,17 +25,26 @@ def _state():
     )
     cs = CandidateSet(
         bucket_to_tickers={
-            "kr_equity":     tickers[0:2],
-            "global_equity": tickers[2:4],
-            "fx_commodity":  tickers[4:6],
-            "bond":          tickers[6:8],
-            "cash_mmf":      tickers[8:10],
+            "kr_equity":             tickers[0:2],
+            "global_equity":         tickers[2:4],
+            "cyclical_commodity_fx": tickers[4:6],
+            "kr_bond":               tickers[6:8],
+            "cash_mmf":              tickers[8:10],
         },
         selection_criteria="test", total_candidates=10,
     )
     bt = BucketTarget(
-        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
-        bond=0.20, cash_mmf=0.20, rationale="test",
+        weights={
+            "kr_equity":             0.20,
+            "global_equity":         0.20,
+            "precious_metals":       0.00,
+            "cyclical_commodity_fx": 0.20,
+            "kr_bond":               0.20,
+            "credit":                0.00,
+            "global_duration":       0.00,
+            "cash_mmf":              0.20,
+        },
+        rationale="test",
     )
     return {
         "as_of_date": "2024-06-15",

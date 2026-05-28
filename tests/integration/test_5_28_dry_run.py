@@ -153,8 +153,11 @@ def test_5_28_dry_run_produces_artifacts(
     # Stage 2: research_manager mock — 5 ETF fixture (1 per bucket) 호환 위해
     # 균등 0.20 BucketTarget 강제. factor model 결과를 우회.
     _fixture_bucket = BucketTarget(
-        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
-        bond=0.20, cash_mmf=0.20,
+        weights={
+            "kr_equity": 0.20, "global_equity": 0.20, "precious_metals": 0.00,
+            "cyclical_commodity_fx": 0.20, "kr_bond": 0.20,
+            "credit": 0.00, "global_duration": 0.00, "cash_mmf": 0.20,
+        },
         rationale="Equal bucket split for fixture feasibility",
     )
     _fixture_decision = ResearchDecision(
@@ -293,11 +296,11 @@ def test_5_28_dry_run_produces_artifacts(
     # 11. Mock select_etf_candidates — bypass AUM filter for fixture universe
     controlled_candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": ["A069500"],
-            "global_equity": ["A360750"],
-            "fx_commodity": ["A411060"],
-            "bond": ["A114260"],
-            "cash_mmf": ["A459580"],
+            "kr_equity":             ["A069500"],
+            "global_equity":         ["A360750"],
+            "cyclical_commodity_fx": ["A411060"],
+            "kr_bond":               ["A114260"],
+            "cash_mmf":              ["A459580"],
         },
         selection_criteria="5/28 fixture-controlled (AUM filter bypassed)",
         total_candidates=5,

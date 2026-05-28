@@ -129,8 +129,11 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
     # 5 ETF fixture (1 per bucket) 가정 + allocator의 단일 자산 cap 20% 호환을
     # 위해 균등 0.20씩 강제. factor model 결과 대신 균등 BucketTarget을 직접 반환.
     _fixture_bucket = BucketTarget(
-        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
-        bond=0.20, cash_mmf=0.20,
+        weights={
+            "kr_equity": 0.20, "global_equity": 0.20, "precious_metals": 0.00,
+            "cyclical_commodity_fx": 0.20, "kr_bond": 0.20,
+            "credit": 0.00, "global_duration": 0.00, "cash_mmf": 0.20,
+        },
         rationale="equal bucket split — fixture feasibility",
     )
     _fixture_decision = ResearchDecision(
@@ -273,11 +276,11 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
     from tradingagents.schemas.portfolio import CandidateSet
     controlled_candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": ["A069500"],
-            "global_equity": ["A360750"],
-            "fx_commodity": ["A411060"],
-            "bond": ["A114260"],
-            "cash_mmf": ["A459580"],
+            "kr_equity":             ["A069500"],
+            "global_equity":         ["A360750"],
+            "cyclical_commodity_fx": ["A411060"],
+            "kr_bond":               ["A114260"],
+            "cash_mmf":              ["A459580"],
         },
         selection_criteria="fixture-controlled (AUM filter bypassed for test)",
         total_candidates=5,

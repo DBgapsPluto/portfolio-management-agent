@@ -42,7 +42,7 @@ def test_bucket_of_ticker():
     m = _bucket_of_ticker(u)
     assert m["A1"] == "kr_equity"
     assert m["A2"] == "kr_equity"
-    assert m["A3"] == "fx_commodity"
+    assert m["A3"] == "precious_metals"  # gold sub_category → precious_metals
     assert m["A4"] == "cash_mmf"
 
 
@@ -113,8 +113,16 @@ def test_catalog_files_load_against_schema():
         assert parts[0] in {"A", "B", "C", "D"}
         assert parts[1] in {"N", "T"}
         assert parts[2] in {"F", "boom", "stress"}
-        # bucket_target 합 ≈ 1
+        # bucket_target 합 ≈ 1 (legacy 5-bucket or new 8-bucket)
         bt = data["stage2"]["bucket_target"]
-        s = sum(bt[k] for k in ("kr_equity", "global_equity", "fx_commodity",
-                                  "bond", "cash_mmf"))
+        _8_bucket_keys = {
+            "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+            "kr_bond", "credit", "global_duration", "cash_mmf",
+        }
+        _5_bucket_keys = {"kr_equity", "global_equity", "fx_commodity", "bond", "cash_mmf"}
+        if _8_bucket_keys & set(bt.keys()):
+            sum_keys = [k for k in _8_bucket_keys if k in bt]
+        else:
+            sum_keys = [k for k in _5_bucket_keys if k in bt]
+        s = sum(bt[k] for k in sum_keys)
         assert abs(s - 1.0) < 0.01, f"{p.name} bucket_target sum={s:.3f}"

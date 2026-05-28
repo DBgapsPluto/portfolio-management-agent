@@ -11,32 +11,63 @@ class OptimizationMethod(str, Enum):
 
 
 class BucketTarget(BaseModel):
-    """Asset class weight target from Research Manager."""
-    kr_equity: float = Field(ge=0, le=1)
-    global_equity: float = Field(ge=0, le=1)
-    fx_commodity: float = Field(ge=0, le=1)
-    bond: float = Field(ge=0, le=1)
-    cash_mmf: float = Field(ge=0, le=1)
+    """Asset class weight target from Research Manager — 8-bucket schema (Tier 1).
+
+    Buckets (8): kr_equity, global_equity, precious_metals,
+                 cyclical_commodity_fx, kr_bond, credit, global_duration, cash_mmf.
+
+    Legacy 5-bucket names (fx_commodity, bond) are no longer valid fields; all
+    callers must pass the 8-bucket dict.
+
+    bond_tips_share: fraction of bond-equivalent buckets (kr_bond + credit +
+        global_duration) allocated to inflation-linked candidates. Stored separately
+        from weights so the candidate selector can split the pool.
+    """
+    weights: dict[str, float] = Field(
+        description="Bucket name → weight. 8-bucket schema (Tier 1)."
+    )
     rationale: str = Field(max_length=500)
-    # Within the bond bucket, fraction allocated to inflation-linked candidates
-    # (sub_category="inflation_linked"). Nominal candidates take the remainder.
-    # Default 0.0 keeps legacy fixtures valid; mapper overrides at runtime.
     bond_tips_share: float = Field(default=0.0, ge=0, le=1)
 
-    @property
-    def total(self) -> float:
-        return self.kr_equity + self.global_equity + self.fx_commodity + self.bond + self.cash_mmf
+    # --- dict-like accessors so callers can use bucket_target["kr_equity"] etc. ---
+    def __getitem__(self, key: str) -> float:
+        return self.weights[key]
+
+    def __iter__(self):
+        return iter(self.weights)
+
+    def items(self):
+        return self.weights.items()
+
+    def keys(self):
+        return self.weights.keys()
+
+    def values(self):
+        return self.weights.values()
+
+    def get(self, key: str, default=None):
+        return self.weights.get(key, default)
 
     @model_validator(mode="after")
     def _sum_to_one(self):
-        if abs(self.total - 1.0) > 1e-6:
-            raise ValueError(f"Bucket weights must sum to 1.0, got {self.total}")
+        total = sum(self.weights.values())
+        if abs(total - 1.0) > 1e-6:
+            raise ValueError(f"Bucket weights must sum to 1.0, got {total}")
         return self
 
     @property
+    def total(self) -> float:
+        return sum(self.weights.values())
+
+    @property
     def risk_asset_weight(self) -> float:
-        """위험자산 합계 (대회 §2.2 룰: ≤70%)."""
-        return self.kr_equity + self.global_equity + self.fx_commodity
+        """위험자산 합계 (대회 §2.2 룰: ≤70%).
+
+        Risk buckets: kr_equity, global_equity, precious_metals,
+                      cyclical_commodity_fx.
+        """
+        _RISK = ("kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx")
+        return sum(self.weights.get(b, 0.0) for b in _RISK)
 
 
 class CandidateSet(BaseModel):

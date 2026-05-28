@@ -453,11 +453,7 @@ def create_research_manager(deep_llm):
         )[:500]
 
         target = BucketTarget(
-            kr_equity=bucket["kr_equity"],
-            global_equity=bucket["global_equity"],
-            fx_commodity=bucket["fx_commodity"],
-            bond=bucket["bond"],
-            cash_mmf=bucket["cash_mmf"],
+            weights=dict(bucket),
             bond_tips_share=tips_share,
             rationale=rationale,
         )
@@ -503,12 +499,11 @@ def create_research_manager(deep_llm):
             f"Factor z-scores:\n"
             + "\n".join(f"  {f}: {z:+.2f}" for f, z in z_dict.items())
             + f"\n\n## Bucket Target\n"
-            f"국내주식: {target.kr_equity*100:.1f}%, "
-            f"해외주식: {target.global_equity*100:.1f}%, "
-            f"FX/원자재: {target.fx_commodity*100:.1f}%, "
-            f"채권: {target.bond*100:.1f}% (TIPS {tips_share*100:.0f}%), "
-            f"MMF: {target.cash_mmf*100:.1f}%\n"
-            f"위험자산 합: {(target.kr_equity + target.global_equity + target.fx_commodity)*100:.1f}%"
+            + "\n".join(
+                f"  {b}: {w*100:.1f}%"
+                for b, w in target.items()
+            )
+            + f"\n위험자산 합: {target.risk_asset_weight*100:.1f}%"
         )
 
         return {

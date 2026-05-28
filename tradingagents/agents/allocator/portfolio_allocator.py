@@ -155,13 +155,7 @@ def create_portfolio_allocator(
                     if research_decision else None
                 ),
                 "bond_tips_share":      bucket_target.bond_tips_share,
-                "bucket_target": {
-                    "kr_equity":     bucket_target.kr_equity,
-                    "global_equity": bucket_target.global_equity,
-                    "fx_commodity":  bucket_target.fx_commodity,
-                    "bond":          bucket_target.bond,
-                    "cash_mmf":      bucket_target.cash_mmf,
-                },
+                "bucket_target":        dict(bucket_target.weights),
                 # Stage 3 audit Task 0: Stage 1+2 sentinel propagation 가시화.
                 "regime_staleness":    regime_staleness,
                 "systemic_staleness":  systemic_staleness,
@@ -335,23 +329,31 @@ def _build_sector_mapper_and_bounds(
     sector_mapper: dict[str, str] = {}
     for bucket, tickers in candidates.bucket_to_tickers.items():
         for t in tickers:
-            if bucket == "bond" and split_bond:
+            if bucket == "global_duration" and split_bond:
                 sc = sub_category_lookup.get(t)
                 sector_mapper[t] = "bond_tips" if sc == "inflation_linked" else "bond_nominal"
             else:
                 sector_mapper[t] = bucket
 
-    target_map: dict[str, float] = {
-        "kr_equity": bucket_target.kr_equity,
-        "global_equity": bucket_target.global_equity,
-        "fx_commodity": bucket_target.fx_commodity,
-        "cash_mmf": bucket_target.cash_mmf,
-    }
+    # Build target_map from the 8-bucket weights dict.
+    # Only include buckets represented in sector_mapper (i.e., have tickers).
+    # Zero-weight buckets with no tickers are excluded to prevent infeasibility.
+    # global_duration is split into bond_tips / bond_nominal when bond_tips_share > 0.
+    active_buckets = set(sector_mapper.values())
     if split_bond:
-        target_map["bond_tips"] = bucket_target.bond * bucket_target.bond_tips_share
-        target_map["bond_nominal"] = bucket_target.bond * (1.0 - bucket_target.bond_tips_share)
+        # global_duration → bond_tips/bond_nominal (handled below)
+        target_map: dict[str, float] = {
+            b: w for b, w in bucket_target.weights.items()
+            if b != "global_duration" and b in active_buckets
+        }
+        global_dur = bucket_target.weights.get("global_duration", 0.0)
+        target_map["bond_tips"] = global_dur * bucket_target.bond_tips_share
+        target_map["bond_nominal"] = global_dur * (1.0 - bucket_target.bond_tips_share)
     else:
-        target_map["bond"] = bucket_target.bond
+        target_map = {
+            b: w for b, w in bucket_target.weights.items()
+            if b in active_buckets
+        }
 
     # Infeasibility 방어 — 후보 풀에 한쪽 sub-bucket이 0이면 그 target도 0,
     # 다른 sub-bucket에 합쳐서 처리. (candidate_selector가 fallback으로
@@ -716,13 +718,7 @@ def _hrp_per_bucket(
     """
     bucket_shortfalls: list[dict] = []
     sub_category_lookup = sub_category_lookup or {}
-    target_map = {
-        "kr_equity": bucket_target.kr_equity,
-        "global_equity": bucket_target.global_equity,
-        "fx_commodity": bucket_target.fx_commodity,
-        "bond": bucket_target.bond,
-        "cash_mmf": bucket_target.cash_mmf,
-    }
+    target_map = dict(bucket_target.weights)
     split_bond = bucket_target.bond_tips_share > 0.0
 
     final: dict[str, float] = {}
@@ -731,7 +727,7 @@ def _hrp_per_bucket(
         if target <= 0 or not tickers:
             continue
 
-        if bucket == "bond" and split_bond:
+        if bucket == "global_duration" and split_bond:
             # Sub-pool split per inflation_linked sub_category
             tips_tickers = [
                 t for t in tickers

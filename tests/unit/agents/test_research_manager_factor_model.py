@@ -93,9 +93,9 @@ def test_bucket_target_mandate_safe():
     state = _full_state()
     result = node(state)
     bt = result["bucket_target"]
-    risk = bt.kr_equity + bt.global_equity + bt.fx_commodity
+    risk = bt.risk_asset_weight
     assert risk <= 0.70 + 1e-6
-    assert abs(bt.kr_equity + bt.global_equity + bt.fx_commodity + bt.bond + bt.cash_mmf - 1.0) < 1e-6
+    assert abs(bt.total - 1.0) < 1e-6
 
 
 def test_research_decision_has_safety_diagnostics():

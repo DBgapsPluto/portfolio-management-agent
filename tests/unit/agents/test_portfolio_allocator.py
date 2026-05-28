@@ -20,8 +20,16 @@ from tradingagents.skills.portfolio.method_picker import MethodChoice
 
 def _bucket_target() -> BucketTarget:
     return BucketTarget(
-        kr_equity=0.20, global_equity=0.30, fx_commodity=0.10,
-        bond=0.30, cash_mmf=0.10,
+        weights={
+            "kr_equity":             0.20,
+            "global_equity":         0.30,
+            "precious_metals":       0.00,
+            "cyclical_commodity_fx": 0.10,
+            "kr_bond":               0.20,
+            "credit":                0.10,
+            "global_duration":       0.00,
+            "cash_mmf":              0.10,
+        },
         rationale="test",
     )
 
@@ -29,14 +37,15 @@ def _bucket_target() -> BucketTarget:
 def _candidates() -> CandidateSet:
     return CandidateSet(
         bucket_to_tickers={
-            "kr_equity": ["A069500"],
-            "global_equity": ["A360750"],
-            "fx_commodity": ["A411060"],
-            "bond": ["A114260"],
-            "cash_mmf": ["A459580"],
+            "kr_equity":             ["A069500"],
+            "global_equity":         ["A360750"],
+            "cyclical_commodity_fx": ["A411060"],
+            "kr_bond":               ["A114260"],
+            "credit":                ["A_CREDIT"],
+            "cash_mmf":              ["A459580"],
         },
         selection_criteria="test",
-        total_candidates=5,
+        total_candidates=6,
     )
 
 
@@ -45,11 +54,12 @@ def test_hrp_per_bucket_single_asset_per_bucket():
     rng = np.random.default_rng(42)
     n = 252
     returns = pd.DataFrame({
-        "A069500": rng.normal(0.001, 0.01, n),
-        "A360750": rng.normal(0.001, 0.01, n),
-        "A411060": rng.normal(0.001, 0.01, n),
-        "A114260": rng.normal(0.0005, 0.005, n),
-        "A459580": rng.normal(0.0001, 0.001, n),
+        "A069500":  rng.normal(0.001, 0.01, n),
+        "A360750":  rng.normal(0.001, 0.01, n),
+        "A411060":  rng.normal(0.001, 0.01, n),
+        "A114260":  rng.normal(0.0005, 0.005, n),
+        "A_CREDIT": rng.normal(0.0003, 0.004, n),
+        "A459580":  rng.normal(0.0001, 0.001, n),
     })
     wv = _hrp_per_bucket(returns, _candidates(), _bucket_target())
     # Each ticker gets its bucket target weight (since 1 ticker per bucket)
@@ -72,30 +82,41 @@ def test_hrp_per_bucket_iterative_redistribution():
     candidates = CandidateSet(
         bucket_to_tickers={
             "kr_equity": ["A1", "A2", "A3", "A4"],
-            "global_equity": [], "fx_commodity": [], "bond": [], "cash_mmf": [],
+            "global_equity": [], "cyclical_commodity_fx": [], "kr_bond": [],
+            "credit": [], "global_duration": [], "cash_mmf": [],
         },
         selection_criteria="test", total_candidates=4,
     )
     target = BucketTarget(
-        kr_equity=0.80, global_equity=0.0, fx_commodity=0.0,
-        bond=0.20, cash_mmf=0.0,
+        weights={
+            "kr_equity":             0.80,
+            "global_equity":         0.00,
+            "precious_metals":       0.00,
+            "cyclical_commodity_fx": 0.00,
+            "kr_bond":               0.20,
+            "credit":                0.00,
+            "global_duration":       0.00,
+            "cash_mmf":              0.00,
+        },
         rationale="extreme test",
     )
-    # We need a 5th asset for bond=0.20 to be filled, otherwise total < 1.0
-    # Add a bond asset:
-    candidates.bucket_to_tickers["bond"] = ["B1"]
+    # We need a 5th asset for kr_bond=0.20 to be filled, otherwise total < 1.0
+    # Add a kr_bond asset:
+    candidates.bucket_to_tickers["kr_bond"] = ["B1"]
     candidates = candidates.model_copy(update={"total_candidates": 5})
 
     rng = np.random.default_rng(0)
     n = 200
-    # Assets in kr_equity highly correlated (HRP gives uneven weights)
+    # Assets in kr_equity with different vol (HRP gives uneven weights), but NOT
+    # perfectly correlated — keep some independent noise so HRP converges.
     factor = rng.normal(0, 1, n)
+    # B1 must be in returns for kr_bond pool to be processed
     returns = pd.DataFrame({
-        "A1": factor * 1.0 + rng.normal(0, 0.01, n),
-        "A2": factor * 0.5 + rng.normal(0, 0.05, n),
-        "A3": factor * 0.3 + rng.normal(0, 0.08, n),
-        "A4": factor * 0.2 + rng.normal(0, 0.1, n),
-        "B1": rng.normal(0, 0.005, n),
+        "A1": factor * 1.0 + rng.normal(0, 0.20, n),   # high vol
+        "A2": factor * 0.5 + rng.normal(0, 0.15, n),
+        "A3": factor * 0.3 + rng.normal(0, 0.10, n),
+        "A4": factor * 0.2 + rng.normal(0, 0.08, n),   # low vol
+        "B1": rng.normal(0, 0.005, n),                  # kr_bond ticker
     })
     wv = _hrp_per_bucket(returns, candidates, target)
 
@@ -119,25 +140,34 @@ def test_sector_mapper_strict_then_relaxed():
 
 
 def test_sector_mapper_splits_bond_when_tips_share_positive():
-    """bond_tips_share > 0이면 bond bucket이 bond_tips + bond_nominal로 split."""
+    """bond_tips_share > 0이면 global_duration bucket이 bond_tips + bond_nominal로 split."""
     candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": [], "global_equity": [], "fx_commodity": [],
-            "bond": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
+            "kr_equity": [], "global_equity": [], "cyclical_commodity_fx": [],
+            "global_duration": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
             "cash_mmf": [],
         },
         selection_criteria="test", total_candidates=4,
     )
     target = BucketTarget(
-        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.40, cash_mmf=0.60, rationale="t",
-        bond_tips_share=0.75,  # 40% bond × 75% = 30% TIPS, 10% nominal
+        weights={
+            "kr_equity":             0.00,
+            "global_equity":         0.00,
+            "precious_metals":       0.00,
+            "cyclical_commodity_fx": 0.00,
+            "kr_bond":               0.00,
+            "credit":                0.00,
+            "global_duration":       0.40,
+            "cash_mmf":              0.60,
+        },
+        rationale="t",
+        bond_tips_share=0.75,  # 40% global_duration × 75% = 30% TIPS, 10% nominal
     )
     sub_lookup = {
         "A_TIPS_1": "inflation_linked",
         "A_TIPS_2": "inflation_linked",
-        "A_NOM_1": "kr_treasury",
-        "A_NOM_2": "kr_corporate",
+        "A_NOM_1": "us_treasury",
+        "A_NOM_2": "us_aggregate",
     }
     sm, lower, upper = _build_sector_mapper_and_bounds(
         candidates, target, attempts=0, sub_category_lookup=sub_lookup,
@@ -146,7 +176,7 @@ def test_sector_mapper_splits_bond_when_tips_share_positive():
     assert sm["A_TIPS_2"] == "bond_tips"
     assert sm["A_NOM_1"] == "bond_nominal"
     assert sm["A_NOM_2"] == "bond_nominal"
-    assert "bond" not in lower
+    assert "global_duration" not in lower
     assert lower["bond_tips"] == pytest.approx(0.30)
     assert lower["bond_nominal"] == pytest.approx(0.10)
 
@@ -158,26 +188,35 @@ def test_sector_mapper_keeps_single_bond_when_tips_share_zero():
     sm, lower, upper = _build_sector_mapper_and_bounds(
         candidates, target, attempts=0, sub_category_lookup={},
     )
-    assert sm["A114260"] == "bond"  # single bond
-    assert lower["bond"] == 0.30
+    assert sm["A114260"] == "kr_bond"  # single kr_bond
+    assert lower["kr_bond"] == pytest.approx(0.20)
 
 
 def test_sector_mapper_absorbs_missing_tips_pool():
     """후보에 inflation_linked 없으면 bond_tips target을 bond_nominal로 흡수."""
     candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": [], "global_equity": [], "fx_commodity": [],
-            "bond": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
+            "kr_equity": [], "global_equity": [], "cyclical_commodity_fx": [],
+            "global_duration": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
             "cash_mmf": [],
         },
         selection_criteria="test", total_candidates=2,
     )
     target = BucketTarget(
-        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.50, cash_mmf=0.50, rationale="t",
+        weights={
+            "kr_equity":             0.00,
+            "global_equity":         0.00,
+            "precious_metals":       0.00,
+            "cyclical_commodity_fx": 0.00,
+            "kr_bond":               0.00,
+            "credit":                0.00,
+            "global_duration":       0.50,
+            "cash_mmf":              0.50,
+        },
+        rationale="t",
         bond_tips_share=0.80,  # 의도는 TIPS 40%, 그러나 후보 없음
     )
-    sub_lookup = {"A_NOM_1": "kr_treasury", "A_NOM_2": "kr_corporate"}
+    sub_lookup = {"A_NOM_1": "us_treasury", "A_NOM_2": "us_aggregate"}
     sm, lower, upper = _build_sector_mapper_and_bounds(
         candidates, target, attempts=0, sub_category_lookup=sub_lookup,
     )
@@ -189,7 +228,7 @@ def test_sector_mapper_absorbs_missing_tips_pool():
 def test_hrp_per_bucket_enforces_bond_tips_split():
     """HRP path가 bond_tips_share를 sub-pool weight으로 강제.
 
-    Realistic setup: bond=0.40, tips_share=0.50 → TIPS 20%, nominal 20%.
+    Realistic setup: global_duration=0.40, tips_share=0.50 → TIPS 20%, nominal 20%.
     Cash 3 tickers로 분산 (cap 0.20씩 → 3개 = 0.60 채움).
     """
     rng = np.random.default_rng(7)
@@ -205,25 +244,35 @@ def test_hrp_per_bucket_enforces_bond_tips_split():
     })
     candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": [], "global_equity": [], "fx_commodity": [],
-            "bond": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
+            "kr_equity": [], "global_equity": [], "cyclical_commodity_fx": [],
+            "kr_bond": [], "credit": [],
+            "global_duration": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
             "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
         },
         selection_criteria="t", total_candidates=7,
     )
     target = BucketTarget(
-        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.40, cash_mmf=0.60, rationale="t",
-        bond_tips_share=0.50,  # bond 40% × 50% = 20% TIPS, 20% nominal
+        weights={
+            "kr_equity":             0.00,
+            "global_equity":         0.00,
+            "precious_metals":       0.00,
+            "cyclical_commodity_fx": 0.00,
+            "kr_bond":               0.00,
+            "credit":                0.00,
+            "global_duration":       0.40,
+            "cash_mmf":              0.60,
+        },
+        rationale="t",
+        bond_tips_share=0.50,  # global_duration 40% × 50% = 20% TIPS, 20% nominal
     )
     sub_lookup = {
         "A_TIPS_1": "inflation_linked", "A_TIPS_2": "inflation_linked",
-        "A_NOM_1": "kr_treasury", "A_NOM_2": "kr_treasury",
+        "A_NOM_1": "us_treasury", "A_NOM_2": "us_treasury",
     }
     wv = _hrp_per_bucket(returns, candidates, target, sub_category_lookup=sub_lookup)
     tips_sum = wv.weights.get("A_TIPS_1", 0) + wv.weights.get("A_TIPS_2", 0)
     nom_sum = wv.weights.get("A_NOM_1", 0) + wv.weights.get("A_NOM_2", 0)
-    # bond_tips_share=0.50 of bond 40% = 20% TIPS
+    # bond_tips_share=0.50 of global_duration 40% = 20% TIPS
     assert tips_sum == pytest.approx(0.20, abs=0.03), f"TIPS sum {tips_sum} != 0.20"
     assert nom_sum == pytest.approx(0.20, abs=0.03), f"nominal sum {nom_sum} != 0.20"
 

@@ -11,8 +11,12 @@ def _minimal_research_decision(**override):
     """Factor model 만 (C5: 24-cell field 제거 후)."""
     base = dict(
         bucket_target=BucketTarget(
-            kr_equity=0.1, global_equity=0.2, fx_commodity=0.3,
-            bond=0.3, cash_mmf=0.1, rationale="t", bond_tips_share=0.5,
+            weights={
+                "kr_equity": 0.10, "global_equity": 0.20, "precious_metals": 0.05,
+                "cyclical_commodity_fx": 0.10, "kr_bond": 0.20,
+                "credit": 0.05, "global_duration": 0.20, "cash_mmf": 0.10,
+            },
+            rationale="t", bond_tips_share=0.5,
         ),
         conviction="high",
         dominant_scenario="goldilocks",

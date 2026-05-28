@@ -14,10 +14,19 @@ from tradingagents.schemas.risk_overlay import RiskOverlay
 
 
 def _bucket():
-    # 모든 bucket ≤ 0.20 — 단일 ticker per bucket fixture 호환
+    # 8-bucket, 0.20×5 = 1.0 — single-ticker-per-bucket fixture 호환
+    # Remaining 3 buckets: precious_metals=0, credit=0, global_duration=0
     return BucketTarget(
-        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
-        bond=0.20, cash_mmf=0.20,
+        weights={
+            "kr_equity":             0.20,
+            "global_equity":         0.20,
+            "precious_metals":       0.00,
+            "cyclical_commodity_fx": 0.20,
+            "kr_bond":               0.20,
+            "credit":                0.00,
+            "global_duration":       0.00,
+            "cash_mmf":              0.20,
+        },
         rationale="test bucket",
     )
 
@@ -35,14 +44,14 @@ def _wv():
 
 
 def _candidates():
-    # 2 ticker per bucket — multiplier 적용 후에도 cap 안 위반
+    # 2 ticker per non-zero bucket — multiplier 적용 후에도 cap 안 위반
     return CandidateSet(
         bucket_to_tickers={
-            "kr_equity":     _TICKERS[0:2],
-            "global_equity": _TICKERS[2:4],
-            "fx_commodity":  _TICKERS[4:6],
-            "bond":          _TICKERS[6:8],
-            "cash_mmf":      _TICKERS[8:10],
+            "kr_equity":             _TICKERS[0:2],
+            "global_equity":         _TICKERS[2:4],
+            "cyclical_commodity_fx": _TICKERS[4:6],
+            "kr_bond":               _TICKERS[6:8],
+            "cash_mmf":              _TICKERS[8:10],
         },
         selection_criteria="test", total_candidates=10,
     )
@@ -69,9 +78,9 @@ def test_empty_overlay_returns_weight_vector_unchanged():
 def test_shrink_bucket_by_multiplier_05():
     bucket = _bucket()  # 위험자산 = 0.20+0.20+0.20 = 0.60
     shrunk = _shrink_bucket_by_multiplier(bucket, 0.5)
-    risk_total = shrunk.kr_equity + shrunk.global_equity + shrunk.fx_commodity
+    risk_total = sum(shrunk[b] for b in ("kr_equity", "global_equity", "cyclical_commodity_fx"))
     assert risk_total == pytest.approx(0.30, abs=0.001)
-    safe_total = shrunk.bond + shrunk.cash_mmf
+    safe_total = sum(shrunk[b] for b in ("kr_bond", "cash_mmf"))
     assert safe_total == pytest.approx(0.70, abs=0.001)
     assert (risk_total + safe_total) == pytest.approx(1.0, abs=0.001)
 
@@ -79,8 +88,8 @@ def test_shrink_bucket_by_multiplier_05():
 def test_shrink_bucket_by_multiplier_10_is_noop():
     bucket = _bucket()
     shrunk = _shrink_bucket_by_multiplier(bucket, 1.0)
-    assert shrunk.kr_equity == bucket.kr_equity
-    assert shrunk.cash_mmf == bucket.cash_mmf
+    assert shrunk["kr_equity"] == bucket["kr_equity"]
+    assert shrunk["cash_mmf"] == bucket["cash_mmf"]
 
 
 def test_overlay_with_multiplier_shrinks_risk_assets():

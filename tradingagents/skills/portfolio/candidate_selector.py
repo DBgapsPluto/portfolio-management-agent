@@ -10,21 +10,25 @@ from tradingagents.skills.portfolio.factor_scorer import (
     score_candidates_with_components, select_cluster_aware, select_diverse,
 )
 from tradingagents.skills.portfolio.sub_category import (
-    _scenario_to_axes, compose_boost, log_boost,
+    _scenario_to_axes, bucket_for_etf, compose_boost, log_boost,
 )
 from tradingagents.skills.registry import register_skill
 
 
-# Map BucketTarget fields to universe categories
+# Map 8-bucket names to universe .category values.
+# Buckets that require sub_category disambiguation (precious_metals,
+# cyclical_commodity_fx, kr_bond, credit, global_duration) are filtered via
+# bucket_for_etf() rather than a simple category string match.
 BUCKET_TO_CATEGORIES = {
-    "kr_equity": ["국내주식_지수", "국내주식_섹터"],
-    "global_equity": ["해외주식_지수", "해외주식_섹터"],
-    "fx_commodity": ["FX 및 원자재"],
-    "bond": [
-        "국내채권_종합", "국내채권_회사채",
-        "해외채권_종합", "해외채권_회사채",
-    ],
-    "cash_mmf": ["금리연계형/초단기채권"],
+    "kr_equity":             ["국내주식_지수", "국내주식_섹터"],
+    "global_equity":         ["해외주식_지수", "해외주식_섹터"],
+    # split-by-sub_category buckets — resolved through bucket_for_etf()
+    "precious_metals":       ["FX 및 원자재"],
+    "cyclical_commodity_fx": ["FX 및 원자재"],
+    "kr_bond":               ["국내채권_종합"],
+    "credit":                ["국내채권_회사채", "국내채권_종합", "해외채권_종합", "해외채권_회사채"],
+    "global_duration":       ["해외채권_종합"],
+    "cash_mmf":              ["금리연계형/초단기채권"],
 }
 
 
@@ -36,13 +40,17 @@ BUCKET_TO_CATEGORIES = {
 DEFAULT_BOOST_SCALE: float = 1.0
 
 
-def _eligible_for_bucket(universe: Universe, cats: list[str]) -> list:
-    """Category match only — AUM filter removed (Tier 1).
+def _eligible_for_bucket(universe: Universe, bucket_name: str) -> list:
+    """Return ETFs that classify into bucket_name under the 8-bucket schema.
 
-    188 universe is already KRX-listed (basic size threshold).
+    Uses bucket_for_etf() which respects sub_category for ambiguous categories
+    (FX 및 원자재 → precious_metals vs cyclical_commodity_fx;
+     국내채권_종합/해외채권_종합 → kr_bond / credit / global_duration).
+
+    AUM filter removed (Tier 1): 188 universe is already KRX-listed.
     Mandate's 20% single-ETF cap + Stage 4 cluster cap control micro-cap risk.
     """
-    return [e for e in universe.etfs if e.category in cats]
+    return [e for e in universe.etfs if bucket_for_etf(e) == bucket_name]
 
 
 def list_eligible_tickers(
@@ -57,18 +65,15 @@ def list_eligible_tickers(
     """
     universe = universe.tradable_at(as_of)
     out: dict[str, list[str]] = {}
-    for bucket_name, weight in [
-        ("kr_equity", bucket_target.kr_equity),
-        ("global_equity", bucket_target.global_equity),
-        ("fx_commodity", bucket_target.fx_commodity),
-        ("bond", bucket_target.bond),
-        ("cash_mmf", bucket_target.cash_mmf),
-    ]:
+    for bucket_name, weight in bucket_target.items():
+        if bucket_name == "bond_tips_share":
+            continue
         if weight <= 0:
             out[bucket_name] = []
             continue
-        cats = BUCKET_TO_CATEGORIES[bucket_name]
-        out[bucket_name] = [e.ticker for e in _eligible_for_bucket(universe, cats)]
+        out[bucket_name] = [
+            e.ticker for e in _eligible_for_bucket(universe, bucket_name)
+        ]
     return out
 
 
@@ -134,13 +139,9 @@ def select_etf_candidates(
         })
         attribution["buckets"] = {}
 
-    for bucket_name, weight in [
-        ("kr_equity", bucket_target.kr_equity),
-        ("global_equity", bucket_target.global_equity),
-        ("fx_commodity", bucket_target.fx_commodity),
-        ("bond", bucket_target.bond),
-        ("cash_mmf", bucket_target.cash_mmf),
-    ]:
+    # Iterate over all 8 buckets from the BucketTarget dict.
+    # TIPS quota applies to global_duration (which holds inflation_linked ETFs).
+    for bucket_name, weight in bucket_target.items():
         bucket_attr: dict | None = None
         if attribution is not None:
             bucket_attr = {
@@ -157,8 +158,7 @@ def select_etf_candidates(
                 bucket_attr["skip_reason"] = "bucket_weight=0"
             continue
 
-        cats = BUCKET_TO_CATEGORIES[bucket_name]
-        eligible = _eligible_for_bucket(universe, cats)
+        eligible = _eligible_for_bucket(universe, bucket_name)
         if bucket_attr is not None:
             bucket_attr["eligible_count"] = len(eligible)
 
@@ -169,7 +169,8 @@ def select_etf_candidates(
                 bucket_attr["skip_reason"] = "no eligible tickers"
             continue
 
-        if bucket_name == "bond" and bucket_target.bond_tips_share > 0.0:
+        # TIPS quota split applies to global_duration (contains inflation_linked ETFs).
+        if bucket_name == "global_duration" and bucket_target.bond_tips_share > 0.0:
             chosen = _select_bond_with_tips_quota(
                 eligible, returns, aum_lookup,
                 regime_quadrant, regime_confidence, factor_panel,

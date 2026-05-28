@@ -86,8 +86,12 @@ def _trivial_panel(tickers):
 def test_kr_boom_scenario_boosts_semiconductor_over_dividend():
     universe = _make_universe_with_subcat()
     target = BucketTarget(
-        kr_equity=1.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.0, rationale="t",
+        weights={
+            "kr_equity": 1.0, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0,
+            "credit": 0.0, "global_duration": 0.0, "cash_mmf": 0.0,
+        },
+        rationale="t",
     )
     tickers = ["A111111", "A222222"]
     returns = _trivial_returns(tickers)
@@ -124,8 +128,12 @@ def test_no_subcategory_means_no_boost_effect():
                  sub_category=None),
     ])
     target = BucketTarget(
-        kr_equity=1.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.0, rationale="t",
+        weights={
+            "kr_equity": 1.0, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0,
+            "credit": 0.0, "global_duration": 0.0, "cash_mmf": 0.0,
+        },
+        rationale="t",
     )
     tickers = ["A111111", "A222222"]
     returns = _trivial_returns(tickers)
