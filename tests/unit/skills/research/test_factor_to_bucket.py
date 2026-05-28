@@ -328,3 +328,63 @@ def test_sign_restriction_consistency_with_initial_beta():
             assert beta >= 0, f"{f}×{b} sign=positive but prior β={beta}"
         elif sign == "negative":
             assert beta <= 0, f"{f}×{b} sign=negative but prior β={beta}"
+
+
+# ---------------------------------------------------------------------------
+# T1 Tasks 5+6: project_to_mandate_qp + apply_factor_model 8-bucket verification
+# ---------------------------------------------------------------------------
+
+
+def test_project_to_mandate_qp_8_buckets():
+    """QP returns dict with 8 keys, sum=1, risk_buckets sum ≤ 0.70."""
+    from tradingagents.skills.research.factor_to_bucket import (
+        project_to_mandate_qp,
+    )
+    # Construct target with too much risk
+    target = {b: 0.20 for b in RISK_BUCKETS}  # 4 × 0.20 = 0.80 risk
+    target.update({b: 0.05 for b in BUCKETS if b not in RISK_BUCKETS})  # 4 × 0.05 = 0.20
+    # Total = 1.00, risk = 0.80 — must be projected down to 0.70
+    result = project_to_mandate_qp(target)
+    assert set(result.keys()) == set(BUCKETS)
+    assert abs(sum(result.values()) - 1.0) < 1e-6
+    risk = sum(result[b] for b in RISK_BUCKETS)
+    assert risk <= 0.70 + 1e-6
+
+
+def test_project_to_mandate_qp_baseline_preserves_intent():
+    """INITIAL_BASELINE is already feasible (risk 0.57 < 0.70)."""
+    from tradingagents.skills.research.factor_to_bucket import (
+        project_to_mandate_qp,
+    )
+    # INITIAL_BASELINE is already feasible (risk 0.57 < 0.70)
+    result = project_to_mandate_qp(dict(INITIAL_BASELINE))
+    for b, w in INITIAL_BASELINE.items():
+        assert abs(result[b] - w) < 0.001
+
+
+def test_apply_factor_model_handles_missing_factor_z():
+    """F11/F12 None case — apply_factor_model should still work.
+
+    Provide z for F1-F10 only (F11/F12 missing — pre-2010 case).
+    """
+    # Provide z for F1-F10 only (F11/F12 missing — pre-2010 case)
+    factor_z = {
+        "F1_growth": 0.5, "F2_inflation": 0.0, "F3_real_rate": 0.0,
+        "F4_term_premium": 0.0, "F5_credit_cycle": 0.0,
+        "F6_krw_regime": 0.0, "F7_equity_vol_regime": 0.0,
+        "F8_valuation": 0.0, "F9_market_dispersion": 0.0,
+        "F10_systemic_liquidity": 0.0,
+        # F11, F12 absent
+    }
+    bucket, tips, contribs = apply_factor_model(factor_z)
+    assert set(bucket.keys()) == set(BUCKETS)
+    # F1 +0.5 → kr_eq, gl_eq slight positive shift
+    assert bucket["kr_equity"] > INITIAL_BASELINE["kr_equity"]
+
+
+def test_apply_factor_model_all_zero_returns_baseline():
+    """All factor z = 0 → bucket == INITIAL_BASELINE."""
+    factor_z = {f: 0.0 for f in FACTORS}
+    bucket, tips, contribs = apply_factor_model(factor_z)
+    for b, w in INITIAL_BASELINE.items():
+        assert abs(bucket[b] - w) < 1e-9
