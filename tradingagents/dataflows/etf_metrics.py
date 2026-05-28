@@ -209,11 +209,28 @@ def compute_premium_discount_median(
     metrics: pd.DataFrame, ticker: str, n_days: int = 30,
 ) -> float | None:
     """최근 n_days median |premium_discount|. 부족 시 None."""
-    raise NotImplementedError
+    if ticker not in metrics.index.get_level_values("ticker"):
+        return None
+    sub = metrics.xs(ticker, level="ticker")
+    if "premium_discount" not in sub.columns:
+        return None
+    pd_series = sub["premium_discount"].dropna().tail(n_days)
+    if len(pd_series) < min(n_days, 10):  # 최소 10일은 있어야
+        return None
+    return float(pd_series.abs().median())
 
 
 def compute_volume_per_aum_median(
     metrics: pd.DataFrame, ticker: str, n_days: int = 30,
 ) -> float | None:
     """최근 n_days median (trade_value_krw / aum_krw). 유동성 proxy. 부족 시 None."""
-    raise NotImplementedError
+    if ticker not in metrics.index.get_level_values("ticker"):
+        return None
+    sub = metrics.xs(ticker, level="ticker")
+    if "trade_value_krw" not in sub.columns or "aum_krw" not in sub.columns:
+        return None
+    valid = sub[(sub["aum_krw"] > 0) & sub["trade_value_krw"].notna()].tail(n_days)
+    if len(valid) < min(n_days, 10):
+        return None
+    ratio = valid["trade_value_krw"] / valid["aum_krw"]
+    return float(ratio.median())
