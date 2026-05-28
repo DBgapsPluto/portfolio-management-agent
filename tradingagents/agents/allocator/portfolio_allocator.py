@@ -23,6 +23,8 @@ from tradingagents.skills.portfolio.candidate_selector import (
 )
 from tradingagents.skills.portfolio.method_picker import pick_optimization_method
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
+from tradingagents.skills.portfolio.cash_spillover import adjust_bucket_targets
+from tradingagents.skills.portfolio.diversification import compute_enb
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,9 @@ MIN_POSITION_WEIGHT: float = 0.015
 # 분산 약함"). 단일 sub_category 가 bucket 합의 이 비율을 초과하지 못하게 cap.
 # 0.5 = bucket 의 50%. 예: fx_commodity 19% 면 jpy_fx 최대 9.5%.
 MAX_SUBCATEGORY_BUCKET_SHARE: float = 0.50
+
+# Phase 1 (Stage 3 phase1-cash-spillover spec, 2026-05-28).
+ENB_WARNING_THRESHOLD: float = 3.0
 
 
 def create_portfolio_allocator(
@@ -373,6 +378,21 @@ def _build_sector_mapper_and_bounds(
         sector_upper = {b: round(min(1.0, w + band), 10) for b, w in target_map.items()}
 
     return sector_mapper, sector_lower, sector_upper
+
+
+def _collect_alpha_scores_per_bucket(
+    attribution: dict,
+) -> dict[str, dict[str, float]]:
+    """attribution['buckets'][bucket]['alpha_scores'] 에서 추출.
+
+    candidate_selector 가 이미 bucket_attr['alpha_scores'] = {ticker: alpha}
+    형태로 채워둠. bond bucket 의 split path 도 Task 8 의 보강으로 같은 키 사용.
+    """
+    out: dict[str, dict[str, float]] = {}
+    for bucket_name, bucket_attr in (attribution.get("buckets") or {}).items():
+        alpha_scores = bucket_attr.get("alpha_scores") or {}
+        out[bucket_name] = dict(alpha_scores)
+    return out
 
 
 def _optimize_with_bucket_constraints(
