@@ -27,6 +27,24 @@ class NewsItem(BaseModel):
     published_at: datetime
     url: str  # plain str for resilience to bad sources
 
+    # 2026-05-28 — news body fetch (Tier 1 + Tier 2)
+    description: str | None = Field(
+        default=None,
+        max_length=2000,
+        description=(
+            "RSS feed 의 summary/description field — 보통 1-3 문장. "
+            "Tier 1: fetcher 에서 추출. 추가 HTTP 호출 없이 헤드라인보다 풍부한 context."
+        ),
+    )
+    body_summary: str | None = Field(
+        default=None,
+        max_length=500,
+        description=(
+            "Article body LLM 요약 (≤500자). Tier 2: top-N ranked news 만 본문 fetch + "
+            "요약. Disk cache (URL → summary, TTL 7d). Paywall/JS-rendered 는 None."
+        ),
+    )
+
 
 class ImpactAssessment(BaseModel):
     """Subagent output."""

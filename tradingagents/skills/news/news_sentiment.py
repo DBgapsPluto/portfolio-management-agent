@@ -13,31 +13,52 @@ from tradingagents.schemas.news import (
 from tradingagents.skills.registry import register_skill
 
 
-def _llm_score_batch(quick_llm, headlines: list[str]) -> list[float]:
-    """Sentiment score [-1, +1]. 실패 시 0.0으로 fallback."""
-    if not headlines:
+def _format_context(item) -> str:
+    """Headline + (body_summary > description) 결합.
+
+    2026-05-28 — Tier 1 (RSS description) + Tier 2 (body_summary) 우선순위.
+    body_summary 가장 풍부 (article 본문 LLM 요약), description fallback,
+    둘 다 없으면 headline only.
+    """
+    body = getattr(item, "body_summary", None)
+    if body:
+        return f"{item.headline} — {body[:500]}"
+    desc = getattr(item, "description", None)
+    if desc:
+        return f"{item.headline} — {desc[:500]}"
+    return item.headline
+
+
+def _llm_score_batch(quick_llm, contexts: list[str]) -> list[float]:
+    """Sentiment score [-1, +1]. 실패 시 0.0으로 fallback.
+
+    2026-05-28 Tier 1: contexts 가 headline + description 결합 string. nuance
+    detection 정확도 향상 (headline 의 극단성 단독이 아닌 본문 nuance 반영).
+    """
+    if not contexts:
         return []
     prompt = (
-        "You are a financial sentiment scorer. For each headline, output a "
+        "You are a financial sentiment scorer. For each news (headline + brief description), output a "
         "float in [-1.0, +1.0] where -1 is very negative for risk assets, "
-        "0 is neutral, +1 is very positive.\n\n"
+        "0 is neutral, +1 is very positive. Consider nuance — a strong headline "
+        "with mitigating context in the description should be scored less extreme.\n\n"
         "Return ONLY a JSON array like "
-        "[{\"idx\": 0, \"score\": -0.4}, ...]. No prose.\n\nHeadlines:\n"
-        + "\n".join(f"{i}. {h}" for i, h in enumerate(headlines))
+        "[{\"idx\": 0, \"score\": -0.4}, ...]. No prose.\n\nNews:\n"
+        + "\n".join(f"{i}. {h}" for i, h in enumerate(contexts))
     )
     try:
         resp = quick_llm.invoke(prompt).content
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", resp.strip(), flags=re.M)
         data = json.loads(cleaned)
-        result = [0.0] * len(headlines)
+        result = [0.0] * len(contexts)
         for entry in data:
             idx = int(entry.get("idx", -1))
             score = float(entry.get("score", 0.0))
-            if 0 <= idx < len(headlines):
+            if 0 <= idx < len(contexts):
                 result[idx] = max(-1.0, min(1.0, score))
         return result
     except Exception:
-        return [0.0] * len(headlines)
+        return [0.0] * len(contexts)
 
 
 def score_sentiment(
@@ -46,10 +67,11 @@ def score_sentiment(
     """In-place style: 각 item에 sentiment_score 채워서 반환."""
     if not categorized or quick_llm is None:
         return categorized
-    headlines = [c.item.headline for c in categorized]
+    # 2026-05-28 Tier 1: headline + description 결합 context 로 LLM 호출
+    contexts = [_format_context(c.item) for c in categorized]
     scores: list[float] = []
-    for start in range(0, len(headlines), batch_size):
-        batch = headlines[start:start + batch_size]
+    for start in range(0, len(contexts), batch_size):
+        batch = contexts[start:start + batch_size]
         scores.extend(_llm_score_batch(quick_llm, batch))
     out: list[CategorizedNewsItem] = []
     for c, s in zip(categorized, scores):

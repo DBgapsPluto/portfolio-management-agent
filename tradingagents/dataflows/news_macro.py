@@ -16,8 +16,40 @@ from tradingagents.dataflows.event_calendar_fetcher import (
 )
 
 
+def _extract_rss_description(entry) -> str | None:
+    """RSS entry 의 description/summary field 추출 (Tier 1).
+
+    Source 별 field 이름 다양 (description / summary / content / subtitle).
+    HTML tag 제거 후 ≤2000자 truncate. 빈 string 은 None 반환.
+    """
+    import re
+
+    raw = (
+        entry.get("summary")
+        or entry.get("description")
+        or (entry.get("content", [{}])[0].get("value") if entry.get("content") else None)
+        or entry.get("subtitle")
+    )
+    if not raw or not isinstance(raw, str):
+        return None
+    # HTML tag 제거 (간단한 stripping — bleach/lxml 없이)
+    cleaned = re.sub(r"<[^>]+>", " ", raw)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # CDATA, entity 제거
+    cleaned = cleaned.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+    # headline 과 동일한 경우 None (중복)
+    if len(cleaned) < 20:
+        return None
+    return cleaned[:2000]
+
+
 def fetch_macro_news(rss_urls: list[str], window_days: int = 7) -> list[NewsItem]:
-    """Pull headlines from RSS sources. No body fetched (intentional — D2 schema lock)."""
+    """Pull headlines from RSS sources.
+
+    2026-05-28: Tier 1 — RSS description/summary 도 추출 (NewsItem.description).
+    추가 HTTP 호출 없이 headline 보다 풍부한 context 제공. Tier 2 (body fetch)
+    는 별도 module (news_body_fetcher.py) 에서.
+    """
     cutoff = datetime.utcnow() - timedelta(days=window_days)
     items: list[NewsItem] = []
     for url in rss_urls:
@@ -31,11 +63,13 @@ def fetch_macro_news(rss_urls: list[str], window_days: int = 7) -> list[NewsItem
                 published = datetime.fromtimestamp(mktime(entry["published_parsed"]))
                 if published < cutoff:
                     continue
+                description = _extract_rss_description(entry)
                 items.append(NewsItem(
                     headline=entry["title"][:300],
                     source=feed.feed.get("title", url) if hasattr(feed, "feed") else url,
                     published_at=published,
                     url=entry.get("link", ""),
+                    description=description,
                 ))
             except (KeyError, TypeError):
                 continue
