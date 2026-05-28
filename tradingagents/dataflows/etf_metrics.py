@@ -83,6 +83,24 @@ def _parse_krx_record(record: dict, basDd: date) -> ETFDailyMetrics | None:
     )
 
 
+def _business_days(start: date, end: date) -> list[date]:
+    """월~금 (공휴일 무관, KRX 응답이 빈 list 면 skip)."""
+    days = []
+    current = start
+    while current <= end:
+        if current.weekday() < 5:  # Mon=0 ~ Fri=4
+            days.append(current)
+        current += timedelta(days=1)
+    return days
+
+
+def _cache_file(cache_path: Path, basDd: date) -> Path:
+    """cache_path/etf_metrics/YYYY-MM-DD.parquet"""
+    cache_dir = cache_path / "etf_metrics"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir / f"{basDd.isoformat()}.parquet"
+
+
 def fetch_etf_metrics_window(
     tickers: list[str],
     start: date,
@@ -95,7 +113,58 @@ def fetch_etf_metrics_window(
              aum_krw, tracking_rate.
     누락 날짜는 KRX OpenAPI fetch, ParquetCache 영구 저장.
     """
-    raise NotImplementedError
+    days = _business_days(start, end)
+    all_rows: list[dict] = []
+    cache_root: Path | None = None
+    if cache_path is not None:
+        cache_root = Path(cache_path)
+
+    for d in days:
+        cache_file_path: Path | None = (
+            _cache_file(cache_root, d) if cache_root is not None else None
+        )
+        # 1. 캐시 hit 시 load
+        day_rows: list[dict] | None = None
+        if cache_file_path is not None and cache_file_path.exists():
+            try:
+                day_df = pd.read_parquet(cache_file_path)
+                day_rows = day_df.to_dict(orient="records")
+            except Exception as e:
+                logger.warning("cache read failed for %s: %s — refetching", d, e)
+                day_rows = None
+
+        # 2. 캐시 miss → fetch
+        if day_rows is None:
+            try:
+                records = fetch_etf_daily_detail(d, ticker=None)
+            except KRXOpenAPIError:
+                # 호출자가 처리할 수 있도록 raise
+                raise
+            day_rows = []
+            for rec in records:
+                parsed = _parse_krx_record(rec, d)
+                if parsed is not None:
+                    day_rows.append(parsed.model_dump())
+            # 캐시 저장 (빈 list 도 저장 — 공휴일 표시)
+            if cache_file_path is not None:
+                pd.DataFrame(day_rows).to_parquet(cache_file_path)
+
+        # 3. ticker 필터링
+        for row in day_rows:
+            if row["ticker"] in tickers:
+                all_rows.append(row)
+
+    if not all_rows:
+        return pd.DataFrame(
+            columns=["nav", "market_price", "premium_discount", "volume",
+                     "trade_value_krw", "aum_krw", "tracking_rate"],
+            index=pd.MultiIndex.from_arrays([[], []], names=["ticker", "trade_date"]),
+        )
+
+    df = pd.DataFrame(all_rows)
+    df["trade_date"] = pd.to_datetime(df["trade_date"]).dt.date
+    df = df.set_index(["ticker", "trade_date"]).sort_index()
+    return df
 
 
 def compute_tracking_error_12m(
