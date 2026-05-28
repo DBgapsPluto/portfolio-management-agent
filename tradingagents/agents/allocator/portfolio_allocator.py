@@ -273,7 +273,7 @@ def create_portfolio_allocator(
         # bond bucket의 sub-bucket(TIPS/nominal) weight 강제 위해 sub_category lookup 전달.
         sub_category_lookup = {e.ticker: e.sub_category for e in universe.etfs}
         attribution["optimization"] = {}
-        wv = _optimize_with_bucket_constraints(
+        wv, sigma_df = _optimize_with_bucket_constraints(
             method=method_choice.method,
             returns=returns,
             candidates=candidates,
@@ -404,7 +404,7 @@ def _optimize_with_bucket_constraints(
     attempts: int,
     sub_category_lookup: dict[str, str | None] | None = None,
     attribution: dict | None = None,
-) -> WeightVector:
+) -> tuple[WeightVector, pd.DataFrame]:
     """Optimize with simultaneous (single-cap, bucket sum) constraints.
 
     sub_category_lookup이 주어지면 bond bucket이 (bond_tips, bond_nominal)로
@@ -412,6 +412,9 @@ def _optimize_with_bucket_constraints(
 
     attribution (Stage 3 audit Task 1/3): 제공 시 cov 표본 부족 제외 ticker,
     cap 발동 ticker 등 진단 정보를 dict 에 기록.
+
+    Returns (WeightVector, sigma_df): sigma_df 는 sample covariance DataFrame
+    (ticker × ticker). HRP 와 EF 경로 양쪽에서 모두 반환 — Task 13 ENB 측정용.
     """
     sector_mapper, sector_lower, sector_upper = _build_sector_mapper_and_bounds(
         candidates, bucket_target, attempts, sub_category_lookup,
@@ -446,13 +449,15 @@ def _optimize_with_bucket_constraints(
                 attribution["cov_excluded_tickers"] = list(excluded)
                 attribution["cov_final_obs"] = int(len(returns))
 
+    S = risk_models.sample_cov(returns)
+
     if method == OptimizationMethod.HRP:
-        return _hrp_per_bucket(
+        wv = _hrp_per_bucket(
             returns, candidates, bucket_target, sub_category_lookup,
             attribution=attribution,
         )
-
-    S = risk_models.sample_cov(returns)
+        sigma_df = S if isinstance(S, pd.DataFrame) else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
+        return wv, sigma_df
 
     if method == OptimizationMethod.BLACK_LITTERMAN:
         from pypfopt import BlackLittermanModel
@@ -544,6 +549,7 @@ def _optimize_with_bucket_constraints(
     weights = _apply_min_weight_threshold(
         weights, candidates, attribution=attribution,
     )
+    sigma_df = S if isinstance(S, pd.DataFrame) else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
     return WeightVector(
         method=method,
         weights=weights,
@@ -553,7 +559,7 @@ def _optimize_with_bucket_constraints(
         ),
         expected_volatility=expected_vol,
         expected_sharpe=expected_sharpe,
-    )
+    ), sigma_df
 
 
 def _apply_subcategory_cap(
