@@ -12,6 +12,7 @@ Stage 2 추가 LLM 호출 0. macro_news_analyst 의 NewsReport structured field 
 """
 import logging
 from dataclasses import replace
+from datetime import datetime, date
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -303,7 +304,25 @@ def create_research_manager(deep_llm):
         logger.info("research_manager start: computing 9-factor z-vector")
 
         # 1. Compute 9 factors (deterministic)
-        factor_scores = compute_all_factors(state)
+        # Tier 0: thread as_of_date + use_dynamic_baseline from state/config.
+        _config = state.get("config") if isinstance(state, dict) else getattr(state, "config", None)
+        use_dynamic = (
+            _config.get("use_dynamic_baseline", False)
+            if isinstance(_config, dict) else False
+        )
+        _as_of_str = state.get("as_of_date") if isinstance(state, dict) else getattr(state, "as_of_date", None)
+        as_of_date_val: date | None = None
+        if _as_of_str:
+            try:
+                as_of_date_val = datetime.strptime(str(_as_of_str), "%Y-%m-%d").date()
+            except Exception:
+                as_of_date_val = None
+
+        factor_scores = compute_all_factors(
+            state, mode="production",
+            as_of_date=as_of_date_val,
+            use_dynamic_baseline=use_dynamic,
+        )
         z_dict_pre = factor_scores.to_dict()
         n_active = sum(
             1 for f in [

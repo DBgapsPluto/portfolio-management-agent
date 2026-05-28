@@ -145,4 +145,7 @@ DEFAULT_CONFIG.update({
     # Tracing / observability
     "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",
     "langsmith_project": os.getenv("LANGSMITH_PROJECT", "db-gaps-agent"),
+    # Tier 0: expanding-window z-baseline (Pesaran-Timmermann 1995). Default off
+    # for backward compat — opt-in per run or backtest sweep.
+    "use_dynamic_baseline": False,
 })

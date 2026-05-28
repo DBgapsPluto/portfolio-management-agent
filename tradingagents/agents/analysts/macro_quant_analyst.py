@@ -13,17 +13,26 @@ Tier-1 확장 (KR cycle + US 선행/실시간 성장):
 import logging
 from datetime import date, timedelta
 
+import pandas as pd
 from tradingagents.dataflows.commodities import fetch_commodity_close
 from tradingagents.dataflows.equity_indices import fetch_equity_index_close
+from tradingagents.dataflows.gpr_index import fetch_gpr_index
 from tradingagents.dataflows.pykrx_data import fetch_foreign_flow
+from tradingagents.dataflows.shiller_cape import fetch_shiller_cape
 from tradingagents.schemas.macro import (
-    ChinaLeadingSnapshot, DivergenceScore, FXSnapshot, FedPathSnapshot,
+    ChinaLeadingSnapshot, ChinaCreditImpulseSnapshot, CommodityMomentumSnapshot,
+    DivergenceScore, EarningsRevisionSnapshot, FXSnapshot, FedPathSnapshot,
     FinancialConditionsSnapshot, ForeignFlowSnapshot, GDPNowSnapshot,
-    InflationExpectationsSnapshot, KRBusinessSurveySnapshot, KRExportSnapshot,
-    KRLeadingIndexSnapshot, PolicyUncertaintySnapshot, RegimeClassification,
-    RiskAppetiteSnapshot, TailRiskSnapshot, USLeadingIndexSnapshot,
+    GeopoliticalRiskSnapshot, InflationExpectationsSnapshot, KRBusinessSurveySnapshot,
+    KRExportSnapshot, KRLeadingIndexSnapshot, PolicyUncertaintySnapshot,
+    RegimeClassification, RiskAppetiteSnapshot, TailRiskSnapshot,
+    USEquityValuationSnapshot, USLeadingIndexSnapshot,
 )
 from tradingagents.schemas.reports import MacroReport
+from tradingagents.skills.research.china_credit_impulse import compute_china_credit_impulse
+from tradingagents.skills.research.earnings_revision import (
+    compute_sp500_net_revision, compute_kospi200_net_revision,
+)
 from tradingagents.skills.macro.calendar import fetch_central_bank_calendar_skill
 from tradingagents.skills.macro.china_leading import compute_china_leading
 from tradingagents.skills.macro.divergence import compute_kr_divergence
@@ -51,6 +60,123 @@ from tradingagents.skills.macro.yield_curve import compute_yield_curve, compute_
 
 
 logger = logging.getLogger(__name__)
+
+
+# ===========================================================================
+# Tier 0 — 5 new MacroReport snapshot builders (Tasks 4.1 / 5.11 / 5.12)
+# ===========================================================================
+
+def _build_us_equity_valuation(as_of: date) -> USEquityValuationSnapshot | None:
+    """Shiller CAPE snapshot — F8 component."""
+    try:
+        cape_series = fetch_shiller_cape(as_of=as_of)
+        if cape_series.empty:
+            return None
+        cape = float(cape_series.iloc[-1])
+        cutoff = pd.Timestamp(as_of) - pd.DateOffset(years=30)
+        recent = cape_series[cape_series.index >= cutoff]
+        if len(recent) < 12:
+            z = 0.0
+        else:
+            mu, sd = float(recent.mean()), float(recent.std(ddof=1)) or 1e-9
+            z = (cape - mu) / sd
+        return USEquityValuationSnapshot(
+            source_date=as_of, staleness_days=1,
+            cape=cape, cape_zscore_30y=z,
+        )
+    except Exception as e:
+        logger.warning("US CAPE fetch failed: %s", e)
+        return None
+
+
+def _build_geopolitical_risk(as_of: date) -> GeopoliticalRiskSnapshot | None:
+    """Caldara-Iacoviello GPR Index snapshot — F7 component."""
+    try:
+        gpr = fetch_gpr_index(frequency="monthly", series="GPR", as_of=as_of)
+        if gpr.empty:
+            return None
+        gpr_now = float(gpr.iloc[-1])
+        cutoff = pd.Timestamp(as_of) - pd.DateOffset(months=60)
+        recent = gpr[gpr.index >= cutoff]
+        if len(recent) < 12:
+            z = 0.0
+        else:
+            mu, sd = float(recent.mean()), float(recent.std(ddof=1)) or 1e-9
+            z = (gpr_now - mu) / sd
+        gpr_daily_val = None
+        try:
+            gd = fetch_gpr_index(frequency="daily", series="GPRD", as_of=as_of)
+            if not gd.empty:
+                gpr_daily_val = float(gd.iloc[-1])
+        except Exception:
+            pass
+        return GeopoliticalRiskSnapshot(
+            source_date=as_of, staleness_days=1,
+            gpr_monthly=gpr_now, gpr_zscore_60m=z, gpr_daily=gpr_daily_val,
+        )
+    except Exception as e:
+        logger.warning("GPR fetch failed: %s", e)
+        return None
+
+
+def _build_china_credit_impulse_snapshot(as_of: date) -> ChinaCreditImpulseSnapshot | None:
+    """BIS China credit impulse snapshot — F12."""
+    try:
+        ci_data = compute_china_credit_impulse(as_of)
+        if ci_data is None:
+            return None
+        return ChinaCreditImpulseSnapshot(
+            source_date=as_of, staleness_days=60,
+            credit_impulse=ci_data["impulse"],
+            credit_to_gdp_ratio=ci_data["ratio"],
+            credit_yoy_pct=ci_data["yoy"],
+        )
+    except Exception as e:
+        logger.warning("China credit impulse failed: %s", e)
+        return None
+
+
+def _build_earnings_revision(as_of: date) -> EarningsRevisionSnapshot | None:
+    """SP500 + KOSPI200 earnings revision net ratio — F11 (staggered, 2010+)."""
+    if as_of < date(2010, 1, 1):
+        return None  # F11 staggered: pre-2010 unavailable
+    try:
+        sp = compute_sp500_net_revision(as_of)
+        ks = compute_kospi200_net_revision(as_of)
+        if sp is None and ks is None:
+            return None
+        return EarningsRevisionSnapshot(
+            source_date=as_of, staleness_days=1,
+            sp500_net_revision=sp, kospi200_net_revision=ks,
+        )
+    except Exception as e:
+        logger.warning("earnings_revision failed: %s", e)
+        return None
+
+
+def _build_commodity_momentum(as_of: date) -> CommodityMomentumSnapshot | None:
+    """Copper/Gold/WTI 3m & 6m momentum snapshot — F2/F12 components."""
+    start_6m = as_of - timedelta(days=200)
+    try:
+        copper = fetch_commodity_close("copper", start_6m, as_of)
+        gold = fetch_commodity_close("gold", start_6m, as_of)
+        wti = fetch_commodity_close("wti_oil", start_6m, as_of)
+
+        def _pct(s, days):
+            if s is None or s.empty or len(s) < days:
+                return 0.0
+            return float((s.iloc[-1] / s.iloc[-days] - 1) * 100)
+
+        return CommodityMomentumSnapshot(
+            source_date=as_of, staleness_days=1,
+            copper_3m_pct=_pct(copper, 63), copper_6m_pct=_pct(copper, 126),
+            gold_3m_pct=_pct(gold, 63),     gold_6m_pct=_pct(gold, 126),
+            wti_3m_pct=_pct(wti, 63),       wti_6m_pct=_pct(wti, 126),
+            bcom_3m_pct=None,
+        )
+    except Exception as e:
+        logger.warning("commodity_momentum failed: %s", e)
+        return None
 
 
 def _compute_yoy_from_fred(series_key: str, as_of_date: date) -> float | None:
@@ -516,6 +642,14 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         us_indpro_yoy_pct = _compute_yoy_from_fred("us_indpro", as_of)
         us_real_pce_yoy_pct = _compute_yoy_from_fred("us_real_pce", as_of)
 
+        # Tier 0 — 5 new snapshot builders (Task 4.1).
+        # All best-effort: None on fetch failure (Optional fields in MacroReport).
+        commodity_momentum_snapshot = _build_commodity_momentum(as_of)
+        us_equity_valuation_snapshot = _build_us_equity_valuation(as_of)
+        geopolitical_risk_snapshot = _build_geopolitical_risk(as_of)
+        china_credit_impulse_snap = _build_china_credit_impulse_snapshot(as_of)
+        earnings_revision_snap = _build_earnings_revision(as_of)
+
         # Stage 1 audit (Task 2): sentinel inventory before regime classification.
         # 어느 snapshot이 fetch 실패로 sentinel인지 카운트 → narrative summary 로 노출.
         # classify_regime LLM은 sentinel을 정상값으로 흡수할 수 있으므로 (예: kr_bsi=100.0
@@ -704,6 +838,12 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             kr_valuation=kr_valuation_snapshot,  # ★ NEW C5 (Optional, None on fail)
             us_indpro_yoy_pct=us_indpro_yoy_pct,
             us_real_pce_yoy_pct=us_real_pce_yoy_pct,
+            # ★ Tier 0 Task 4.1 — 5 new snapshots (all Optional, None on fail)
+            commodity_momentum=commodity_momentum_snapshot,
+            us_equity_valuation=us_equity_valuation_snapshot,
+            geopolitical_risk=geopolitical_risk_snapshot,
+            china_credit_impulse=china_credit_impulse_snap,
+            earnings_revision=earnings_revision_snap,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"macro_report": report, "macro_summary": summary}
