@@ -10,8 +10,10 @@ from tradingagents.skills.portfolio.sub_category import (
 def test_bucket_for_category_known():
     assert bucket_for_category("국내주식_지수") == "kr_equity"
     assert bucket_for_category("해외주식_섹터") == "global_equity"
-    assert bucket_for_category("FX 및 원자재") == "fx_commodity"
-    assert bucket_for_category("국내채권_종합") == "bond"
+    # Tier 1 (2026-05-28): FX/채권 categories are ambiguous → None (split by sub_category)
+    assert bucket_for_category("FX 및 원자재") is None
+    assert bucket_for_category("국내채권_종합") is None
+    assert bucket_for_category("국내채권_회사채") == "credit"
     assert bucket_for_category("금리연계형/초단기채권") == "cash_mmf"
 
 
@@ -22,10 +24,15 @@ def test_bucket_for_category_unknown_returns_none():
 def test_is_valid_subcategory():
     assert is_valid_subcategory("kr_equity", "semiconductor")
     assert is_valid_subcategory("global_equity", "us_tech_nasdaq")
-    assert is_valid_subcategory("fx_commodity", "gold")
-    assert is_valid_subcategory("bond", "kr_treasury")
-    assert not is_valid_subcategory("kr_equity", "gold")  # gold는 fx_commodity
-    assert not is_valid_subcategory("bond", "semiconductor")
+    # Tier 1 (2026-05-28): fx_commodity split → precious_metals / cyclical_commodity_fx
+    assert is_valid_subcategory("precious_metals", "gold")
+    assert is_valid_subcategory("cyclical_commodity_fx", "oil_energy")
+    # Tier 1: bond split → kr_bond / credit / global_duration
+    assert is_valid_subcategory("kr_bond", "kr_treasury")
+    assert is_valid_subcategory("credit", "kr_corporate")
+    assert is_valid_subcategory("global_duration", "us_treasury")
+    assert not is_valid_subcategory("kr_equity", "gold")  # gold는 precious_metals
+    assert not is_valid_subcategory("credit", "semiconductor")
 
 
 def test_classify_batch_via_llm_parses_response():
@@ -109,9 +116,9 @@ def test_all_valid_labels_have_no_overlap_across_buckets():
 
 
 def test_jpy_fx_in_valid_subcategories():
-    """엔선물 별도 분류 (이전엔 gold 로 잘못 라벨링)."""
+    """엔선물 별도 분류 (이전엔 gold 로 잘못 라벨링). Tier 1: cyclical_commodity_fx bucket."""
     from tradingagents.skills.portfolio.sub_category import VALID_SUB_CATEGORIES
-    assert "jpy_fx" in VALID_SUB_CATEGORIES["fx_commodity"]
+    assert "jpy_fx" in VALID_SUB_CATEGORIES["cyclical_commodity_fx"]
 
 
 def test_fx_subcategory_group_classifies_inflation_hedge():
