@@ -310,6 +310,19 @@ def create_portfolio_allocator(
             attribution=attribution["optimization"],
         )
 
+        # Phase 1 — ENB 사후 측정 (warning-only)
+        try:
+            enb_value = compute_enb(wv.weights, sigma_df, method="minimum_torsion")
+        except Exception as e:
+            logger.warning("ENB 계산 실패: %s", e)
+            enb_value = 0.0
+        attribution["enb"] = float(enb_value)
+        if enb_value > 0 and enb_value < ENB_WARNING_THRESHOLD:
+            logger.warning(
+                "ENB %.2f < %.2f — possible insufficient diversification",
+                enb_value, ENB_WARNING_THRESHOLD,
+            )
+
         attribution["method_picker"] = {
             "method":       method_choice.method.value,
             "rule_fired":   method_choice.rule_fired,
