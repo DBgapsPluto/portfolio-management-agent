@@ -69,13 +69,14 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "dovish_bias":        "medium",
 
     # ----- F6 krw_regime -----
-    "krw_overnight_pct": "high",
-    "krw_level":         "high",
-    "krw_reer":          "high",
-    "kr_us_rate_diff":   "high",
-    "foreign_flow_z":    "high",
-    "kr_exports_yoy":    "high",
-    "bok_tone_balance":  "high",
+    # Tier 0 (2026-05-28): krw_level removed, foreign_flow_z replaced by foreign_flow_normalized.
+    "krw_overnight_pct":       "high",
+    "krw_change_6m_pct":       "high",
+    "krw_reer":                "high",
+    "kr_us_rate_diff":         "high",
+    "foreign_flow_normalized": "high",
+    "kr_exports_yoy":          "high",
+    "bok_tone_balance":        "high",
 
     # ----- F7 equity_vol -----
     "vix_level":            "high",
@@ -86,15 +87,20 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "skew_level":           "medium-low",  # post-2018 structurally elevated
     "skew_change":          "medium",
     "sentiment_dispersion": "high",
-    "geopolitical_surge":   "high",
+    # Tier 0 (2026-05-28): geopolitical_surge → gpr_index_zscore (Caldara-Iacoviello GPR).
+    "gpr_index_zscore":     "high",
 
     # ----- F8 valuation -----
     "sp_pe":          "medium",
     "earnings_yield": "medium",
     "erp":            "medium-high",
     "kospi_pbr":      "high",
+    # Tier 0 (2026-05-28): US CAPE + KOSPI PER + Div Yield activated.
+    "us_cape":        "high",
+    "kospi_per":      "high",
+    "kospi_div_yield":"high",
 
-    # ----- F9 liquidity -----
+    # ----- F9 market_dispersion (renamed from F9_liquidity, Tier 0 2026-05-28) -----
     "vrp":                "high",
     "eq_bond_corr":       "high",
     "sector_dispersion":  "medium",   # C8: narrow rally regime degrades reliability

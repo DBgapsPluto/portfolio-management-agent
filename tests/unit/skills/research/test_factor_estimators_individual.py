@@ -20,7 +20,7 @@ from tradingagents.skills.research.factor_estimators import (
     compute_growth_surprise,
     compute_inflation_surprise,
     compute_krw_regime,
-    compute_liquidity_regime,
+    compute_market_dispersion,
     compute_real_rate,
     compute_term_premium,
     compute_valuation,
@@ -374,7 +374,7 @@ def test_compute_valuation_baseline_z_zero(_pe, _krw):
 @patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
 @patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
 def test_compute_liquidity_baseline_z_zero(_pe, _krw):
-    s = compute_liquidity_regime(_full_stage1_baseline())
+    s = compute_market_dispersion(_full_stage1_baseline())
     # VRP = (20/100)^2 - 0.012^2 = 0.04 - 0.000144 ≈ 0.0399
     # * 10000 = 399. Baseline (50, 30) → z = (399-50)/30 = 11.6 → cap at 3.
     # 다른 components 가 0 이므로 weighted avg 가 3 보다 작을 것.

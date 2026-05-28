@@ -159,3 +159,74 @@ def test_f5_uses_gz_ebp_and_kr_corp_spread():
     score = compute_credit_cycle(state, mode="historical")
     # gz_ebp z=+2.0, kr_corp z=+2.0; renormalized among 6 present components → z > 0.25
     assert score.z_score > 0.25  # gz_ebp + kr_corp_spread drive credit stress signal
+
+
+# === Tier 0 F6/F7/F8 reform + F9 rename tests (Tasks 5.6–5.9) ===
+
+def test_f6_no_longer_uses_krw_level():
+    """Tier 0 F6 reform: krw_level removed."""
+    from tradingagents.skills.research.factor_estimators import compute_krw_regime
+    class _Obj:
+        def __init__(self, **d): self.__dict__.update(d)
+    state = _Obj(
+        macro_report=_Obj(
+            fx=_Obj(krw_change_6m_pct=10.0, krw_reer=None, staleness_days=0),  # +2σ
+            kr_divergence=_Obj(us_kr_rate_gap_bps=0.0, staleness_days=0),
+            foreign_flow=_Obj(net_20d_normalized=0.0, staleness_days=0),
+            kr_export=_Obj(yoy_pct=5.0, staleness_days=0),
+        ),
+        news_report=None,
+    )
+    score = compute_krw_regime(state, mode="historical")
+    assert score.z_score > 0.3  # 6m %change shock → weaker KRW signal
+
+
+def test_f7_uses_gpr_index():
+    """F7 uses GPR Index (replaces geopolitical_surge)."""
+    from tradingagents.skills.research.factor_estimators import compute_equity_vol_regime
+    class _Obj:
+        def __init__(self, **d): self.__dict__.update(d)
+    state = _Obj(
+        macro_report=_Obj(
+            tail_risk=_Obj(move=100.0, staleness_days=0),
+            geopolitical_risk=_Obj(gpr_monthly=120.0, gpr_zscore_60m=2.0, staleness_days=0),
+        ),
+        risk_report=_Obj(
+            vix=_Obj(current_value=20.0, zscore_30d=0.0, staleness_days=0),
+            vix_term=_Obj(ratio=1.0, staleness_days=0),
+            real_vol=_Obj(realized_vol_60d=0.15, staleness_days=0),
+            skew=_Obj(change_1m_z=0.0, staleness_days=0),
+        ),
+        news_report=None,
+    )
+    score = compute_equity_vol_regime(state, mode="historical")
+    assert score.z_score > 0.2  # GPR +2σ should lift F7
+
+
+def test_f8_uses_us_cape_and_kospi():
+    """F8 uses CAPE + KOSPI PER + Div Yield activated."""
+    from unittest.mock import patch
+    from tradingagents.skills.research.factor_estimators import compute_valuation
+    class _Obj:
+        def __init__(self, **d): self.__dict__.update(d)
+    state = _Obj(
+        macro_report=_Obj(
+            us_equity_valuation=_Obj(cape=36.0, staleness_days=0),  # +2σ from (20, 8)
+            kr_valuation=_Obj(kospi_pbr=1.0, kospi_per=13.0, kospi_div_yield=2.0, staleness_days=0),
+        ),
+        risk_report=_Obj(
+            real_yields=_Obj(tips_10y=2.0, staleness_days=0),
+        ),
+        news_report=None,
+    )
+    with patch("tradingagents.skills.research.factor_estimators.fetch_sp_trailing_pe",
+               return_value=25.0):
+        score = compute_valuation(state, mode="historical")
+    assert score.z_score > 0.2  # CAPE +2σ × 0.20 weight; other components partially offset
+
+
+def test_f9_renamed_to_market_dispersion():
+    """compute_market_dispersion function exists (was compute_liquidity_regime)."""
+    from tradingagents.skills.research import factor_estimators
+    assert hasattr(factor_estimators, "compute_market_dispersion")
+    assert not hasattr(factor_estimators, "compute_liquidity_regime")

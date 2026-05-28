@@ -68,7 +68,7 @@ _PARQUET_TO_FACTOR_KEY: dict[str, str] = {
     "krw_regime": "F6_krw_regime",
     "equity_vol_regime": "F7_equity_vol_regime",
     "valuation": "F8_valuation",
-    "liquidity_regime": "F9_liquidity_regime",
+    "market_dispersion": "F9_market_dispersion",
 }
 
 

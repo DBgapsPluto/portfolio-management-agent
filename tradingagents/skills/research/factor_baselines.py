@@ -74,15 +74,17 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F5_credit_cycle", "dovish_bias"):        (0.0, 0.5),
 
     # === F6 krw_regime ===
-    ("F6_krw_regime", "krw_overnight_pct"): (0.0, 0.5),
-    ("F6_krw_regime", "krw_level"):         (1250.0, 100.0),
-    ("F6_krw_regime", "kr_us_rate_diff"):   (-100.0, 100.0),
-    # C8 D11a (2026-05-24): foreign_flow_z 의 raw 는 net_20d_krw (KRW 단위 누적).
-    # 20d 누적 순매수 typical magnitude ~수조 (1e12 KRW). sd=1e12 으로 z ≈ -3~+3
-    # normal range. Prior was (0, 1.0) which made z = raw KRW (1e12-scale) — broken.
-    ("F6_krw_regime", "foreign_flow_z"):    (0.0, 1e12),
-    ("F6_krw_regime", "kr_exports_yoy"):    (5.0, 15.0),
-    ("F6_krw_regime", "bok_tone_balance"):  (0.0, 0.5),
+    # Tier 0 reform (2026-05-28, Engel-West 2005 fix):
+    # - REMOVED: krw_level (raw I(1) — spurious regression risk)
+    # - REMOVED: foreign_flow_z (KRW-unit, scale mismatch) → replaced by foreign_flow_normalized
+    # - ADDED: krw_change_6m_pct, krw_reer, foreign_flow_normalized
+    ("F6_krw_regime", "krw_overnight_pct"):       (0.0, 0.5),
+    ("F6_krw_regime", "krw_change_6m_pct"):       (0.0, 5.0),     # 6m %change mean 0, sd 5%
+    ("F6_krw_regime", "krw_reer"):                (100.0, 5.0),   # BIS REER mean 100, sd 5
+    ("F6_krw_regime", "kr_us_rate_diff"):         (-100.0, 100.0),
+    ("F6_krw_regime", "foreign_flow_normalized"): (0.0, 0.005),   # mean 0, sd ~0.5%
+    ("F6_krw_regime", "kr_exports_yoy"):          (5.0, 15.0),
+    ("F6_krw_regime", "bok_tone_balance"):        (0.0, 0.5),
 
     # === F7 equity_vol ===
     ("F7_equity_vol", "vix_level"):            (20.0, 8.0),
@@ -97,13 +99,9 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     # (delta / hand-coded sd=5.0). Use (0, 1) so factor-level z passes through.
     ("F7_equity_vol", "skew_change"):          (0.0, 1.0),
     ("F7_equity_vol", "sentiment_dispersion"): (0.3, 0.15),
-    # 2026-05-26 F7 saturate fix (#1): raw 는 count delta (24h - 7d_avg).
-    # 실측 5 backtest 시점에서 raw=25 일관 (NEWS_WINDOW 가 24h cover →
-    # prev_7d_avg=0, recent≈25 → delta≈25 정수 범위). baseline (0, 1) 는 ±1
-    # 변동 가정 — 실제 raw 분포 (0~30+) 와 단위 mismatch → z=25 outlier 가
-    # F7 raw_avg 를 단독 cap 까지 끌고 감. (5, 10) 으로 raw 분포에 맞춤:
-    # z(25)=(25-5)/10=2.0 정상 magnitude.
-    ("F7_equity_vol", "geopolitical_surge"):   (5.0, 10.0),
+    # Tier 0 (2026-05-28): geopolitical_surge (news count delta) → Caldara-Iacoviello
+    # GPR Index (quant). gpr_index_zscore is already z-scored externally (0, 1).
+    ("F7_equity_vol", "gpr_index_zscore"):     (0.0, 1.0),
 
     # === F8 valuation ===
     ("F8_valuation", "sp_pe"):           (18.0, 6.0),
@@ -111,19 +109,26 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F8_valuation", "erp"):             (4.0, 2.0),
     # C8 (2026-05-24): KOSPI PBR long-run normal range ~0.7-1.3 (mean 1.0, sd 0.3).
     ("F8_valuation", "kospi_pbr"):       (1.0, 0.3),
+    # Tier 0 (2026-05-28): US:KR 50:50 balance — CAPE + KOSPI PER/Div Yield.
+    # Shiller CAPE 1881+ mean ~20, sd ~8. KOSPI200 PER mean ~13, sd ~4.
+    # kospi_div_yield component is -div_yield (inverted: high yield = cheap → -z).
+    # Baseline matches inverted component: mean=-2.0, sd=0.8.
+    ("F8_valuation", "us_cape"):         (20.0, 8.0),    # Shiller CAPE
+    ("F8_valuation", "kospi_per"):       (13.0, 4.0),    # KOSPI200 PER
+    ("F8_valuation", "kospi_div_yield"): (-2.0, 0.8),    # -div_yield (inverted sign)
 
-    # === F9 liquidity ===
+    # === F9 market_dispersion (renamed from F9_liquidity, Tier 0 2026-05-28) ===
     # C8 (2026-05-24): vrp_60d = (VIX/100)² - realized² × 10000 (bps²-like). Range
     # typically -200~+200 in normal regimes; mean ~0 (variance premium is small/null
     # on average; large positive in stress regimes). Hand-coded sd 200.
-    ("F9_liquidity", "vrp"):                (0.0, 200.0),
-    ("F9_liquidity", "eq_bond_corr"):       (-0.2, 0.2),
+    ("F9_market_dispersion", "vrp"):                (0.0, 200.0),
+    ("F9_market_dispersion", "eq_bond_corr"):       (-0.2, 0.2),
     # C8 (2026-05-24): BreadthSnapshot.sector_return_dispersion is decimal-scale
     # cross-sectional stddev of sector ETF 60d returns. Mean ~5% (0.05), sd ~3% (0.03).
-    ("F9_liquidity", "sector_dispersion"):  (0.05, 0.03),
-    ("F9_liquidity", "breadth"):            (0.55, 0.15),
-    ("F9_liquidity", "event_cluster"):      (1.5, 1.5),
-    ("F9_liquidity", "rising_signal"):      (0.5, 0.5),
+    ("F9_market_dispersion", "sector_dispersion"):  (0.05, 0.03),
+    ("F9_market_dispersion", "breadth"):            (0.55, 0.15),
+    ("F9_market_dispersion", "event_cluster"):      (1.5, 1.5),
+    ("F9_market_dispersion", "rising_signal"):      (0.5, 0.5),
 
     # === F10 systemic_liquidity (2026-05-27 신규) ===
     # +z = tight financial conditions (stress).

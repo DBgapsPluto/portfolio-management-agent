@@ -27,7 +27,7 @@ def test_factor_scores_field_accepts_9_factor_dict():
             "F1_growth": 0.5, "F2_inflation": -0.3, "F3_real_rate": 0.1,
             "F4_term_premium": 0.0, "F5_credit_cycle": -0.2,
             "F6_krw_regime": 0.4, "F7_equity_vol_regime": 0.0,
-            "F8_valuation": -0.5, "F9_liquidity_regime": 0.2,
+            "F8_valuation": -0.5, "F9_market_dispersion": 0.2,
         }
     )
     assert d.factor_scores["F1_growth"] == 0.5

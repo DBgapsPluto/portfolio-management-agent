@@ -619,49 +619,32 @@ def compute_credit_cycle(stage1: Any, mode: FactorMode = "production") -> Factor
 def compute_krw_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F6 krw_regime — +z = weaker KRW.
 
-    PR0 hotfix (C1):
-    - kr_macro.bok_us_rate_diff_bps → kr_divergence.us_kr_rate_gap_bps
-    - kr_macro.exports_yoy_pct → kr_export.yoy_pct (KRExportSnapshot)
-    - foreign_flow.net_flow_z → foreign_flow.net_20d_krw (ForeignFlowSnapshot
-      에 net_flow_z 없음, 20d 누적 순매수액을 proxy 로 사용)
-    - krw_level: macro_report.fx.usd_krw 우선 사용, 없으면 external fetch.
+    Tier 0 reform (Engel-West 2005 random walk fix):
+    - REMOVED: krw_level (raw I(1) — spurious regression risk)
+    - ADDED:   krw_change_6m_pct, krw_reer
+    - foreign_flow: normalized by KOSPI mcap (Stambaugh 1986 fix)
     """
-    # macro_report.fx (FXSnapshot) 의 usd_krw 우선. None 일 때 external fetch.
-    # Stage 2 audit (Task 3): None 의 원인 (sentinel guard 작동 or fx field 결측)
-    # 을 logger.info 로 trace — yfinance 우회 경로 가시화.
-    krw_level = _safe_get(stage1, "macro_report", "fx", "usd_krw")
-    if krw_level is None:
-        logger.info(
-            "compute_krw_regime: Stage 1 fx.usd_krw missing/sentinel → external yfinance fallback"
-        )
-        krw_level = fetch_krw_usd_level()  # external fallback
-        if krw_level is None:
-            logger.warning(
-                "compute_krw_regime: external fallback also failed → krw_level component drop"
-            )
+    krw_6m = _safe_get(stage1, "macro_report", "fx", "krw_change_6m_pct")
+    krw_reer = _safe_get(stage1, "macro_report", "fx", "krw_reer")
+    foreign_flow_norm = _safe_get(stage1, "macro_report", "foreign_flow", "net_20d_normalized")
 
     components_raw: dict[str, float | None] = {
-        "krw_overnight_pct": _safe_get(
-            stage1, "news_report", "global_overnight", "krw", "change_pct"
-        ),
-        "krw_level": krw_level,
-        "kr_us_rate_diff": _safe_get(
-            stage1, "macro_report", "kr_divergence", "us_kr_rate_gap_bps"
-        ),
-        "foreign_flow_z": _safe_get(
-            stage1, "macro_report", "foreign_flow", "net_20d_krw"
-        ),
-        "kr_exports_yoy": _safe_get(
-            stage1, "macro_report", "kr_export", "yoy_pct"
-        ),
-        "bok_tone_balance": _safe_get(
-            stage1, "news_report", "cb_speakers", "bok_tone_balance"
-        ),
+        "krw_overnight_pct":        _safe_get(stage1, "news_report", "global_overnight", "krw", "change_pct"),
+        "krw_change_6m_pct":        krw_6m,
+        "krw_reer":                 krw_reer,
+        "kr_us_rate_diff":          _safe_get(stage1, "macro_report", "kr_divergence", "us_kr_rate_gap_bps"),
+        "foreign_flow_normalized":  foreign_flow_norm,
+        "kr_exports_yoy":           _safe_get(stage1, "macro_report", "kr_export", "yoy_pct"),
+        "bok_tone_balance":         _safe_get(stage1, "news_report", "cb_speakers", "bok_tone_balance"),
     }
     weights: dict[str, float] = {
-        "krw_overnight_pct": 0.20, "krw_level": 0.20,
-        "kr_us_rate_diff": 0.15, "foreign_flow_z": 0.20,
-        "kr_exports_yoy": 0.10, "bok_tone_balance": 0.15,
+        "krw_overnight_pct":       0.20,
+        "krw_change_6m_pct":       0.20,
+        "krw_reer":                0.10,
+        "kr_us_rate_diff":         0.15,
+        "foreign_flow_normalized": 0.20,
+        "kr_exports_yoy":          0.05,
+        "bok_tone_balance":        0.10,
     }
     return _aggregate("F6_krw_regime", components_raw, weights, mode=mode)
 
@@ -672,53 +655,31 @@ def compute_krw_regime(stage1: Any, mode: FactorMode = "production") -> FactorSc
 def compute_equity_vol_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
     """F7 equity_vol_regime — +z = high vol.
 
-    PR0 hotfix (C1):
-    - vix.z_score → vix.zscore_30d (VolatilitySnapshot)
-    - vix.term_ratio → vix_term.ratio (VIXTermStructureSnapshot, 별도 snapshot)
-    - move.current_value → macro_report.tail_risk.move (TailRiskSnapshot;
-      MOVE 가 risk_report 가 아니라 macro_report.tail_risk 에 위치)
-    - skew_change: PLACEHOLDER (weight=0) — SkewSnapshot has only absolute
-      `skew_value` (no change/delta field), but factor_baselines assumes
-      *change* semantic (mean=0, sd=5). Activated in C8 after SkewSnapshot
-      gains a change/delta field (or baseline retuned for absolute level).
-    - realized_vol_60d: PLACEHOLDER (weight=0) — C8 activation after PR1
-      adds RealVolSnapshot.
+    Tier 0 reform: geopolitical_surge (news count delta) → Caldara-Iacoviello GPR (quant).
     """
-    geo = _safe_get(
-        stage1, "news_report", "news_sentiment", "count_change_vs_7d", "geopolitical"
-    )
-    geopolitical_surge = None if geo is None else max(0.0, float(geo))
-
-    # C8 activation (2026-05-24): PR1 C6 added RealVolSnapshot.realized_vol_60d
-    # (SPY annualized 60d stddev).
-    realized_vol_60d = _safe_get(
-        stage1, "risk_report", "real_vol", "realized_vol_60d"
-    )
-
-    # C8 activation (2026-05-24): PR1 C7.5 added SkewSnapshot.change_1m_z
-    # (1-month change normalized by long-run sd — cleaner signal than level).
+    gpr_z = _safe_get(stage1, "macro_report", "geopolitical_risk", "gpr_zscore_60m")
+    realized_vol_60d = _safe_get(stage1, "risk_report", "real_vol", "realized_vol_60d")
     skew_change = _safe_get(stage1, "risk_report", "skew", "change_1m_z")
 
     components_raw: dict[str, float | None] = {
-        "vix_level":   _safe_get(stage1, "risk_report", "vix", "current_value"),
-        "vix_z_score": _safe_get(stage1, "risk_report", "vix", "zscore_30d"),
-        "vix_term_ratio": _safe_get(stage1, "risk_report", "vix_term", "ratio"),
-        # MOVE 는 macro_report.tail_risk 에 위치
-        "move":        _safe_get(stage1, "macro_report", "tail_risk", "move"),
-        "realized_vol_60d": realized_vol_60d,  # C8 activated
-        "skew_change": skew_change,            # C8 activated (C7.5)
-        "sentiment_dispersion": _safe_get(
-            stage1, "news_report", "news_sentiment", "sentiment_dispersion"
-        ),
-        "geopolitical_surge": geopolitical_surge,
+        "vix_level":            _safe_get(stage1, "risk_report", "vix", "current_value"),
+        "vix_z_score":          _safe_get(stage1, "risk_report", "vix", "zscore_30d"),
+        "vix_term_ratio":       _safe_get(stage1, "risk_report", "vix_term", "ratio"),
+        "move":                 _safe_get(stage1, "macro_report", "tail_risk", "move"),
+        "realized_vol_60d":     realized_vol_60d,
+        "skew_change":          skew_change,
+        "gpr_index_zscore":     gpr_z,
+        "sentiment_dispersion": _safe_get(stage1, "news_report", "news_sentiment", "sentiment_dispersion"),
     }
-    # C8 weight rebalance (D11 plan default; sum=1.00):
     weights: dict[str, float] = {
-        "vix_level": 0.20, "vix_z_score": 0.10, "vix_term_ratio": 0.10,
-        "move": 0.15,
-        "realized_vol_60d": 0.13,   # C8 activated
-        "skew_change": 0.07,        # C8 activated (C7.5)
-        "sentiment_dispersion": 0.10, "geopolitical_surge": 0.15,
+        "vix_level":            0.20,
+        "vix_z_score":          0.10,
+        "vix_term_ratio":       0.10,
+        "move":                 0.15,
+        "realized_vol_60d":     0.13,
+        "skew_change":          0.07,
+        "gpr_index_zscore":     0.15,   # NEW (replaces geopolitical_surge)
+        "sentiment_dispersion": 0.10,
     }
     return _aggregate("F7_equity_vol", components_raw, weights, mode=mode)
 
@@ -727,48 +688,51 @@ def compute_equity_vol_regime(stage1: Any, mode: FactorMode = "production") -> F
 
 
 def compute_valuation(stage1: Any, mode: FactorMode = "production") -> FactorScore:
-    """F8 valuation — +z = more expensive.
+    """F8 valuation — +z = expensive.
 
-    PR0 hotfix (C1):
-    - tips_yield: macro_report.real_yields → risk_report.real_yields.tips_10y
-    - kospi_pbr: PLACEHOLDER (weight=0) — C8 activation after PR1 adds
-      KRValuationSnapshot to macro_report.kr_valuation.
+    Tier 0 reform: US:KR 50:55:45 balance via Shiller CAPE + KOSPI PER/Div Yield activated.
     """
     sp_pe = fetch_sp_trailing_pe()
-    if sp_pe is not None and sp_pe > 0:
-        earnings_yield: float | None = 100.0 / sp_pe
-    else:
-        earnings_yield = None
+    earnings_yield = (100.0 / sp_pe) if (sp_pe and sp_pe > 0) else None
 
     tips_yield = _safe_get(stage1, "risk_report", "real_yields", "tips_10y")
-    if earnings_yield is not None and tips_yield is not None:
-        erp: float | None = earnings_yield - float(tips_yield)
-    else:
-        erp = None
+    erp = (earnings_yield - float(tips_yield)) if (earnings_yield is not None and tips_yield is not None) else None
 
-    # C8 activation (2026-05-24): PR1 C5 added macro_report.kr_valuation
-    # (KRValuationSnapshot, Optional). _safe_get → None safe.
+    us_cape = _safe_get(stage1, "macro_report", "us_equity_valuation", "cape")
     kospi_pbr = _safe_get(stage1, "macro_report", "kr_valuation", "kospi_pbr")
+    kospi_per = _safe_get(stage1, "macro_report", "kr_valuation", "kospi_per")
+    kospi_div = _safe_get(stage1, "macro_report", "kr_valuation", "kospi_div_yield")
+    # Div yield inverted: high yield = cheap → -z for F8. Baseline (-2.0, 0.8).
+    kospi_div_inv = -float(kospi_div) if kospi_div is not None else None
 
     components_raw: dict[str, float | None] = {
-        "sp_pe":          sp_pe,
-        "earnings_yield": earnings_yield,
-        "erp":            erp,
-        "kospi_pbr":      kospi_pbr,  # C8 activated
+        "sp_pe":           sp_pe,
+        "earnings_yield":  earnings_yield,
+        "erp":             erp,
+        "us_cape":         us_cape,
+        "kospi_pbr":       kospi_pbr,
+        "kospi_per":       kospi_per,
+        "kospi_div_yield": kospi_div_inv,
     }
-    # C8 weight rebalance (D11 plan default; sum=1.00):
     weights: dict[str, float] = {
-        "sp_pe": 0.20, "earnings_yield": 0.25, "erp": 0.30,
-        "kospi_pbr": 0.25,   # C8 activated
+        "sp_pe":           0.10,
+        "earnings_yield":  0.10,
+        "erp":             0.15,
+        "us_cape":         0.20,
+        "kospi_pbr":       0.20,
+        "kospi_per":       0.15,
+        "kospi_div_yield": 0.10,
     }
     return _aggregate("F8_valuation", components_raw, weights, mode=mode)
 
 
-# ---------------------- F9 liquidity_regime ----------------------
+# ---------------------- F9 market_dispersion (renamed from liquidity_regime) ----------------------
 
 
-def compute_liquidity_regime(stage1: Any, mode: FactorMode = "production") -> FactorScore:
-    """F9 liquidity_regime — +z = CROSS-SECTIONAL stress (not systemic).
+def compute_market_dispersion(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+    """F9 market_dispersion — +z = CROSS-SECTIONAL stress (not systemic).
+
+    Tier 0 rename (2026-05-28): compute_liquidity_regime → compute_market_dispersion.
 
     *명칭 주의 (2026-05-27)*: 이 factor 의 이름은 'liquidity_regime' 이지만
     실제 측정은 *cross-sectional risk concentration / dispersion* 임. 즉:
@@ -837,7 +801,7 @@ def compute_liquidity_regime(stage1: Any, mode: FactorMode = "production") -> Fa
         "event_cluster": 0.15,
         "rising_signal": 0.15,
     }
-    return _aggregate("F9_liquidity", components_raw, weights, mode=mode)
+    return _aggregate("F9_market_dispersion", components_raw, weights, mode=mode)
 
 
 # ---------------------- F10 systemic_liquidity ----------------------
@@ -917,7 +881,7 @@ def compute_all_factors(
         krw_regime=compute_krw_regime(stage1, mode=mode),
         equity_vol_regime=compute_equity_vol_regime(stage1, mode=mode),
         valuation=compute_valuation(stage1, mode=mode),
-        market_dispersion=compute_liquidity_regime(stage1, mode=mode),
+        market_dispersion=compute_market_dispersion(stage1, mode=mode),
         # 2026-05-27 — F10 신규 추가. systemic_liquidity_snapshot 부재 시 None
         # 으로 graceful skip (downstream FactorScores.to_dict 에서 누락).
         systemic_liquidity=compute_systemic_liquidity(stage1, mode=mode),
@@ -940,7 +904,7 @@ __all__: Final = [
     "compute_growth_surprise",
     "compute_inflation_surprise",
     "compute_krw_regime",
-    "compute_liquidity_regime",
+    "compute_market_dispersion",
     "compute_systemic_liquidity",
     "compute_real_rate",
     "compute_term_premium",

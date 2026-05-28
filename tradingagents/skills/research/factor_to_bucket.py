@@ -59,7 +59,7 @@ FACTORS: Final[tuple[str, ...]] = (
     "F6_krw_regime",
     "F7_equity_vol_regime",
     "F8_valuation",
-    "F9_liquidity_regime",
+    "F9_market_dispersion",
     # 2026-05-27 — F10 신규. F9 가 cross-sectional dispersion, F10 가 systemic.
     "F10_systemic_liquidity",
 )
@@ -134,12 +134,12 @@ INITIAL_BETA: Final[dict[tuple[str, str], float]] = {
     ("F8_valuation", "fx_commodity"):  +0.0213,
     ("F8_valuation", "bond"):          +0.0437,
     ("F8_valuation", "cash_mmf"):      +0.0162,
-    # F9 liquidity_regime
-    ("F9_liquidity_regime", "kr_equity"):     -0.0723,
-    ("F9_liquidity_regime", "global_equity"): -0.0755,
-    ("F9_liquidity_regime", "fx_commodity"): -0.011,
-    ("F9_liquidity_regime", "bond"):          +0.0657,
-    ("F9_liquidity_regime", "cash_mmf"):      +0.0575,
+    # F9 market_dispersion (renamed from F9_liquidity_regime, Tier 0 2026-05-28)
+    ("F9_market_dispersion", "kr_equity"):     -0.0723,
+    ("F9_market_dispersion", "global_equity"): -0.0755,
+    ("F9_market_dispersion", "fx_commodity"): -0.011,
+    ("F9_market_dispersion", "bond"):          +0.0657,
+    ("F9_market_dispersion", "cash_mmf"):      +0.0575,
     # F10 systemic_liquidity (2026-05-27 신규, expert prior).
     # +z = tight FCI (stress) → broad risk-off (모든 위험자산 -, 안전자산 +).
     # F9 (cross-sectional) 보다 위험자산 영향 더 균등 (특정 자산 집중 X).
@@ -161,7 +161,7 @@ INITIAL_TIPS_BETA: Final[dict[str, float]] = {
     "F6_krw_regime":        0.0,
     "F7_equity_vol_regime": 0.0,
     "F8_valuation":         0.0,
-    "F9_liquidity_regime": -0.03,
+    "F9_market_dispersion": -0.03,
     "F10_systemic_liquidity": +0.05,  # systemic stress 시 TIPS preference 약간 ↑
 }
 

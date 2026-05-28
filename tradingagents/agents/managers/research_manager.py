@@ -158,7 +158,7 @@ def _blend_factors_with_prior(
         krw_regime=_blend(new.krw_regime, "F6_krw_regime"),
         equity_vol_regime=_blend(new.equity_vol_regime, "F7_equity_vol_regime"),
         valuation=_blend(new.valuation, "F8_valuation"),
-        liquidity_regime=_blend(new.liquidity_regime, "F9_liquidity_regime"),
+        market_dispersion=_blend(new.market_dispersion, "F9_market_dispersion"),
     )
 
 
@@ -311,7 +311,7 @@ def create_research_manager(deep_llm):
                 factor_scores.real_rate, factor_scores.term_premium,
                 factor_scores.credit_cycle, factor_scores.krw_regime,
                 factor_scores.equity_vol_regime, factor_scores.valuation,
-                factor_scores.liquidity_regime,
+                factor_scores.market_dispersion,
             ] if f.confidence > 0.0
         )
         logger.info(
@@ -363,7 +363,7 @@ def create_research_manager(deep_llm):
         for factor_name in (
             "growth_surprise", "inflation_surprise", "real_rate",
             "term_premium", "credit_cycle", "krw_regime",
-            "equity_vol_regime", "valuation", "liquidity_regime",
+            "equity_vol_regime", "valuation", "market_dispersion",
         ):
             fs = getattr(factor_scores, factor_name, None)
             if fs is None:
