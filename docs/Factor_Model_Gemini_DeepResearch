@@ -1,0 +1,616 @@
+다중 자산 포트폴리오 운용을 위한 거시경제 팩터 모델의 계량적 타당성 및 구조적 결함에 대한 심층 분석 보고서
+1. 포트폴리오 자산 배분 모델의 구조적 이해와 문제의식
+현대 금융 시장에서 다중 자산(Multi-asset) 포트폴리오의 운용은 거시경제적 변동성을 얼마나 정교하게 포착하고 이를 자산군의 비중 가감(Tactical Asset Allocation)에 반영할 수 있는지에 달려 있다. 본 연구가 분석하는 다중 단계(Multi-stage) 포트폴리오 운용 알고리즘은 1단계에서 거시 지표를 수집하고, 2단계에서 10개의 핵심 팩터(Factor)를 도출하여 사전 설정된 베이스라인(Baseline) 버킷 비중을 조절하며, 3단계에서 세부 상장지수펀드(ETF)를 선정하는 구조를 취하고 있다.
+
+이러한 하향식(Top-down) 접근법은 자산군 간의 상관관계를 통제하고 팩터 기반의 위험 프리미엄을 수취한다는 점에서 이론적 타당성을 갖는다. 특히 글로벌 주식(Global Equity), 한국 주식(KR Equity), 원자재 및 외환(Cyclical Commodity FX), 귀금속(Precious Metals), 한국 채권(KR Bond), 글로벌 듀레이션(Global Duration), 신용 채권(Credit), 현금성 자산(Cash MMF)으로 세분화된 8개 버킷 구조는 경기 주기와 물가 환경의 변화에 유연하게 대응할 수 있는 기초를 제공한다.
+
+그러나 2단계(Stage 2)에서 팩터를 버킷 비중으로 환산하는 계량 모델의 내부 구조를 객관적인 계량경제학적 원리와 선행 학술 연구에 비추어 냉정하게 평가할 때, 다수의 치명적인 논리적 비약과 수학적 결함이 관찰된다. 모형에 투입되는 10개의 팩터는 겉보기에는 경제학적 직관에 부합하는 듯 보이나, 실제 데이터 변환 및 교정(Calibration) 과정에서는 다중공선성(Multicollinearity), 시계열 데이터의 비정상성(Non-stationarity)으로 인한 가짜 회귀(Spurious Regression), 핵심 선행 지표의 누락, 그리고 자유도(Degrees of Freedom) 부족에 따른 극단적 과적합(Overfitting)의 위험을 내포하고 있다. 이러한 구조적 결함을 방치한 채 모델을 가동할 경우, 표본 내(In-sample) 테스트에서는 훌륭한 성과를 보일지라도 실제 운용 환경인 표본 외(Out-of-sample) 영역에서는 포트폴리오 비중이 무작위로 요동치며 심각한 자본 손실을 초래할 수 있다. 본 보고서는 각 팩터의 통계적 정합성, 거시경제학적 근거, 그리고 최적화 알고리즘의 맹점을 철저히 분석하고 이에 대한 학술적, 실증적 대안을 제시한다.   
+
+2. 팩터 산출 구조의 내재적 결함: 이중 계산(Double Counting)과 다중공선성(Multicollinearity)
+거시경제 지표를 활용한 다중 팩터 모델(Macroeconomic Multi-factor Model)의 가장 큰 난제는 독립 변수 간의 높은 상관관계로 인해 발생하는 다중공선성 문제이다. 자산군의 수익률을 예측하는 회귀 모형에서 독립 변수들이 서로 강하게 연관되어 있다면, 특정 팩터가 포트폴리오 수익률에 미치는 독립적인 한계 기여도(Marginal Contribution)를 분리해내는 것은 불가능에 가깝다. 현재 제안된 10개 팩터 설계안에는 동일한 기초 경제 지표가 상이한 팩터들에 중복 편입되는 구조적 모순이 존재한다.   
+
+2.1. 금융환경지수(NFCI)와 수익률 곡선(Yield Curve)의 구조적 중복
+첫 번째 핵심적인 결함은 F1(Growth) 팩터와 F10(Systemic Liquidity) 팩터 간의 충돌이다. 경제 성장 모멘텀을 대리하는 F1 팩터는 시카고 연방준비은행의 국가금융환경지수(NFCI, National Financial Conditions Index)를 역산하여 12%의 가중치로 포함하고 있다. 이와 동시에 시스템적 유동성 경색을 측정하기 위해 신설된 F10 팩터 역시 NFCI를 30%의 지배적인 가중치로 사용하고 있다.   
+
+두 팩터가 계수(β) 행렬 내에서 독립적인 신호로 작용한다고 가정하고 교정(Calibration) 절차를 수행할 경우, 동일한 글로벌 금융 환경 충격이 포트폴리오 배분 알고리즘에 중복으로 적용되는 이중 산정(Double Counting) 오류가 발생한다. NFCI가 급격히 상승하는(금융 환경이 타이트해지는) 국면에서 F1은 주식 비중 축소 신호를 보내고, F10 역시 동일한 논리로 주식 및 위험 자산의 매도 신호를 발생시킨다. 이는 알고리즘이 특정 위험에 대해 과잉 반응(Overreaction)하게 만들어 포트폴리오의 회전율(Turnover)을 불필요하게 높이고 톱니 효과(Whipsaw)에 노출되게 한다.   
+
+두 번째 결함은 F1(Growth)과 F4(Term Premium) 사이의 장단기 금리차(Yield Curve Spread) 중복이다. F1은 10년물과 2년물 국채 금리의 스프레드(spread_10y_2y_bps)를 10% 비중으로 포함하고 있으며, 기간 프리미엄을 측정하는 F4 또한 동일한 기초 자산인 slope_2_10y 변수를 25% 비중으로 반영하고 있다. F4가 수익률 곡선의 형태를 포착하는 주력 팩터로 설계되었음을 고려할 때, F1에 포함된 금리차 변수는 모델의 분산만을 증가시킬 뿐 추가적인 설명력을 제공하지 못한다. 특히 기간 프리미엄의 경우 단순 스프레드가 아닌 Adrian, Crump, Moench (2013)의 ACM 모델과 같이 국채 수익률을 기대 단기 금리 경로와 순수 기간 프리미엄으로 엄밀히 분해한 지표를 사용하는 것이 거시경제학의 표준이다. 단순 스프레드가 두 개 이상의 팩터에 산재해 있는 것은 모델의 정교함을 크게 떨어뜨린다.   
+
+2.2. 분산팽창지수(VIF)와 추정 표준오차의 수학적 왜곡
+이러한 변수 간의 중복은 통계적으로 분산팽창지수(Variance Inflation Factor, VIF)를 급상승시켜 회귀 계수의 신뢰성을 근본적으로 파괴한다. VIF는 특정 팩터 j의 분산이 다른 팩터들과의 선형 결합으로 인해 얼마나 부풀려졌는지를 측정하는 지표로, 다음과 같은 수식으로 정의된다.   
+
+VIF 
+j
+​
+ = 
+1−R 
+j
+2
+​
+ 
+1
+​
+ 
+여기서 R 
+j
+2
+​
+ 는 j번째 팩터를 종속 변수로 두고 나머지 모든 팩터들을 독립 변수로 하여 다중 회귀분석을 수행했을 때 도출되는 결정계수이다. 통상적으로 VIF 값이 5를 초과하거나 특히 10 이상일 경우 해당 모델은 심각한 다중공선성에 노출된 것으로 판정한다. 다중공선성이 발생하면 팩터 계수 추정치의 분산과 표준오차(Standard Error)가 기하급수적으로 커지며, 이는 t-통계량을 극단적으로 낮추어 해당 팩터가 실제로는 중요함에도 불구하고 통계적으로 유의미하지 않다는 잘못된 결론(Type II Error)을 유도한다.   
+
+팩터 간 관계	중복 기초 변수	공선성 발생 메커니즘	포트폴리오에 미치는 악영향
+F1 vs F10	시카고 연은 NFCI	거시 유동성 충격의 양방향 동시 적용	위험 자산(주식/원자재) 비중의 극단적 축소 또는 확대 (Whipsaw 발생)
+F1 vs F4	10년-2년 금리 스프레드	성장 기대감과 기간 프리미엄의 상관성 중첩	듀레이션(채권) 배분 비중 추정 시 표준오차 팽창 및 t-통계량 상실
+F9 vs F10	시장 유동성 및 분산 지표	국소적 자산 분산도와 거시 시스템 유동성 혼재	'Liquidity' 명칭 혼선으로 인한 교정 제약 조건(Sign Restriction) 설정 오류
+결과적으로 다중공선성이 해소되지 않은 β 매트릭스는 표본 데이터의 사소한 노이즈에도 크게 요동치는 불안정한 계수를 산출하게 된다. 이를 바로잡기 위해서는 F1(Growth)에서 NFCI와 수익률 곡선 변수를 완전히 제거하고, 이를 산업생산지수(Industrial Production)나 실질 개인소비지출(PCE)과 같은 순수 실물 경제 지표로 대체하여 팩터 간 직교성(Orthogonality)을 회복해야 한다. 또한 F9의 명칭을 'Liquidity Regime'에서 실제 지표의 본질에 부합하는 'Market Dispersion(시장 분산)'으로 변경하여 F10과의 기능적 중복에 대한 해석상 오류를 방지해야 한다.
+
+3. 시계열 데이터의 비정상성(Non-stationarity)과 가짜 회귀(Spurious Regression)의 위험성
+거시경제 변수를 금융 자산의 예측 팩터로 활용함에 있어 가장 흔하면서도 치명적인 오류는 시계열의 정상성(Stationarity)을 검증하지 않은 채 원시 레벨(Raw Level) 데이터를 모형에 투입하는 것이다. 시계열의 평균과 분산이 시간에 따라 변하지 않는 정상성이 확보되지 않으면, 모델은 데이터 간의 우연한 추세적 동행을 인과관계로 착각하는 가짜 회귀(Spurious Regression)에 빠지게 된다.   
+
+3.1. F6(KRW Regime) 팩터의 원시 수준(Raw Level) 데이터 사용 오류
+현재 제안된 F6 팩터는 원/달러 환율(USD/KRW)의 원시 수준 데이터 자체를 평균과 표준편차를 이용해 Z-score로 정규화하여 신호로 사용하고 있다. 이는 계량경제학적 관점에서 명백한 오류이다. 환율 데이터는 대표적으로 단위근(Unit Root)을 포함하는 I(1) 비정상 시계열이며 무작위 행보(Random Walk)에 가까운 특성을 지닌다.   
+
+단순 정규화(Z-score)는 데이터의 척도(Scale)를 바꿀 뿐, 시계열이 가진 비정상성을 I(0) 정상 시계열로 변환시켜 주지 못한다. 예를 들어, 원/달러 환율의 과거 장기 평균이 1,100원이고 표준편차가 150원일 때, 현재 환율이 구조적 요인에 의해 1,400원 수준에서 새로운 균형을 형성하고 있다면 Z-score는 지속적으로 +2.0 이상의 극단값을 기록하게 된다. 알고리즘은 이를 '원화의 강력한 약세 모멘텀(Weaker KRW signal)'으로 해석하여 한국 주식(kr_equity)과 한국 채권(kr_bond)의 비중을 영구적으로 과소 배분하는 심각한 구조적 편향(Structural Drift)을 낳게 된다.   
+
+3.2. Meese-Rogoff 퍼즐과 통계적 검증의 중요성
+환율의 절대적 레벨을 이용한 예측 모델의 한계는 1983년 출판된 Meese와 Rogoff의 기념비적인 논문에서부터 철저하게 입증되었다. 그들은 이자율, 인플레이션, 통화량 등 구조적 거시경제 펀더멘털 변수들을 총망라한 복잡한 환율 모형들이 표본 외 예측력(Out-of-sample predictability) 평가에서 단순한 무작위 행보(Random Walk) 모형을 전혀 이기지 못함을 증명했다. '미즈-로고프 퍼즐'로 불리는 이 현상은 환율의 단기 및 중기 변동이 거시경제적 레벨 팩터보다는 미시 구조적 수급이나 기대의 변화율에 의해 지배된다는 점을 강력히 시사한다.   
+
+이후 시계열 계량경제학의 발전 과정에서 Granger와 Newbold (1974)는 서로 아무런 관련이 없는 독립적인 확률 보행 변수들을 단순히 레벨 상태에서 회귀분석할 경우, 결정계수(R 
+2
+ )가 높게 나오고 t-통계량이 유의하게 산출되는 가짜 회귀가 76%에서 96%의 확률로 발생함을 몬테카를로 시뮬레이션을 통해 명백히 증명하였다.   
+
+시계열 처리 방식	데이터 특성	통계적 문제점	포트폴리오 교정 시의 결과
+원시 수준 (Raw Level)	I(1) 비정상 시계열, 단위근 존재	가짜 회귀 발생, 추세적 일치를 인과성으로 오인	가짜 유의성으로 인해 팩터 과적합 발생, Out-of-sample 붕괴
+수준의 Z-score	I(1) 시리즈의 스케일 변경	비정상성 미해결, 구조적 국면 이동(Regime Shift) 시 영구적 왜곡	특정 자산군(예: 원화 자산)의 장기적인 과소/과대 배분 편향
+로그 차분 / 변화율 (Rate of Change)	I(0) 정상 시계열	유효한 공분산 추정 가능, 가짜 회귀 방지	팩터의 단기 모멘텀 및 충격에 대한 정확한 민감도(β) 추정 가능
+Diebold-Mariano(1995) 예측력 검정이나 Clark-West 검정 등 모델의 우위를 판단하는 엄밀한 통계 기법들 역시 변수의 공분산 정상성(Covariance Stationarity)을 가정하고 있다. 비정상 시계열을 그대로 β 매트릭스의 교정에 사용하는 것은 알고리즘에 쓰레기를 집어넣고 금이 나오길 바라는 것(Garbage In, Garbage Out)과 다름없다. 따라서 F6의 krw_level 변수는 반드시 3개월 또는 6개월 변화율(예: krw_6m_pct)로 변환되어 적용되어야 하며, 이는 선택의 여지가 없는 수학적 필수 사항이다.   
+
+4. 지역 편향성(Regional Bias)과 로컬 자산 팩터의 커버리지 한계 검증
+글로벌 자산 배분 알고리즘이 특정 국가(주로 미국)의 데이터에만 과도하게 의존할 경우, 해당 펀드가 벤치마크로 삼는 통화 기준이나 지리적 특수성을 반영하지 못해 성과 측정에 심각한 오류가 발생한다. 제안된 10개 팩터 중 가치평가(F8)와 신용 주기(F5) 팩터는 미국 시장 데이터에 편중되어 있어 한국 및 원화 자산(kr_equity, kr_bond)의 위험 프리미엄을 정확히 진단하지 못하는 약점을 드러낸다.
+
+4.1. 홈 바이어스(Home Bias)의 정당성과 F8(Valuation) 팩터의 모순
+국제 재무론의 고전적인 '국제 분산 투자 퍼즐(International Diversification Puzzle)' 혹은 홈 바이어스(Home Bias) 현상은 투자자들이 최적의 글로벌 시장 포트폴리오를 보유하기보다는 자국 자산을 압도적으로 많이 보유하는 현상을 말한다. 이는 단순히 투자자들의 비합리적 선호나 친숙함(Familiarity) 때문만은 아니다. Baxter와 Jermann(1997), Heathcote와 Perri(2013) 등의 연구에 따르면, 국내 투자자가 직면하는 비분산적 노동 소득 위험(Non-diversifiable labor income risk)이나 자국 통화 표시 부채, 그리고 국내 인플레이션 리스크를 헤지하기 위해 자국 자산을 초과 보유하는 것은 지극히 합리적인 경제학적 선택이다.   
+
+따라서 사용자가 제안한 베이스라인(Baseline) 구조에서 한국 주식(0.15)을 글로벌 주식(0.20)의 75% 수준으로 매우 높게 설정한 것(옵션 C)은 원화 기준 운용 펀드의 특성상 이론적으로 매우 타당하며 방어 가능한(Defensible) 전략이다.
+
+그러나 팩터 F8(Valuation)의 구성을 보면 이러한 홈 바이어스의 철학과 정면으로 모순된다. F8은 S&P 500의 주가수익비율(PE), 이익수익률(Earnings Yield), 그리고 주식위험프리미엄(ERP) 등 미국 지표 3개에 75%의 가중치를 부여하고 있으며, 한국 시장 지표는 KOSPI PBR 단 하나(25%)에 불과하다. 만약 미국 증시가 인공지능(AI) 등 특정 섹터의 붐으로 인해 고평가 영역에 진입하여 F8이 강력한 양(+)의 값(비싸짐)을 출력한다면, 정작 가치평가 측면에서 역사적 저점이나 이른바 '코리아 디스카운트(Korea Discount)' 영역에 머물러 있는 한국 주식마저 무차별적으로 비중 축소(Risk-off) 대상이 되는 기계적 오류가 발생한다.   
+
+따라서 한국 주식의 가중치를 0.15로 높게 가져가는 펀드의 정체성을 유지하기 위해서는, F8 내에 KOSPI의 12개월 선행 주가수익비율(12M Fwd PE)이나 쉴러의 경기조정주가수익비율(CAPE)과 같은 한국 특화 밸류에이션 팩터를 대폭 추가하여 미국 대 한국 지표의 비중을 최소 50:50으로 맞춰야만 지역적 편향을 교정할 수 있다.   
+
+4.2. F5(Credit Cycle)의 협소성과 초과 채권 프리미엄(Excess Bond Premium)의 부재
+채권 및 신용 스프레드 버킷(kr_bond, credit, global_duration)의 비중을 조절하는 핵심 신호인 F5(Credit Cycle) 팩터의 구성 또한 심각한 문제를 안고 있다. 현재 F5는 미국의 하이일드 옵션조정스프레드(US HY OAS)와 투자등급(IG) 스프레드 등 미국 데이터에만 100% 의존하고 있다. 한국의 채권 시장이나 기업 신용 스프레드 지표가 전무하다는 것은 한국 신용 버킷의 비중을 미국의 데이터로만 가감하겠다는 의미로, 국지적 자금 경색(예: 국내 부동산 PF 위기나 단기 자금 시장 경색) 상황을 전혀 감지할 수 없다.
+
+더욱 치명적인 것은, 단순히 관측된 거시적 신용 스프레드 자체를 사용하는 것은 최신의 거시-금융(Macro-Finance) 연구 동향에 비추어 볼 때 정보 가치가 크게 떨어진다는 점이다. Gilchrist와 Zakrajšek(2012)의 선구적인 연구(AER 게재)는 개별 기업의 미시적 채권 데이터를 활용하여, 전체 신용 스프레드를 기업 고유의 '예상 부도 확률(Expected Default)' 부문과 금융 시장 전반의 위험 수용 능력(Risk-bearing Capacity)을 나타내는 '초과 채권 프리미엄(Excess Bond Premium, EBP)' 부문으로 분해하는 엄밀한 수학적 방법론을 제시하였다.   
+
+Spread 
+i,t
+​
+ =β 
+′
+ X 
+i,t
+​
+ +ExcessBondPremium 
+t
+​
+ 
+(여기서 $X_{i,t}$는 Merton(1974)의 부도 거리(Distance to Default) 등 기업 고유의 예상 부도 위험 요인이다.)
+
+Gilchrist-Zakrajšek(GZ) 모델에 따르면, 실물 경제(GDP, 실업률, 산업생산 등)의 하강이나 자산 가격의 붕괴를 예측하는 실질적인 동인은 단순한 신용 스프레드의 확대가 아니라, 펀더멘털을 초과하여 발생하는 '초과 채권 프리미엄(EBP)'의 충격이다. EBP가 급등할 때 이는 은행과 투자자들의 극심한 자본 제약과 신용 공급 축소를 의미하며, 실물 경제에 직접적인 타격을 가한다. 따라서 F5 팩터를 정교화하기 위해서는 단순한 US HY OAS 대신 미국 연방준비제도(FRB)에서 발표하는 GZ EBP 지표를 편입하고, 추가로 한국 시장의 로컬 신용 스프레드(국고채-회사채 금리차 등)를 통합하여 글로벌-로컬 복합 신용 팩터로 재설계해야 한다.   
+
+5. 포트폴리오 설명력 극대화를 위한 핵심 선행 팩터의 도입 논리
+기존의 10개 팩터는 주로 GDP, 고용, 물가 등 동행 지표(Coincident Indicator)나 후행 지표(Lagging Indicator)적 성격을 강하게 띤다. 금융 시장은 항상 실물 경제를 선행하여 반영하므로, 알고리즘이 시장의 변곡점을 적시에 포착하기 위해서는 펀더멘털 기반의 선행 지표(Leading Indicator)가 반드시 모델에 편입되어야 한다. 현재 모델에서는 한국 수출과 밀접한 중국 거시 지표와, 주가 모멘텀의 핵심인 이익 수정 비율 지표가 완전히 누락되어 있다.
+
+5.1. 중국 신용 자극(China Credit Impulse) 지표의 필수적 편입
+새로이 제안된 C안의 베이스라인에서, 위험 자산의 축을 담당하는 한국 주식(kr_equity)과 원자재 및 이머징 통화(cyclical_commodity_fx) 버킷의 비중 가감을 결정할 가장 강력한 단일 동인은 다름 아닌 중국의 경제 정책 사이클이다. 한국 수출의 25% 이상이 중국으로 향하고 있으며, 특히 KOSPI 시가총액의 절대다수를 차지하는 반도체 등 IT 하드웨어 산업과 산업재는 글로벌 제조업 수요, 특히 중국의 유동성 공급에 극도로 민감한 구조를 띤다.   
+
+다수의 실증 분석과 글로벌 투자은행의 연구에 따르면, 단순한 중국의 GDP 성장률이나 은행 대출 잔액보다는 '신용 자극(Credit Impulse)'이 자산 시장 예측에 훨씬 우월한 성능을 발휘한다. 신용 자극은 신규 신용 흐름의 변화율(Change in the flow of new credit)을 명목 GDP 대비 비중으로 측정한 것으로, 통화 및 재정 정책의 2차 미분값(가속도)에 해당한다.   
+
+중국의 신용 자극은 시차를 두고 글로벌 제조업 구매관리자지수(PMI), 산업용 금속(구리, 철광석 등) 가격, 그리고 한국 수출 증가율에 6개월에서 9개월 가량 선행(Lead)하는 특성을 보인다. 따라서, 원자재와 신흥국 주식의 움직임을 포착하기 위해 F12(China_Macro_Signal) 팩터를 신설하여 중국 PMI와 신용 자극 지표를 편입하는 것은 선택이 아닌 필수이다. 이 지표가 누락된 채 원자재 비중을 물가나 환율로만 조절하려는 시도는 포트폴리오의 선제적 리스크 관리 기능을 마비시킬 것이다.   
+
+5.2. 이익 수정 비율(Earnings Revision Cycle) 팩터의 도입
+주식 시장의 중단기 방향성을 결정하는 가장 직접적인 미시적 펀더멘털 지표는 애널리스트들의 기업 실적 전망치 변화, 즉 이익 수정(Earnings Revision) 모멘텀이다. F1(Growth)이 포괄하는 GDP 등 거시 지표는 발표 주기가 길고 사후적으로 수정되는 경우가 많아 알고리즘의 민첩한 자산 배분 신호로 작동하기에는 한계가 있다.
+
+현대 정량적 투자(Quant Investing)의 대가인 Asness, Frazzini, Pedersen (2019) 등은 실적 수정 및 질적(Quality) 지표가 포트폴리오의 장단기 수익률을 획기적으로 개선하며, 특히 가치(Value) 팩터나 가격 모멘텀(Momentum) 팩터가 포착하지 못하는 고유의 수익 원천을 제공함을 실증하였다. 주식 시장의 효율성이 완벽하지 않기 때문에, 애널리스트들이 기업의 새로운 정보에 대해 전망치를 보수적으로 서서히 조정(Sluggishness)하는 과정에서 이익 수정 모멘텀은 추세적으로 지속되는 성향을 띠게 된다.   
+
+거시 경제 모멘텀이 둔화되더라도 특정 섹터(예: AI 반도체)의 사이클 호조로 인해 KOSPI나 S&P 500의 선행 EPS 전망치가 상향 조정되고 있다면, 주식 비중을 축소해서는 안 된다. KOSPI 및 글로벌 증시의 '이익 상향 조정 기업 수 대비 하향 조정 기업 수 비율(EPS Revision Net Ratio)' 등을 반영하는 F11(Earnings_Cycle) 팩터를 편입함으로써, 탑다운(Top-down) 거시 지표가 지닌 맹점을 바텀업(Bottom-up) 펀더멘털 데이터로 보완하여 자산 배분 알고리즘의 선명도를 획기적으로 높일 수 있다.
+
+6. 고차원 매개변수 환경에서의 팩터 교정(Calibration)과 축소(Shrinkage) 최적화의 수학적 원리
+알고리즘의 Stage 2 구현에서 가장 치명적인 통계적 위협은 팩터-버킷 간의 민감도(β) 행렬을 추정하는 과정에서 발생하는 과적합(Overfitting)이다. 기존 5개 버킷과 9개 팩터 체제에서는 45개의 β 엔트리를 추정해야 했으나, 제안된 8개 버킷과 10개 팩터 체제에서는 추정해야 할 매개변수가 80개로 78% 급증했다. 반면 훈련에 사용되는 역사적 샘플 데이터의 수는 133분기로 고정되어 있다.   
+
+6.1. 표본 크기의 한계와 OLS 기반 공분산 추정의 붕괴
+매개변수 수(80개) 대비 관측치 수(133개)의 비율(Sample-to-variable ratio)이 1.66에 불과한 환경에서 전통적인 최우추정법(Maximum Likelihood Estimation)이나 최소자승법(OLS)을 사용하면 모형은 데이터의 근본적인 패턴이 아닌 일시적인 노이즈까지 완벽히 암기하게 된다. Goyal과 Welch(2008)의 기념비적 연구가 경고하듯, 표본 내(In-sample)에서 높은 설명력을 보이는 거시경제 예측 변수들의 조합이 표본 외(Out-of-sample)에서는 단순 역사적 평균(Historical Average) 모형조차 이기지 못하는 현상은 바로 이 과적합과 모수 추정의 불안정성에서 기인한다.   
+
+초고차원 환경에서 표본 공분산 행렬은 심하게 왜곡되며 극단적인 고유값(Eigenvalue)을 산출한다. 이러한 행렬을 바탕으로 Markowitz 류의 포트폴리오 최적화나 팩터 가중치 배분을 수행하면, 특정 자산에 비상식적으로 거대한 롱/숏 포지션이 구축되는 코너 솔루션(Corner Solution) 문제가 발생한다.   
+
+6.2. 릿지 회귀(Ridge Regression)와 유효 자유도(Effective Degrees of Freedom)의 제어
+이러한 과적합 문제를 통제하기 위해 본 알고리즘은 베이지안 사전 확률(Prior)을 부여하고 계수의 크기를 축소(Shrinkage)하는 L2 정규화 기법인 릿지 회귀(Ridge Regression)를 사용한다. 릿지 추정량 $\hat{\beta}$는 다음의 잔차제곱합과 페널티 항의 합을 최소화하는 해로 정의된다.   
+
+β
+^
+​
+ =arg 
+β
+min
+​
+ {∥Y−Xβ∥ 
+2
+ +λ∥β∥ 
+2
+ }
+이를 행렬 방정식으로 나타내면 다음과 같은 폐쇄형 해(Closed-form solution)를 갖는다.
+
+β
+^
+​
+ =(X 
+⊤
+ X+λI) 
+−1
+ X 
+⊤
+ Y
+여기서 튜닝 파라미터 λ(Shrinkage parameter)가 증가할수록 추정된 계수들의 크기는 0을 향해 점진적으로 수축되며, 모형의 편향(Bias)은 커지지만 분산(Variance)은 획기적으로 줄어들어 표본 외 예측의 안정성이 상승한다.   
+
+중요한 점은 매개변수가 45개에서 80개로 확장되었을 때, 동일한 수준의 과적합 방어력을 유지하기 위해서는 λ 값이 어떻게 변해야 하는가이다. 이를 파악하기 위해서는 릿지 회귀의 유효 자유도(Effective Degrees of Freedom, df) 개념을 도입해야 한다. 릿지 회귀에서 종속 변수의 예측값 $\hat{Y}$는 투영 행렬(Hat Matrix, H)에 의해  
+Y
+^
+ =HY로 표현되며, H는 다음과 같이 정의된다.   
+
+H=X(X 
+⊤
+ X+λI) 
+−1
+ X 
+⊤
+ 
+통계학적으로 모델의 유효 자유도는 이 투영 행렬의 대각합(Trace)으로 산출된다.   
+
+df=tr(H)= 
+j=1
+∑
+p
+​
+  
+d 
+j
+2
+​
+ +λ
+d 
+j
+2
+​
+ 
+​
+ 
+(여기서 d 
+j
+​
+ 는 설계 행렬 X의 특이값(Singular value)이다.)
+
+이 수식은 λ가 0에 가까우면 유효 자유도가 독립 변수의 수 p에 근접하여 과적합이 발생하고, λ가 무한대로 커지면 자유도가 0으로 수렴하여 모형의 유연성이 사라짐을 보여준다. 기존 PR2a 모델이 λ=2.0에서 적절한 유효 자유도를 확보하여 생존할 수 있었다면, 독립 변수 p가 80으로 폭증한 현재의 C안 환경에서는 동일한 λ=2.0을 적용하더라도 공식의 분자가 커짐에 따라 전체 유효 자유도가 표본 수(133)의 임계점에 아슬아슬하게 근접할 위험이 높다.   
+
+파라미터 환경	관측치(Sample)	추정 계수(p)	유효 자유도 제어의 필요성	최적 탐색 그리드 권고안
+과거 (PR2a)	133 분기	45 개	중간 수준의 수축만으로 안정성 확보	[0.1, 0.3, 0.5, 0.7, 1.0, 2.0]
+현재 (원칙 기반 C안)	133 분기	80 개	고강도 수축 없이는 노이즈까지 암기하는 과적합 발생	[0.5, 1.0, 2.0, 3.0, 5.0]
+결론적으로, 대회 마감(6/1) 전까지 재교정(Re-calibration)을 안정적으로 완료하기 위해서는 기존에 설정된 수축 파라미터의 탐색 그리드(Grid)를 고강도 페널티 영역으로 대폭 상향 이동시켜야 한다. 즉, [0.5, 1.0, 2.0, 3.0, 5.0]과 같이 더 큰 페널티를 부여하는 옵션을 포함하여 교차 검증(Cross-validation)을 수행해야만, β 행렬 내의 불필요한 노이즈가 제거되고 10개 팩터가 가진 핵심 시그널만이 포트폴리오 비중 가감에 반영될 수 있다.   
+
+7. 사전 부호 제약(Sign Restriction) 및 방향성 패턴의 거시경제학적 정합성 평가
+과적합을 억제하고 모델이 합리적인 결과를 도출하도록 유도하는 또 다른 핵심 기제는 특정 팩터가 특정 자산 버킷에 미치는 영향을 사전에 양(+) 또는 음(-)으로 강제하는 부호 제약(Sign Restriction)이다. 제시된 10×8 β Prior Matrix의 방향성 원칙들은 대부분 거시경제학의 전통적인 자산 가격 결정 메커니즘과 포트폴리오 이론에 부합한다. 하지만 일부 설정은 자산군의 비대칭적 민감도를 간과하고 있어 국소 최적점(Local Minima) 오류를 범할 위험이 있다.
+
+7.1. 타당성이 입증된 합리적 제약 조건
+F1(Growth)의 양의 주식/신용 배분: 경제 성장이 호조를 보일 때 기업의 이익 전망이 개선되고 디폴트 위험이 감소하므로, 한국 및 글로벌 주식(kr_eq, gl_eq)과 신용 채권(credit), 경기 민감 원자재(cyclical)에 양(+)의 팩터를 배정하는 것은 경제 성장의 기초 논리와 완벽히 일치한다. 반대로 안전 자산인 채권과 금에는 음(-)의 제약을 가하는 것이 타당하다.
+
+F2(Inflation)의 실물 자산 편호와 명목 채권 회피: 인플레이션 가속 구간에서 실물 자산인 귀금속(precious)과 원자재(cyclical)가 구매력을 보존하는 인플레이션 헤지(Hedge) 역할을 하며, 현금흐름이 고정된 한국 채권(kr_bond)과 글로벌 듀레이션(gl_dur)은 실질 가치 하락으로 타격을 받는다는 논리는 확고한 검증을 거친 사실이다.
+
+F3(Real Rate) 상승에 따른 자산 기회비용 반영: 실질 금리의 상승은 이자를 지급하지 않는 금(precious)의 기회비용을 급격히 높이며, 채권 가격(gl_dur)의 하락을 유발한다. 이 환경에서 유일한 승자는 이자 수익률을 즉각적으로 추종할 수 있는 현금성 자산(cash_mmf)이라는 제약 조건은 매우 정교하다.
+
+F8(Valuation) 악화 시의 위험 자산 회피: 주식 밸류에이션 지표가 고평가 영역에 진입했을 때(비싸짐), 자산의 기대 수익률이 낮아지므로 주식 버킷(kr_eq, gl_eq)에 음(-)의 제약을 가하는 것은 자본 배분의 정석이다.
+
+7.2. 수정이 요구되는 비대칭적 및 과도한 제약
+F7(Equity Volatility)과 안전 자산 간의 무조건적 역상관성 가정: 주식 시장의 변동성이 급증(Risk-off)할 때 주식 비중을 축소하고 현금 비중을 확대하는 제약은 합리적이다. 그러나 글로벌 듀레이션(gl_dur)이나 금(precious)에 무조건적인 양(+)의 제약을 거는 것은 위험하다. 2022년의 인플레이션 주도 금리 인상기나 2008년의 극단적 유동성 경색기에는 주식과 채권, 금이 동반 폭락하는 상관관계 붕괴(Correlation Breakdown) 현상이 자주 목격되었다. 극심한 변동성 환경에서 모든 자산을 팔고 달러 현금만을 확보하려는 대시 투 캐시(Dash for Cash) 현상을 고려할 때, 채권과 금에 강한 하드 페널티(Hard Penalty)를 부여하기보다는 데이터가 상황에 맞게 교정되도록 자유도(Freedom)를 열어두는 것이 현명하다.
+
+F5(Credit Cycle) 악화 시 귀금속(Precious) 비중 무조건 확대의 모순: 신용 스프레드가 벌어지고 자금 조달 시장이 얼어붙는 국면에서 위험 자산을 줄이는 것은 맞지만, 금(Precious) 비중을 무조건 확대하도록 강제하는 것은 논리적 모순이다. 기업과 금융기관이 유동성을 마련하기 위해 마진콜(Margin Call)에 대응할 때 가장 먼저 현금화하기 쉬운 자산이 금이기 때문에 단기적으로 금값은 오히려 급락하는 경향이 있다. F5에서 금 버킷에 설정된 강제적인 양(+)의 부호는 제거해야 한다.
+
+8. 결론 및 포트폴리오 아키텍처 재구축을 위한 전략적 제언
+본 보고서가 수행한 계량경제학적 및 거시금융적(Macro-Finance) 심층 분석의 결과를 종합하면, 제안된 C안(원칙 기반 재구성)의 베이스라인 배분 구조는 홈 바이어스와 위험 프리미엄 철학을 충실히 반영하고 있어 기존 원안(A)이나 직관적 대안(B)보다 월등히 우월하고 논리적 방어가 가능한(Defensible) 최적의 출발점이다.
+
+그러나 2단계(Stage 2)의 팩터 산출 및 교정 엔진의 내부는 다중공선성, 시계열 비정상성, 차원의 저주 등 통계적 시한폭탄을 다수 내포하고 있다. 다가오는 대회 마감 기한과 실전 운용의 안정성을 동시에 담보하기 위해 다음과 같은 점진적(Tiered) 모델 개편 프로세스를 강력히 권고한다.
+
+다중공선성의 원천 제거: F1(Growth) 팩터 내에 포함된 시카고 연은 NFCI 지수와 10년-2년 장단기 금리차(Curve) 지표를 전면 삭제하여 F10 및 F4와의 이중 산정(Double Counting)을 방지하고 VIF 지수를 억제해야 한다. 남은 가중치는 독립적인 실물 경제 모멘텀 지표로 재배분한다.
+
+비정상 시계열의 가짜 회귀 차단: F6(KRW Regime)에서 사용 중인 원/달러 환율의 원시 수준(Raw level) 데이터를 즉시 6개월 로그 변화율 등 I(0) 정상 시계열 지표로 교체하여 알고리즘이 환율의 영구적 이동과 단기적 모멘텀을 혼동하는 치명적 오류를 막아야 한다.
+
+명칭 혼선 방지: F9의 명칭을 실제 분산도를 측정하는 본질에 맞게 'F9_Market_Dispersion'으로 변경한다.
+
+과도한 사전 제약 해제: F7(변동성)과 F5(신용 주기) 팩터에서 귀금속 및 글로벌 듀레이션에 부과된 무조건적인 양(+)의 하드 페널티를 해제하여 데이터 주도적(Data-driven) 교정이 가능하도록 유연성을 부여한다.
+
+릿지 회귀의 λ 그리드 대폭 상향: 80개의 계수를 133개의 관측치로 추정해야 하는 극단적 자유도 부족 환경을 극복하기 위해, 수축 파라미터 교정 범위를 기존보다 훨씬 강한 패널티 영역인 [0.5, 1.0, 2.0, 3.0, 5.0]으로 확장하여 유효 자유도(tr(H))를 안전한 수준으로 축소시켜야 한다.
+
+선행 펀더멘털 엔진 장착: 포트폴리오의 수익률 예측력을 근본적으로 상향시키기 위해, 한국 수출과 원자재 시장을 가장 강력하게 선행하는 중국 신용 자극(China Credit Impulse) 지수(F12 신설)와 거시 경제의 후행성을 보완할 애널리스트 이익 수정 비율(Earnings Revision Cycle) 지표(F11 신설)의 편입을 대회 직후 V2 파이프라인의 최우선 과제로 추진해야 한다. 더불어 F5 팩터의 미국 편향을 극복하기 위해 Gilchrist-Zakrajsek의 초과 채권 프리미엄(EBP)을 통합하여 국지적 신용 경색을 감지하는 능력을 배양해야 한다.
+
+이상의 계량적, 경제학적 원칙을 준수하여 팩터 엔진을 재구축할 때, 본 포트폴리오 알고리즘은 비로소 과거의 노이즈를 과적합하는 덫에서 벗어나 구조적 펀더멘털의 변화를 신속하고 안정적으로 자산 비중 가감에 반영하는 강력하고 견고한 다중 자산 배분 솔루션으로 거듭날 것이다.
+
+
+ideas.repec.org
+Out-of-Sample Equity Premium Prediction: Combination Forecasts and Links to the Real Economy - IDEAS/RePEc
+새 창에서 열기
+
+breesefine7110.tulane.edu
+A Comprehensive Look at The Empirical Performance of Equity Premium Prediction
+새 창에서 열기
+
+pmc.ncbi.nlm.nih.gov
+Multicollinearity and misleading statistical results - PMC - NIH
+새 창에서 열기
+
+danielbuncic.com
+Macroeconomic factors and equity premium predictability - Daniel Buncic
+새 창에서 열기
+
+systamental.com
+Risk & Returns of Digital Assets. Part II: Looking Through a Macro Risk… | by Nick Latinovic | Systamental
+새 창에서 열기
+
+cms.dm.uba.ar
+Active Portfolio Management
+새 창에서 열기
+
+bankofcanada.ca
+Financial Shocks and the Output Growth Distribution - Bank of Canada
+새 창에서 열기
+
+frbsf.org
+Decomposing the Monetary Policy Multiplier - Federal Reserve Bank of San Francisco
+새 창에서 열기
+
+federalreserve.gov
+Supervisory Stress Test Documentation Credit Risk Models - January 2026 - Federal Reserve
+새 창에서 열기
+
+cemla.org
+Term Premium Estimates - Centro de Estudios Monetarios Latinoamericanos | CEMLA
+새 창에서 열기
+
+newyorkfed.org
+Treasury Term Premia - FEDERAL RESERVE BANK of NEW YORK
+새 창에서 열기
+
+federalreserve.gov
+The Fed - Robustness of long-maturity term premium estimates - Federal Reserve
+새 창에서 열기
+
+libertystreeteconomics.newyorkfed.org
+Treasury Term Premia: 1961-Present - Liberty Street Economics - Federal Reserve Bank of New York
+새 창에서 열기
+
+ncss.com
+Ridge Regression - NCSS
+새 창에서 열기
+
+ibm.com
+What Is Multicollinearity? | IBM
+새 창에서 열기
+
+mathworks.com
+Time Series Regression II: Collinearity and Estimator Variance - MATLAB & Simulink Example - MathWorks
+새 창에서 열기
+
+datacamp.com
+Variance Inflation Factor: How to Detect Multicollinearity - DataCamp
+새 창에서 열기
+
+scirp.org
+Modeling Vehicle Crash Frequency When Multicollinearity Exists in Vehicle Crash Data: Ridge Regression versus Ordinary Least Squares Linear Regression - SCIRP
+새 창에서 열기
+
+researchgate.net
+Estimation of the Effect of Multicollinearity on the Standard Error for Regression Coefficients
+새 창에서 열기
+
+ejournal.unimap.edu.my
+Robust Ridge Regression Approach for Combined Multicollinearity- Outlier Problem - EJOURNAL UNIVERSITI MALAYSIA PERLIS (UniMAP)
+새 창에서 열기
+
+reed.edu
+Section 12 Time Series Regression with Non- Stationary Variables
+새 창에서 열기
+
+reed.edu
+CHAPTER 4 - Regression with Nonsta- tionary Variables
+새 창에서 열기
+
+mpra.ub.uni-muenchen.de
+Spurious Regression - Munich Personal RePEc Archive
+새 창에서 열기
+
+mdpi.com
+Refurbished Institutional Quality and Good Governance for Bank Stability: A Meta-Analysis of Emerging Economies - MDPI
+새 창에서 열기
+
+researchgate.net
+139 questions with answers in STOCK PRICING | Science topic - ResearchGate
+새 창에서 열기
+
+file-cdn.bok.or.kr
+Tracking Uncertainty through the Relative Sentiment Shift Series - bok.or.kr
+새 창에서 열기
+
+nber.org
+The Out-of-Sample Failure of Empirical Exchange Rate Models - NBER
+새 창에서 열기
+
+periodicos.fgv.br
+Is It Possible to Beat the Random Walk Model in Exchange Rate Forecasting? More Evidence for Brazilian Case
+새 창에서 열기
+
+ideas.repec.org
+Evaluating exchange rate forecasts along time and frequency - IDEAS/RePEc
+새 창에서 열기
+
+research.library.fordham.edu
+Meese-Rogoff Redux: Micro-Based Exchange Rate Forecasting - Fordham Research Commons
+새 창에서 열기
+
+econbrowser.com
+Interpreting and Re-interpreting Meese-Rogoff - Econbrowser
+새 창에서 열기
+
+eml.berkeley.edu
+Exchange Rate Models and Spurious Regressions
+새 창에서 열기
+
+estima.com
+Spurious Regression - Estima
+새 창에서 열기
+
+peterenns.org
+Time Series Analysis and Spurious Regression: An Error Correction - Peter K. Enns
+새 창에서 열기
+
+nber.org
+Spurious Regressions in Financial Economics? Wayne E. Ferson, Sergei Sarkissian and Timothy Simin Working Paper - NBER
+새 창에서 열기
+
+ssc.wisc.edu
+Empirical exchange rate models of the nineties: Are any fit to survive? - University of Wisconsin–Madison
+새 창에서 열기
+
+elibrary.imf.org
+The Monetary Model Strikes Back: Evidence from the World in - IMF eLibrary
+새 창에서 열기
+
+ineteconomics.org
+Rationality and the Meese and Rogoff Exchange-Rate-Disconnect Puzzle: Learning vs. Contingent Knowledge
+새 창에서 열기
+
+pmc.ncbi.nlm.nih.gov
+Forecasting nominal exchange rates using a dynamic model averaging framework - PMC
+새 창에서 열기
+
+mdpi.com
+Does Exchange Rate Volatility Matter for Banking-Sector Financial Stability? A Global Analysis - MDPI
+새 창에서 열기
+
+pmc.ncbi.nlm.nih.gov
+The Time–Frequency Relationship between Oil Price, Stock Returns and Exchange Rate
+새 창에서 열기
+
+scirp.org
+Country-Level Indicators and Foreign Exchange Returns - SCIRP
+새 창에서 열기
+
+ndl.ethernet.edu.et
+IN QUEST OF GROWTH IN TIMES OF AUSTERITY
+새 창에서 열기
+
+rwi-essen.de
+Spurious Regressions and Panel IV Estimation: Revisiting the Causes of Conflict - RWI – Leibniz-Institut für Wirtschaftsforschung
+새 창에서 열기
+
+pmc.ncbi.nlm.nih.gov
+The home bias and the local bias: A survey - PMC - NIH
+새 창에서 열기
+
+nber.org
+NBER WORKING PAPER SERIES HOME BIAS IN OPEN ECONOMY FINANCIAL MACROECONOMICS Nicolas Coeurdacier Hélène Rey Working Paper 1769
+새 창에서 열기
+
+jonathanheathcote.com
+The International Diversification Puzzle Is Not as Bad as You Think - Jonathan Heathcote
+새 창에서 열기
+
+matheo.uliege.be
+How have the institutional and behavioral factors behind patterns of Home and Foreign Biases impacted investment portfolios and - MatheO
+새 창에서 열기
+
+federalreserve.gov
+U.S. Monetary Spillovers to Emerging Markets: Both Policy Drivers and Vulnerabilities Matter - Federal Reserve
+새 창에서 열기
+
+hermes-investment.com
+The tiger that lost its roar: the mystery of South Korea's underperforming equities
+새 창에서 열기
+
+rcmbrand.rockco.com
+Capital Market Assumptions
+새 창에서 열기
+
+arxiv.org
+Understanding the Excess Bond Premium - arXiv
+새 창에서 열기
+
+ideas.repec.org
+Credit Spreads and Business Cycle Fluctuations - IDEAS/RePEc
+새 창에서 열기
+
+econpapers.repec.org
+Credit Spreads and Business Cycle Fluctuations - EconPapers
+새 창에서 열기
+
+ionmihai.github.io
+Gilchrist and Zakrajsek (2012) - Mihai Ion
+새 창에서 열기
+
+federalreserve.gov
+What Drives the Cross-Section of Credit Spreads?: A Variance Decomposition Approach - Federal Reserve
+새 창에서 열기
+
+imf.org
+Do Corporate Bond Shocks Affect Commercial Bank Lending? - International Monetary Fund
+새 창에서 열기
+
+mfm.uchicago.edu
+Credit Spreads and Business Cycle Fluctuations - Macro Finance Research Program
+새 창에서 열기
+
+ecb.europa.eu
+Credit spreads, economic activity and fragmentation - European Central Bank
+새 창에서 열기
+
+newyorkfed.org
+Credit Spreads, Financial Crises and Macroprudential Policy - Federal Reserve Bank of New York
+새 창에서 열기
+
+dnb.nl
+Default Cycles - De Nederlandsche Bank
+새 창에서 열기
+
+bfi.uchicago.edu
+Modeling Financial Sector Linkages to the Macroeconomy - Becker Friedman Institute for Economics - The University of Chicago
+새 창에서 열기
+
+nber.org
+NBER WORKING PAPER SERIES CREDIT SPREADS AND BUSINESS CYCLE FLUCTUATIONS Simon Gilchrist Egon Zakrajšek Working Paper 17021 htt
+새 창에서 열기
+
+lseg.com
+Korean Equities: Macro Recovery, Reform and AI - LSEG
+새 창에서 열기
+
+am.jpmorgan.com
+Guide to the Markets - Asia - J.P. Morgan Asset Management
+새 창에서 열기
+
+lpl.com
+What Korean Exports Surge May Signal for the S&P 500 - LPL Financial
+새 창에서 열기
+
+franklintempletonglobal.com
+From “if” to “where:” Which emerging markets are rebounding - Franklin Templeton Investments
+새 창에서 열기
+
+hlbank.com.sg
+Global Equity Strategy 2022 3Q22 and 2H22 Outlook: Themes, sectors and styles - HL Bank Singapore
+새 창에서 열기
+
+vaneck.com.au
+VanEck ViewPointTM - VanEck Australia
+새 창에서 열기
+
+securities.miraeasset.com
+One-Asia Monthly Wrap-Up
+새 창에서 열기
+
+researchgate.net
+China's Growing Influence on Asian Financial Markets | Request PDF - ResearchGate
+새 창에서 열기
+
+kgieworld.sg
+Outlook 2020 - KGI Securities
+새 창에서 열기
+
+hlbank.com.sg
+Global Equity Strategy 2022 3Q22 and 2H22 Outlook: Themes, sectors and styles - HL Bank Singapore
+새 창에서 열기
+
+reports.elaracapital.com
+Strategy - Elara Capital
+새 창에서 열기
+
+researchgate.net
+Identifying Expectation Errors in Value/Glamour Strategies: A Fundamental Analysis Approach | Request PDF - ResearchGate
+새 창에서 열기
+
+pm-research.com
+T H E J O U R N A L O F - Portfolio Management Research
+새 창에서 열기
+
+wp.lancs.ac.uk
+...and nothing else matters? On the dimensionality and predictability of international stock returns
+새 창에서 열기
+
+academic.oup.com
+Earnings Extrapolation and Predictable Stock Market Returns | The Review of Financial Studies | Oxford Academic
+새 창에서 열기
+
+academic.oup.com
+Earnings Extrapolation and Predictable Stock Market Returns - Oxford Academic
+새 창에서 열기
+
+webdoc.agsci.colostate.edu
+Regression Shrinkage and Selection via the Lasso
+새 창에서 열기
+
+tandfonline.com
+Adaptive Beta Shrinkage estimation of covariance matrices - Taylor & Francis
+새 창에서 열기
+
+osti.gov
+A likelihood ratio test for shrinkage covariance estimators - OSTI
+새 창에서 열기
+
+arxiv.org
+Estimation of Large Financial Covariances: A Cross-Validation Approach - arXiv
+새 창에서 열기
+
+pmc.ncbi.nlm.nih.gov
+Penalization and shrinkage methods produced unreliable clinical prediction models especially when sample size was small - PMC
+새 창에서 열기
+
+acfr.aut.ac.nz
+Out-of-sample equity premium prediction: a scenario analysis approach - ACFR - AUT
+새 창에서 열기
+
+ivo-welch.info
+A Comprehensive Look at The Empirical Performance of Equity Premium Prediction - Ivo Welch
+새 창에서 열기
+
+portfoliooptimizationbook.com
+3.6 Prior Information: Shrinkage, Factor Models, and Black–Litterman | Portfolio Optimization
+새 창에서 열기
+
+en.wikipedia.org
+Lasso (statistics) - Wikipedia
+새 창에서 열기
+
+ar.casact.org
+An Introduction to Lasso Regression for Actuaries
+새 창에서 열기
+
+stats.stackexchange.com
+새 창에서 열기
+
+andrewcharlesjones.github.io
+The ubiquity of degrees of freedom - Andy Jones
+새 창에서 열기
+
+stats.stackexchange.com
+How to calculate the degrees of freedom for L1 and L2 regularised GLMs? - Cross Validated
+새 창에서 열기
+
+en.wikipedia.org
+Degrees of freedom (statistics) - Wikipedia
+새 창에서 열기
+
+utstat.utoronto.ca
+Shrinkage estimation, model averaging, and degrees of freedom - Department of Statistical Sciences
+새 창에서 열기
+
+nber.org
+NBER WORKING PAPER SERIES UNIVERSAL PORTFOLIO SHRINKAGE Bryan T. Kelly Semyon Malamud Mohammad Pourmohammadi Fabio Trojani Worki
+새 창에서 열기
+
+stats.stackexchange.com
+How to estimate shrinkage parameter in Lasso or ridge regression with >50K variables?
+새 창에서 열기
