@@ -18,7 +18,7 @@ from pypfopt import EfficientFrontier, HRPOpt, risk_models, expected_returns
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
 from tradingagents.skills.portfolio.candidate_selector import (
-    BUCKET_TO_CATEGORIES, DEFAULT_MIN_AUM_KRW, list_eligible_tickers,
+    BUCKET_TO_CATEGORIES, list_eligible_tickers,
     select_etf_candidates,
 )
 from tradingagents.skills.portfolio.method_picker import pick_optimization_method
@@ -117,11 +117,10 @@ def create_portfolio_allocator(
         start = as_of - timedelta(days=PRICE_LOOKBACK_DAYS_ALLOC)
         eligible_by_bucket = list_eligible_tickers(
             universe, bucket_target, as_of=as_of,
-            min_aum_krw=DEFAULT_MIN_AUM_KRW,
         )
         eligible_tickers = list({t for ts in eligible_by_bucket.values() for t in ts})
         if not eligible_tickers:
-            raise RuntimeError("No eligible tickers (universe × bucket × AUM filter empty)")
+            raise RuntimeError("No eligible tickers (universe × bucket filter empty)")
 
         returns = fetch_returns_matrix(
             eligible_tickers, start, as_of, cache_path=cache_path,
@@ -212,7 +211,6 @@ def create_portfolio_allocator(
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,
-            min_aum_krw=DEFAULT_MIN_AUM_KRW,
             per_bucket_n=per_bucket_n,
             returns=returns,
             factor_panel=factor_panel,

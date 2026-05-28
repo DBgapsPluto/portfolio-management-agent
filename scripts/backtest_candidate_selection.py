@@ -168,7 +168,6 @@ def run_fixture_backtest() -> None:
     # Fixture spans 2025-05-12 ~ 2026-05-08. Pick 2025-11, 2026-01.
     as_of_dates = [date(2025, 11, 3), date(2026, 1, 5)]
     horizon = 60
-    min_aum_krw = 0.0  # bypass for fixture
 
     rows = []
     for as_of in as_of_dates:
@@ -182,12 +181,11 @@ def run_fixture_backtest() -> None:
         legacy = select_etf_candidates(
             universe, target, rankings,
             as_of=as_of, per_bucket_n=2,
-            min_aum_krw=min_aum_krw, returns=None,
+            returns=None,
         )
         new = select_etf_candidates(
             universe, target, rankings,
             as_of=as_of, per_bucket_n=2,
-            min_aum_krw=min_aum_krw,
             returns=returns,
             regime_quadrant="unknown", regime_confidence=0.5,
             correlation_threshold=0.85,
@@ -272,12 +270,12 @@ def _scenario(name: str, series_by_ticker: dict[str, np.ndarray],
     legacy = select_etf_candidates(
         universe, target, rankings,
         as_of=as_of, per_bucket_n=per_bucket_n,
-        min_aum_krw=0.0, returns=None,
+        returns=None,
     )
     new = select_etf_candidates(
         universe, target, rankings,
         as_of=as_of, per_bucket_n=per_bucket_n,
-        min_aum_krw=0.0, returns=returns,
+        returns=returns,
         regime_quadrant=regime_quadrant, regime_confidence=regime_confidence,
         correlation_threshold=0.85,
     )
@@ -417,7 +415,6 @@ def run_krx_backtest(
     fetch_end = max(as_of_dates) + timedelta(days=horizon_days + 30)
     eligible_by_bucket = list_eligible_tickers(
         universe, target, as_of=min(as_of_dates),
-        min_aum_krw=1_000_000_000_000,
     )
     all_eligible = sorted({t for ts in eligible_by_bucket.values() for t in ts})
     print(f"[krx] {len(all_eligible)} eligible tickers — pulling from cache "
@@ -448,12 +445,11 @@ def run_krx_backtest(
         legacy = select_etf_candidates(
             universe, target, rankings,
             as_of=as_of, per_bucket_n=4,
-            min_aum_krw=1_000_000_000_000, returns=None,
+            returns=None,
         )
         new = select_etf_candidates(
             universe, target, rankings,
             as_of=as_of, per_bucket_n=4,
-            min_aum_krw=1_000_000_000_000,
             returns=returns,
             regime_quadrant=quad, regime_confidence=conf,
             correlation_threshold=0.85,

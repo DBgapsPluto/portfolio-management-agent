@@ -28,18 +28,6 @@ BUCKET_TO_CATEGORIES = {
 }
 
 
-# Investability floor — flat ~500억 (Stage 3 cluster-aware selection, D2).
-# 운영 capital ~100억 가정 + 포지션 < AUM 5% 가이드 → 500억이 안전 최소선.
-# 유동성·구현품질은 hard filter 가 아니라 impl_score 의 soft 선호로 분리(D3).
-DEFAULT_MIN_AUM_KRW: float = 50_000_000_000   # 500억
-
-# Sub_category별 minimum AUM 완화 — KR 시장에 large-AUM 옵션이 부족한
-# sparse sub_category 한정. default min_aum_krw 대신 이 값 사용.
-_RELAXED_MIN_AUM_KRW: dict[str, float] = {
-    "inflation_linked": 10_000_000_000,   # 100억 — KR TIPS 시장 매우 작음
-}
-
-
 # Scenario boost를 factor score에 가산할 때 곱하는 스케일.
 # 1.0 = 원본 log_boost 그대로 (max +0.69). rank_percentile에서 boost ratio가
 # factor 대비 ~136%까지 올라가지만, anchor 재평가 결과 시스템이 corr-aware로
@@ -48,33 +36,21 @@ _RELAXED_MIN_AUM_KRW: dict[str, float] = {
 DEFAULT_BOOST_SCALE: float = 1.0
 
 
-def _min_aum_for_etf(etf, default_threshold: float) -> float:
-    """ETF의 sub_category에 따라 minimum AUM 결정.
+def _eligible_for_bucket(universe: Universe, cats: list[str]) -> list:
+    """Category match only — AUM filter removed (Tier 1).
 
-    sub_category가 _RELAXED_MIN_AUM_KRW에 있으면 그 값과 default 중 작은 쪽 사용.
-    그 외엔 default 그대로.
+    188 universe is already KRX-listed (basic size threshold).
+    Mandate's 20% single-ETF cap + Stage 4 cluster cap control micro-cap risk.
     """
-    sc = etf.sub_category
-    if sc and sc in _RELAXED_MIN_AUM_KRW:
-        return min(default_threshold, _RELAXED_MIN_AUM_KRW[sc])
-    return default_threshold
-
-
-def _eligible_for_bucket(universe: Universe, cats: list[str], min_aum_krw: float):
-    """Single eligibility filter (Stage 3 D2/D3 — used by both list_* and select_*)."""
-    return [
-        e for e in universe.etfs
-        if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
-    ]
+    return [e for e in universe.etfs if e.category in cats]
 
 
 def list_eligible_tickers(
     universe: Universe,
     bucket_target: BucketTarget,
     as_of: date,
-    min_aum_krw: float = DEFAULT_MIN_AUM_KRW,
 ) -> dict[str, list[str]]:
-    """Return tickers passing hard filters (tradable + category + AUM), pre-ranking.
+    """Return tickers passing hard filters (tradable + category), pre-ranking.
 
     Caller uses this to know which tickers need price/return data fetched
     before invoking the full select_etf_candidates with multi-factor mode.
@@ -92,7 +68,7 @@ def list_eligible_tickers(
             out[bucket_name] = []
             continue
         cats = BUCKET_TO_CATEGORIES[bucket_name]
-        out[bucket_name] = [e.ticker for e in _eligible_for_bucket(universe, cats, min_aum_krw)]
+        out[bucket_name] = [e.ticker for e in _eligible_for_bucket(universe, cats)]
     return out
 
 
@@ -104,7 +80,6 @@ def select_etf_candidates(
     *,
     returns: pd.DataFrame,
     factor_panel: dict[str, FactorPanel],
-    min_aum_krw: float = DEFAULT_MIN_AUM_KRW,
     per_bucket_n: int = 5,
     regime_quadrant: str | None = None,
     regime_confidence: float = 0.5,
@@ -122,7 +97,7 @@ def select_etf_candidates(
     factor_scores: dict[str, float] | None = None,
     require_positive_alpha: bool = True,
 ) -> CandidateSet:
-    """Filter universe by bucket target + AUM, then multi-factor rank + corr de-dup.
+    """Filter universe by bucket target, then multi-factor rank + corr de-dup.
 
     Stage 1 technical_analyst가 항상 returns + factor_panel을 채우므로
     multi-factor mode가 유일한 운영 경로. legacy momentum-only mode는 폐기.
@@ -156,7 +131,6 @@ def select_etf_candidates(
             "per_bucket_n":          per_bucket_n,
             "correlation_threshold": correlation_threshold,
             "longlist_multiplier":   longlist_multiplier,
-            "min_aum_krw":           min_aum_krw,
         })
         attribution["buckets"] = {}
 
@@ -184,7 +158,7 @@ def select_etf_candidates(
             continue
 
         cats = BUCKET_TO_CATEGORIES[bucket_name]
-        eligible = _eligible_for_bucket(universe, cats, min_aum_krw)
+        eligible = _eligible_for_bucket(universe, cats)
         if bucket_attr is not None:
             bucket_attr["eligible_count"] = len(eligible)
 
@@ -257,7 +231,7 @@ def select_etf_candidates(
     return CandidateSet(
         bucket_to_tickers=bucket_to_tickers,
         selection_criteria=(
-            f"AUM ≥ {min_aum_krw / 1e12:.1f}조, mode={mode_label}, "
+            f"mode={mode_label}, "
             f"per_bucket_n={per_bucket_n}, corr_thresh={correlation_threshold}"
         )[:300],
         total_candidates=max(total, 1),
