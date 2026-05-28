@@ -53,6 +53,29 @@ from tradingagents.skills.macro.yield_curve import compute_yield_curve, compute_
 logger = logging.getLogger(__name__)
 
 
+def _compute_yoy_from_fred(series_key: str, as_of_date: date) -> float | None:
+    """Compute YoY %-change for a FRED series. Returns None on fetch failure."""
+    from tradingagents.dataflows.fred import fetch_fred_series
+    from datetime import timedelta
+    import pandas as pd
+    try:
+        start = as_of_date - timedelta(days=400)  # ~13 months for YoY
+        s = fetch_fred_series(series_key, start, as_of_date, as_of_date=as_of_date)
+        if s.empty or len(s) < 2:
+            return None
+        latest = float(s.iloc[-1])
+        # Find value ~12 months ago
+        target_ago = pd.Timestamp(as_of_date) - pd.DateOffset(months=12)
+        prior_idx = s.index.get_indexer([target_ago], method="nearest")[0]
+        prior = float(s.iloc[prior_idx])
+        if prior == 0:
+            return None
+        return (latest / prior - 1.0) * 100.0
+    except Exception as e:
+        logger.warning("YoY compute %s failed: %s", series_key, e)
+        return None
+
+
 # Stage 1 audit (2026-05-26, Task 2): named lookback windows.
 MACRO_LOOKBACK_DAYS: int = 365 * 5      # 5y FRED/ECOS macro series
 COMMODITY_LOOKBACK_DAYS: int = 400      # ~1y trading buffer for copper/gold/iron ore
@@ -473,6 +496,10 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
 
         events = fetch_central_bank_calendar_skill(as_of, days=CALENDAR_LOOKAHEAD_DAYS)
 
+        # Tier 0 F1 reform: INDPRO YoY + Real PCE YoY (live-only; graceful None on failure)
+        us_indpro_yoy_pct = _compute_yoy_from_fred("us_indpro", as_of)
+        us_real_pce_yoy_pct = _compute_yoy_from_fred("us_real_pce", as_of)
+
         # Stage 1 audit (Task 2): sentinel inventory before regime classification.
         # 어느 snapshot이 fetch 실패로 sentinel인지 카운트 → narrative summary 로 노출.
         # classify_regime LLM은 sentinel을 정상값으로 흡수할 수 있으므로 (예: kr_bsi=100.0
@@ -659,6 +686,8 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             china_leading=china_leading, foreign_flow=foreign_flow,
             policy_uncertainty=policy_uncertainty, tail_risk=tail_risk,
             kr_valuation=kr_valuation_snapshot,  # ★ NEW C5 (Optional, None on fail)
+            us_indpro_yoy_pct=us_indpro_yoy_pct,
+            us_real_pce_yoy_pct=us_real_pce_yoy_pct,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"macro_report": report, "macro_summary": summary}

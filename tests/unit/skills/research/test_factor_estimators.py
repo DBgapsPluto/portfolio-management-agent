@@ -68,3 +68,48 @@ def test_geopolitical_surge_removed_from_news_set():
 
 def test_gdpnow_in_live_only_quant():
     assert "gdpnow" in LIVE_ONLY_QUANT_COMPONENTS
+
+
+# === Tier 0 F1 reform tests ===
+
+def test_f1_no_longer_uses_nfci_or_curve():
+    """Tier 0 F1 reform: nfci/curve removed."""
+    from tradingagents.skills.research.factor_estimators import compute_growth_surprise
+    from types import SimpleNamespace
+
+    state = SimpleNamespace(
+        macro_report=SimpleNamespace(
+            financial_conditions=SimpleNamespace(
+                nfci=2.0, cfnai=0.0, cfnai_3m_avg=0.0,  # strong nfci
+                staleness_days=0,
+            ),
+            gdp_nowcast=SimpleNamespace(nowcast_pct=2.0, staleness_days=0),
+            employment=SimpleNamespace(sahm_rule_triggered=False, staleness_days=0),
+            yield_curve=SimpleNamespace(spread_10y_2y_bps=80.0, staleness_days=0),  # neutral curve
+            us_indpro_yoy_pct=2.0,
+            us_real_pce_yoy_pct=2.5,
+        ),
+        news_report=None,
+    )
+    score = compute_growth_surprise(state, mode="historical")
+    # F1 z should be ~0 (all components at baseline). nfci/curve should NOT contribute.
+    assert abs(score.z_score) < 0.5
+
+
+def test_f1_responds_to_indpro_real_pce():
+    """Strong INDPRO YoY shock → F1 positive."""
+    from tradingagents.skills.research.factor_estimators import compute_growth_surprise
+    from types import SimpleNamespace
+
+    state = SimpleNamespace(
+        macro_report=SimpleNamespace(
+            financial_conditions=SimpleNamespace(cfnai=0.0, cfnai_3m_avg=0.0, staleness_days=0),
+            gdp_nowcast=SimpleNamespace(nowcast_pct=2.0, staleness_days=0),
+            employment=SimpleNamespace(sahm_rule_triggered=False, staleness_days=0),
+            us_indpro_yoy_pct=8.0,  # +2σ above baseline (mean=2, sd=3)
+            us_real_pce_yoy_pct=2.5,
+        ),
+        news_report=None,
+    )
+    score = compute_growth_surprise(state, mode="historical")
+    assert score.z_score > 0.3  # positive growth signal

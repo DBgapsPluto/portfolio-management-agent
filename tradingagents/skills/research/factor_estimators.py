@@ -357,60 +357,54 @@ def _interpretation(factor_name: str, z: float) -> str:
 
 
 def compute_growth_surprise(stage1: Any, mode: FactorMode = "production") -> FactorScore:
-    """F1 growth_surprise — +z = stronger growth, -z = recession.
+    """F1 growth_surprise — +z = stronger growth.
 
-    PR0 hotfix (2026-05-23 C1): paths fixed to real MacroReport schema.
-    - gdp_nowcast: macro_report.gdp_nowcast.nowcast_pct (GDPNowSnapshot)
-    - nfci: macro_report.financial_conditions.nfci (FinancialConditionsSnapshot)
-    - sahm: macro_report.employment.sahm_rule_triggered (EmploymentSnapshot)
-    - curve: macro_report.yield_curve.spread_10y_2y_bps (YieldCurveSnapshot)
-    - cfnai: PLACEHOLDER (weight=0) — C8 activation after PR1 adds field
+    Tier 0 reform (2026-05-28):
+    - REMOVED: nfci (F10 dup), curve (F4 dup)
+    - ADDED:   indpro_yoy (INDPRO YoY), real_pce_yoy (Real PCE YoY)
+    - gdpnow: live only (LIVE_ONLY_QUANT_COMPONENTS drops in historical)
     """
     gdpnow = _safe_get(stage1, "macro_report", "gdp_nowcast", "nowcast_pct")
 
-    nfci_raw = _safe_get(stage1, "macro_report", "financial_conditions", "nfci")
-    nfci = -float(nfci_raw) if nfci_raw is not None else None
+    indpro_yoy = _safe_get(stage1, "macro_report", "us_indpro_yoy_pct")
+    real_pce_yoy = _safe_get(stage1, "macro_report", "us_real_pce_yoy_pct")
 
     sahm_trigger = _safe_get(stage1, "macro_report", "employment", "sahm_rule_triggered")
     sahm_signal = None if sahm_trigger is None else (-1.0 if sahm_trigger else 0.5)
 
-    curve = _safe_get(stage1, "macro_report", "yield_curve", "spread_10y_2y_bps")
-
-    # C8 activation (2026-05-24): PR1 C3 added FinancialConditionsSnapshot.cfnai
-    # + cfnai_3m_avg. CFNAI 3m avg < -0.7 is NBER recession signal.
     cfnai = _safe_get(stage1, "macro_report", "financial_conditions", "cfnai")
     cfnai_3m = _safe_get(stage1, "macro_report", "financial_conditions", "cfnai_3m_avg")
 
     components_raw: dict[str, float | None] = {
-        "gdpnow":   gdpnow,
-        "cfnai":    cfnai,     # C8 activated
-        "cfnai_3m": cfnai_3m,  # C8 NEW component
-        "nfci":     nfci,
-        "sahm":     sahm_signal,
-        "curve":    curve,
-
-        # News-derived (Option Z)
-        "release_surprise": _safe_get(
-            stage1, "news_report", "release_surprise", "surprise_index_30d"
-        ),
-        "hawkish_bias": _BIAS_MAP.get(
+        "gdpnow":         gdpnow,
+        "cfnai":          cfnai,
+        "cfnai_3m":       cfnai_3m,
+        "sahm":           sahm_signal,
+        "indpro_yoy":     indpro_yoy,
+        "real_pce_yoy":   real_pce_yoy,
+        # News-derived (drop in historical mode):
+        "release_surprise":      _safe_get(stage1, "news_report", "release_surprise", "surprise_index_30d"),
+        "hawkish_bias":          _BIAS_MAP.get(
             _safe_get(stage1, "news_report", "release_surprise", "bias_30d") or ""
         ),
-        "macro_sent": _safe_get(
-            stage1, "news_report", "news_sentiment", "avg_sentiment", "macro"
-        ),
+        "macro_sent":            _safe_get(stage1, "news_report", "news_sentiment", "avg_sentiment", "macro"),
         "risk_regime_overnight": _RISK_REGIME_MAP.get(
             _safe_get(stage1, "news_report", "global_overnight", "risk_regime_overnight") or ""
         ),
     }
 
-    # C8 weight rebalance (D11 plan default; sum=1.00):
+    # Production weights (sum=1.00); historical mode drops gdpnow + news, renormalizes.
     weights: dict[str, float] = {
-        "gdpnow": 0.18,
-        "cfnai": 0.10, "cfnai_3m": 0.08,    # C8 activated
-        "nfci": 0.12, "sahm": 0.07, "curve": 0.10,
-        "release_surprise": 0.18, "hawkish_bias": 0.05,
-        "macro_sent": 0.05, "risk_regime_overnight": 0.07,
+        "gdpnow":      0.10,   # LIVE only (drops in historical)
+        "cfnai":       0.12,
+        "cfnai_3m":    0.10,
+        "sahm":        0.08,
+        "indpro_yoy":  0.15,   # NEW
+        "real_pce_yoy":0.10,   # NEW
+        "release_surprise":      0.15,
+        "hawkish_bias":          0.05,
+        "macro_sent":            0.05,
+        "risk_regime_overnight": 0.10,
     }
     return _aggregate("F1_growth", components_raw, weights, mode=mode)
 

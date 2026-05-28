@@ -82,6 +82,9 @@ class MacroReport(_AnalystReport):
     geopolitical_risk: GeopoliticalRiskSnapshot | None = None
     china_credit_impulse: ChinaCreditImpulseSnapshot | None = None
     earnings_revision: EarningsRevisionSnapshot | None = None
+    # === Tier 0 F1 reform — INDPRO YoY + Real PCE YoY ===
+    us_indpro_yoy_pct: float | None = None
+    us_real_pce_yoy_pct: float | None = None
 
 
 class RiskReport(_AnalystReport):

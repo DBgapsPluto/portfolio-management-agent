@@ -18,13 +18,16 @@ from typing import Final
 
 LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     # === F1 growth_surprise ===
+    # Tier 0 reform (2026-05-28): nfci removed (F10 dup), curve removed (F4 dup).
+    # Added: indpro_yoy (INDPRO YoY), real_pce_yoy (Real PCE YoY).
     ("F1_growth", "gdpnow"):                (2.0, 2.0),
     ("F1_growth", "cfnai"):                 (0.0, 0.5),
     # C8 (2026-05-24): cfnai_3m_avg shares CFNAI scale (smoothing — slightly tighter sd).
     ("F1_growth", "cfnai_3m"):              (0.0, 0.5),
-    ("F1_growth", "nfci"):                  (0.0, 0.5),
     ("F1_growth", "sahm"):                  (0.0, 1.0),
-    ("F1_growth", "curve"):                 (80.0, 80.0),
+    # Tier 0: F1 reform
+    ("F1_growth", "indpro_yoy"):            (2.0, 3.0),    # INDPRO YoY long-run mean ~2%, sd ~3%
+    ("F1_growth", "real_pce_yoy"):          (2.5, 2.0),    # Real PCE YoY long-run mean ~2.5%, sd ~2%
     ("F1_growth", "release_surprise"):      (0.0, 1.0),
     ("F1_growth", "hawkish_bias"):          (0.0, 0.8),
     ("F1_growth", "macro_sent"):            (0.0, 0.3),
