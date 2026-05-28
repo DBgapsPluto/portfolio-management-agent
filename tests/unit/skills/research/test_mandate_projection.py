@@ -3,7 +3,7 @@
 Constraints:
   1. weights ≥ 0
   2. sum = 1.0
-  3. 위험자산 (kr_equity + global_equity + fx_commodity) ≤ 0.70
+  3. 위험자산 (kr_equity + global_equity + precious_metals + cyclical_commodity_fx) ≤ 0.70
   4. baseline L2 거리 최소 (soft objective)
 """
 from __future__ import annotations
@@ -16,12 +16,10 @@ from tradingagents.skills.research.factor_to_bucket import (
     BUCKETS,
     FACTORS,
     INITIAL_BASELINE,
+    RISK_BUCKETS,
     apply_factor_model,
     project_to_mandate_qp,
 )
-
-
-RISK_BUCKETS = ("kr_equity", "global_equity", "fx_commodity")
 
 
 def _assert_simplex(w: dict[str, float], *, tol: float = 1e-6):
@@ -46,9 +44,12 @@ def test_qp_clips_negative():
     bucket = {
         "kr_equity": -0.05,
         "global_equity": 0.25,
-        "fx_commodity": 0.10,
-        "bond": 0.40,
-        "cash_mmf": 0.30,
+        "precious_metals": 0.05,
+        "cyclical_commodity_fx": 0.05,
+        "kr_bond": 0.25,
+        "credit": 0.05,
+        "global_duration": 0.15,
+        "cash_mmf": 0.25,
     }
     w = project_to_mandate_qp(bucket)
     for b, v in w.items():
@@ -61,10 +62,13 @@ def test_qp_renormalizes_to_one():
     bucket = {
         "kr_equity": 0.15,
         "global_equity": 0.25,
-        "fx_commodity": 0.10,
-        "bond": 0.35,
+        "precious_metals": 0.05,
+        "cyclical_commodity_fx": 0.05,
+        "kr_bond": 0.20,
+        "credit": 0.05,
+        "global_duration": 0.15,
         "cash_mmf": 0.25,
-    }  # sum = 1.10
+    }  # sum = 1.15
     w = project_to_mandate_qp(bucket)
     _assert_simplex(w)
 
@@ -73,9 +77,12 @@ def test_qp_risk_cap_enforced():
     """risk asset > 0.70 인 input → projection 후 risk ≤ 0.70."""
     bucket = {
         "kr_equity": 0.30,
-        "global_equity": 0.35,
-        "fx_commodity": 0.15,  # risk = 0.80
-        "bond": 0.15,
+        "global_equity": 0.30,
+        "precious_metals": 0.10,
+        "cyclical_commodity_fx": 0.10,  # risk = 0.80
+        "kr_bond": 0.10,
+        "credit": 0.05,
+        "global_duration": 0.00,
         "cash_mmf": 0.05,
     }
     w = project_to_mandate_qp(bucket)
@@ -95,18 +102,20 @@ def test_qp_no_change_when_feasible():
 def test_qp_preserves_relative_ratio_better_than_proportional():
     """Soft check: sum=1, risk ≤ 0.70, weights ≥ 0 — 4 가지 hard constraint 만 검증."""
     bucket = {
-        "kr_equity": 0.35,
+        "kr_equity": 0.30,
         "global_equity": 0.40,
-        "fx_commodity": 0.10,  # risk = 0.85
-        "bond": 0.10,
+        "precious_metals": 0.10,
+        "cyclical_commodity_fx": 0.05,  # risk = 0.85
+        "kr_bond": 0.05,
+        "credit": 0.03,
+        "global_duration": 0.02,
         "cash_mmf": 0.05,
     }
     w = project_to_mandate_qp(bucket)
     _assert_simplex(w)
     assert _risk_sum(w) <= 0.70 + 1e-6
-    # relative ratio: global_equity > kr_equity > fx_commodity 의 ordering 보존
-    assert w["global_equity"] >= w["kr_equity"]
-    assert w["kr_equity"] >= w["fx_commodity"]
+    # relative ratio: global_equity > kr_equity 의 ordering 보존 (input에서 global_equity 10pp 더 큼)
+    assert w["global_equity"] > w["kr_equity"] - 1e-6
 
 
 # ---------------------------------------------------------------------------
@@ -119,9 +128,12 @@ def test_qp_pathological_all_negative_risk_returns_baseline():
     bucket = {
         "kr_equity": -0.10,
         "global_equity": -0.05,
-        "fx_commodity": -0.02,
-        "bond": 0.70,
-        "cash_mmf": 0.47,
+        "precious_metals": -0.02,
+        "cyclical_commodity_fx": -0.02,
+        "kr_bond": 0.40,
+        "credit": 0.10,
+        "global_duration": 0.30,
+        "cash_mmf": 0.39,
     }
     w = project_to_mandate_qp(bucket)
     _assert_simplex(w)

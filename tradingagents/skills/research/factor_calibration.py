@@ -33,24 +33,30 @@ def _project_simple(bucket: dict[str, float], risk_cap: float = 0.70) -> dict[st
     Here we use proportional scaling — ~50x faster, slight intent distortion
     acceptable for calibration (β is averaged across folds via median anyway).
     """
+    from tradingagents.skills.research.factor_to_bucket import RISK_BUCKETS as _RISK_BUCKETS
+
     bucket = {b: max(0.0, w) for b, w in bucket.items()}
     total = sum(bucket.values())
     if total <= 0:
         return dict(INITIAL_BASELINE)
     bucket = {b: w / total for b, w in bucket.items()}
-    risk_buckets = ("kr_equity", "global_equity", "fx_commodity")
+    risk_buckets = tuple(b for b in _RISK_BUCKETS if b in bucket)
     risk = sum(bucket[b] for b in risk_buckets)
     if risk > risk_cap:
         scale = risk_cap / risk
         for b in risk_buckets:
             bucket[b] *= scale
         shortfall = 1.0 - sum(bucket.values())
-        safe_total = bucket["bond"] + bucket["cash_mmf"]
+        safe_buckets = {b: w for b, w in bucket.items() if b not in risk_buckets and w > 0}
+        safe_total = sum(safe_buckets.values())
         if safe_total > 0:
-            bucket["bond"] += shortfall * (bucket["bond"] / safe_total)
-            bucket["cash_mmf"] += shortfall * (bucket["cash_mmf"] / safe_total)
-        else:
-            bucket["bond"] += shortfall
+            for b in safe_buckets:
+                bucket[b] += shortfall * (bucket[b] / safe_total)
+        elif bucket:
+            # fallback: distribute to first non-risk bucket
+            non_risk = [b for b in bucket if b not in risk_buckets]
+            if non_risk:
+                bucket[non_risk[0]] += shortfall
     return bucket
 
 
@@ -217,13 +223,16 @@ def benchmark_60_40_returns(
     samples: list[HistoricalSample],
     weights: dict[str, float] | None = None,
 ) -> np.ndarray:
-    """Static 60/40 KR-tilted: kr_eq 20% + gl_eq 40% + bond 40%."""
+    """Static 60/40 KR-tilted: kr_eq 20% + gl_eq 40% + global_duration 40%."""
     w = weights or {
-        "kr_equity": 0.20,
-        "global_equity": 0.40,
-        "fx_commodity": 0.0,
-        "bond": 0.40,
-        "cash_mmf": 0.0,
+        "kr_equity":             0.20,
+        "global_equity":         0.40,
+        "precious_metals":       0.00,
+        "cyclical_commodity_fx": 0.00,
+        "kr_bond":               0.00,
+        "credit":                0.00,
+        "global_duration":       0.40,
+        "cash_mmf":              0.00,
     }
     returns = []
     for s in samples:

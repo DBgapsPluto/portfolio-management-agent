@@ -45,8 +45,11 @@ logger = logging.getLogger(__name__)
 BUCKETS: Final[tuple[str, ...]] = (
     "kr_equity",
     "global_equity",
-    "fx_commodity",
-    "bond",
+    "precious_metals",
+    "cyclical_commodity_fx",
+    "kr_bond",
+    "credit",
+    "global_duration",
     "cash_mmf",
 )
 
@@ -62,107 +65,165 @@ FACTORS: Final[tuple[str, ...]] = (
     "F9_market_dispersion",
     # 2026-05-27 — F10 신규. F9 가 cross-sectional dispersion, F10 가 systemic.
     "F10_systemic_liquidity",
+    # 2026-05-28 — F11/F12 신규 (Tier 0 완성).
+    "F11_earnings_revision",
+    "F12_china_credit_impulse",
 )
 
 
-INITIAL_BASELINE: Final[dict[str, float]] = {
-    "kr_equity":     0.12,
-    "global_equity": 0.20,
-    "fx_commodity":  0.15,
-    "bond":          0.33,
-    "cash_mmf":      0.20,
-}
-# Σ = 1.0, 위험자산 = 0.47 (mandate 0.70 의 67%)
+RISK_BUCKETS: Final[tuple[str, ...]] = (
+    "kr_equity",
+    "global_equity",
+    "precious_metals",
+    "cyclical_commodity_fx",
+)
+"""Bucket level mandate (§2.2): 위험자산 sum ≤ 0.70."""
 
-# INITIAL_BETA — PR2a 2026-05-24 calibrated.
-#
-# Replaced hand-coded prior with walk-forward calibrated β.
-# Calibration: scripts/calibrate_factor_model.py on backtest/historical/
-# samples.parquet (133 samples, 1991-Q2 → 2024-Q2 with graceful per-factor
-# degradation by era).
-# Best shrinkage = 2.0. Mean OOS Sharpe 1.171 vs prior (hand-coded) 0.829
-# (+41% Sharpe gain, paired-t p=0.080 < 0.20). 4/5 strict acceptance
-# conditions PASS; 1 marginal sign noise (F7×kr_equity β=+0.0009) absorbed
-# by tolerance 1e-3 (grill-me #3 decision).
-# Full results: artifacts/2026-05-24/calibration_runs/validation_report.json.
+MANDATE_RISK_CAP: Final[float] = 0.70
+
+INITIAL_BASELINE: Final[dict[str, float]] = {
+    "kr_equity":             0.15,
+    "global_equity":         0.20,
+    "precious_metals":       0.08,
+    "cyclical_commodity_fx": 0.14,
+    "kr_bond":               0.15,
+    "credit":                0.05,
+    "global_duration":       0.13,
+    "cash_mmf":              0.10,
+}
+# Σ위험 = 0.57, Σ안전 = 0.43, total = 1.0 (Option C — home bias, Gemini-validated).
+
+# INITIAL_BETA — T1 2026-05-29: 8-bucket schema, 12×8 = 96 entries.
+# Expert prior (row sum = 0 invariant enforced).
+# Bucket rename: fx_commodity → cyclical_commodity_fx + precious_metals split;
+#                bond → kr_bond + credit + global_duration split.
+# F11/F12 새로 추가 (Tier 0 완성). All |β| ≤ 0.20, row sums = 0.
 INITIAL_BETA: Final[dict[tuple[str, str], float]] = {
-    # F1 growth
-    ("F1_growth", "kr_equity"):     +0.0203,
-    ("F1_growth", "global_equity"): +0.0668,
-    ("F1_growth", "fx_commodity"):  -0.0304,
-    ("F1_growth", "bond"):          -0.0739,
-    ("F1_growth", "cash_mmf"):      -0.0309,
-    # F2 inflation
-    ("F2_inflation", "kr_equity"):     -0.1153,
-    ("F2_inflation", "global_equity"): -0.0371,
-    ("F2_inflation", "fx_commodity"):  +0.0445,
-    ("F2_inflation", "bond"):          -0.0016,
-    ("F2_inflation", "cash_mmf"):      +0.0754,
-    # F3 real_rate
-    ("F3_real_rate", "kr_equity"):     +0.0385,
-    ("F3_real_rate", "global_equity"): -0.0732,
-    ("F3_real_rate", "fx_commodity"):  -0.0204,
-    ("F3_real_rate", "bond"):          -0.0868,
-    ("F3_real_rate", "cash_mmf"):      +0.1075,
-    # F4 term_premium
-    ("F4_term_premium", "kr_equity"):     +0.004,
-    ("F4_term_premium", "global_equity"): +0.0548,
-    ("F4_term_premium", "fx_commodity"):  -0.0842,
-    ("F4_term_premium", "bond"):          +0.122,
-    ("F4_term_premium", "cash_mmf"):      -0.041,
-    # F5 credit_cycle
-    ("F5_credit_cycle", "kr_equity"):     -0.104,
-    ("F5_credit_cycle", "global_equity"): -0.0118,
-    ("F5_credit_cycle", "fx_commodity"):  -0.0041,
-    ("F5_credit_cycle", "bond"):          +0.0385,
-    ("F5_credit_cycle", "cash_mmf"):      +0.1998,
-    # F6 krw_regime
-    ("F6_krw_regime", "kr_equity"):     -0.0148,
-    ("F6_krw_regime", "global_equity"): +0.0976,
-    ("F6_krw_regime", "fx_commodity"):  +0.0503,
-    ("F6_krw_regime", "bond"):          +0.0976,
-    ("F6_krw_regime", "cash_mmf"):      +0.0976,
-    # F7 equity_vol_regime
-    ("F7_equity_vol_regime", "kr_equity"):     +0.0009,  # marginal noise, expected negative
-    ("F7_equity_vol_regime", "global_equity"): -0.0954,
-    ("F7_equity_vol_regime", "fx_commodity"):  -0.0062,
-    ("F7_equity_vol_regime", "bond"):          +0.0011,
-    ("F7_equity_vol_regime", "cash_mmf"):      +0.0386,
-    # F8 valuation
-    ("F8_valuation", "kr_equity"):     -0.0593,
-    ("F8_valuation", "global_equity"): -0.0357,
-    ("F8_valuation", "fx_commodity"):  +0.0213,
-    ("F8_valuation", "bond"):          +0.0437,
-    ("F8_valuation", "cash_mmf"):      +0.0162,
-    # F9 market_dispersion (renamed from F9_liquidity_regime, Tier 0 2026-05-28)
-    ("F9_market_dispersion", "kr_equity"):     -0.0723,
-    ("F9_market_dispersion", "global_equity"): -0.0755,
-    ("F9_market_dispersion", "fx_commodity"): -0.011,
-    ("F9_market_dispersion", "bond"):          +0.0657,
-    ("F9_market_dispersion", "cash_mmf"):      +0.0575,
-    # F10 systemic_liquidity (2026-05-27 신규, expert prior).
-    # +z = tight FCI (stress) → broad risk-off (모든 위험자산 -, 안전자산 +).
-    # F9 (cross-sectional) 보다 위험자산 영향 더 균등 (특정 자산 집중 X).
-    ("F10_systemic_liquidity", "kr_equity"):     -0.060,
-    ("F10_systemic_liquidity", "global_equity"): -0.070,
-    ("F10_systemic_liquidity", "fx_commodity"):  -0.020,
-    ("F10_systemic_liquidity", "bond"):          +0.080,
-    ("F10_systemic_liquidity", "cash_mmf"):      +0.070,
+    # F1 growth (row sum = 0)
+    ("F1_growth", "kr_equity"):             +0.05,
+    ("F1_growth", "global_equity"):         +0.06,
+    ("F1_growth", "precious_metals"):       -0.02,
+    ("F1_growth", "cyclical_commodity_fx"): +0.03,
+    ("F1_growth", "kr_bond"):               -0.04,
+    ("F1_growth", "credit"):                +0.02,
+    ("F1_growth", "global_duration"):       -0.05,
+    ("F1_growth", "cash_mmf"):              -0.05,
+    # F2 inflation (row sum = 0)
+    ("F2_inflation", "kr_equity"):             -0.02,
+    ("F2_inflation", "global_equity"):         -0.03,
+    ("F2_inflation", "precious_metals"):       +0.04,
+    ("F2_inflation", "cyclical_commodity_fx"): +0.05,
+    ("F2_inflation", "kr_bond"):               -0.03,
+    ("F2_inflation", "credit"):                -0.01,
+    ("F2_inflation", "global_duration"):       -0.03,
+    ("F2_inflation", "cash_mmf"):              +0.03,
+    # F3 real_rate (row sum = 0)
+    ("F3_real_rate", "kr_equity"):             -0.01,
+    ("F3_real_rate", "global_equity"):         -0.02,
+    ("F3_real_rate", "precious_metals"):       -0.05,
+    ("F3_real_rate", "cyclical_commodity_fx"): -0.01,
+    ("F3_real_rate", "kr_bond"):               -0.03,
+    ("F3_real_rate", "credit"):                 0.00,
+    ("F3_real_rate", "global_duration"):       -0.04,
+    ("F3_real_rate", "cash_mmf"):              +0.16,
+    # F4 term_premium (row sum = 0)
+    ("F4_term_premium", "kr_equity"):             +0.02,
+    ("F4_term_premium", "global_equity"):         +0.03,
+    ("F4_term_premium", "precious_metals"):        0.00,
+    ("F4_term_premium", "cyclical_commodity_fx"):  0.00,
+    ("F4_term_premium", "kr_bond"):               +0.04,
+    ("F4_term_premium", "credit"):                +0.01,
+    ("F4_term_premium", "global_duration"):       +0.03,
+    ("F4_term_premium", "cash_mmf"):              -0.13,
+    # F5 credit_cycle (row sum = 0; precious 제거 — dash-for-cash 모순)
+    ("F5_credit_cycle", "kr_equity"):             -0.05,
+    ("F5_credit_cycle", "global_equity"):         -0.06,
+    ("F5_credit_cycle", "precious_metals"):        0.00,
+    ("F5_credit_cycle", "cyclical_commodity_fx"):  0.00,
+    ("F5_credit_cycle", "kr_bond"):               +0.01,
+    ("F5_credit_cycle", "credit"):                -0.06,
+    ("F5_credit_cycle", "global_duration"):       +0.04,
+    ("F5_credit_cycle", "cash_mmf"):              +0.12,
+    # F6 krw_regime (row sum = 0)
+    ("F6_krw_regime", "kr_equity"):             -0.05,
+    ("F6_krw_regime", "global_equity"):         +0.05,
+    ("F6_krw_regime", "precious_metals"):       +0.02,
+    ("F6_krw_regime", "cyclical_commodity_fx"): +0.02,
+    ("F6_krw_regime", "kr_bond"):               -0.01,
+    ("F6_krw_regime", "credit"):                 0.00,
+    ("F6_krw_regime", "global_duration"):       +0.01,
+    ("F6_krw_regime", "cash_mmf"):              -0.04,
+    # F7 equity_vol_regime (row sum = 0; gl_dur, precious 제거 — correlation breakdown)
+    ("F7_equity_vol_regime", "kr_equity"):             -0.05,
+    ("F7_equity_vol_regime", "global_equity"):         -0.06,
+    ("F7_equity_vol_regime", "precious_metals"):        0.00,
+    ("F7_equity_vol_regime", "cyclical_commodity_fx"): -0.03,
+    ("F7_equity_vol_regime", "kr_bond"):               +0.02,
+    ("F7_equity_vol_regime", "credit"):                -0.02,
+    ("F7_equity_vol_regime", "global_duration"):       +0.04,
+    ("F7_equity_vol_regime", "cash_mmf"):              +0.10,
+    # F8 valuation (row sum = 0)
+    ("F8_valuation", "kr_equity"):             -0.04,
+    ("F8_valuation", "global_equity"):         -0.05,
+    ("F8_valuation", "precious_metals"):       +0.01,
+    ("F8_valuation", "cyclical_commodity_fx"): +0.01,
+    ("F8_valuation", "kr_bond"):               +0.02,
+    ("F8_valuation", "credit"):                +0.01,
+    ("F8_valuation", "global_duration"):       +0.02,
+    ("F8_valuation", "cash_mmf"):              +0.02,
+    # F9 market_dispersion (row sum = 0)
+    ("F9_market_dispersion", "kr_equity"):             -0.04,
+    ("F9_market_dispersion", "global_equity"):         -0.05,
+    ("F9_market_dispersion", "precious_metals"):       -0.02,
+    ("F9_market_dispersion", "cyclical_commodity_fx"): -0.02,
+    ("F9_market_dispersion", "kr_bond"):               +0.03,
+    ("F9_market_dispersion", "credit"):                -0.02,
+    ("F9_market_dispersion", "global_duration"):       +0.02,
+    ("F9_market_dispersion", "cash_mmf"):              +0.10,
+    # F10 systemic_liquidity (row sum = 0; +z = tight FCI = stress → risk-off)
+    ("F10_systemic_liquidity", "kr_equity"):             -0.06,
+    ("F10_systemic_liquidity", "global_equity"):         -0.07,
+    ("F10_systemic_liquidity", "precious_metals"):       +0.02,
+    ("F10_systemic_liquidity", "cyclical_commodity_fx"): -0.02,
+    ("F10_systemic_liquidity", "kr_bond"):               +0.04,
+    ("F10_systemic_liquidity", "credit"):                -0.04,
+    ("F10_systemic_liquidity", "global_duration"):       +0.04,
+    ("F10_systemic_liquidity", "cash_mmf"):              +0.09,
+    # F11 earnings_revision (row sum = 0; 2026-05-28 신규)
+    ("F11_earnings_revision", "kr_equity"):             +0.05,
+    ("F11_earnings_revision", "global_equity"):         +0.05,
+    ("F11_earnings_revision", "precious_metals"):       -0.01,
+    ("F11_earnings_revision", "cyclical_commodity_fx"): +0.01,
+    ("F11_earnings_revision", "kr_bond"):               -0.02,
+    ("F11_earnings_revision", "credit"):                +0.02,
+    ("F11_earnings_revision", "global_duration"):       -0.04,
+    ("F11_earnings_revision", "cash_mmf"):              -0.06,
+    # F12 china_credit_impulse (row sum = 0; 2026-05-28 신규)
+    ("F12_china_credit_impulse", "kr_equity"):             +0.04,
+    ("F12_china_credit_impulse", "global_equity"):         +0.04,
+    ("F12_china_credit_impulse", "precious_metals"):        0.00,
+    ("F12_china_credit_impulse", "cyclical_commodity_fx"): +0.04,
+    ("F12_china_credit_impulse", "kr_bond"):               -0.02,
+    ("F12_china_credit_impulse", "credit"):                +0.02,
+    ("F12_china_credit_impulse", "global_duration"):       -0.04,
+    ("F12_china_credit_impulse", "cash_mmf"):              -0.08,
 }
 
 # Bond TIPS share separate scalar regression (spec § 5.5)
 INITIAL_TIPS_BASELINE: Final[float] = 0.30
 INITIAL_TIPS_BETA: Final[dict[str, float]] = {
-    "F1_growth":           +0.05,
-    "F2_inflation":        +0.20,
-    "F3_real_rate":        -0.10,
-    "F4_term_premium":      0.0,
-    "F5_credit_cycle":     -0.05,
-    "F6_krw_regime":        0.0,
-    "F7_equity_vol_regime": 0.0,
-    "F8_valuation":         0.0,
-    "F9_market_dispersion": -0.03,
-    "F10_systemic_liquidity": +0.05,  # systemic stress 시 TIPS preference 약간 ↑
+    "F1_growth":               +0.05,
+    "F2_inflation":            +0.20,
+    "F3_real_rate":            -0.10,
+    "F4_term_premium":          0.00,
+    "F5_credit_cycle":         -0.05,
+    "F6_krw_regime":            0.00,
+    "F7_equity_vol_regime":     0.00,
+    "F8_valuation":             0.00,
+    "F9_market_dispersion":    -0.03,
+    "F10_systemic_liquidity":  +0.05,  # systemic stress 시 TIPS preference 약간 ↑
+    "F11_earnings_revision":    0.00,
+    "F12_china_credit_impulse": 0.00,
 }
 
 SignRestriction = Literal[
@@ -170,32 +231,60 @@ SignRestriction = Literal[
 ]
 SIGN_RESTRICTION: Final[dict[tuple[str, str], SignRestriction]] = {
     # F1 growth
-    ("F1_growth", "kr_equity"):     "positive",
-    ("F1_growth", "global_equity"): "positive",
-    ("F1_growth", "bond"):          "negative",
-    ("F1_growth", "cash_mmf"):      "negative",
+    ("F1_growth", "kr_equity"):       "positive",
+    ("F1_growth", "global_equity"):   "positive",
+    ("F1_growth", "credit"):          "positive",
+    ("F1_growth", "kr_bond"):         "negative",
+    ("F1_growth", "global_duration"): "negative",
+    ("F1_growth", "cash_mmf"):        "negative",
     # F2 inflation
-    ("F2_inflation", "fx_commodity"):  "positive",
-    ("F2_inflation", "bond"):          "negative",
+    ("F2_inflation", "precious_metals"):       "positive",
+    ("F2_inflation", "cyclical_commodity_fx"): "positive",
+    ("F2_inflation", "kr_bond"):               "negative",
+    ("F2_inflation", "global_duration"):       "negative",
     # F3 real_rate
-    ("F3_real_rate", "bond"):          "negative",
-    ("F3_real_rate", "cash_mmf"):      "positive",
-    # F5 credit_cycle
+    ("F3_real_rate", "precious_metals"):  "negative",
+    ("F3_real_rate", "kr_bond"):          "negative",
+    ("F3_real_rate", "global_duration"):  "negative",
+    ("F3_real_rate", "cash_mmf"):         "positive",
+    # F4 term_premium
+    ("F4_term_premium", "kr_bond"):         "positive",
+    ("F4_term_premium", "global_duration"): "positive",
+    ("F4_term_premium", "cash_mmf"):        "negative",
+    # F5 credit_cycle (precious 제거 — dash-for-cash 모순)
     ("F5_credit_cycle", "kr_equity"):     "negative",
     ("F5_credit_cycle", "global_equity"): "negative",
+    ("F5_credit_cycle", "credit"):        "negative",
     ("F5_credit_cycle", "cash_mmf"):      "positive",
-    # F7 equity_vol_regime
+    # F6 krw_regime
+    ("F6_krw_regime", "kr_equity"):     "negative",
+    ("F6_krw_regime", "global_equity"): "positive",
+    # F7 equity_vol_regime (gl_dur, precious 제거 — correlation breakdown)
     ("F7_equity_vol_regime", "kr_equity"):     "negative",
     ("F7_equity_vol_regime", "global_equity"): "negative",
     ("F7_equity_vol_regime", "cash_mmf"):      "positive",
     # F8 valuation (+z = expensive → -equity)
     ("F8_valuation", "kr_equity"):     "negative",
     ("F8_valuation", "global_equity"): "negative",
-    # F10 systemic_liquidity (2026-05-27, +z = tight FCI = systemic stress)
-    ("F10_systemic_liquidity", "kr_equity"):     "negative",
-    ("F10_systemic_liquidity", "global_equity"): "negative",
-    ("F10_systemic_liquidity", "bond"):          "positive",
-    ("F10_systemic_liquidity", "cash_mmf"):      "positive",
+    # F9 market_dispersion
+    ("F9_market_dispersion", "kr_equity"):     "negative",
+    ("F9_market_dispersion", "global_equity"): "negative",
+    ("F9_market_dispersion", "cash_mmf"):      "positive",
+    # F10 systemic_liquidity (+z = tight FCI = systemic stress)
+    ("F10_systemic_liquidity", "kr_equity"):              "negative",
+    ("F10_systemic_liquidity", "global_equity"):          "negative",
+    ("F10_systemic_liquidity", "credit"):                 "negative",
+    ("F10_systemic_liquidity", "cyclical_commodity_fx"):  "negative",
+    ("F10_systemic_liquidity", "kr_bond"):                "positive",
+    ("F10_systemic_liquidity", "global_duration"):        "positive",
+    ("F10_systemic_liquidity", "cash_mmf"):               "positive",
+    # F11 earnings_revision
+    ("F11_earnings_revision", "kr_equity"):     "positive",
+    ("F11_earnings_revision", "global_equity"): "positive",
+    ("F11_earnings_revision", "cash_mmf"):      "negative",
+    # F12 china_credit_impulse
+    ("F12_china_credit_impulse", "kr_equity"):              "positive",
+    ("F12_china_credit_impulse", "cyclical_commodity_fx"):  "positive",
 }
 
 
@@ -205,11 +294,6 @@ PER_FACTOR_BUCKET_CONTRIB_CAP: Final[float] = 0.10
 이유: single factor 가 single bucket 을 dominate 못 하게 — diversification.
 β × z 가 cap 을 초과하면 cap 으로 clip.
 """
-
-RISK_BUCKETS: Final[tuple[str, ...]] = ("kr_equity", "global_equity", "fx_commodity")
-"""Bucket level mandate (§2.2): 위험자산 sum ≤ 0.70."""
-
-MANDATE_RISK_CAP: Final[float] = 0.70
 
 
 # ---------------------------------------------------------------------------

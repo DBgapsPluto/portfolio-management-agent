@@ -4,6 +4,7 @@ Tests in this file cover:
   - apply_factor_model: linear additive regression with per-contribution cap
   - apply_factor_model_with_safety: regression + QP projection + diagnostics
   - INITIAL_BETA / INITIAL_BASELINE invariants
+  - 8-bucket schema invariants (Tasks 1-4)
 """
 from __future__ import annotations
 
@@ -18,7 +19,10 @@ from tradingagents.skills.research.factor_to_bucket import (
     INITIAL_BETA,
     INITIAL_TIPS_BASELINE,
     INITIAL_TIPS_BETA,
+    MANDATE_RISK_CAP,
     PER_FACTOR_BUCKET_CONTRIB_CAP,
+    RISK_BUCKETS,
+    SIGN_RESTRICTION,
     apply_factor_model,
     apply_factor_model_with_safety,
 )
@@ -49,11 +53,7 @@ def test_initial_baseline_sums_to_one():
 
 
 def test_initial_baseline_satisfies_mandate():
-    risk = (
-        INITIAL_BASELINE["kr_equity"]
-        + INITIAL_BASELINE["global_equity"]
-        + INITIAL_BASELINE["fx_commodity"]
-    )
+    risk = sum(INITIAL_BASELINE[b] for b in RISK_BUCKETS)
     assert risk <= 0.70
 
 
@@ -78,13 +78,13 @@ def test_apply_factor_model_baseline_returns_baseline():
 
 
 def test_apply_factor_model_growth_lifts_equity():
-    """F1 = +1.5 → equity ↑, bond ↓ (consistent with positive growth β)."""
+    """F1 = +1.5 → equity ↑, kr_bond ↓ (consistent with positive growth β)."""
     z = _zero_z()
     z["F1_growth"] = 1.5
     bucket, _, _ = apply_factor_model(z)
     assert bucket["kr_equity"] > INITIAL_BASELINE["kr_equity"]
     assert bucket["global_equity"] > INITIAL_BASELINE["global_equity"]
-    assert bucket["bond"] < INITIAL_BASELINE["bond"]
+    assert bucket["kr_bond"] < INITIAL_BASELINE["kr_bond"]
 
 
 def test_apply_factor_model_preserves_sum_bounded_no_capping():
@@ -257,3 +257,74 @@ def test_safety_diagnostics_no_intervention_for_baseline():
     _, _, _, diagnostics = apply_factor_model_with_safety(_zero_z())
     assert diagnostics["projection_l2_distance"] < 1e-6
     assert diagnostics["projection_intervened"] is False
+
+
+# ---------------------------------------------------------------------------
+# T1 Tasks 1-4: 8-bucket schema invariants
+# ---------------------------------------------------------------------------
+
+
+def test_buckets_8_entries():
+    expected = {
+        "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+        "kr_bond", "credit", "global_duration", "cash_mmf",
+    }
+    assert set(BUCKETS) == expected
+    assert len(BUCKETS) == 8
+
+
+def test_risk_buckets_subset():
+    assert set(RISK_BUCKETS) == {
+        "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+    }
+    assert all(b in BUCKETS for b in RISK_BUCKETS)
+
+
+def test_initial_baseline_option_c_57pct_risk():
+    assert abs(sum(INITIAL_BASELINE.values()) - 1.0) < 1e-9
+    risk_sum = sum(INITIAL_BASELINE[b] for b in RISK_BUCKETS)
+    assert abs(risk_sum - 0.57) < 1e-9
+    safe_sum = sum(INITIAL_BASELINE[b] for b in BUCKETS if b not in RISK_BUCKETS)
+    assert abs(safe_sum - 0.43) < 1e-9
+    assert MANDATE_RISK_CAP == 0.70
+
+
+def test_initial_beta_96_entries_row_sums_zero():
+    assert len(INITIAL_BETA) == len(FACTORS) * len(BUCKETS)
+    assert len(INITIAL_BETA) == 96
+    for factor in FACTORS:
+        row_sum = sum(INITIAL_BETA[(factor, b)] for b in BUCKETS)
+        assert abs(row_sum) < 1e-9, f"{factor} row sum = {row_sum}"
+
+
+def test_initial_beta_bounds():
+    for (f, b), v in INITIAL_BETA.items():
+        assert abs(v) <= 0.20, f"{f} × {b} = {v} exceeds bound"
+
+
+def test_initial_tips_beta_12_entries():
+    assert len(INITIAL_TIPS_BETA) == 12
+    for factor in FACTORS:
+        assert factor in INITIAL_TIPS_BETA
+    assert INITIAL_TIPS_BASELINE == 0.30
+
+
+def test_sign_restriction_no_f5_precious_no_f7_gldur_no_f7_precious():
+    assert ("F5_credit_cycle", "precious_metals") not in SIGN_RESTRICTION
+    assert ("F7_equity_vol_regime", "global_duration") not in SIGN_RESTRICTION
+    assert ("F7_equity_vol_regime", "precious_metals") not in SIGN_RESTRICTION
+
+
+def test_sign_restriction_count():
+    # 8-bucket schema with F1-F12: 43 entries (spec §4, 2026-05-29).
+    # Guard against accidental deletion; upper bound gives headroom for additions.
+    assert 40 <= len(SIGN_RESTRICTION) <= 50
+
+
+def test_sign_restriction_consistency_with_initial_beta():
+    for (f, b), sign in SIGN_RESTRICTION.items():
+        beta = INITIAL_BETA[(f, b)]
+        if sign == "positive":
+            assert beta >= 0, f"{f}×{b} sign=positive but prior β={beta}"
+        elif sign == "negative":
+            assert beta <= 0, f"{f}×{b} sign=negative but prior β={beta}"

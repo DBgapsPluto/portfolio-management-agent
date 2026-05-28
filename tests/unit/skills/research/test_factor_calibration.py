@@ -21,11 +21,14 @@ def _synthetic_samples(n: int = 50, seed: int = 42) -> list[HistoricalSample]:
     for q in range(n):
         factor_z = {f: float(np.random.normal(0, 1)) for f in FACTORS}
         bucket_returns = {
-            "kr_equity": 0.02 + 0.02 * factor_z["F1_growth"] + float(np.random.normal(0, 0.05)),
-            "global_equity": 0.02 + 0.03 * factor_z["F1_growth"] + float(np.random.normal(0, 0.05)),
-            "fx_commodity": 0.005 + float(np.random.normal(0, 0.04)),
-            "bond": 0.01 - 0.01 * factor_z["F1_growth"] + float(np.random.normal(0, 0.02)),
-            "cash_mmf": 0.005 + float(np.random.normal(0, 0.002)),
+            "kr_equity":             0.02 + 0.02 * factor_z["F1_growth"] + float(np.random.normal(0, 0.05)),
+            "global_equity":         0.02 + 0.03 * factor_z["F1_growth"] + float(np.random.normal(0, 0.05)),
+            "precious_metals":       0.005 + float(np.random.normal(0, 0.03)),
+            "cyclical_commodity_fx": 0.005 + float(np.random.normal(0, 0.04)),
+            "kr_bond":               0.01 - 0.01 * factor_z["F1_growth"] + float(np.random.normal(0, 0.02)),
+            "credit":                0.008 + float(np.random.normal(0, 0.015)),
+            "global_duration":       0.01 - 0.008 * factor_z["F1_growth"] + float(np.random.normal(0, 0.02)),
+            "cash_mmf":              0.005 + float(np.random.normal(0, 0.002)),
         }
         samples.append(
             HistoricalSample(
