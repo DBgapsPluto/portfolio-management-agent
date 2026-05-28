@@ -397,6 +397,24 @@ def _build_sector_mapper_and_bounds(
     else:
         target_map["bond"] = bucket_target.bond
 
+    # Infeasibility 방어 — cash_mmf 후보가 없거나 부족하면 (Phase 1 spillover가
+    # candidates 선택 이후에 bucket_target을 수정해서 cash_mmf 비중이 생겼을 때,
+    # 또는 require_positive_alpha 필터로 후보가 줄어서 n × SINGLE_ASSET_CAP <
+    # target 이 될 때) target 초과분을 bond bucket으로 흡수해 EF infeasibility 방지.
+    sectors_present = set(sector_mapper.values())
+    from collections import Counter as _SectorCounter
+    _n_cash = _SectorCounter(sector_mapper.values()).get("cash_mmf", 0)
+    _cash_target = target_map.get("cash_mmf", 0.0)
+    _cash_achievable = _n_cash * SINGLE_ASSET_CAP  # max realizable with cap
+    if _cash_target > 0 and (_n_cash == 0 or _cash_achievable < _cash_target - 1e-9):
+        bond_key = "bond_nominal" if split_bond else "bond"
+        target_map[bond_key] = target_map.get(bond_key, 0.0) + target_map.pop("cash_mmf")
+        logger.warning(
+            "cash_mmf infeasibility guard: n_cash=%d, achievable=%.4f < target=%.4f"
+            " — merging into %s",
+            _n_cash, _cash_achievable, _cash_target, bond_key,
+        )
+
     # Infeasibility 방어 — 후보 풀에 한쪽 sub-bucket이 0이면 그 target도 0,
     # 다른 sub-bucket에 합쳐서 처리. (candidate_selector가 fallback으로
     # nominal로 채워도 sector_mapper에 따라 'bond_nominal'로 매핑됨)
