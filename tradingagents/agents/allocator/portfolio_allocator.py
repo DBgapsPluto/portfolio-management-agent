@@ -18,11 +18,13 @@ from pypfopt import EfficientFrontier, HRPOpt, risk_models, expected_returns
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
 from tradingagents.skills.portfolio.candidate_selector import (
-    BUCKET_TO_CATEGORIES, DEFAULT_MIN_AUM_KRW, list_eligible_tickers,
+    BUCKET_TO_CATEGORIES, list_eligible_tickers,
     select_etf_candidates,
 )
 from tradingagents.skills.portfolio.method_picker import pick_optimization_method
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
+from tradingagents.skills.portfolio.cash_spillover import adjust_bucket_targets
+from tradingagents.skills.portfolio.diversification import compute_enb
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,9 @@ MIN_POSITION_WEIGHT: float = 0.015
 # 분산 약함"). 단일 sub_category 가 bucket 합의 이 비율을 초과하지 못하게 cap.
 # 0.5 = bucket 의 50%. 예: fx_commodity 19% 면 jpy_fx 최대 9.5%.
 MAX_SUBCATEGORY_BUCKET_SHARE: float = 0.50
+
+# Phase 1 (Stage 3 phase1-cash-spillover spec, 2026-05-28).
+ENB_WARNING_THRESHOLD: float = 3.0
 
 
 def create_portfolio_allocator(
@@ -117,11 +122,10 @@ def create_portfolio_allocator(
         start = as_of - timedelta(days=PRICE_LOOKBACK_DAYS_ALLOC)
         eligible_by_bucket = list_eligible_tickers(
             universe, bucket_target, as_of=as_of,
-            min_aum_krw=DEFAULT_MIN_AUM_KRW,
         )
         eligible_tickers = list({t for ts in eligible_by_bucket.values() for t in ts})
         if not eligible_tickers:
-            raise RuntimeError("No eligible tickers (universe × bucket × AUM filter empty)")
+            raise RuntimeError("No eligible tickers (universe × bucket filter empty)")
 
         returns = fetch_returns_matrix(
             eligible_tickers, start, as_of, cache_path=cache_path,
@@ -212,7 +216,6 @@ def create_portfolio_allocator(
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,
-            min_aum_krw=DEFAULT_MIN_AUM_KRW,
             per_bucket_n=per_bucket_n,
             returns=returns,
             factor_panel=factor_panel,
@@ -232,6 +235,32 @@ def create_portfolio_allocator(
                 if research_decision is not None else None
             ),
         )
+
+        # Phase 1 — cash spillover (Stage 2 macro ↔ Stage 3 micro 화해)
+        alpha_scores_by_bucket = _collect_alpha_scores_per_bucket(attribution)
+        spillover_result = adjust_bucket_targets(
+            bucket_target=bucket_target,
+            bucket_chosen=candidates.bucket_to_tickers,
+            alpha_scores_by_bucket=alpha_scores_by_bucket,
+            returns=returns,
+        )
+        bucket_target = spillover_result.adjusted_bucket_target
+        attribution["cash_spillover"] = spillover_result.model_dump()
+        logger.info(
+            "spillover: total_to_cash=%.4f, cap_triggered=%s, overflow_buckets=%s",
+            spillover_result.total_spillover_to_cash,
+            spillover_result.cash_cap_triggered,
+            list(spillover_result.cash_overflow_to_buckets.keys()),
+        )
+        # attribution config 의 bucket_target snapshot 도 update (감사 용이).
+        attribution["config"]["bucket_target"] = {
+            "kr_equity":     bucket_target.kr_equity,
+            "global_equity": bucket_target.global_equity,
+            "fx_commodity":  bucket_target.fx_commodity,
+            "bond":          bucket_target.bond,
+            "cash_mmf":      bucket_target.cash_mmf,
+        }
+        attribution["config"]["bond_tips_share"] = bucket_target.bond_tips_share
 
         all_candidates = [
             t for tickers in candidates.bucket_to_tickers.values() for t in tickers
@@ -270,7 +299,7 @@ def create_portfolio_allocator(
         # bond bucket의 sub-bucket(TIPS/nominal) weight 강제 위해 sub_category lookup 전달.
         sub_category_lookup = {e.ticker: e.sub_category for e in universe.etfs}
         attribution["optimization"] = {}
-        wv = _optimize_with_bucket_constraints(
+        wv, sigma_df = _optimize_with_bucket_constraints(
             method=method_choice.method,
             returns=returns,
             candidates=candidates,
@@ -280,6 +309,19 @@ def create_portfolio_allocator(
             sub_category_lookup=sub_category_lookup,
             attribution=attribution["optimization"],
         )
+
+        # Phase 1 — ENB 사후 측정 (warning-only)
+        try:
+            enb_value = compute_enb(wv.weights, sigma_df, method="minimum_torsion")
+        except Exception as e:
+            logger.warning("ENB 계산 실패: %s", e)
+            enb_value = 0.0
+        attribution["enb"] = float(enb_value)
+        if enb_value > 0 and enb_value < ENB_WARNING_THRESHOLD:
+            logger.warning(
+                "ENB %.2f < %.2f — possible insufficient diversification",
+                enb_value, ENB_WARNING_THRESHOLD,
+            )
 
         attribution["method_picker"] = {
             "method":       method_choice.method.value,
@@ -355,6 +397,24 @@ def _build_sector_mapper_and_bounds(
     else:
         target_map["bond"] = bucket_target.bond
 
+    # Infeasibility 방어 — cash_mmf 후보가 없거나 부족하면 (Phase 1 spillover가
+    # candidates 선택 이후에 bucket_target을 수정해서 cash_mmf 비중이 생겼을 때,
+    # 또는 require_positive_alpha 필터로 후보가 줄어서 n × SINGLE_ASSET_CAP <
+    # target 이 될 때) target 초과분을 bond bucket으로 흡수해 EF infeasibility 방지.
+    sectors_present = set(sector_mapper.values())
+    from collections import Counter as _SectorCounter
+    _n_cash = _SectorCounter(sector_mapper.values()).get("cash_mmf", 0)
+    _cash_target = target_map.get("cash_mmf", 0.0)
+    _cash_achievable = _n_cash * SINGLE_ASSET_CAP  # max realizable with cap
+    if _cash_target > 0 and (_n_cash == 0 or _cash_achievable < _cash_target - 1e-9):
+        bond_key = "bond_nominal" if split_bond else "bond"
+        target_map[bond_key] = target_map.get(bond_key, 0.0) + target_map.pop("cash_mmf")
+        logger.warning(
+            "cash_mmf infeasibility guard: n_cash=%d, achievable=%.4f < target=%.4f"
+            " — merging into %s",
+            _n_cash, _cash_achievable, _cash_target, bond_key,
+        )
+
     # Infeasibility 방어 — 후보 풀에 한쪽 sub-bucket이 0이면 그 target도 0,
     # 다른 sub-bucket에 합쳐서 처리. (candidate_selector가 fallback으로
     # nominal로 채워도 sector_mapper에 따라 'bond_nominal'로 매핑됨)
@@ -377,6 +437,21 @@ def _build_sector_mapper_and_bounds(
     return sector_mapper, sector_lower, sector_upper
 
 
+def _collect_alpha_scores_per_bucket(
+    attribution: dict,
+) -> dict[str, dict[str, float]]:
+    """attribution['buckets'][bucket]['alpha_scores'] 에서 추출.
+
+    candidate_selector 가 이미 bucket_attr['alpha_scores'] = {ticker: alpha}
+    형태로 채워둠. bond bucket 의 split path 도 Task 8 의 보강으로 같은 키 사용.
+    """
+    out: dict[str, dict[str, float]] = {}
+    for bucket_name, bucket_attr in (attribution.get("buckets") or {}).items():
+        alpha_scores = bucket_attr.get("alpha_scores") or {}
+        out[bucket_name] = dict(alpha_scores)
+    return out
+
+
 def _optimize_with_bucket_constraints(
     method: OptimizationMethod,
     returns: pd.DataFrame,
@@ -386,7 +461,7 @@ def _optimize_with_bucket_constraints(
     attempts: int,
     sub_category_lookup: dict[str, str | None] | None = None,
     attribution: dict | None = None,
-) -> WeightVector:
+) -> tuple[WeightVector, pd.DataFrame]:
     """Optimize with simultaneous (single-cap, bucket sum) constraints.
 
     sub_category_lookup이 주어지면 bond bucket이 (bond_tips, bond_nominal)로
@@ -394,6 +469,9 @@ def _optimize_with_bucket_constraints(
 
     attribution (Stage 3 audit Task 1/3): 제공 시 cov 표본 부족 제외 ticker,
     cap 발동 ticker 등 진단 정보를 dict 에 기록.
+
+    Returns (WeightVector, sigma_df): sigma_df 는 sample covariance DataFrame
+    (ticker × ticker). HRP 와 EF 경로 양쪽에서 모두 반환 — Task 13 ENB 측정용.
     """
     sector_mapper, sector_lower, sector_upper = _build_sector_mapper_and_bounds(
         candidates, bucket_target, attempts, sub_category_lookup,
@@ -428,13 +506,15 @@ def _optimize_with_bucket_constraints(
                 attribution["cov_excluded_tickers"] = list(excluded)
                 attribution["cov_final_obs"] = int(len(returns))
 
+    S = risk_models.sample_cov(returns)
+
     if method == OptimizationMethod.HRP:
-        return _hrp_per_bucket(
+        wv = _hrp_per_bucket(
             returns, candidates, bucket_target, sub_category_lookup,
             attribution=attribution,
         )
-
-    S = risk_models.sample_cov(returns)
+        sigma_df = S if isinstance(S, pd.DataFrame) else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
+        return wv, sigma_df
 
     if method == OptimizationMethod.BLACK_LITTERMAN:
         from pypfopt import BlackLittermanModel
@@ -526,6 +606,7 @@ def _optimize_with_bucket_constraints(
     weights = _apply_min_weight_threshold(
         weights, candidates, attribution=attribution,
     )
+    sigma_df = S if isinstance(S, pd.DataFrame) else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
     return WeightVector(
         method=method,
         weights=weights,
@@ -535,7 +616,7 @@ def _optimize_with_bucket_constraints(
         ),
         expected_volatility=expected_vol,
         expected_sharpe=expected_sharpe,
-    )
+    ), sigma_df
 
 
 def _apply_subcategory_cap(
