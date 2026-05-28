@@ -96,3 +96,20 @@ def test_minimum_torsion_matrix_decorrelates():
     assert np.max(np.abs(off_diag)) < 1e-9
     # 분산은 보존 (diag(diag(Σ)) 와 동일)
     assert np.allclose(np.diag(transformed), np.diag(expected_diag), atol=1e-9)
+
+
+def test_compute_enb_pca_method_works():
+    """PCA method smoke — fallback path 가 정상 동작 (Phase 1 followup, Phase 2a Task 10)."""
+    sigma = _equal_corr_cov(3, rho=0.3)
+    enb_mt = compute_enb(_equal_weights(sigma), sigma, method="minimum_torsion")
+    enb_pca = compute_enb(_equal_weights(sigma), sigma, method="pca")
+    # ENB ∈ [1, n] 범위
+    assert 1.0 <= enb_mt <= 3.0, f"minimum_torsion ENB out of range: {enb_mt}"
+    assert 1.0 <= enb_pca <= 3.0, f"pca ENB out of range: {enb_pca}"
+
+
+def test_compute_enb_pca_perfectly_correlated_returns_one():
+    """PCA: 완전 상관 portfolio → ENB ≈ 1."""
+    sigma = _equal_corr_cov(4, rho=0.999999)
+    enb_pca = compute_enb(_equal_weights(sigma), sigma, method="pca")
+    assert enb_pca == pytest.approx(1.0, abs=1e-2)
