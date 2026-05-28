@@ -51,7 +51,11 @@ KEYWORD_MAP: dict[NewsCategory, tuple[str, ...]] = {
 
 
 def _keyword_classify(text: str) -> tuple[NewsCategory | None, int]:
-    """Return (category, hits) or (None, 0)."""
+    """Return (category, hits) or (None, 0).
+
+    2026-05-28 — Tier 1: text 가 headline + description 결합 string 일 수 있음.
+    keyword 매칭 검색 범위가 늘어 정확도 향상.
+    """
     lower = text.lower()
     best: NewsCategory | None = None
     best_hits = 0
@@ -63,36 +67,51 @@ def _keyword_classify(text: str) -> tuple[NewsCategory | None, int]:
     return best, best_hits
 
 
+def _format_for_classify(item: NewsItem) -> str:
+    """Headline + (body_summary > description) 결합.
+
+    2026-05-28 Tier 1 + Tier 2 우선순위:
+    - body_summary 있으면 ≤500자 (가장 풍부, article 본문 LLM 요약)
+    - description 있으면 ≤500자 (RSS feed 의 summary)
+    - 둘 다 없으면 headline 만
+    """
+    if item.body_summary:
+        return f"{item.headline} — {item.body_summary[:500]}"
+    if item.description:
+        return f"{item.headline} — {item.description[:500]}"
+    return item.headline
+
+
 def _llm_classify_batch(
-    quick_llm, headlines: list[str],
+    quick_llm, contexts: list[str],
 ) -> list[NewsCategory]:
-    """LLM에게 batch 분류 의뢰. Return 길이 = headlines 길이."""
-    if not headlines:
+    """LLM에게 batch 분류 의뢰. 2026-05-28 Tier 1: headline + description 받음."""
+    if not contexts:
         return []
     prompt = (
-        "You are a financial news classifier. Classify each headline into "
+        "You are a financial news classifier. Classify each news (headline + brief description) into "
         "exactly one of: policy, macro, corporate, geopolitical, "
         "market_commentary.\n\n"
         "Return ONLY a JSON array like "
         "[{\"idx\": 0, \"category\": \"policy\"}, ...]. "
-        "No prose, no markdown.\n\nHeadlines:\n"
-        + "\n".join(f"{i}. {h}" for i, h in enumerate(headlines))
+        "No prose, no markdown.\n\nNews:\n"
+        + "\n".join(f"{i}. {h}" for i, h in enumerate(contexts))
     )
     try:
         resp = quick_llm.invoke(prompt).content
         # strip markdown fences if present
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", resp.strip(), flags=re.M)
         data = json.loads(cleaned)
-        result: list[NewsCategory] = ["macro"] * len(headlines)
+        result: list[NewsCategory] = ["macro"] * len(contexts)
         valid = set(KEYWORD_MAP.keys())
         for entry in data:
             idx = int(entry.get("idx", -1))
             cat = entry.get("category", "macro")
-            if 0 <= idx < len(headlines) and cat in valid:
+            if 0 <= idx < len(contexts) and cat in valid:
                 result[idx] = cat  # type: ignore[assignment]
         return result
     except Exception:
-        return ["macro"] * len(headlines)
+        return ["macro"] * len(contexts)
 
 
 @register_skill(name="categorize_news", category="news")
@@ -104,7 +123,9 @@ def categorize_news(
     llm_pending: list[tuple[int, str]] = []  # (output_idx, headline)
 
     for item in items:
-        cat, hits = _keyword_classify(item.headline)
+        # 2026-05-28 Tier 1: keyword 매칭에 description 도 포함 (검색 범위 ↑)
+        ctx = _format_for_classify(item)
+        cat, hits = _keyword_classify(ctx)
         if cat is not None and hits >= 1:
             out.append(CategorizedNewsItem(
                 item=item, category=cat,
@@ -118,13 +139,13 @@ def categorize_news(
                 sentiment_score=0.0,
                 classifier_source="llm",
             ))
-            llm_pending.append((len(out) - 1, item.headline))
+            llm_pending.append((len(out) - 1, ctx))
 
     if quick_llm is not None and llm_pending:
         for start in range(0, len(llm_pending), llm_batch_size):
             batch = llm_pending[start:start + llm_batch_size]
-            headlines = [h for _, h in batch]
-            cats = _llm_classify_batch(quick_llm, headlines)
+            contexts = [c for _, c in batch]
+            cats = _llm_classify_batch(quick_llm, contexts)
             for (out_idx, _), cat in zip(batch, cats):
                 out[out_idx] = out[out_idx].model_copy(update={"category": cat})
 
