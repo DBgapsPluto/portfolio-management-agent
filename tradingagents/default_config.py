@@ -135,6 +135,12 @@ DEFAULT_CONFIG.update({
         "kr_treasury_3y": 1,
         "kr_treasury_10y": 1,
         "kr_corp_aa_3y": 1,
+        # Tier 0 additions (2026-05-28)
+        "us_indpro": 17,                # IP released ~17th of month for prior month
+        "us_real_pce": 30,              # BEA quarterly + 1 month lag
+        "us_acm_term_premium_10y": 5,   # NY Fed weekly update
+        "kr_reer": 17,                  # BIS monthly
+        "ted_spread": 1,                # daily
     },
     # Tracing / observability
     "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",

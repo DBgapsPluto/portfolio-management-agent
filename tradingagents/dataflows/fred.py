@@ -72,6 +72,16 @@ FRED_SERIES = {
     # AAA 도 sentinel 대비 BAA10Y 가 더 나은 proxy.
     # backtest/data.py:24 와 같은 패턴.
     "us_credit_proxy": "BAA10Y",       # Moody's BAA - 10Y, daily 1986-
+    # === Tier 0 additions (2026-05-28) ===
+    # F1 reform — INDPRO + Real PCE replace nfci/curve removal
+    "us_indpro": "INDPRO",                # Industrial Production Index (1919+)
+    "us_real_pce": "PCECC96",             # Real PCE Chained 2017 Dollars (1947+, quarterly)
+    # F4 reform — ACM term premium decomposition
+    "us_acm_term_premium_10y": "THREEFYTP10",  # NY Fed 10y ACM (1990+, daily)
+    # F6 reform — BIS REER (Engel-West random walk fix companion)
+    "kr_reer": "RBKRBIS",                 # BIS Real Effective Exchange Rate KR (1994+, monthly)
+    # F10 SOFR-TED stitching (pre-2018 proxy)
+    "ted_spread": "TEDRATE",              # TED Spread (1986-2022, discontinued)
 }
 
 
