@@ -41,9 +41,46 @@ class ETFDailyMetrics(BaseModel):
 def _parse_krx_record(record: dict, basDd: date) -> ETFDailyMetrics | None:
     """KRX OpenAPI 단일 record (dict) → ETFDailyMetrics.
 
-    필수 필드 누락 또는 파싱 실패 시 None 반환.
+    필수 필드 누락 또는 파싱 실패 시 None 반환 + WARNING log.
     """
-    raise NotImplementedError
+    try:
+        ticker = str(record["ISU_SRT_CD"]).strip()
+        nav = float(record["NAV"])
+        market_price = float(record["TDD_CLSPRC"])
+        volume = int(float(record["ACC_TRDVOL"]))
+        trade_value = float(record["ACC_TRDVAL"])
+        aum = float(record["MKTCAP"])
+    except (KeyError, ValueError, TypeError) as e:
+        logger.warning(
+            "_parse_krx_record: skipping malformed record (%s): %r",
+            e, record,
+        )
+        return None
+
+    # premium_discount = market_price / nav - 1 (NAV=0 보호)
+    if nav <= 0:
+        return None
+    premium_discount = market_price / nav - 1.0
+
+    # tracking_rate 는 optional
+    tracking_rate: float | None = None
+    if "TRC_RT" in record:
+        try:
+            tracking_rate = float(record["TRC_RT"])
+        except (ValueError, TypeError):
+            tracking_rate = None
+
+    return ETFDailyMetrics(
+        ticker=ticker,
+        trade_date=basDd,
+        nav=nav,
+        market_price=market_price,
+        premium_discount=premium_discount,
+        volume=volume,
+        trade_value_krw=trade_value,
+        aum_krw=aum,
+        tracking_rate=tracking_rate,
+    )
 
 
 def fetch_etf_metrics_window(
