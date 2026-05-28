@@ -236,6 +236,16 @@ def create_portfolio_allocator(
             ),
         )
 
+        # Phase 2a — Stage 2 원본 bucket_target 별도 보존 (spillover 전 macro 결정)
+        attribution["config"]["bucket_target_stage2"] = {
+            "kr_equity":      bucket_target.kr_equity,
+            "global_equity":  bucket_target.global_equity,
+            "fx_commodity":   bucket_target.fx_commodity,
+            "bond":           bucket_target.bond,
+            "cash_mmf":       bucket_target.cash_mmf,
+            "bond_tips_share": bucket_target.bond_tips_share,
+        }
+
         # Phase 1 — cash spillover (Stage 2 macro ↔ Stage 3 micro 화해)
         alpha_scores_by_bucket = _collect_alpha_scores_per_bucket(attribution)
         spillover_result = adjust_bucket_targets(
@@ -261,6 +271,11 @@ def create_portfolio_allocator(
             "cash_mmf":      bucket_target.cash_mmf,
         }
         attribution["config"]["bond_tips_share"] = bucket_target.bond_tips_share
+
+        # Phase 2a — post-spillover snapshot 도 별도 키로 저장 (audit trail)
+        attribution["config"]["bucket_target_post_spillover"] = dict(
+            attribution["config"]["bucket_target"]
+        )
 
         all_candidates = [
             t for tickers in candidates.bucket_to_tickers.values() for t in tickers
