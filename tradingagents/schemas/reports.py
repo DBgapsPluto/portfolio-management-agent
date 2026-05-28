@@ -8,6 +8,9 @@ from tradingagents.schemas.macro import (
     FinancialConditionsSnapshot, InflationExpectationsSnapshot, FedPathSnapshot,
     FXSnapshot, RiskAppetiteSnapshot, ChinaLeadingSnapshot, ForeignFlowSnapshot,
     PolicyUncertaintySnapshot, TailRiskSnapshot, KRValuationSnapshot,
+    CommodityMomentumSnapshot, USEquityValuationSnapshot,
+    GeopoliticalRiskSnapshot, ChinaCreditImpulseSnapshot,
+    EarningsRevisionSnapshot,
 )
 from tradingagents.schemas.risk import (
     VolatilitySnapshot, SpreadSnapshot, SentimentSnapshot,
@@ -16,7 +19,7 @@ from tradingagents.schemas.risk import (
     RealYieldsSnapshot, FundingStressSnapshot, CreditQualitySnapshot,
     KRYieldCurveSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
     KRMarketTierSnapshot, EquityBondCorrelationSnapshot,
-    RealVolSnapshot,
+    RealVolSnapshot, ExcessBondPremiumSnapshot,
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
@@ -73,6 +76,12 @@ class MacroReport(_AnalystReport):
     # 2026-05-23 C5 — KR equity valuation for factor model F8 valuation.
     # Optional / default None — backward compat (기존 archive 호환).
     kr_valuation: KRValuationSnapshot | None = None
+    # === Tier 0 (2026-05-28) — Optional new snapshots ===
+    commodity_momentum: CommodityMomentumSnapshot | None = None
+    us_equity_valuation: USEquityValuationSnapshot | None = None
+    geopolitical_risk: GeopoliticalRiskSnapshot | None = None
+    china_credit_impulse: ChinaCreditImpulseSnapshot | None = None
+    earnings_revision: EarningsRevisionSnapshot | None = None
 
 
 class RiskReport(_AnalystReport):
@@ -104,6 +113,8 @@ class RiskReport(_AnalystReport):
     # 2026-05-23 C6 — SPY realized vol for factor model F7 + F9 (via VRP).
     # Optional / default None — backward compat (기존 archive 호환).
     real_vol: RealVolSnapshot | None = None
+    # === Tier 0 (2026-05-28) ===
+    excess_bond_premium: ExcessBondPremiumSnapshot | None = None
 
 
 class TechnicalReport(_AnalystReport):
