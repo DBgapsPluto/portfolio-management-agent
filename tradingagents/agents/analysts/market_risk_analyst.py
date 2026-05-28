@@ -15,11 +15,12 @@ import pandas as pd
 from tradingagents.dataflows.cross_asset_returns import fetch_cross_asset_returns
 from tradingagents.dataflows.equity_indices import fetch_equity_index_close
 from tradingagents.dataflows.pykrx_data import fetch_credit_balance, fetch_market_index
+from tradingagents.dataflows.gz_ebp import fetch_gz_ebp
 from tradingagents.schemas.reports import RiskReport
 from tradingagents.schemas.risk import (
-    CreditQualitySnapshot, EquityBondCorrelationSnapshot, FundingStressSnapshot,
-    KRCorpSpreadSnapshot, KRMarginDebtSnapshot, KRMarketTierSnapshot,
-    KRYieldCurveSnapshot, PCASnapshot, RealYieldsSnapshot,
+    CreditQualitySnapshot, EquityBondCorrelationSnapshot, ExcessBondPremiumSnapshot,
+    FundingStressSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
+    KRMarketTierSnapshot, KRYieldCurveSnapshot, PCASnapshot, RealYieldsSnapshot,
     SentimentSnapshot, SkewSnapshot, VIXTermStructureSnapshot, VxnSnapshot,
 )
 from tradingagents.skills.macro.ecos_fetcher import fetch_ecos_series_skill
@@ -125,6 +126,34 @@ def _sentinel_equity_bond_corr(as_of: date) -> EquityBondCorrelationSnapshot:
         correlation_120d=-0.3, change_3m=0.0, regime="normal_hedge",
         source_date=as_of, staleness_days=99,
     )
+
+
+def _build_excess_bond_premium(as_of: date) -> ExcessBondPremiumSnapshot | None:
+    """Build EBP snapshot from Fed Board GZ EBP CSV.
+
+    Returns None on fetch failure (graceful degradation).
+    """
+    try:
+        ebp_series = fetch_gz_ebp(as_of=as_of)
+        if ebp_series.empty:
+            return None
+        ebp_now = float(ebp_series.iloc[-1])
+        # 5-year rolling z-score
+        cutoff = pd.Timestamp(as_of) - pd.DateOffset(years=5)
+        recent = ebp_series[ebp_series.index >= cutoff]
+        if len(recent) < 12:  # min 1y of monthly data
+            z = 0.0
+        else:
+            mu = float(recent.mean())
+            sd = float(recent.std(ddof=1)) or 1e-9
+            z = (ebp_now - mu) / sd
+        return ExcessBondPremiumSnapshot(
+            as_of=as_of, staleness_days=15,  # monthly publication lag
+            ebp=ebp_now, ebp_zscore_5y=z,
+        )
+    except Exception as e:
+        logger.warning("GZ EBP fetch failed: %s", e)
+        return None
 
 
 def create_market_risk_analyst(quick_llm, deep_llm):
@@ -527,6 +556,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             kr_margin_debt=kr_margin, kr_market_tier=kr_market_tier,
             equity_bond_corr=eq_bd_corr,
             real_vol=real_vol,  # ★ NEW C6 (Optional, None on fail)
+            excess_bond_premium=_build_excess_bond_premium(as_of),  # ★ Tier0 Task 4.2
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"risk_report": report, "risk_summary": summary}
