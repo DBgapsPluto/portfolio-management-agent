@@ -90,3 +90,29 @@ def fetch_krx_openapi(endpoint_path: str, basDd: str | date) -> list[dict]:
         "KRX %s basDd=%s → %d records", endpoint_path, basDd, len(records),
     )
     return records
+
+
+# Phase 2a (2026-05-29). KRX 공식 카탈로그에서 endpoint 확정 — Task 1 Step 1 discovery 참고.
+# 발견된 endpoint 가 'etf/etf_bydd_trd' 가 아니면 implementation 시점에 수정.
+KRX_ETF_DAILY_ENDPOINT: str = "etf/etf_bydd_trd"
+
+
+def fetch_etf_daily_detail(
+    basDd: date,
+    ticker: str | None = None,
+) -> list[dict]:
+    """ETF 일별 상세 (NAV, 종가, 거래량, AUM, 추종률).
+
+    Args:
+        basDd: 기준일자 (영업일).
+        ticker: 단축코드 (예: "069500"). None 시 전 ETF 응답.
+
+    Returns:
+        list of records (dict). 빈 응답 시 빈 list.
+        주요 필드: ISU_SRT_CD, BAS_DD, NAV, TDD_CLSPRC,
+                  ACC_TRDVOL, ACC_TRDVAL, MKTCAP, TRC_RT.
+    """
+    records = fetch_krx_openapi(KRX_ETF_DAILY_ENDPOINT, basDd)
+    if ticker is None:
+        return records
+    return [r for r in records if r.get("ISU_SRT_CD") == ticker]

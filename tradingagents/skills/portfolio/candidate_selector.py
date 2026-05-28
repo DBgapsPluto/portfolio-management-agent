@@ -1,7 +1,15 @@
-from datetime import date
+import logging
+import time
+from datetime import date, timedelta
 
 import pandas as pd
 
+from tradingagents.dataflows.etf_metrics import (
+    DEFAULT_METRICS_WINDOW_DAYS, compute_premium_discount_median,
+    compute_tracking_error_12m, compute_volume_per_aum_median,
+    fetch_etf_metrics_window,
+)
+from tradingagents.dataflows.krx_openapi import KRXOpenAPIError
 from tradingagents.dataflows.universe import Universe
 from tradingagents.schemas.portfolio import BucketTarget, CandidateSet
 from tradingagents.schemas.technical import ETFRanking
@@ -14,6 +22,7 @@ from tradingagents.skills.portfolio.sub_category import (
 )
 from tradingagents.skills.registry import register_skill
 
+logger = logging.getLogger(__name__)
 
 # Map BucketTarget fields to universe categories
 BUCKET_TO_CATEGORIES = {
@@ -123,6 +132,67 @@ def select_etf_candidates(
         e.ticker: (e.underlying_index or "") for e in universe.etfs
     }
 
+    # Phase 2a — ETF metrics fetch (impl_score 4-요소 입력)
+    metrics_window_start = as_of - timedelta(days=DEFAULT_METRICS_WINDOW_DAYS)
+    fetch_start_time = time.monotonic()
+    cache_path_obj = None  # 기본 None — caller 가 주입할 수 있도록 향후 확장
+    etf_metrics = None
+    fetch_succeeded = False
+    fallback_reason: str | None = None
+    try:
+        etf_metrics = fetch_etf_metrics_window(
+            list({e.ticker for e in universe.etfs}),
+            metrics_window_start, as_of,
+            cache_path=cache_path_obj,
+        )
+        fetch_succeeded = True
+    except KRXOpenAPIError as e:
+        logger.warning(
+            "KRX OpenAPI fetch failed (%s) — impl_score falls back to log_aum only", e,
+        )
+        fallback_reason = str(e)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "etf_metrics fetch failed unexpectedly (%s) — impl_score falls back", e,
+        )
+        fallback_reason = str(e)
+    fetch_duration = time.monotonic() - fetch_start_time
+
+    tracking_error_by_ticker: dict[str, float | None] | None = None
+    prem_disc_by_ticker: dict[str, float | None] | None = None
+    vol_aum_by_ticker: dict[str, float | None] | None = None
+    if etf_metrics is not None and not etf_metrics.empty:
+        elig_tickers_all = [e.ticker for e in universe.etfs]
+        tracking_error_by_ticker = {
+            t: compute_tracking_error_12m(etf_metrics, t)
+            for t in elig_tickers_all
+        }
+        prem_disc_by_ticker = {
+            t: compute_premium_discount_median(etf_metrics, t, n_days=30)
+            for t in elig_tickers_all
+        }
+        vol_aum_by_ticker = {
+            t: compute_volume_per_aum_median(etf_metrics, t, n_days=30)
+            for t in elig_tickers_all
+        }
+
+    if attribution is not None:
+        attribution["etf_metrics_summary"] = {
+            "fetch_attempted": True,
+            "fetch_succeeded": fetch_succeeded,
+            "fallback_reason": fallback_reason,
+            "n_tickers_with_te": (
+                sum(1 for v in (tracking_error_by_ticker or {}).values() if v is not None)
+            ),
+            "n_tickers_with_pd": (
+                sum(1 for v in (prem_disc_by_ticker or {}).values() if v is not None)
+            ),
+            "n_tickers_with_vol_aum": (
+                sum(1 for v in (vol_aum_by_ticker or {}).values() if v is not None)
+            ),
+            "fetch_duration_seconds": float(fetch_duration),
+        }
+
     bucket_to_tickers: dict[str, list[str]] = {}
 
     if attribution is not None:
@@ -197,7 +267,13 @@ def select_etf_candidates(
                 extended=extended, etf_states=etf_states,
                 factor_scores=factor_scores,
             )
-            impl_scores = compute_impl_score(panels_for_impl, normalization=normalization)
+            impl_scores = compute_impl_score(
+                panels_for_impl,
+                normalization=normalization,
+                volume_per_aum=vol_aum_by_ticker,
+                premium_discount=prem_disc_by_ticker,
+                tracking_error=tracking_error_by_ticker,
+            )
             ranked = sorted(
                 alpha_scores.keys(), key=lambda t: alpha_scores[t], reverse=True,
             )

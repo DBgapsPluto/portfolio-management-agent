@@ -340,20 +340,38 @@ def score_candidates(
     return scores
 
 
+# Phase 2a (2026-05-29). impl_score 4-요소 weighted composite.
+# Signed weights — 부호가 contribution 방향. 절댓값 합 = 1.0.
+IMPL_SCORE_WEIGHTS: dict[str, float] = {
+    "log_aum":            0.33,   # 클수록 좋음
+    "premium_discount":  -0.28,   # |괴리율| 클수록 나쁨
+    "tracking_error":    -0.22,   # 클수록 나쁨
+    "volume_per_aum":     0.17,   # 클수록 좋음
+}
+
+
 def compute_impl_score(
     panels: dict[str, FactorPanel],
     *,
-    adv: dict[str, float | None] | None = None,
-    deviation: dict[str, float | None] | None = None,
+    volume_per_aum: dict[str, float | None] | None = None,
+    premium_discount: dict[str, float | None] | None = None,
     tracking_error: dict[str, float | None] | None = None,
     normalization: str = "rank_percentile",
 ) -> dict[str, float]:
-    """Implementation-quality score (Stage 3 cluster-aware selection).
+    """4-요소 weighted composite (Phase 2a, 2026-05-29).
 
-    "대체재 중 최선 vehicle" — 그룹 내 선택에 사용. 높을수록 좋음.
-    - Phase 1: log_aum (큰 ETF = 더 유동, 좁은 spread proxy)
-    - Phase 2 (optional): + ADV↑, |괴리율|↓, 추적오차율↓
-    미제공 신호는 neutral(0 기여). normalization은 alpha와 동일 기본값.
+    공식 (rank-percentile normalize 후 signed weight 합성):
+      impl_score(t) = +0.33 × z(log_aum)
+                    + 0.17 × z(volume_per_aum)
+                    + (-0.28) × z(|premium_discount|)
+                    + (-0.22) × z(tracking_error)
+
+    각 signal 의 raw 값 (premium_discount 는 절댓값) 을 normalize 후 signed weight
+    와 합성. 큰 |premium_discount| → 큰 z → 음수 가중치 × 큰 z = 음수 기여.
+
+    누락 신호 (입력 None 또는 dict value None) 는 0 (neutral z) 기여.
+    Backward-compat: 모든 signal None 시 impl_score = 0.33 × z(log_aum),
+    Phase 1 의 log_aum-단독 ordering 동일.
     """
     if not panels:
         return {}
@@ -364,25 +382,43 @@ def compute_impl_score(
         normalize = _zscore
     else:
         raise ValueError(
-            f"unknown normalization {normalization!r} (expected 'rank_percentile' or 'zscore')"
+            f"unknown normalization {normalization!r} "
+            f"(expected 'rank_percentile' or 'zscore')"
         )
 
-    parts: list[dict[str, float]] = [
-        normalize({t: p.log_aum for t, p in panels.items()})
-    ]
-    if adv is not None:
-        parts.append(normalize({t: adv.get(t) for t in panels}))
-    if deviation is not None:
-        parts.append(normalize({
-            t: (-abs(deviation[t]) if deviation.get(t) is not None else None)
+    # 1. log_aum 항상 존재 (FactorPanel.log_aum 필수)
+    n_log_aum = normalize({t: p.log_aum for t, p in panels.items()})
+
+    # 2. volume_per_aum (positive direction)
+    if volume_per_aum is not None:
+        n_vol_aum = normalize({t: volume_per_aum.get(t) for t in panels})
+    else:
+        n_vol_aum = {t: 0.0 for t in panels}
+
+    # 3. |premium_discount| (절댓값 normalize → signed weight 음수)
+    if premium_discount is not None:
+        n_pd = normalize({
+            t: (abs(premium_discount[t]) if premium_discount.get(t) is not None else None)
             for t in panels
-        }))
+        })
+    else:
+        n_pd = {t: 0.0 for t in panels}
+
+    # 4. tracking_error (signed weight 음수)
     if tracking_error is not None:
-        parts.append(normalize({
-            t: (-tracking_error[t] if tracking_error.get(t) is not None else None)
-            for t in panels
-        }))
-    return {t: float(np.mean([p[t] for p in parts])) for t in panels}
+        n_te = normalize({t: tracking_error.get(t) for t in panels})
+    else:
+        n_te = {t: 0.0 for t in panels}
+
+    out: dict[str, float] = {}
+    for t in panels:
+        out[t] = (
+            IMPL_SCORE_WEIGHTS["log_aum"]           * n_log_aum[t]
+            + IMPL_SCORE_WEIGHTS["volume_per_aum"]    * n_vol_aum[t]
+            + IMPL_SCORE_WEIGHTS["premium_discount"]  * n_pd[t]
+            + IMPL_SCORE_WEIGHTS["tracking_error"]    * n_te[t]
+        )
+    return out
 
 
 def _timing_overlay(

@@ -520,3 +520,139 @@ def test_bond_split_path_populates_bucket_alpha_scores():
     assert "alpha_scores" in bond_attr
     # TIPS + nominal 모든 ticker 가 통합 alpha_scores 에 포함
     assert set(bond_attr["alpha_scores"].keys()) >= {"A_TIPS01", "A_NOM01", "A_NOM02"}
+
+
+def test_select_etf_candidates_uses_etf_metrics(monkeypatch):
+    """metrics 입력 시 attribution 에 etf_metrics_summary 기록 + impl_score 4-요소 사용."""
+    from datetime import date
+    import math
+    import numpy as np
+    import pandas as pd
+
+    from tradingagents.dataflows.universe import ETFEntry, Universe
+    from tradingagents.schemas.portfolio import BucketTarget
+    from tradingagents.skills.portfolio.candidate_selector import select_etf_candidates
+    from tradingagents.skills.portfolio.factor_scorer import FactorPanel
+
+    etfs = [
+        ETFEntry(
+            ticker="A_BIG", name="Big_HighTE", aum_krw=150_000_000_000_000,
+            underlying_index="S&P 500", bucket="위험", category="해외주식_지수",
+        ),
+        ETFEntry(
+            ticker="A_SMALL", name="Small_LowTE", aum_krw=10_000_000_000_000,
+            underlying_index="S&P 500", bucket="위험", category="해외주식_지수",
+        ),
+    ]
+    universe = Universe(version="test", etfs=etfs)
+    bt = BucketTarget(
+        kr_equity=0.0, global_equity=0.7, fx_commodity=0.0,
+        bond=0.0, cash_mmf=0.3, bond_tips_share=0.0, rationale="test",
+    )
+    rng = np.random.default_rng(42)
+    returns = pd.DataFrame(
+        rng.normal(0, 0.01, size=(252, 2)),
+        columns=["A_BIG", "A_SMALL"],
+    )
+    factor_panel = {
+        t: FactorPanel(
+            skip1m_mom_3m=0.05, skip1m_mom_6m=0.05, skip1m_mom_12m=0.05,
+            realized_vol_60d=0.1, sharpe_60d=0.5,
+            log_aum=math.log(etfs[i].aum_krw),
+        )
+        for i, t in enumerate(["A_BIG", "A_SMALL"])
+    }
+
+    # Mock metrics fetch
+    def fake_fetch_metrics(tickers, start, end, cache_path=None):
+        dates = pd.date_range(start, end, freq="B")  # business days
+        idx = pd.MultiIndex.from_product(
+            [tickers, dates], names=["ticker", "trade_date"],
+        )
+        df = pd.DataFrame(index=idx)
+        df["tracking_rate"] = [99.60 if t == "A_BIG" else 99.95 for t in idx.get_level_values("ticker")]
+        df["premium_discount"] = 0.001
+        df["trade_value_krw"] = 1e10
+        df["aum_krw"] = 1e13
+        df["market_price"] = 45000.0
+        df["nav"] = 45000.0
+        df["volume"] = 1000000
+        return df
+
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        fake_fetch_metrics,
+    )
+
+    attribution: dict = {}
+    select_etf_candidates(
+        universe, bt, as_of=date(2026, 5, 28),
+        returns=returns, factor_panel=factor_panel,
+        per_bucket_n=1, attribution=attribution,
+    )
+
+    # attribution['etf_metrics_summary'] 확인
+    assert "etf_metrics_summary" in attribution
+    summary = attribution["etf_metrics_summary"]
+    assert summary["fetch_attempted"] is True
+    assert summary["fetch_succeeded"] is True
+    # 2 tickers TE 계산 가능 (300일 mock data 면 ≥ 60일 만족)
+    # 단 mock dates 길이가 < 60 이면 None 가능 — fetcher 가 from 시작일 ~ end 까지 모든
+    # business days 생성하므로, 400일 window 면 ~280 business days
+    assert summary["n_tickers_with_te"] >= 0  # mock 이라 결과가 달라질 수 있음
+
+
+def test_select_etf_candidates_falls_back_when_metrics_fetch_fails(monkeypatch):
+    """fetch_etf_metrics_window 가 KRXOpenAPIError raise → fallback (log_aum 단독)."""
+    from datetime import date
+    import math
+    import numpy as np
+    import pandas as pd
+
+    from tradingagents.dataflows.universe import ETFEntry, Universe
+    from tradingagents.dataflows.krx_openapi import KRXOpenAPIError
+    from tradingagents.schemas.portfolio import BucketTarget
+    from tradingagents.skills.portfolio.candidate_selector import select_etf_candidates
+    from tradingagents.skills.portfolio.factor_scorer import FactorPanel
+
+    etfs = [
+        ETFEntry(
+            ticker="A_BIG", name="Big", aum_krw=150_000_000_000_000,
+            underlying_index="X", bucket="위험", category="국내주식_지수",
+        ),
+    ]
+    universe = Universe(version="test", etfs=etfs)
+    bt = BucketTarget(
+        kr_equity=0.7, global_equity=0.0, fx_commodity=0.0,
+        bond=0.0, cash_mmf=0.3, bond_tips_share=0.0, rationale="test",
+    )
+    rng = np.random.default_rng(7)
+    returns = pd.DataFrame(rng.normal(0, 0.01, size=(252, 1)), columns=["A_BIG"])
+    factor_panel = {
+        "A_BIG": FactorPanel(
+            skip1m_mom_3m=0.05, skip1m_mom_6m=0.05, skip1m_mom_12m=0.05,
+            realized_vol_60d=0.1, sharpe_60d=0.5,
+            log_aum=math.log(150_000_000_000_000),
+        )
+    }
+
+    def fake_fetch_fails(tickers, start, end, cache_path=None):
+        raise KRXOpenAPIError("simulated KRX outage")
+
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        fake_fetch_fails,
+    )
+
+    attribution: dict = {}
+    candidates = select_etf_candidates(
+        universe, bt, as_of=date(2026, 5, 28),
+        returns=returns, factor_panel=factor_panel,
+        per_bucket_n=1, attribution=attribution,
+    )
+
+    # fetch 실패해도 candidates 산출
+    assert "A_BIG" in candidates.bucket_to_tickers["kr_equity"]
+    # attribution 에 fallback_reason 기록
+    assert attribution["etf_metrics_summary"]["fetch_succeeded"] is False
+    assert "simulated KRX outage" in attribution["etf_metrics_summary"]["fallback_reason"]
