@@ -1,4 +1,4 @@
-"""Stage 2 deterministic factor estimators (9 factors).
+"""Stage 2 deterministic factor estimators (12 factors).
 
 Each ``compute_<factor>(stage1)`` function pulls component raw values
 from the Stage 1 reports (``macro_report`` / ``risk_report`` /
@@ -28,7 +28,10 @@ Sign convention (positive z = …):
 - F6 krw_regime: weaker KRW (USD/KRW up)
 - F7 equity_vol_regime: higher vol
 - F8 valuation: more expensive
-- F9 liquidity_regime: liquidity stress
+- F9 market_dispersion: cross-sectional stress (renamed from liquidity_regime)
+- F10 systemic_liquidity: systemic financial conditions stress
+- F11 earnings_revision: earnings revision momentum (staggered, 2010+)
+- F12 china_credit_impulse: China credit impulse
 
 PR0 hotfix (2026-05-23 C1): _safe_get paths corrected to match actual
 MacroReport/RiskReport schema.
@@ -41,6 +44,9 @@ added upstream schema + skill modules:
 - F8: kospi_pbr (KRValuationSnapshot; C5)
 - F9: vrp (RealVolSnapshot.vrp_60d; C6) + sector_dispersion (BreadthSnapshot extension; C7)
 Each factor weight dict re-normalized to sum=1.0 (D11 plan default).
+
+Tier 0 (2026-05-28): FACTORS 12 entries — F9 renamed market_dispersion,
+F11 earnings_revision + F12 china_credit_impulse added (staggered).
 """
 from __future__ import annotations
 
@@ -56,6 +62,24 @@ from tradingagents.skills.research.external_fetchers import (
 )
 from tradingagents.skills.research.factor_baselines import z_score
 from tradingagents.skills.research.factor_reliability_audit import get_weight_cap
+
+
+# ---------------------- FACTORS canonical tuple ----------------------
+
+FACTORS: Final[tuple[str, ...]] = (
+    "F1_growth",
+    "F2_inflation",
+    "F3_real_rate",
+    "F4_term_premium",
+    "F5_credit_cycle",
+    "F6_krw_regime",
+    "F7_equity_vol_regime",
+    "F8_valuation",
+    "F9_market_dispersion",        # renamed from F9_liquidity_regime
+    "F10_systemic_liquidity",
+    "F11_earnings_revision",       # NEW (staggered, 2010+)
+    "F12_china_credit_impulse",    # NEW
+)
 
 
 # ---------------------- Critical 2 (PR2a) — historical mode ----------------------
@@ -74,20 +98,25 @@ from tradingagents.skills.research.factor_reliability_audit import get_weight_ca
 NEWS_DERIVED_COMPONENTS: Final[frozenset[str]] = frozenset({
     # F1
     "release_surprise", "hawkish_bias", "macro_sent", "risk_regime_overnight",
-    # F2 (release_hawkish is F2's specific name for what F1 calls hawkish_bias)
+    # F2
     "release_hawkish",
     # F3
     "fed_voting_balance",
-    # F4 (fed_voting_balance also appears here; included above)
+    # F4
     "fed_tone_balance",
     # F5
     "corporate_distress", "dovish_bias",
     # F6
     "krw_overnight_pct", "bok_tone_balance",
-    # F7
-    "sentiment_dispersion", "geopolitical_surge",
+    # F7 (geopolitical_surge removed — Tier 0: GPR Index is quant)
+    "sentiment_dispersion",
     # F9
     "event_cluster", "rising_signal",
+})
+
+# Tier 0 (2026-05-28): quant components with short backtest history → live-only.
+LIVE_ONLY_QUANT_COMPONENTS: Final[frozenset[str]] = frozenset({
+    "gdpnow",  # GDPNow (2011+) — too short for backtest, live add only
 })
 
 FactorMode = Literal["production", "historical"]
@@ -116,25 +145,31 @@ class FactorScores:
     krw_regime: FactorScore
     equity_vol_regime: FactorScore
     valuation: FactorScore
-    liquidity_regime: FactorScore       # F9 — cross-sectional stress (실제 의미)
-    # 2026-05-27 — F10_systemic_liquidity 신규 추가. NFCI/Fed BS/SOFR/IG OAS 기반.
+    market_dispersion: FactorScore     # renamed (was liquidity_regime) — F9 cross-sectional stress
+    # 2026-05-27 — F10_systemic_liquidity. NFCI/Fed BS/SOFR/IG OAS 기반.
     # F9 (cross-sectional) 와 직교: 같은 stress 라도 source 다른 axis.
     systemic_liquidity: FactorScore | None = None
+    earnings_revision: FactorScore | None = None     # NEW F11 (staggered, 2010+)
+    china_credit_impulse: FactorScore | None = None  # NEW F12
 
     def to_dict(self) -> dict[str, float]:
         out = {
-            "F1_growth":            self.growth_surprise.z_score,
-            "F2_inflation":         self.inflation_surprise.z_score,
-            "F3_real_rate":         self.real_rate.z_score,
-            "F4_term_premium":      self.term_premium.z_score,
-            "F5_credit_cycle":      self.credit_cycle.z_score,
-            "F6_krw_regime":        self.krw_regime.z_score,
-            "F7_equity_vol_regime": self.equity_vol_regime.z_score,
-            "F8_valuation":         self.valuation.z_score,
-            "F9_liquidity_regime":  self.liquidity_regime.z_score,
+            "F1_growth":              self.growth_surprise.z_score,
+            "F2_inflation":           self.inflation_surprise.z_score,
+            "F3_real_rate":           self.real_rate.z_score,
+            "F4_term_premium":        self.term_premium.z_score,
+            "F5_credit_cycle":        self.credit_cycle.z_score,
+            "F6_krw_regime":          self.krw_regime.z_score,
+            "F7_equity_vol_regime":   self.equity_vol_regime.z_score,
+            "F8_valuation":           self.valuation.z_score,
+            "F9_market_dispersion":   self.market_dispersion.z_score,
         }
         if self.systemic_liquidity is not None:
             out["F10_systemic_liquidity"] = self.systemic_liquidity.z_score
+        if self.earnings_revision is not None:
+            out["F11_earnings_revision"] = self.earnings_revision.z_score
+        if self.china_credit_impulse is not None:
+            out["F12_china_credit_impulse"] = self.china_credit_impulse.z_score
         return out
 
 
@@ -224,12 +259,13 @@ def _aggregate(
             on the same scale as production.
     """
     # Critical 2 (PR2a): in historical mode, drop news-derived components
-    # before any z-score / weight processing. Surviving quant weights are
-    # renormalized by the existing Step 4 logic.
+    # and live-only quant components before any z-score / weight processing.
+    # Surviving quant weights are renormalized by the existing Step 4 logic.
     if mode == "historical":
         components_raw = {
             k: v for k, v in components_raw.items()
             if k not in NEWS_DERIVED_COMPONENTS
+            and k not in LIVE_ONLY_QUANT_COMPONENTS
         }
 
     # Step 1+2: drop None, look up z-score via baseline.
@@ -844,13 +880,14 @@ def compute_systemic_liquidity(stage1: Any, mode: FactorMode = "production") -> 
 def compute_all_factors(
     stage1: Any, mode: FactorMode = "production",
 ) -> FactorScores:
-    """Compute all 9 factors.
+    """Compute all factors (F1–F10; F11/F12 staggered — None until Task 5.13).
 
     Args:
         mode: "production" (default) or "historical" (Critical 2, PR2a).
-            In "historical" mode, NEWS_DERIVED_COMPONENTS are dropped from each
-            factor's component pool (news_report is not LLM-reproducible in
-            backtest); surviving quant weights are renormalized.
+            In "historical" mode, NEWS_DERIVED_COMPONENTS and
+            LIVE_ONLY_QUANT_COMPONENTS are dropped from each factor's
+            component pool (news/LLM-derived state cannot be replayed;
+            live-only quant components have insufficient backtest history).
     """
     return FactorScores(
         growth_surprise=compute_growth_surprise(stage1, mode=mode),
@@ -861,18 +898,23 @@ def compute_all_factors(
         krw_regime=compute_krw_regime(stage1, mode=mode),
         equity_vol_regime=compute_equity_vol_regime(stage1, mode=mode),
         valuation=compute_valuation(stage1, mode=mode),
-        liquidity_regime=compute_liquidity_regime(stage1, mode=mode),
+        market_dispersion=compute_liquidity_regime(stage1, mode=mode),
         # 2026-05-27 — F10 신규 추가. systemic_liquidity_snapshot 부재 시 None
         # 으로 graceful skip (downstream FactorScores.to_dict 에서 누락).
         systemic_liquidity=compute_systemic_liquidity(stage1, mode=mode),
+        # F11/F12 — staggered (2010+ / China data); wired in Task 5.13.
+        earnings_revision=None,
+        china_credit_impulse=None,
     )
 
 
 __all__: Final = [
+    "FACTORS",
     "FactorScore",
     "FactorScores",
     "FactorMode",
     "NEWS_DERIVED_COMPONENTS",
+    "LIVE_ONLY_QUANT_COMPONENTS",
     "compute_all_factors",
     "compute_credit_cycle",
     "compute_equity_vol_regime",

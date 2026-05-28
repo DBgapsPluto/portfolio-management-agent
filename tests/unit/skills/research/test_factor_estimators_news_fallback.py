@@ -164,6 +164,6 @@ def test_compute_all_factors_returns_9(_pe, _krw):
     base_keys = {
         "F1_growth", "F2_inflation", "F3_real_rate", "F4_term_premium",
         "F5_credit_cycle", "F6_krw_regime", "F7_equity_vol_regime",
-        "F8_valuation", "F9_liquidity_regime",
+        "F8_valuation", "F9_market_dispersion",
     }
     assert base_keys.issubset(set(d.keys()))
