@@ -230,3 +230,82 @@ def test_f9_renamed_to_market_dispersion():
     from tradingagents.skills.research import factor_estimators
     assert hasattr(factor_estimators, "compute_market_dispersion")
     assert not hasattr(factor_estimators, "compute_liquidity_regime")
+
+
+# === Task 5.13: compute_all_factors 12-factor integration tests ===
+
+def test_compute_all_factors_12_factor_returns():
+    """compute_all_factors returns FactorScores with up to 12 factors."""
+    from tradingagents.skills.research.factor_estimators import compute_all_factors
+
+    class _Obj:
+        def __init__(self, **d): self.__dict__.update(d)
+
+    # Minimal mock stage1 — most snapshots None → confidence 0 → factors may be None
+    state = _Obj(macro_report=None, risk_report=None, news_report=None)
+    fs = compute_all_factors(state, mode="historical")
+    d = fs.to_dict()
+    # At minimum F1-F9 always present (their compute funcs return FactorScore not None)
+    assert "F1_growth" in d
+    assert "F9_market_dispersion" in d
+    # F10/F11/F12 may be None (Optional) → not in dict when confidence=0
+    # (all components missing for minimal state)
+
+
+def test_compute_all_factors_f11_f12_present_when_data_available():
+    """F11 and F12 are wired: with real data they produce FactorScore."""
+    from tradingagents.skills.research.factor_estimators import (
+        compute_all_factors, compute_earnings_revision, compute_china_credit_impulse_factor,
+    )
+
+    class _Obj:
+        def __init__(self, **d): self.__dict__.update(d)
+
+    # State with F11 and F12 data present
+    state = _Obj(
+        macro_report=_Obj(
+            earnings_revision=_Obj(
+                sp500_net_revision=0.1,
+                kospi200_net_revision=0.05,
+                staleness_days=0,
+            ),
+            china_credit_impulse=_Obj(
+                credit_impulse=1.5,
+                credit_yoy_pct=8.0,
+                staleness_days=0,
+            ),
+            china_leading=None,
+        ),
+        risk_report=None,
+        news_report=None,
+    )
+    fs = compute_all_factors(state, mode="historical")
+    d = fs.to_dict()
+    # F11: sp500_net_revision=0.1 → z=(0.1-0.0)/0.3 ≈ +0.33 → F11 present
+    assert "F11_earnings_revision" in d
+    # F12: credit_impulse=1.5 → z=(1.5-0.0)/2.0=0.75 → F12 present
+    assert "F12_china_credit_impulse" in d
+
+
+def test_safely_returns_none_on_exception():
+    """_safely catches exceptions and returns None."""
+    from tradingagents.skills.research.factor_estimators import _safely
+
+    def _bad_fn(stage1, mode):
+        raise ValueError("oops")
+
+    result = _safely(_bad_fn, None, "production")
+    assert result is None
+
+
+def test_safely_returns_none_on_zero_confidence():
+    """_safely returns None when all components missing (confidence=0)."""
+    from tradingagents.skills.research.factor_estimators import _safely, compute_earnings_revision
+
+    class _Obj:
+        def __init__(self, **d): self.__dict__.update(d)
+
+    # No earnings_revision data → confidence=0
+    state = _Obj(macro_report=None, risk_report=None, news_report=None)
+    result = _safely(compute_earnings_revision, state, "historical")
+    assert result is None

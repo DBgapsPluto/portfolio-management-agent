@@ -137,6 +137,19 @@ LONG_RUN_BASELINE: dict[tuple[str, str], tuple[float, float]] = {
     ("F10_systemic_liquidity", "fed_bs_signal"):     (5.0, 10.0),    # -YoY% (sign 뒤집힘) — 평균 -5% YoY 가정 → signal=+5
     ("F10_systemic_liquidity", "sofr_tbill_spread"): (5.0, 10.0),    # SOFR-Tbill bp 평균 ~5bp, sd 10bp
     ("F10_systemic_liquidity", "aaa_oas"):           (0.6, 0.3),     # IG AAA OAS 평균 60bp = 0.6%, sd 30bp
+
+    # === F11 earnings_revision (Tier 0 2026-05-28, staggered 2010+) ===
+    # Net revision ratio: (upgrades - downgrades) / total. Range ~ [-1, +1], mean ~0, sd ~0.3.
+    ("F11_earnings_revision", "sp500_net_revision"):    (0.0, 0.3),  # net ratio mean 0, sd ~0.3
+    ("F11_earnings_revision", "kospi200_net_revision"): (0.0, 0.3),
+
+    # === F12 china_credit_impulse (Tier 0 2026-05-28) ===
+    # Biggs-Mayer-Pick 2010 JMCB impulse in pp/quarter. Mean ~0, sd ~2pp.
+    ("F12_china_credit_impulse", "credit_impulse"):  (0.0, 2.0),
+    # Credit/GDP YoY % — long-run mean ~5% expansion, sd ~5%.
+    ("F12_china_credit_impulse", "credit_yoy_pct"):  (5.0, 5.0),
+    # Iron ore 3m price change (%) — mean 0, sd 15%.
+    ("F12_china_credit_impulse", "iron_ore_3m_pct"): (0.0, 15.0),
 }
 
 

@@ -857,13 +857,68 @@ def compute_systemic_liquidity(stage1: Any, mode: FactorMode = "production") -> 
     return _aggregate("F10_systemic_liquidity", components_raw, weights, mode=mode)
 
 
+# ---------------------- F11 earnings_revision ----------------------
+
+
+def compute_earnings_revision(stage1: Any, mode: FactorMode = "production") -> FactorScore:
+    """F11 earnings_revision — +z = upward revisions dominate. Tier 0 NEW (staggered 2010+)."""
+    sp = _safe_get(stage1, "macro_report", "earnings_revision", "sp500_net_revision")
+    ks = _safe_get(stage1, "macro_report", "earnings_revision", "kospi200_net_revision")
+    components_raw: dict[str, float | None] = {
+        "sp500_net_revision":    sp,
+        "kospi200_net_revision": ks,
+    }
+    weights: dict[str, float] = {
+        "sp500_net_revision":    0.50,
+        "kospi200_net_revision": 0.50,
+    }
+    return _aggregate("F11_earnings_revision", components_raw, weights, mode=mode)
+
+
+# ---------------------- F12 china_credit_impulse ----------------------
+
+
+def compute_china_credit_impulse_factor(
+    stage1: Any, mode: FactorMode = "production",
+) -> FactorScore:
+    """F12 china_credit_impulse — +z = accelerating credit. Tier 0 NEW."""
+    impulse = _safe_get(stage1, "macro_report", "china_credit_impulse", "credit_impulse")
+    yoy = _safe_get(stage1, "macro_report", "china_credit_impulse", "credit_yoy_pct")
+    iron_ore_3m = _safe_get(stage1, "macro_report", "china_leading", "iron_ore_change_3m_pct")
+    components_raw: dict[str, float | None] = {
+        "credit_impulse":   impulse,
+        "credit_yoy_pct":   yoy,
+        "iron_ore_3m_pct":  iron_ore_3m,
+    }
+    weights: dict[str, float] = {
+        "credit_impulse":   0.60,
+        "credit_yoy_pct":   0.30,
+        "iron_ore_3m_pct":  0.10,
+    }
+    return _aggregate("F12_china_credit_impulse", components_raw, weights, mode=mode)
+
+
+# ---------------------- _safely helper ----------------------
+
+
+def _safely(fn, stage1: Any, mode: FactorMode) -> FactorScore | None:
+    """Run factor compute; None on hard failure (snapshot absent etc.)."""
+    try:
+        score = fn(stage1, mode=mode)
+        # If confidence=0 (all components missing), treat as None for to_dict skip
+        return score if score.confidence > 0 else None
+    except Exception as e:
+        logger.warning("%s failed: %s", fn.__name__, e)
+        return None
+
+
 # ---------------------- compute_all_factors ----------------------
 
 
 def compute_all_factors(
     stage1: Any, mode: FactorMode = "production",
 ) -> FactorScores:
-    """Compute all factors (F1–F10; F11/F12 staggered — None until Task 5.13).
+    """Compute all 12 factors. Returns FactorScores with None for unavailable (e.g. F11 pre-2010).
 
     Args:
         mode: "production" (default) or "historical" (Critical 2, PR2a).
@@ -885,9 +940,9 @@ def compute_all_factors(
         # 2026-05-27 — F10 신규 추가. systemic_liquidity_snapshot 부재 시 None
         # 으로 graceful skip (downstream FactorScores.to_dict 에서 누락).
         systemic_liquidity=compute_systemic_liquidity(stage1, mode=mode),
-        # F11/F12 — staggered (2010+ / China data); wired in Task 5.13.
-        earnings_revision=None,
-        china_credit_impulse=None,
+        # F11/F12 — staggered (2010+ / China data); confidence=0 → None via _safely.
+        earnings_revision=_safely(compute_earnings_revision, stage1, mode),
+        china_credit_impulse=_safely(compute_china_credit_impulse_factor, stage1, mode),
     )
 
 
@@ -899,7 +954,9 @@ __all__: Final = [
     "NEWS_DERIVED_COMPONENTS",
     "LIVE_ONLY_QUANT_COMPONENTS",
     "compute_all_factors",
+    "compute_china_credit_impulse_factor",
     "compute_credit_cycle",
+    "compute_earnings_revision",
     "compute_equity_vol_regime",
     "compute_growth_surprise",
     "compute_inflation_surprise",
@@ -909,4 +966,5 @@ __all__: Final = [
     "compute_real_rate",
     "compute_term_premium",
     "compute_valuation",
+    "_safely",
 ]

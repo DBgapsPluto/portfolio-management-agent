@@ -114,6 +114,15 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "fed_bs_signal":      "high",     # WALCL FRED, weekly
     "sofr_tbill_spread":  "high",     # SOFR + DTB3 FRED, daily
     "aaa_oas":            "high",     # IG AAA OAS FRED (BAA10Y fallback)
+
+    # ----- F11 earnings_revision (Tier 0 2026-05-28, staggered 2010+) -----
+    "sp500_net_revision":    "medium",  # yfinance upgrades_downgrades API coverage varies
+    "kospi200_net_revision": "medium",  # pykrx PER-implied proxy — indirect
+
+    # ----- F12 china_credit_impulse (Tier 0 2026-05-28) -----
+    "credit_impulse":   "high",   # BIS Total Credit Q:CN:P:A:M:770:A (quarterly, direct)
+    "credit_yoy_pct":   "high",   # same BIS series YoY
+    "iron_ore_3m_pct":  "medium", # commodity proxy — indirect China demand signal
 }
 
 
