@@ -24,7 +24,7 @@ Reliability = Literal[
 ]
 
 
-AUDIT_DATE: Final[str] = "2026-05-24"
+AUDIT_DATE: Final[str] = "2026-05-28"
 
 
 COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
@@ -33,6 +33,8 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "cfnai":                 "high",
     "cfnai_3m":              "high",   # C8 (2026-05-24): 3m avg, NBER recession signal
     "nfci":                  "high",
+    "indpro_yoy":            "high",   # Tier 0 (2026-05-28): industrial production YoY
+    "real_pce_yoy":          "high",   # Tier 0 (2026-05-28): real PCE YoY
     "sahm":                  "medium-low",   # post-COVID distortion
     "curve":                 "medium-low",   # post-COVID de-anchored
     "release_surprise":      "high",
@@ -56,9 +58,10 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "fed_path_implied":   "high",
 
     # ----- F4 term_premium -----
-    "slope_2_10y":      "medium",
-    "slope_5_30y":      "high",
-    "fed_tone_balance": "high",
+    "slope_2_10y":         "medium",
+    "slope_5_30y":         "high",
+    "fed_tone_balance":    "high",
+    "acm_term_premium_10y":"high",   # Tier 0 (2026-05-28): ACM model 10Y term premium
 
     # ----- F5 credit_cycle -----
     "hy_oas_bps":         "high",
@@ -67,6 +70,8 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "funding_bps":        "high",
     "corporate_distress": "medium",
     "dovish_bias":        "medium",
+    "gz_ebp":             "high",              # Tier 0 (2026-05-28): Gilchrist-Zakrajsek excess bond premium
+    "kr_corp_spread_bps": "high",              # Tier 0 (2026-05-28): Korea corporate bond spread
 
     # ----- F6 krw_regime -----
     # Tier 0 (2026-05-28): krw_level removed, foreign_flow_z replaced by foreign_flow_normalized.
