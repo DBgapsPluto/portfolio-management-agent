@@ -56,8 +56,9 @@ def minimum_torsion_matrix(sigma: np.ndarray) -> np.ndarray:
 def minimum_torsion_decomposition(w: np.ndarray, sigma: np.ndarray) -> np.ndarray:
     """반환 p_i: 비상관 factor i 의 분산 기여 (합 1).
 
-    e = T^(-T) w   (exposures, n-vector)
-    factor_var_i = e_i² × diag(Σ)_i
+    e = T^(-T) w   (exposures, n-vector from minimum torsion)
+    λ_i = eigenvalue i of Σ
+    factor_var_i = e_i² × λ_i
     p_i = factor_var_i / (w^T Σ w)
     """
     n = len(w)
@@ -65,8 +66,8 @@ def minimum_torsion_decomposition(w: np.ndarray, sigma: np.ndarray) -> np.ndarra
         return np.array([1.0])
     T = minimum_torsion_matrix(sigma)
     exposures = np.linalg.solve(T.T, w)
-    diag_var = np.diag(sigma)
-    factor_var = exposures ** 2 * diag_var
+    vals, _ = np.linalg.eigh(sigma)
+    factor_var = exposures ** 2 * vals
     port_var = float(w @ sigma @ w)
     if port_var <= ENB_NUMERICAL_FLOOR:
         return np.full(n, 1.0 / n)
@@ -81,5 +82,49 @@ def compute_enb(
     sigma: pd.DataFrame,
     method: Literal["minimum_torsion", "pca"] = "minimum_torsion",
 ) -> float:
-    """ENB = exp(-Σ p_i ln p_i)."""
-    raise NotImplementedError
+    """ENB = exp(-Σ p_i ln p_i). p_i 는 method 따라 분해."""
+    tickers = list(sigma.index)
+    n = len(tickers)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return 1.0
+
+    # weights → ndarray aligned with sigma index
+    if isinstance(weights, pd.Series):
+        w_dict = weights.to_dict()
+    else:
+        w_dict = weights
+    w = np.array([float(w_dict.get(t, 0.0)) for t in tickers], dtype=float)
+    w_sum = w.sum()
+    if w_sum <= 0:
+        return float(n)  # degenerate → equal split
+    if abs(w_sum - 1.0) > 1e-6:
+        w = w / w_sum
+
+    S = sigma.values
+    if method == "minimum_torsion":
+        p = minimum_torsion_decomposition(w, S)
+    elif method == "pca":
+        p = _pca_decomposition(w, S)
+    else:
+        raise ValueError(
+            f"unknown method {method!r} (expected 'minimum_torsion' or 'pca')"
+        )
+
+    p_safe = np.maximum(p, ENB_NUMERICAL_FLOOR)
+    return float(np.exp(-np.sum(p_safe * np.log(p_safe))))
+
+
+def _pca_decomposition(w: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+    """PCA 기반 분산 분해 (보조)."""
+    vals, vecs = np.linalg.eigh(sigma)
+    port_var = float(w @ sigma @ w)
+    if port_var <= ENB_NUMERICAL_FLOOR:
+        return np.full(len(w), 1.0 / len(w))
+    factor_loadings = vecs.T @ w
+    factor_var = factor_loadings ** 2 * vals
+    p = factor_var / port_var
+    p = np.maximum(p, 0.0)
+    s = p.sum()
+    return p / s if s > 0 else np.full(len(w), 1.0 / len(w))
