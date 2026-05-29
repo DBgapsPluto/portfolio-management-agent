@@ -135,8 +135,8 @@ def _candidates():
         bucket_to_tickers={
             "kr_equity": ["A001", "A002"],
             "global_equity": ["A003", "A004"],
-            "fx_commodity": ["A005"],
-            "bond": ["A006", "A007"],
+            "cyclical_commodity_fx": ["A005"],
+            "kr_bond": ["A006", "A007"],
             "cash_mmf": ["A008"],
         },
         selection_criteria="t", total_candidates=8,
@@ -144,7 +144,7 @@ def _candidates():
 
 
 def _wv_risk(risk_weight: float) -> WeightVector:
-    """위험자산(A001-A005) 비중 risk_weight, 나머지는 안전자산."""
+    """위험자산(A001-A005: kr_equity/global_equity/cyclical_commodity_fx) 비중 risk_weight, 나머지(A006-A008: kr_bond/cash_mmf)는 안전자산."""
     safe = 1.0 - risk_weight
     per_risk = risk_weight / 5  # 5 risk tickers
     per_safe = safe / 3         # 3 safe tickers
@@ -216,7 +216,7 @@ def test_macro_lens_recession_high_branch_reachable():
     cs = CandidateSet(
         bucket_to_tickers={
             "kr_equity": ["A001"], "global_equity": ["A002"],
-            "fx_commodity": ["A003"], "bond": ["A004"], "cash_mmf": ["A005"],
+            "cyclical_commodity_fx": ["A003"], "kr_bond": ["A004"], "cash_mmf": ["A005"],
         },
         selection_criteria="test", total_candidates=5,
     )
@@ -248,7 +248,7 @@ def test_macro_lens_recession_medium_still_works():
     cs = CandidateSet(
         bucket_to_tickers={
             "kr_equity": ["A001"], "global_equity": ["A002"],
-            "fx_commodity": ["A003"], "bond": ["A004"], "cash_mmf": ["A005"],
+            "cyclical_commodity_fx": ["A003"], "kr_bond": ["A004"], "cash_mmf": ["A005"],
         },
         selection_criteria="test", total_candidates=5,
     )
