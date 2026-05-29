@@ -23,7 +23,9 @@ def test_aum_filter_removed_small_etfs_pass():
                  underlying_index="u4", bucket="위험", category="국내주식_지수"),
     ])
 
-    eligible = _eligible_for_bucket(universe, ["국내주식_지수"])
+    # Tier 1 contract: _eligible_for_bucket takes an 8-bucket NAME (not a category).
+    # 국내주식_지수 category → kr_equity bucket via bucket_for_etf.
+    eligible = _eligible_for_bucket(universe, "kr_equity")
     assert len(eligible) == 4  # all 4 pass (no AUM filter)
     tickers = [e.ticker for e in eligible]
     assert "A100003" in tickers and "A100004" in tickers  # TINY and MICRO pass
@@ -36,14 +38,15 @@ def test_eligible_for_bucket_signature_no_min_aum_param():
 
 
 def test_eligible_for_bucket_category_mismatch_excluded():
-    """ETFs in wrong category are still excluded."""
+    """ETFs that classify into a different bucket are excluded."""
     universe = _make_universe([
         ETFEntry(ticker="A111111", name="A", aum_krw=1_000_000_000_000,
                  underlying_index="u1", bucket="위험", category="국내주식_지수"),
         ETFEntry(ticker="A222222", name="B", aum_krw=1_000_000_000_000,
-                 underlying_index="u2", bucket="안전", category="국내채권_종합"),
+                 underlying_index="u2", bucket="안전", category="해외주식_지수"),
     ])
-    eligible = _eligible_for_bucket(universe, ["국내주식_지수"])
+    # kr_equity bucket: only the 국내주식_지수 ETF; 해외주식_지수 → global_equity.
+    eligible = _eligible_for_bucket(universe, "kr_equity")
     tickers = [e.ticker for e in eligible]
     assert tickers == ["A111111"]
     assert "A222222" not in tickers
@@ -52,4 +55,4 @@ def test_eligible_for_bucket_category_mismatch_excluded():
 def test_eligible_for_bucket_empty_universe():
     """Empty universe returns empty list."""
     universe = _make_universe([])
-    assert _eligible_for_bucket(universe, ["국내주식_지수"]) == []
+    assert _eligible_for_bucket(universe, "kr_equity") == []
