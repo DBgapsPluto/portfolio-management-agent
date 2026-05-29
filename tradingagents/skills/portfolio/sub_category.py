@@ -59,6 +59,7 @@ VALID_SUB_CATEGORIES: dict[str, list[str]] = {
     # NEW: split from bond
     "kr_bond": [
         "kr_treasury",
+        "inflation_linked",   # KR TIPS (e.g. 물가채) — domestic inflation-linked
         "short_duration",  # NOTE: universe-level review — may be KR or global
     ],
     "credit": [
@@ -96,6 +97,16 @@ _CATEGORY_TO_BUCKET: dict[str, str] = {
 }
 
 
+# Tier 1: for _SPLIT_MARKER categories, which buckets are valid split targets.
+# bucket_for_etf restricts the sub_category scan to these (prevents cross-category
+# leakage, e.g. a KR inflation-linked bond → global_duration).
+_SPLIT_TARGETS: dict[str, tuple[str, ...]] = {
+    "FX 및 원자재":   ("precious_metals", "cyclical_commodity_fx"),
+    "국내채권_종합":  ("kr_bond", "credit"),
+    "해외채권_종합":  ("credit", "global_duration"),
+}
+
+
 def bucket_for_category(category: str) -> str | None:
     """Backward-compat: legacy single-category lookup. Returns None for ambiguous."""
     result = _CATEGORY_TO_BUCKET.get(category)
@@ -106,7 +117,8 @@ def bucket_for_etf(etf) -> str | None:
     """8-bucket classification using (category, sub_category).
 
     For categories with _SPLIT_MARKER (FX 및 원자재, 국내채권_종합, 해외채권_종합),
-    split by sub_category against VALID_SUB_CATEGORIES.
+    split by sub_category — but ONLY among the buckets valid for that category
+    (_SPLIT_TARGETS), preventing cross-category leakage.
 
     Returns None for unknown category or unclassified sub_category.
     """
@@ -115,12 +127,12 @@ def bucket_for_etf(etf) -> str | None:
         return None
     if cat != _SPLIT_MARKER:
         return cat
-    # Split by sub_category
     sub = getattr(etf, "sub_category", None)
     if not sub:
         return None
-    for bucket, valid_subs in VALID_SUB_CATEGORIES.items():
-        if sub in valid_subs:
+    targets = _SPLIT_TARGETS.get(etf.category, tuple(VALID_SUB_CATEGORIES.keys()))
+    for bucket in targets:
+        if sub in VALID_SUB_CATEGORIES.get(bucket, []):
             return bucket
     return None
 

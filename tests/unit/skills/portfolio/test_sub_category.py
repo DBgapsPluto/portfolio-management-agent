@@ -68,3 +68,22 @@ def test_bucket_for_category_backward_compat():
     # Ambiguous category → None
     assert bucket_for_category("FX 및 원자재") is None
     assert bucket_for_category("국내채권_종합") is None
+
+
+def test_bucket_for_etf_no_cross_category_leak():
+    """KR inflation-linked bond must NOT route to global_duration."""
+    class ETF:
+        def __init__(self, cat, sub):
+            self.category = cat
+            self.sub_category = sub
+
+    # KR domestic inflation-linked → kr_bond (not global_duration)
+    assert bucket_for_etf(ETF("국내채권_종합", "inflation_linked")) == "kr_bond"
+    # Global inflation-linked (해외채권_종합) → global_duration
+    assert bucket_for_etf(ETF("해외채권_종합", "inflation_linked")) == "global_duration"
+    # FX category can't reach a bond bucket
+    assert bucket_for_etf(ETF("FX 및 원자재", "kr_treasury")) is None
+    # FX category can reach precious_metals
+    assert bucket_for_etf(ETF("FX 및 원자재", "gold")) == "precious_metals"
+    # 국내채권_종합 can't reach global_duration
+    assert bucket_for_etf(ETF("국내채권_종합", "us_treasury")) is None

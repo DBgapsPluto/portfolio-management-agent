@@ -313,3 +313,15 @@ def test_macro_high_valuation_alone_does_not_trigger():
         systemic_score=4.0,
     )
     assert c.level == "none"
+
+
+# ---- 8-bucket schema: RISK_BUCKETS_MC constant ----
+
+def test_risk_buckets_mc_is_4_bucket():
+    """RISK_BUCKETS_MC must match the canonical 8-bucket schema (4 risk buckets)."""
+    from tradingagents.agents.risk_lens.macro_conditional_lens import RISK_BUCKETS_MC
+    assert RISK_BUCKETS_MC == frozenset({
+        "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+    })
+    assert "fx_commodity" not in RISK_BUCKETS_MC, "stale 5-bucket key 'fx_commodity' must be absent"
+    assert len(RISK_BUCKETS_MC) == 4

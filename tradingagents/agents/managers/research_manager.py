@@ -81,12 +81,16 @@ def _confidence_risk_multiplier(confidence: float | None) -> float:
 
 def _apply_confidence_to_bucket(
     bucket: dict[str, float], confidence: float | None,
-    risk_buckets: tuple[str, ...] = ("kr_equity", "global_equity", "fx_commodity"),
+    risk_buckets: tuple[str, ...] = (
+        "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+    ),
     mandate_risk_cap: float = 0.70,
 ) -> tuple[dict[str, float], float]:
     """bucket 의 위험자산에 confidence multiplier 적용. mandate cap enforce.
 
     Returns (new_bucket, applied_multiplier).
+    8-bucket schema: risk = 4 buckets, safe = remaining (kr_bond, credit,
+    global_duration, cash_mmf). diff redistributed proportionally over safe buckets.
     """
     mult = _confidence_risk_multiplier(confidence)
     if abs(mult - 1.0) < 1e-9:
@@ -100,12 +104,13 @@ def _apply_confidence_to_bucket(
     new_bucket = dict(bucket)
     for b in risk_buckets:
         new_bucket[b] = new_bucket.get(b, 0.0) * risk_factor
-    # diff 만큼 안전자산 (bond + cash_mmf) 에 비례 redistribute.
-    safe_total = new_bucket.get("bond", 0.0) + new_bucket.get("cash_mmf", 0.0)
+    # diff 만큼 안전자산 (risk_buckets 가 아닌 모든 bucket) 에 비례 redistribute.
+    safe_keys = [b for b in new_bucket if b not in risk_buckets]
+    safe_total = sum(new_bucket.get(b, 0.0) for b in safe_keys)
     if safe_total > 0:
-        bond_share = new_bucket.get("bond", 0.0) / safe_total
-        new_bucket["bond"] = new_bucket.get("bond", 0.0) - diff * bond_share
-        new_bucket["cash_mmf"] = new_bucket.get("cash_mmf", 0.0) - diff * (1 - bond_share)
+        for b in safe_keys:
+            share = new_bucket.get(b, 0.0) / safe_total
+            new_bucket[b] = new_bucket.get(b, 0.0) - diff * share
     return new_bucket, mult
 CONVICTION_HIGH_ALIGN: float = 0.6       # 3 중 2 동의 (3-factor sign vote)
 CONVICTION_MED_ALIGN: float = 0.3        # 3 중 1 동의
