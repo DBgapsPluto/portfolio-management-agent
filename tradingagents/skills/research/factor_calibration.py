@@ -31,10 +31,10 @@ from tradingagents.skills.research.factor_to_bucket import (
 # Tier 2: Hierarchical calibration support constants
 # ---------------------------------------------------------------------------
 
-# Hard zero cells (theoretical exclusion). 28 entries per spec §3.
+# Hard zero cells (theoretical exclusion). 23 entries (5 removed: prior-inconsistent /
+# sign-softened cells — see Tier 2 verification).
 HARD_ZERO_CELLS: Final[frozenset[tuple[str, str]]] = frozenset({
     ("F1_growth", "precious_metals"),
-    ("F2_inflation", "global_equity"),
     ("F3_real_rate", "kr_equity"),
     ("F3_real_rate", "cyclical_commodity_fx"),
     ("F4_term_premium", "precious_metals"),
@@ -42,12 +42,9 @@ HARD_ZERO_CELLS: Final[frozenset[tuple[str, str]]] = frozenset({
     ("F4_term_premium", "credit"),
     ("F5_credit_cycle", "precious_metals"),
     ("F5_credit_cycle", "cyclical_commodity_fx"),
-    ("F5_credit_cycle", "global_duration"),
     ("F6_krw_regime", "credit"),
     ("F6_krw_regime", "global_duration"),
-    ("F7_equity_vol_regime", "cyclical_commodity_fx"),
     ("F7_equity_vol_regime", "precious_metals"),
-    ("F7_equity_vol_regime", "global_duration"),
     ("F8_valuation", "precious_metals"),
     ("F8_valuation", "cyclical_commodity_fx"),
     ("F8_valuation", "kr_bond"),
@@ -59,7 +56,6 @@ HARD_ZERO_CELLS: Final[frozenset[tuple[str, str]]] = frozenset({
     ("F10_systemic_liquidity", "precious_metals"),
     ("F11_earnings_revision", "precious_metals"),
     ("F11_earnings_revision", "cyclical_commodity_fx"),
-    ("F12_china_credit_impulse", "global_duration"),
     ("F12_china_credit_impulse", "precious_metals"),
 })
 

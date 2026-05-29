@@ -100,12 +100,22 @@ def test_benchmark_60_40_returns():
 # ---------------------------------------------------------------------------
 
 
-def test_hard_zero_cells_28_entries():
+def test_hard_zero_cells_23_entries():
     from tradingagents.skills.research.factor_calibration import HARD_ZERO_CELLS
-    assert len(HARD_ZERO_CELLS) == 28
+    assert len(HARD_ZERO_CELLS) == 23
     assert ("F1_growth", "precious_metals") in HARD_ZERO_CELLS
     assert ("F8_valuation", "precious_metals") in HARD_ZERO_CELLS
     assert ("F11_earnings_revision", "precious_metals") in HARD_ZERO_CELLS
+
+
+def test_hard_zero_cells_consistent_with_prior():
+    """Every hard-zero cell must have a ~0 prior in INITIAL_BETA (else the
+    theoretical exclusion contradicts the hand-coded prior)."""
+    from tradingagents.skills.research.factor_calibration import HARD_ZERO_CELLS
+    from tradingagents.skills.research.factor_to_bucket import INITIAL_BETA
+    bad = [(k, INITIAL_BETA[k]) for k in HARD_ZERO_CELLS
+           if abs(INITIAL_BETA.get(k, 0.0)) > 0.02]
+    assert not bad, f"hard-zero cells with non-trivial prior: {bad}"
 
 
 def test_bucket_families_5_families():
