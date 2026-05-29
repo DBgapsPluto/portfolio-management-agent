@@ -388,3 +388,39 @@ def test_apply_factor_model_all_zero_returns_baseline():
     bucket, tips, contribs = apply_factor_model(factor_z)
     for b, w in INITIAL_BASELINE.items():
         assert abs(bucket[b] - w) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Task 14: load_calibrated_beta — explicit opt-in loader
+# ---------------------------------------------------------------------------
+
+
+def test_load_calibrated_beta_none_when_absent(tmp_path):
+    from tradingagents.skills.research.factor_to_bucket import load_calibrated_beta
+    # empty artifacts dir → None
+    assert load_calibrated_beta(tmp_path) is None
+
+
+def test_load_calibrated_beta_reads_latest(tmp_path):
+    import json
+    from tradingagents.skills.research.factor_to_bucket import load_calibrated_beta
+    d = tmp_path / "2026-05-30" / "tier2_calibration"
+    d.mkdir(parents=True)
+    (d / "calibrated_beta.json").write_text(json.dumps({
+        "F1_growth|kr_equity": 0.07, "F1_growth|global_equity": 0.06,
+    }))
+    beta = load_calibrated_beta(tmp_path)
+    assert beta is not None
+    assert beta[("F1_growth", "kr_equity")] == 0.07
+    assert beta[("F1_growth", "global_equity")] == 0.06
+
+
+def test_load_calibrated_beta_picks_latest_date(tmp_path):
+    import json
+    from tradingagents.skills.research.factor_to_bucket import load_calibrated_beta
+    for dt, val in [("2026-01-01", 0.01), ("2026-05-30", 0.09)]:
+        d = tmp_path / dt / "tier2_calibration"
+        d.mkdir(parents=True)
+        (d / "calibrated_beta.json").write_text(json.dumps({"F1_growth|kr_equity": val}))
+    beta = load_calibrated_beta(tmp_path)
+    assert beta[("F1_growth", "kr_equity")] == 0.09  # latest date wins (sorted)

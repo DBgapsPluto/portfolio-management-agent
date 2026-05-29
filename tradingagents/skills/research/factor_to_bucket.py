@@ -516,3 +516,37 @@ def apply_factor_model_with_safety(
     }
 
     return bucket_projected, tips, contributions, diagnostics
+
+
+# ---------------------------------------------------------------------------
+# load_calibrated_beta — explicit opt-in loader (no import-time side effect)
+# ---------------------------------------------------------------------------
+
+
+def load_calibrated_beta(
+    artifacts_root: "Path | str" = "artifacts",
+) -> "dict[tuple[str, str], float] | None":
+    """Load the latest Tier 2 calibrated β from artifacts, or None if absent.
+
+    Looks for artifacts/<date>/tier2_calibration/calibrated_beta.json (the
+    output of scripts/calibrate_factor_model_8b.py). Returns a {(factor,bucket):
+    value} dict, or None when no calibration artifact exists (→ caller keeps the
+    hand-coded INITIAL_BETA prior).
+
+    NOTE (production wiring): this is an EXPLICIT loader, not auto-invoked at
+    import. To put a validated calibration into production, either (a) call this
+    and pass the result as the `beta=` arg to apply_factor_model_with_safety, or
+    (b) hand-replace the INITIAL_BETA literal with the calibrated values
+    (PR2a precedent: 'INITIAL_BETA = data-driven calibration result'). Auto-load
+    is intentionally avoided so unit tests and behavior stay deterministic.
+    """
+    import json
+    from pathlib import Path
+    base = Path(artifacts_root)
+    if not base.exists():
+        return None
+    candidates = sorted(base.glob("*/tier2_calibration/calibrated_beta.json"))
+    if not candidates:
+        return None
+    raw = json.loads(candidates[-1].read_text())
+    return {tuple(k.split("|")): float(v) for k, v in raw.items()}
