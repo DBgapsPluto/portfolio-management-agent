@@ -566,11 +566,16 @@ def _optimize_with_bucket_constraints(
 
     if method == OptimizationMethod.BLACK_LITTERMAN:
         from pypfopt import BlackLittermanModel
-        from tradingagents.skills.portfolio.bl_views import generate_bl_views
+        from tradingagents.skills.portfolio.bl_views import (
+            generate_bl_views,
+            BL_TAU_DEFAULT,
+            BL_VIEW_CONF_MULTI_DEFAULT,
+        )
 
+        tilt_params: dict
         if method_params.get("_bl_trigger"):
             bl_breakdown: dict = {}
-            views, confs = generate_bl_views(
+            views, confs, tilt_params = generate_bl_views(
                 scenario=scenario,
                 regime_confidence=regime_confidence,
                 candidates=candidates.bucket_to_tickers,
@@ -582,10 +587,16 @@ def _optimize_with_bucket_constraints(
         else:
             views = method_params.get("views", {})
             confs = method_params.get("view_confidences", [])
+            tilt_params = {
+                "tau": BL_TAU_DEFAULT,
+                "view_conf_multi": BL_VIEW_CONF_MULTI_DEFAULT,
+                "view_conf_multi_applied": False,
+            }
 
         if views:
             bl = BlackLittermanModel(
                 S, absolute_views=views, omega="idzorek", view_confidences=confs,
+                tau=tilt_params["tau"],
             )
             mu = bl.bl_returns()
         else:
