@@ -25,6 +25,7 @@ from tradingagents.skills.portfolio.method_picker import pick_optimization_metho
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
 from tradingagents.skills.portfolio.cash_spillover import adjust_bucket_targets
 from tradingagents.skills.portfolio.diversification import compute_enb
+from tradingagents.skills.portfolio.nco import compute_nco_weights
 
 logger = logging.getLogger(__name__)
 
@@ -493,8 +494,8 @@ def _optimize_with_bucket_constraints(
 
     # 표본 부족 (cov가 비양정부호 → eigenvalue 수렴 실패) 방지.
     # 늦게 상장된 ETF가 적은 수의 NaN-free row만 남기는 경우 데이터 적은 ticker
-    # 부터 제거해서 표본 회복. _hrp_per_bucket은 sub-pool 단위라 영향 적어 skip.
-    if method != OptimizationMethod.HRP and len(returns) < MIN_COV_OBS:
+    # 부터 제거해서 표본 회복. _hrp_per_bucket / _nco_per_bucket은 sub-pool 단위라 영향 적어 skip.
+    if method not in (OptimizationMethod.HRP, OptimizationMethod.NCO) and len(returns) < MIN_COV_OBS:
         valid = list(valid)
         days_per_ticker = {
             t: int(returns_raw[t].dropna().shape[0]) for t in valid
@@ -524,6 +525,18 @@ def _optimize_with_bucket_constraints(
             attribution=attribution,
         )
         sigma_df = S if isinstance(S, pd.DataFrame) else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
+        return wv, sigma_df
+
+    # NCO 분기 (Phase 3a NEW)
+    if method == OptimizationMethod.NCO:
+        wv = _nco_per_bucket(
+            returns, candidates, bucket_target, sub_category_lookup,
+            attribution=attribution,
+        )
+        sigma_df = (
+            S if isinstance(S, pd.DataFrame)
+            else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
+        )
         return wv, sigma_df
 
     if method == OptimizationMethod.BLACK_LITTERMAN:
@@ -960,6 +973,190 @@ def _hrp_per_bucket(
         weights=final,
         rationale=(
             f"HRP within each bucket × bucket_target weight. "
+            f"위험자산 target {bucket_target.risk_asset_weight:.1%}, single-asset cap 20%."
+        ),
+    )
+
+
+def _nco_per_bucket(
+    returns: pd.DataFrame, candidates, bucket_target,
+    sub_category_lookup: dict[str, str | None] | None = None,
+    attribution: dict | None = None,
+) -> WeightVector:
+    """NCO within each bucket × bucket target, with ITERATIVE water-filling cap.
+
+    HRP-per-bucket 패턴 재사용: bond split, single-asset cap, water-fill,
+    subcategory cap, min-weight threshold, normalize.
+
+    Inner per-pool call: compute_nco_weights (Lopez de Prado 2019 NCO).
+    fallback to equal weight if NCO fails.
+
+    attribution: 제공 시 cap-all shortfall, pool NCO breakdown, 최종 normalization
+    발동 등을 dict 에 기록.
+    """
+    bucket_shortfalls: list[dict] = []
+    nco_breakdown_per_pool: dict[str, dict] = {}
+    sub_category_lookup = sub_category_lookup or {}
+    target_map = {
+        "kr_equity": bucket_target.kr_equity,
+        "global_equity": bucket_target.global_equity,
+        "fx_commodity": bucket_target.fx_commodity,
+        "bond": bucket_target.bond,
+        "cash_mmf": bucket_target.cash_mmf,
+    }
+    split_bond = bucket_target.bond_tips_share > 0.0
+
+    final: dict[str, float] = {}
+    for bucket, tickers in candidates.bucket_to_tickers.items():
+        target = target_map.get(bucket, 0)
+        if target <= 0 or not tickers:
+            continue
+
+        if bucket == "bond" and split_bond:
+            # Sub-pool split per inflation_linked sub_category
+            tips_tickers = [
+                t for t in tickers
+                if sub_category_lookup.get(t) == "inflation_linked"
+            ]
+            nominal_tickers = [t for t in tickers if t not in tips_tickers]
+            tips_target = target * bucket_target.bond_tips_share
+            nominal_target = target * (1.0 - bucket_target.bond_tips_share)
+            # 한쪽이 비면 target을 다른 쪽으로 흡수
+            if not tips_tickers and nominal_tickers:
+                nominal_target += tips_target
+                tips_target = 0.0
+            if not nominal_tickers and tips_tickers:
+                tips_target += nominal_target
+                nominal_target = 0.0
+
+            sub_buckets = []
+            if tips_tickers and tips_target > 0:
+                sub_buckets.append((tips_tickers, tips_target, "bond_tips"))
+            if nominal_tickers and nominal_target > 0:
+                sub_buckets.append((nominal_tickers, nominal_target, "bond_nominal"))
+        else:
+            sub_buckets = [(tickers, target, bucket)]
+
+        for pool_tickers, pool_target, pool_label in sub_buckets:
+            sub = returns[[t for t in pool_tickers if t in returns.columns]].dropna(axis=0, how="any")
+            if sub.shape[1] == 0:
+                continue
+            if sub.shape[1] == 1:
+                inner = {sub.columns[0]: 1.0}
+                nco_breakdown_per_pool[pool_label] = {"n_assets": 1, "fallback": "single_asset"}
+            else:
+                pool_breakdown: dict = {}
+                try:
+                    nco_w = compute_nco_weights(sub, breakdown_out=pool_breakdown)
+                except Exception as e:
+                    logger.warning(
+                        "NCO failed for pool %s: %s — fallback equal weight",
+                        pool_label, e,
+                    )
+                    n = sub.shape[1]
+                    inner = {t: 1.0 / n for t in sub.columns}
+                    pool_breakdown = {"error": str(e), "fallback": "equal_weight"}
+                else:
+                    inner = nco_w.to_dict()
+                nco_breakdown_per_pool[pool_label] = pool_breakdown
+
+            s = sum(inner.values())
+            inner = {k: v / s for k, v in inner.items()}
+
+            scaled = {t: w * pool_target for t, w in inner.items()}
+
+            capped = {t: min(w, SINGLE_ASSET_CAP) for t, w in scaled.items()}
+            residual = sum(scaled.values()) - sum(capped.values())
+            for _ in range(HRP_WATER_FILL_MAX_ITERS):
+                if residual <= 1e-9:
+                    break
+                non_capped = [t for t, w in capped.items() if w < SINGLE_ASSET_CAP - 1e-9]
+                if not non_capped:
+                    # All assets at cap — bucket target unreachable; accept partial fill.
+                    logger.warning(
+                        "NCO: bucket %s 의 모든 자산이 cap 도달 — target=%.3f, "
+                        "실제=%.3f (shortfall=%.3f)",
+                        bucket, pool_target, sum(capped.values()), residual,
+                    )
+                    bucket_shortfalls.append({
+                        "bucket": bucket,
+                        "pool_target": float(pool_target),
+                        "actual": float(sum(capped.values())),
+                        "shortfall": float(residual),
+                        "n_assets_capped": len(capped),
+                    })
+                    break
+                share = residual / len(non_capped)
+                for t in non_capped:
+                    room = SINGLE_ASSET_CAP - capped[t]
+                    add = min(share, room)
+                    capped[t] += add
+                residual = sum(scaled.values()) - sum(capped.values())
+
+            final.update(capped)
+
+    total = sum(final.values())
+    final_norm_intervened = False
+    if total > 0 and abs(total - 1.0) > 1e-9:
+        final_norm_intervened = True
+        logger.info(
+            "NCO final normalization: sum=%.6f ≠ 1.0 → water-fill redistribute",
+            total,
+        )
+        target_total = 1.0
+        remaining = target_total
+        normalized: dict[str, float] = {}
+        uncapped = list(final.keys())
+        raw = dict(final)
+        raw_total = sum(raw.values())
+        scaled_raw = {t: w / raw_total for t, w in raw.items()}
+        for _ in range(HRP_WATER_FILL_MAX_ITERS):
+            capped_tickers = [t for t in uncapped if scaled_raw[t] >= SINGLE_ASSET_CAP - 1e-9]
+            for t in capped_tickers:
+                normalized[t] = min(scaled_raw[t], SINGLE_ASSET_CAP)
+                uncapped.remove(t)
+            if not capped_tickers:
+                for t in uncapped:
+                    normalized[t] = scaled_raw[t]
+                break
+            free = remaining - sum(normalized.values())
+            if not uncapped or free <= 0:
+                break
+            sub_total = sum(scaled_raw[t] for t in uncapped)
+            if sub_total <= 0:
+                break
+            scaled_raw = {t: scaled_raw[t] / sub_total * free for t in uncapped}
+            remaining = free
+        else:
+            for t in uncapped:
+                normalized[t] = scaled_raw[t]
+        final = normalized
+
+    if attribution is not None:
+        if bucket_shortfalls:
+            attribution["nco_bucket_shortfalls"] = bucket_shortfalls
+        attribution["nco_final_norm_intervened"] = final_norm_intervened
+        attribution["nco_breakdown_per_pool"] = nco_breakdown_per_pool
+
+    violators = [(t, w) for t, w in final.items() if w > SINGLE_ASSET_CAP + 1e-6]
+    assert not violators, (
+        f"NCO-per-bucket post-condition: {SINGLE_ASSET_CAP*100:.0f}% cap violated: {violators}"
+    )
+
+    # sub_category cap (bucket 내부 다양성).
+    final = _apply_subcategory_cap(
+        final, candidates, sub_category_lookup=sub_category_lookup,
+        attribution=attribution,
+    )
+    # min weight threshold.
+    final = _apply_min_weight_threshold(
+        final, candidates, attribution=attribution,
+    )
+    return WeightVector(
+        method=OptimizationMethod.NCO,
+        weights=final,
+        rationale=(
+            f"NCO within each bucket × bucket_target weight. "
             f"위험자산 target {bucket_target.risk_asset_weight:.1%}, single-asset cap 20%."
         ),
     )
