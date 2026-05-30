@@ -34,6 +34,14 @@ from pydantic import BaseModel
 TIMING_DELTA: float = 0.1
 TIMING_CAP: float = 0.3
 
+# Phase 2b (2026-05-30). ENB greedy + adaptive n_max constants.
+ENB_DELTA_THRESHOLD: float = 0.15
+ABS_MAX_PER_BUCKET: int = 8
+MIN_POSITION_KRW: float = 50_000_000
+MIN_BUCKET_POSITION_RATIO: float = 0.025
+N_MIN_HARD_FLOOR: int = 1
+ALPHA_IMPL_BLEND_DEFAULT: float = 0.85
+
 
 REGIME_FACTOR_WEIGHTS: dict[str, dict[str, float]] = {
     "growth_disinflation":    {"mom": 0.50, "lowvol": 0.10, "qual": 0.25, "size": 0.15},
@@ -652,6 +660,31 @@ def select_cluster_aware(
             if len(chosen) >= n:
                 break
     return chosen[:n]
+
+
+def compute_adaptive_n_max(
+    *,
+    n_positive_alpha: int,
+    bucket_weight: float,
+    capital_krw: float,
+) -> int:
+    """Adaptive n_max — 4 cap 의 min.
+
+    n_max = min(
+        n_positive_alpha,
+        max(1, int(bucket_weight / MIN_BUCKET_POSITION_RATIO)),
+        max(1, int(bucket_weight * capital_krw / MIN_POSITION_KRW)),
+        ABS_MAX_PER_BUCKET,
+    )
+    bucket_weight = 0 또는 n_positive_alpha = 0 시 즉시 0.
+    """
+    if bucket_weight <= 0:
+        return 0
+    if n_positive_alpha <= 0:
+        return 0
+    weight_cap = max(1, int(bucket_weight / MIN_BUCKET_POSITION_RATIO))
+    capital_cap = max(1, int(bucket_weight * capital_krw / MIN_POSITION_KRW))
+    return min(n_positive_alpha, weight_cap, capital_cap, ABS_MAX_PER_BUCKET)
 
 
 def select_diverse(

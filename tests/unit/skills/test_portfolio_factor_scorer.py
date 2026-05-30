@@ -742,3 +742,68 @@ def test_impl_score_high_volume_per_aum_raises_score():
         premium_discount=premium_discount,
     )
     assert impl["high_vol"] > impl["low_vol"]
+
+
+# ---------- Phase 2b Task 1: compute_adaptive_n_max ----------
+
+
+def test_compute_adaptive_n_max_alpha_cap():
+    """양수 alpha 후보 수가 가장 작으면 그 값이 n_max."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=3,
+        bucket_weight=0.30,
+        capital_krw=1_000_000_000_000,
+    )
+    assert n == 3
+
+
+def test_compute_adaptive_n_max_weight_cap():
+    """작은 bucket weight → weight cap."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=100,
+        bucket_weight=0.05,
+        capital_krw=1_000_000_000_000,
+    )
+    assert n == 2
+
+
+def test_compute_adaptive_n_max_capital_cap():
+    """1B 자본 + 10% bucket → 100M / 50M = 2."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=10,
+        bucket_weight=0.10,
+        capital_krw=1_000_000_000,
+    )
+    assert n == 2
+
+
+def test_compute_adaptive_n_max_abs_max():
+    """모든 cap 큼 → 8."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=20,
+        bucket_weight=0.50,
+        capital_krw=100_000_000_000,
+    )
+    assert n == 8
+
+
+def test_compute_adaptive_n_max_zero_bucket_weight():
+    """bucket_weight = 0 → 0."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=10, bucket_weight=0.0, capital_krw=1_000_000_000,
+    )
+    assert n == 0
+
+
+def test_compute_adaptive_n_max_zero_positive_alpha():
+    """positive_alpha = 0 → 0."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=0, bucket_weight=0.30, capital_krw=1_000_000_000,
+    )
+    assert n == 0
