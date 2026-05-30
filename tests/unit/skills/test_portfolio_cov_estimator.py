@@ -37,7 +37,9 @@ def test_compute_robust_cov_shrinkage_intensity_in_unit_interval():
     breakdown: dict = {}
     compute_robust_cov(returns, breakdown_out=breakdown)
     delta = breakdown["shrinkage_intensity"]
-    assert -1.0 <= delta <= 1.0
+    # QIS mean(1 - d/λ): upper-bounded at 1, no hard lower bound
+    assert delta <= 1.0
+    assert isinstance(delta, float)
 
 
 def test_compute_robust_cov_is_psd():
@@ -111,4 +113,6 @@ def test_qis_cov_intensity_in_signed_range():
     breakdown: dict = {}
     compute_robust_cov(returns, method="qis", breakdown_out=breakdown)
     intensity = breakdown["shrinkage_intensity"]
-    assert -1.0 <= intensity <= 1.0
+    # QIS mean(1 - d/λ): upper-bounded at 1 (full shrinkage), no hard lower bound
+    assert intensity <= 1.0
+    assert isinstance(intensity, float)
