@@ -440,7 +440,7 @@ def evaluate_anchor(
         rationale="anchor evaluation",
     )
     eligible_by_bucket = list_eligible_tickers(
-        universe, bt, as_of=as_of, min_aum_krw=1_000_000_000_000,
+        universe, bt, as_of=as_of,
     )
     eligible = sorted({t for ts in eligible_by_bucket.values() for t in ts})
     if not eligible:

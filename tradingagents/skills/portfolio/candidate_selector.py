@@ -1,19 +1,29 @@
-from datetime import date
+import logging
+import time
+from datetime import date, timedelta
 
 import pandas as pd
 
+from tradingagents.dataflows.etf_metrics import (
+    DEFAULT_METRICS_WINDOW_DAYS, compute_premium_discount_median,
+    compute_tracking_error_12m, compute_volume_per_aum_median,
+    fetch_etf_metrics_window,
+)
+from tradingagents.dataflows.krx_openapi import KRXOpenAPIError
 from tradingagents.dataflows.universe import Universe
 from tradingagents.schemas.portfolio import BucketTarget, CandidateSet
 from tradingagents.schemas.technical import ETFRanking
 from tradingagents.skills.portfolio.factor_scorer import (
-    FactorPanel, compute_factor_panel, compute_impl_score, score_candidates,
-    score_candidates_with_components, select_cluster_aware, select_diverse,
+    FactorPanel, compute_adaptive_n_max, compute_factor_panel, compute_impl_score,
+    score_candidates, score_candidates_with_components, select_by_enb_greedy,
+    select_diverse,
 )
 from tradingagents.skills.portfolio.sub_category import (
     _scenario_to_axes, compose_boost, log_boost,
 )
 from tradingagents.skills.registry import register_skill
 
+logger = logging.getLogger(__name__)
 
 # Map BucketTarget fields to universe categories
 BUCKET_TO_CATEGORIES = {
@@ -28,16 +38,6 @@ BUCKET_TO_CATEGORIES = {
 }
 
 
-# Investability floor — flat ~500억 (Stage 3 cluster-aware selection, D2).
-# 운영 capital ~100억 가정 + 포지션 < AUM 5% 가이드 → 500억이 안전 최소선.
-# 유동성·구현품질은 hard filter 가 아니라 impl_score 의 soft 선호로 분리(D3).
-DEFAULT_MIN_AUM_KRW: float = 50_000_000_000   # 500억
-
-# Sub_category별 minimum AUM 완화 — KR 시장에 large-AUM 옵션이 부족한
-# sparse sub_category 한정. default min_aum_krw 대신 이 값 사용.
-_RELAXED_MIN_AUM_KRW: dict[str, float] = {
-    "inflation_linked": 10_000_000_000,   # 100억 — KR TIPS 시장 매우 작음
-}
 
 
 # Scenario boost를 factor score에 가산할 때 곱하는 스케일.
@@ -48,23 +48,13 @@ _RELAXED_MIN_AUM_KRW: dict[str, float] = {
 DEFAULT_BOOST_SCALE: float = 1.0
 
 
-def _min_aum_for_etf(etf, default_threshold: float) -> float:
-    """ETF의 sub_category에 따라 minimum AUM 결정.
-
-    sub_category가 _RELAXED_MIN_AUM_KRW에 있으면 그 값과 default 중 작은 쪽 사용.
-    그 외엔 default 그대로.
-    """
-    sc = etf.sub_category
-    if sc and sc in _RELAXED_MIN_AUM_KRW:
-        return min(default_threshold, _RELAXED_MIN_AUM_KRW[sc])
-    return default_threshold
 
 
-def _eligible_for_bucket(universe: Universe, cats: list[str], min_aum_krw: float):
+def _eligible_for_bucket(universe: Universe, cats: list[str]):
     """Single eligibility filter (Stage 3 D2/D3 — used by both list_* and select_*)."""
     return [
         e for e in universe.etfs
-        if e.category in cats and e.aum_krw >= _min_aum_for_etf(e, min_aum_krw)
+        if e.category in cats
     ]
 
 
@@ -72,9 +62,8 @@ def list_eligible_tickers(
     universe: Universe,
     bucket_target: BucketTarget,
     as_of: date,
-    min_aum_krw: float = DEFAULT_MIN_AUM_KRW,
 ) -> dict[str, list[str]]:
-    """Return tickers passing hard filters (tradable + category + AUM), pre-ranking.
+    """Return tickers passing hard filters (tradable + category), pre-ranking.
 
     Caller uses this to know which tickers need price/return data fetched
     before invoking the full select_etf_candidates with multi-factor mode.
@@ -92,7 +81,7 @@ def list_eligible_tickers(
             out[bucket_name] = []
             continue
         cats = BUCKET_TO_CATEGORIES[bucket_name]
-        out[bucket_name] = [e.ticker for e in _eligible_for_bucket(universe, cats, min_aum_krw)]
+        out[bucket_name] = [e.ticker for e in _eligible_for_bucket(universe, cats)]
     return out
 
 
@@ -104,8 +93,8 @@ def select_etf_candidates(
     *,
     returns: pd.DataFrame,
     factor_panel: dict[str, FactorPanel],
-    min_aum_krw: float = DEFAULT_MIN_AUM_KRW,
-    per_bucket_n: int = 5,
+    sigma: pd.DataFrame,
+    capital_krw: float,
     regime_quadrant: str | None = None,
     regime_confidence: float = 0.5,
     correlation_threshold: float = 0.85,
@@ -122,7 +111,7 @@ def select_etf_candidates(
     factor_scores: dict[str, float] | None = None,
     require_positive_alpha: bool = True,
 ) -> CandidateSet:
-    """Filter universe by bucket target + AUM, then multi-factor rank + corr de-dup.
+    """Filter universe by bucket target, then multi-factor rank + corr de-dup.
 
     Stage 1 technical_analyst가 항상 returns + factor_panel을 채우므로
     multi-factor mode가 유일한 운영 경로. legacy momentum-only mode는 폐기.
@@ -145,6 +134,67 @@ def select_etf_candidates(
         e.ticker: (e.underlying_index or "") for e in universe.etfs
     }
 
+    # Phase 2a — ETF metrics fetch (impl_score 4-요소 입력)
+    metrics_window_start = as_of - timedelta(days=DEFAULT_METRICS_WINDOW_DAYS)
+    fetch_start_time = time.monotonic()
+    cache_path_obj = None  # 기본 None — caller 가 주입할 수 있도록 향후 확장
+    etf_metrics = None
+    fetch_succeeded = False
+    fallback_reason: str | None = None
+    try:
+        etf_metrics = fetch_etf_metrics_window(
+            list({e.ticker for e in universe.etfs}),
+            metrics_window_start, as_of,
+            cache_path=cache_path_obj,
+        )
+        fetch_succeeded = True
+    except KRXOpenAPIError as e:
+        logger.warning(
+            "KRX OpenAPI fetch failed (%s) — impl_score falls back to log_aum only", e,
+        )
+        fallback_reason = str(e)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "etf_metrics fetch failed unexpectedly (%s) — impl_score falls back", e,
+        )
+        fallback_reason = str(e)
+    fetch_duration = time.monotonic() - fetch_start_time
+
+    tracking_error_by_ticker: dict[str, float | None] | None = None
+    prem_disc_by_ticker: dict[str, float | None] | None = None
+    vol_aum_by_ticker: dict[str, float | None] | None = None
+    if etf_metrics is not None and not etf_metrics.empty:
+        elig_tickers_all = [e.ticker for e in universe.etfs]
+        tracking_error_by_ticker = {
+            t: compute_tracking_error_12m(etf_metrics, t)
+            for t in elig_tickers_all
+        }
+        prem_disc_by_ticker = {
+            t: compute_premium_discount_median(etf_metrics, t, n_days=30)
+            for t in elig_tickers_all
+        }
+        vol_aum_by_ticker = {
+            t: compute_volume_per_aum_median(etf_metrics, t, n_days=30)
+            for t in elig_tickers_all
+        }
+
+    if attribution is not None:
+        attribution["etf_metrics_summary"] = {
+            "fetch_attempted": True,
+            "fetch_succeeded": fetch_succeeded,
+            "fallback_reason": fallback_reason,
+            "n_tickers_with_te": (
+                sum(1 for v in (tracking_error_by_ticker or {}).values() if v is not None)
+            ),
+            "n_tickers_with_pd": (
+                sum(1 for v in (prem_disc_by_ticker or {}).values() if v is not None)
+            ),
+            "n_tickers_with_vol_aum": (
+                sum(1 for v in (vol_aum_by_ticker or {}).values() if v is not None)
+            ),
+            "fetch_duration_seconds": float(fetch_duration),
+        }
+
     bucket_to_tickers: dict[str, list[str]] = {}
 
     if attribution is not None:
@@ -153,10 +203,9 @@ def select_etf_candidates(
             "regime_quadrant":       regime_quadrant,
             "regime_confidence":     regime_confidence,
             "dominant_scenario":     dominant_scenario,
-            "per_bucket_n":          per_bucket_n,
+            "capital_krw":           capital_krw,
             "correlation_threshold": correlation_threshold,
             "longlist_multiplier":   longlist_multiplier,
-            "min_aum_krw":           min_aum_krw,
         })
         attribution["buckets"] = {}
 
@@ -184,7 +233,7 @@ def select_etf_candidates(
             continue
 
         cats = BUCKET_TO_CATEGORIES[bucket_name]
-        eligible = _eligible_for_bucket(universe, cats, min_aum_krw)
+        eligible = _eligible_for_bucket(universe, cats)
         if bucket_attr is not None:
             bucket_attr["eligible_count"] = len(eligible)
 
@@ -196,10 +245,18 @@ def select_etf_candidates(
             continue
 
         if bucket_name == "bond" and bucket_target.bond_tips_share > 0.0:
+            bond_eligible_tickers = [e.ticker for e in eligible]
+            # Use eligible count as n_positive_alpha upper bound — bond TIPS path
+            # uses select_diverse (not ENB greedy), so alpha sign filter is not applied.
+            bond_n = compute_adaptive_n_max(
+                n_positive_alpha=len(bond_eligible_tickers),
+                bucket_weight=weight,
+                capital_krw=capital_krw,
+            )
             chosen = _select_bond_with_tips_quota(
                 eligible, returns, aum_lookup,
                 regime_quadrant, regime_confidence, factor_panel,
-                dominant_scenario, per_bucket_n,
+                dominant_scenario, bond_n,
                 correlation_threshold, longlist_multiplier,
                 tips_share=bucket_target.bond_tips_share,
                 breakdown_out=bucket_attr,
@@ -220,22 +277,47 @@ def select_etf_candidates(
                 extended=extended, etf_states=etf_states,
                 factor_scores=factor_scores,
             )
-            impl_scores = compute_impl_score(panels_for_impl, normalization=normalization)
+            impl_scores = compute_impl_score(
+                panels_for_impl,
+                normalization=normalization,
+                volume_per_aum=vol_aum_by_ticker,
+                premium_discount=prem_disc_by_ticker,
+                tracking_error=tracking_error_by_ticker,
+            )
             ranked = sorted(
                 alpha_scores.keys(), key=lambda t: alpha_scores[t], reverse=True,
             )
-            sel_trace: dict | None = {} if bucket_attr is not None else None
-            chosen = select_cluster_aware(
-                [e.ticker for e in eligible],
-                alpha_scores, impl_scores,
-                clusters=clusters,
-                n=per_bucket_n,
-                returns=returns,
-                correlation_threshold=correlation_threshold,
-                selection_trace=sel_trace,
-                underlying_lookup=underlying_lookup,
-                require_positive_alpha=require_positive_alpha,
+            # Phase 2b — adaptive n_max + ENB greedy
+            bucket_eligible_tickers = [e.ticker for e in eligible]
+            n_positive_alpha = sum(
+                1 for t in bucket_eligible_tickers if alpha_scores.get(t, 0.0) > 0
             )
+            n_max = compute_adaptive_n_max(
+                n_positive_alpha=n_positive_alpha,
+                bucket_weight=weight,
+                capital_krw=capital_krw,
+            )
+            sigma_sub = sigma.reindex(
+                index=bucket_eligible_tickers, columns=bucket_eligible_tickers,
+            ).dropna(how="all").dropna(axis=1, how="all")
+            valid_eligible = [t for t in bucket_eligible_tickers if t in sigma_sub.index]
+            selection_trace: dict = {}
+            chosen = select_by_enb_greedy(
+                eligible=valid_eligible,
+                alpha_scores=alpha_scores,
+                impl_scores=impl_scores,
+                sigma=sigma_sub,
+                n_max=n_max,
+                selection_trace=selection_trace,
+            )
+            n_max_components = {
+                "n_positive_alpha": n_positive_alpha,
+                "weight_cap": max(1, int(weight / 0.025)) if weight > 0 else 0,
+                "capital_cap": max(1, int(weight * capital_krw / 50_000_000)) if weight > 0 else 0,
+                "abs_max": 8,
+                "n_max_chosen": n_max,
+            }
+            selection_trace["n_max_components"] = n_max_components
             if bucket_attr is not None:
                 bucket_attr["bond_split"] = False
                 bucket_attr["ranked_order"] = ranked
@@ -244,11 +326,11 @@ def select_etf_candidates(
                 bucket_attr["regime_weights"] = (rank_break or {}).get("regime_weights")
                 bucket_attr["scenario_axes"] = (rank_break or {}).get("scenario_axes")
                 bucket_attr["per_ticker"] = (rank_break or {}).get("per_ticker", {})
-                bucket_attr["selection_trace"] = sel_trace or {}
-                bucket_attr["clusters_used"] = bool(clusters)
-                bucket_attr["chosen"] = chosen[:per_bucket_n]
+                bucket_attr["selection_trace"] = selection_trace
+                bucket_attr["n_max_computed"] = n_max
+                bucket_attr["chosen"] = chosen
 
-        bucket_to_tickers[bucket_name] = chosen[:per_bucket_n]
+        bucket_to_tickers[bucket_name] = chosen
 
     total = sum(len(v) for v in bucket_to_tickers.values())
     mode_label = (
@@ -257,8 +339,7 @@ def select_etf_candidates(
     return CandidateSet(
         bucket_to_tickers=bucket_to_tickers,
         selection_criteria=(
-            f"AUM ≥ {min_aum_krw / 1e12:.1f}조, mode={mode_label}, "
-            f"per_bucket_n={per_bucket_n}, corr_thresh={correlation_threshold}"
+            f"mode={mode_label}, capital={capital_krw/1e9:.1f}B KRW, strategy=enb_greedy"
         )[:300],
         total_candidates=max(total, 1),
     )
@@ -354,6 +435,16 @@ def _select_bond_with_tips_quota(
         breakdown_out["selection_traces"] = sub_pool_traces
         breakdown_out["tips_picks"] = tips_picks
         breakdown_out["nominal_picks"] = nominal_picks
+        # NEW: bucket level merged alpha_scores — cash_spillover._collect_alpha_scores_per_bucket 가 사용
+        merged_alpha: dict[str, float] = {}
+        for label, sp in sub_pool_breakdowns.items():
+            per_t = sp.get("per_ticker") or {}
+            for t, info in per_t.items():
+                score = info.get("final_score")
+                if score is None:
+                    score = info.get("base_score", 0.0)
+                merged_alpha[t] = float(score)
+        breakdown_out["alpha_scores"] = merged_alpha
 
     return tips_picks + nominal_picks
 
