@@ -704,6 +704,113 @@ def _enb_equal_weight(selected: list[str], sigma: pd.DataFrame) -> float:
     return compute_enb(equal_w, sub_sigma, method="minimum_torsion")
 
 
+def select_by_enb_greedy(
+    *,
+    eligible: list[str],
+    alpha_scores: dict[str, float],
+    impl_scores: dict[str, float],
+    sigma: pd.DataFrame,
+    n_max: int,
+    n_min: int = N_MIN_HARD_FLOOR,
+    enb_delta_threshold: float = ENB_DELTA_THRESHOLD,
+    alpha_impl_blend: float = ALPHA_IMPL_BLEND_DEFAULT,
+    selection_trace: dict | None = None,
+) -> list[str]:
+    """Forward greedy ENB-incremental selection.
+
+    1. Pool = {t in eligible | alpha_scores[t] > 0}
+    2. Composite = blend × z(alpha) + (1 - blend) × z(impl)
+    3. Seed = composite top-1
+    4. While pool and len < n_max:
+         j* = argmax (ENB(selected ∪ {j}) - ENB(selected))
+         if ΔENB < threshold and len ≥ n_min: stop
+         selected.append(j*)
+    """
+    rejected_alpha_negative = [
+        {"ticker": t, "reason": "alpha_negative"}
+        for t in eligible if alpha_scores.get(t, 0.0) <= 0
+    ]
+
+    pool = [t for t in eligible if alpha_scores.get(t, 0.0) > 0]
+    if not pool:
+        if selection_trace is not None:
+            selection_trace["stop_reason"] = "no_positive_alpha"
+            selection_trace["enb_progression"] = []
+            selection_trace["rejected"] = rejected_alpha_negative
+            selection_trace["alpha_impl_blend_used"] = alpha_impl_blend
+        return []
+
+    if n_max <= 0:
+        if selection_trace is not None:
+            selection_trace["stop_reason"] = "capacity_zero"
+            selection_trace["enb_progression"] = []
+            selection_trace["rejected"] = rejected_alpha_negative
+            selection_trace["alpha_impl_blend_used"] = alpha_impl_blend
+        return []
+
+    z_alpha = _rank_normalize({t: alpha_scores[t] for t in pool})
+    z_impl = _rank_normalize({t: impl_scores.get(t, 0.0) for t in pool})
+    composite = {
+        t: alpha_impl_blend * z_alpha[t] + (1 - alpha_impl_blend) * z_impl[t]
+        for t in pool
+    }
+    pool.sort(key=lambda t: composite[t], reverse=True)
+
+    seed = pool.pop(0)
+    selected = [seed]
+    progression: list[dict] = [{"step": 0, "ticker": seed, "enb": 1.0}]
+    rejected_deltas: list[dict] = []
+    stop_reason = "pool_exhausted"
+
+    while pool and len(selected) < n_max:
+        prev_enb = _enb_equal_weight(selected, sigma)
+        best_t = None
+        best_delta = -float("inf")
+        for j in pool:
+            candidate_set = selected + [j]
+            try:
+                new_enb = _enb_equal_weight(candidate_set, sigma)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("enb compute failed for %s: %s", j, e)
+                continue
+            delta = new_enb - prev_enb
+            if delta > best_delta:
+                best_delta = delta
+                best_t = j
+
+        if best_t is None:
+            stop_reason = "numerical_failure"
+            break
+
+        if best_delta < enb_delta_threshold and len(selected) >= n_min:
+            stop_reason = "delta_below_threshold"
+            rejected_deltas.extend(
+                {"ticker": t, "reason": "delta_too_small", "delta": float(best_delta)}
+                for t in pool
+            )
+            break
+
+        selected.append(best_t)
+        pool.remove(best_t)
+        progression.append({
+            "step": len(selected) - 1,
+            "ticker": best_t,
+            "enb": float(prev_enb + best_delta),
+            "delta": float(best_delta),
+        })
+
+    if len(selected) >= n_max and stop_reason == "pool_exhausted":
+        stop_reason = "n_max_reached"
+
+    if selection_trace is not None:
+        selection_trace["stop_reason"] = stop_reason
+        selection_trace["enb_progression"] = progression
+        selection_trace["rejected"] = rejected_alpha_negative + rejected_deltas
+        selection_trace["alpha_impl_blend_used"] = alpha_impl_blend
+
+    return selected
+
+
 def select_diverse(
     ranked_tickers: list[str],
     returns: pd.DataFrame,

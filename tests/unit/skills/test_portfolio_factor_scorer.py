@@ -847,3 +847,156 @@ def test_enb_equal_weight_uncorrelated_pair_close_to_two():
     )
     enb = _enb_equal_weight(["A", "B"], sigma)
     assert 1.95 < enb < 2.05
+
+
+# ---------- Phase 2b Task 3: select_by_enb_greedy ----------
+
+
+def _make_diag_sigma(tickers, vol=0.04):
+    import pandas as pd
+    import numpy as np
+    n = len(tickers)
+    return pd.DataFrame(np.eye(n) * vol, index=tickers, columns=tickers)
+
+
+def _make_dup_sigma(tickers, vol=0.04, rho=0.999):
+    import pandas as pd
+    import numpy as np
+    n = len(tickers)
+    corr = np.full((n, n), rho)
+    np.fill_diagonal(corr, 1.0)
+    return pd.DataFrame(corr * vol, index=tickers, columns=tickers)
+
+
+def test_select_by_enb_greedy_seed_from_top_composite():
+    """Seed = (alpha_impl_blend × z(alpha) + (1 - blend) × z(impl)) 1등."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C"]
+    alpha = {"A": 0.1, "B": 0.5, "C": 0.3}
+    impl = {"A": 0.0, "B": 0.0, "C": 0.0}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=1,
+    )
+    assert chosen == ["B"]
+
+
+def test_select_by_enb_greedy_alpha_floor_only_positive():
+    """음수 alpha 제외."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C", "D"]
+    alpha = {"A": 0.5, "B": -0.1, "C": -0.2, "D": -0.3}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=4,
+    )
+    assert chosen == ["A"]
+
+
+def test_select_by_enb_greedy_handles_no_positive_alpha():
+    """양수 alpha 없으면 빈 list."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B"]
+    alpha = {"A": -0.1, "B": -0.2}
+    impl = {"A": 0.0, "B": 0.0}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=3,
+    )
+    assert chosen == []
+
+
+def test_select_by_enb_greedy_n_max_zero_returns_empty():
+    """n_max = 0 → 빈 list."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B"]
+    alpha = {"A": 0.5, "B": 0.3}
+    impl = {"A": 0.0, "B": 0.0}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=0,
+    )
+    assert chosen == []
+
+
+def test_select_by_enb_greedy_stops_at_n_max():
+    """n_max=2 도달 시 중단."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C", "D"]
+    alpha = {t: 0.5 for t in eligible}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=2,
+    )
+    assert len(chosen) == 2
+
+
+def test_select_by_enb_greedy_duplicates_picked_once():
+    """corr ≈ 1 인 3 ETF → seed 1개만."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C"]
+    alpha = {t: 0.5 for t in eligible}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_dup_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=3,
+    )
+    assert len(chosen) == 1
+
+
+def test_select_by_enb_greedy_attribution_progression_recorded():
+    """selection_trace 채움."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C", "D"]
+    alpha = {"A": 0.5, "B": 0.3, "C": -0.1, "D": 0.4}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_diag_sigma(eligible)
+    trace: dict = {}
+    select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=3, selection_trace=trace,
+    )
+    assert "stop_reason" in trace
+    assert "enb_progression" in trace
+    assert "rejected" in trace
+    assert "alpha_impl_blend_used" in trace
+    rejected_alpha_neg = [r for r in trace["rejected"] if r.get("reason") == "alpha_negative"]
+    assert any(r["ticker"] == "C" for r in rejected_alpha_neg)
+
+
+def test_select_by_enb_greedy_alpha_impl_blend_weighting():
+    """alpha 동등 → impl 큰 쪽 우선."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B"]
+    alpha = {"A": 0.5, "B": 0.5}
+    impl = {"A": 0.1, "B": 0.9}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=1,
+    )
+    assert chosen == ["B"]
+
+
+def test_select_by_enb_greedy_stops_at_delta_threshold():
+    """corr ≈ 1 시 delta 미달 stop."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C"]
+    alpha = {t: 0.5 for t in eligible}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_dup_sigma(eligible)
+    trace: dict = {}
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=3, selection_trace=trace,
+    )
+    assert len(chosen) == 1
+    assert trace["stop_reason"] == "delta_below_threshold"
