@@ -185,3 +185,114 @@ def test_inter_cluster_weights_with_mu_max_sharpe_path():
     reduced_mu = pd.Series([0.1, 0.05], index=[1, 2])
     w = _inter_cluster_weights(reduced_cov, reduced_mu)
     assert w[1] > w[2]  # 더 큰 mu 우대
+
+
+def test_compute_nco_weights_uncorrelated_returns_equal_weight():
+    """n=4 uncorrelated, equal vol → equal weight."""
+    from tradingagents.skills.portfolio.nco import compute_nco_weights
+
+    rng = np.random.default_rng(42)
+    returns = pd.DataFrame(
+        rng.normal(0, 0.02, size=(252, 4)),
+        columns=["A", "B", "C", "D"],
+    )
+    w = compute_nco_weights(returns)
+    # 거의 equal weight (∈ [0.2, 0.3] 정도)
+    for v in w.values:
+        assert 0.1 < v < 0.4
+    assert abs(w.sum() - 1.0) < 1e-6
+
+
+def test_compute_nco_weights_two_clusters_inter_balance():
+    """2 명확한 cluster, equal vol → inter weight 균등 (intra 도 균등)."""
+    from tradingagents.skills.portfolio.nco import compute_nco_weights
+
+    rng = np.random.default_rng(7)
+    # cluster 1: A, B (corr 0.95)
+    # cluster 2: C, D (corr 0.95)
+    # 그룹 간 corr ≈ 0
+    base1 = rng.normal(0, 0.02, size=252)
+    base2 = rng.normal(0, 0.02, size=252)
+    returns = pd.DataFrame({
+        "A": base1 + rng.normal(0, 0.005, size=252),
+        "B": base1 + rng.normal(0, 0.005, size=252),
+        "C": base2 + rng.normal(0, 0.005, size=252),
+        "D": base2 + rng.normal(0, 0.005, size=252),
+    })
+    w = compute_nco_weights(returns)
+    # 2 cluster — A+B 합 ≈ C+D 합 ≈ 0.5
+    ab_sum = w["A"] + w["B"]
+    cd_sum = w["C"] + w["D"]
+    assert abs(ab_sum - 0.5) < 0.15
+    assert abs(cd_sum - 0.5) < 0.15
+
+
+def test_compute_nco_weights_weights_sum_to_one():
+    """Sum invariant."""
+    from tradingagents.skills.portfolio.nco import compute_nco_weights
+
+    rng = np.random.default_rng(11)
+    returns = pd.DataFrame(rng.normal(0, 0.02, size=(252, 5)), columns=list("ABCDE"))
+    w = compute_nco_weights(returns)
+    assert abs(w.sum() - 1.0) < 1e-6
+
+
+def test_compute_nco_weights_non_negative():
+    """Long-only."""
+    from tradingagents.skills.portfolio.nco import compute_nco_weights
+
+    rng = np.random.default_rng(13)
+    returns = pd.DataFrame(rng.normal(0, 0.02, size=(252, 4)), columns=list("ABCD"))
+    w = compute_nco_weights(returns)
+    assert all(v >= 0 for v in w.values)
+
+
+def test_compute_nco_weights_with_mu_max_sharpe_path():
+    """mu given → max-sharpe inner CVO."""
+    from tradingagents.skills.portfolio.nco import compute_nco_weights
+
+    rng = np.random.default_rng(17)
+    returns = pd.DataFrame(rng.normal(0, 0.02, size=(252, 3)), columns=list("ABC"))
+    mu = pd.Series([0.10, 0.05, 0.02], index=list("ABC"))
+    w = compute_nco_weights(returns, mu=mu)
+    # A 가 가장 큰 mu → A weight 가 작지 않아야
+    assert w["A"] > 0
+    assert abs(w.sum() - 1.0) < 1e-6
+
+
+def test_compute_nco_weights_breakdown_out_recorded():
+    """breakdown_out 채움."""
+    from tradingagents.skills.portfolio.nco import compute_nco_weights
+
+    rng = np.random.default_rng(19)
+    returns = pd.DataFrame(rng.normal(0, 0.02, size=(252, 4)), columns=list("ABCD"))
+    breakdown: dict = {}
+    compute_nco_weights(returns, breakdown_out=breakdown)
+    assert "n_clusters" in breakdown
+    assert "silhouette" in breakdown
+    assert "cluster_labels" in breakdown
+    assert "intra_weights" in breakdown
+    assert "inter_weights" in breakdown
+    assert "mu_provided" in breakdown
+    assert breakdown["mu_provided"] is False
+
+
+def test_compute_nco_weights_raises_when_insufficient_tickers():
+    """n=1 → ValueError."""
+    from tradingagents.skills.portfolio.nco import compute_nco_weights
+
+    rng = np.random.default_rng(23)
+    returns = pd.DataFrame(rng.normal(0, 0.02, size=(252, 1)), columns=["A"])
+    with pytest.raises(ValueError, match="NCO requires"):
+        compute_nco_weights(returns)
+
+
+def test_compute_nco_weights_handles_n_equals_two():
+    """n=2 shortcut."""
+    from tradingagents.skills.portfolio.nco import compute_nco_weights
+
+    rng = np.random.default_rng(29)
+    returns = pd.DataFrame(rng.normal(0, 0.02, size=(252, 2)), columns=["A", "B"])
+    w = compute_nco_weights(returns)
+    assert len(w) == 2
+    assert abs(w.sum() - 1.0) < 1e-6

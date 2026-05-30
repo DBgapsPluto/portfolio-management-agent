@@ -118,3 +118,86 @@ def _inter_cluster_weights(
 ) -> pd.Series:
     """Inter-cluster CVO."""
     return _opt_port(reduced_cov, reduced_mu)
+
+
+def compute_nco_weights(
+    returns: pd.DataFrame,
+    mu: pd.Series | None = None,
+    max_num_clusters: int | None = None,
+    breakdown_out: dict | None = None,
+) -> pd.Series:
+    """NCO weights (Lopez de Prado 2019).
+
+    1. Hierarchical clustering (1-corr distance)
+    2. Intra-cluster CVO (min-var if mu=None, else max-sharpe)
+    3. Reduced Σ̂ = intra.T @ Σ @ intra
+    4. Inter-cluster CVO on reduced Σ̂
+    5. Final = intra @ inter
+    """
+    n_assets = returns.shape[1]
+    if n_assets < 2:
+        raise ValueError(f"NCO requires >= 2 assets, got {n_assets}")
+
+    if n_assets == 2:
+        cov = returns.cov()
+        weights = _opt_port(cov, mu)
+        if breakdown_out is not None:
+            breakdown_out["n_clusters"] = 1
+            breakdown_out["silhouette"] = None
+            breakdown_out["cluster_labels"] = {t: 0 for t in returns.columns}
+            breakdown_out["intra_weights"] = weights.to_dict()
+            breakdown_out["inter_weights"] = {0: 1.0}
+            breakdown_out["mu_provided"] = mu is not None
+        return weights
+
+    cov = returns.cov()
+    corr = returns.corr().fillna(0.0)
+
+    if max_num_clusters is None:
+        max_num_clusters = max(
+            NCO_MIN_NUM_CLUSTERS,
+            int(n_assets * NCO_MAX_NUM_CLUSTERS_RATIO),
+        )
+    max_num_clusters = min(max_num_clusters, n_assets - 1)
+
+    labels, silh = _hierarchical_cluster(corr, max_num_clusters)
+
+    intra_weights = _intra_cluster_weights(cov, labels, mu)
+
+    reduced_cov_arr = intra_weights.values.T @ cov.values @ intra_weights.values
+    reduced_cov = pd.DataFrame(
+        reduced_cov_arr,
+        index=intra_weights.columns,
+        columns=intra_weights.columns,
+    )
+
+    reduced_mu = None
+    if mu is not None:
+        reduced_mu = pd.Series(
+            intra_weights.values.T @ mu.reindex(intra_weights.index).fillna(0.0).values,
+            index=intra_weights.columns,
+        )
+
+    inter_weights = _inter_cluster_weights(reduced_cov, reduced_mu)
+    final = intra_weights.values @ inter_weights.values
+    final_series = pd.Series(final, index=intra_weights.index)
+    final_sum = final_series.sum()
+    if final_sum > 0:
+        final_series = final_series / final_sum
+    else:
+        final_series = pd.Series(
+            np.ones(n_assets) / n_assets, index=intra_weights.index,
+        )
+
+    if breakdown_out is not None:
+        breakdown_out["n_clusters"] = int(len(set(labels)))
+        breakdown_out["silhouette"] = float(silh) if silh is not None else None
+        breakdown_out["cluster_labels"] = {
+            ticker: int(label)
+            for ticker, label in zip(returns.columns, labels)
+        }
+        breakdown_out["intra_weights"] = intra_weights.to_dict()
+        breakdown_out["inter_weights"] = inter_weights.to_dict()
+        breakdown_out["mu_provided"] = mu is not None
+
+    return final_series
