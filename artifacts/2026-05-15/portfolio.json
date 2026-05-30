@@ -1,69 +1,69 @@
 {
   "as_of_date": "2026-05-15",
   "capital_krw": 1000000000,
-  "method": "min_variance",
+  "method": "nco",
   "bucket_target": {
-    "kr_equity": 0.13555978484881892,
-    "global_equity": 0.13979058490873505,
-    "fx_commodity": 0.20188391908111722,
-    "bond": 0.2476429601376865,
-    "cash_mmf": 0.27512275102364236,
+    "kr_equity": 0.1357196605626327,
+    "global_equity": 0.14266285197061992,
+    "fx_commodity": 0.20139579424011592,
+    "bond": 0.24736522131827568,
+    "cash_mmf": 0.27285647190835577,
     "rationale": "Factor model: dominant_scenario=late_cycle, conviction=medium. Top contributors: F3_real_rate=+0.79, F9_liquidity_regime=+0.69, F10_systemic_liquidity=-0.67",
-    "bond_tips_share": 0.30244572420829313
+    "bond_tips_share": 0.3007957242082931
   },
   "weights": {
-    "A0061Z0": 0.2,
-    "A091160": 0.00827,
-    "A133690": 0.0547,
-    "A139250": 0.02699,
-    "A144600": 0.01909,
-    "A157450": 0.2,
-    "A261220": 0.01682,
-    "A272560": 0.2,
-    "A283580": 0.07413,
-    "A468370": 0.2
+    "A139250": 0.1,
+    "A091160": 0.1,
+    "A133690": 0.1,
+    "A283580": 0.1,
+    "A261220": 0.1,
+    "A144600": 0.1,
+    "A468370": 0.1,
+    "A157450": 0.1,
+    "A0061Z0": 0.1,
+    "A272560": 0.1
   },
-  "rationale": "DETERMINISTIC FALLBACK after 2 failed attempts: re-optimized with min-variance + hard 20% cap. Original method: black_litterman.",
+  "rationale": "ENB CRITICAL fallback — equal weight + cap clip",
   "expected_volatility": null,
   "expected_sharpe": null,
   "research_decision": {
     "bucket_target": {
-      "kr_equity": 0.13555978484881892,
-      "global_equity": 0.13979058490873505,
-      "fx_commodity": 0.20188391908111722,
-      "bond": 0.2476429601376865,
-      "cash_mmf": 0.27512275102364236,
+      "kr_equity": 0.1357196605626327,
+      "global_equity": 0.14266285197061992,
+      "fx_commodity": 0.20139579424011592,
+      "bond": 0.24736522131827568,
+      "cash_mmf": 0.27285647190835577,
       "rationale": "Factor model: dominant_scenario=late_cycle, conviction=medium. Top contributors: F3_real_rate=+0.79, F9_liquidity_regime=+0.69, F10_systemic_liquidity=-0.67",
-      "bond_tips_share": 0.30244572420829313
+      "bond_tips_share": 0.3007957242082931
     },
     "conviction": "medium",
     "dominant_scenario": "late_cycle",
     "factor_scores": {
-      "F1_growth": 0.22535258470415073,
-      "F2_inflation": 0.5307802054191347,
+      "F1_growth": 0.22035258470415073,
+      "F2_inflation": 0.5237802054191347,
       "F3_real_rate": 0.7929411764705884,
       "F4_term_premium": -0.048947368421052836,
       "F5_credit_cycle": -0.3715382684654878,
       "F6_krw_regime": 0.13721728410201994,
-      "F7_equity_vol_regime": 0.28616425365943715,
+      "F7_equity_vol_regime": 0.25124078683383144,
       "F8_valuation": 0.21097989082056004,
       "F9_liquidity_regime": 0.6890835530946421,
       "F10_systemic_liquidity": -0.671764705882353
     },
     "factor_contributions": {
       "F1_growth": {
-        "kr_equity": 0.00457465746949426,
-        "global_equity": 0.015053552658237268,
-        "fx_commodity": -0.006850718575006182,
-        "bond": -0.01665355600963674,
-        "cash_mmf": -0.006963394867358258
+        "kr_equity": 0.00447315746949426,
+        "global_equity": 0.014719552658237269,
+        "fx_commodity": -0.006698718575006182,
+        "bond": -0.016284056009636737,
+        "cash_mmf": -0.0068088948673582575
       },
       "F2_inflation": {
-        "kr_equity": -0.061198957684826236,
-        "global_equity": -0.019691945621049898,
-        "fx_commodity": 0.023619719141151494,
-        "bond": -0.0008492483286706156,
-        "cash_mmf": 0.04002082748860276
+        "kr_equity": -0.06039185768482623,
+        "global_equity": -0.0194322456210499,
+        "fx_commodity": 0.023308219141151495,
+        "bond": -0.0008380483286706156,
+        "cash_mmf": 0.039493027488602755
       },
       "F3_real_rate": {
         "kr_equity": 0.03052823529411765,
@@ -94,11 +94,11 @@
         "cash_mmf": 0.013392406928357147
       },
       "F7_equity_vol_regime": {
-        "kr_equity": 0.0002575478282934934,
-        "global_equity": -0.027300069799110305,
-        "fx_commodity": -0.0017742183726885102,
-        "bond": 0.00031478067902538086,
-        "cash_mmf": 0.011045940191254275
+        "kr_equity": 0.0002261167081504483,
+        "global_equity": -0.02396837106394752,
+        "fx_commodity": -0.0015576928783697548,
+        "bond": 0.0002763648655172146,
+        "cash_mmf": 0.009697894371785894
       },
       "F8_valuation": {
         "kr_equity": -0.01251110752565921,
@@ -130,12 +130,12 @@
       "cash_mmf": 0.2
     },
     "safety_diagnostics": {
-      "pre_projection_risk_asset": 0.39284184997930005,
+      "pre_projection_risk_asset": 0.3968304430886386,
       "pre_projection_negatives": [],
-      "pre_projection_sum": 0.8972216724437999,
+      "pre_projection_sum": 0.8998312039201619,
       "mandate_violated_pre_projection": false,
       "extreme_factor_active": false,
-      "projection_l2_distance": 0.0459638654058807,
+      "projection_l2_distance": 0.04479684745176652,
       "projection_intervened": true,
       "cap_hits": 0,
       "cap_hits_detail": [],
@@ -158,40 +158,24 @@
     }
   },
   "method_choice": {
-    "method": "black_litterman",
-    "params": {
-      "_bl_trigger": true
-    },
-    "reasoning": "regime_confidence=0.90 ≥ 0.7, scenario=late_cycle: BL views from rulebook.",
-    "rule_fired": "bl_high_confidence",
-    "rule_index": 2,
+    "method": "nco",
+    "params": {},
+    "reasoning": "forced via state['force_method']=nco",
+    "rule_fired": "state_override",
+    "rule_index": -1,
     "inputs": {
-      "regime_quadrant": "growth_inflation",
-      "regime_confidence": 0.9,
-      "systemic_score": 6.0,
-      "systemic_regime": "neutral",
-      "dominant_scenario": "late_cycle",
-      "conviction": "medium",
-      "feedback_present": true,
-      "degraded_inputs": false,
-      "regime_staleness": 0,
-      "systemic_staleness": 0
+      "force_method": "nco"
     }
   },
   "risk_overlay": {
     "staleness_days": 0,
     "source_date": "2026-05-15",
-    "weight_ceilings": {
-      "A0061Z0": 0.165,
-      "A272560": 0.165
-    },
-    "cluster_caps": {
-      "cluster_1": 0.42600000000000005
-    },
+    "weight_ceilings": {},
+    "cluster_caps": {},
     "risk_asset_multiplier": 1.0,
     "tail_hedge_floor": {},
-    "severity_decision": "critical 1 → 70% strength (conservative initial)",
-    "strength_applied": 0.7,
+    "severity_decision": "low/single medium/none → archive only",
+    "strength_applied": 0.0,
     "lens_concerns": [
       {
         "lens": "tail_risk",
@@ -202,26 +186,10 @@
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "CVaR_95_1d=1.10%, systemic_score=6.0, vix_term=contango, funding=calm"
+        "evidence": "CVaR_95_1d=2.06%, systemic_score=4.0, vix_term=contango, funding=calm"
       },
       {
         "lens": "concentration",
-        "level": "critical",
-        "proposed_overlay": {
-          "weight_ceilings": {
-            "A0061Z0": 0.15,
-            "A272560": 0.15
-          },
-          "cluster_caps": {
-            "cluster_1": 0.18
-          },
-          "risk_asset_multiplier": 1.0,
-          "tail_hedge_floor": {}
-        },
-        "evidence": "HHI=0.132, top1=20.8%, top3_sum=53.3%, max_cluster=11.8% (3 clusters)"
-      },
-      {
-        "lens": "macro_conditional",
         "level": "none",
         "proposed_overlay": {
           "weight_ceilings": {},
@@ -229,63 +197,67 @@
           "risk_asset_multiplier": 1.0,
           "tail_hedge_floor": {}
         },
-        "evidence": "risk_asset_weight=34.9%, scenario=late_cycle, conviction=medium, systemic=6.0, regime=growth_inflation, valuation_z=0.21097989082056004"
+        "evidence": "HHI=0.100, top1=10.0%, top3_sum=30.0%, max_cluster=10.0% (3 clusters)"
+      },
+      {
+        "lens": "macro_conditional",
+        "level": "medium",
+        "proposed_overlay": {
+          "weight_ceilings": {},
+          "cluster_caps": {},
+          "risk_asset_multiplier": 0.92,
+          "tail_hedge_floor": {}
+        },
+        "evidence": "risk_asset_weight=60.0%, scenario=late_cycle, conviction=medium, systemic=4.0, regime=growth_inflation, valuation_z=0.21097989082056004"
       }
     ],
-    "overlay_apply_outcome": "fallback_to_1st"
+    "overlay_apply_outcome": "primary_success"
   },
   "portfolio_numerics": {
     "staleness_days": 0,
     "source_date": "2026-05-15",
-    "hhi": 0.131576,
-    "top1_weight": 0.207768,
-    "top3_weight_sum": 0.533068,
+    "hhi": 0.1,
+    "top1_weight": 0.1,
+    "top3_weight_sum": 0.3,
     "cluster_exposure": {
-      "cluster_1": 0.117532,
-      "cluster_12": 0.07594,
-      "cluster_15": 0.03941
+      "cluster_1": 0.1,
+      "cluster_12": 0.1,
+      "cluster_15": 0.1
     },
-    "max_cluster_exposure": 0.117532,
-    "realized_vol_60d": 0.005113,
-    "var_95_1d": 0.00526,
-    "cvar_95_1d": 0.010959,
-    "cvar_95_1d_stress": 0.019637,
-    "cvar_stress_ratio": 1.792,
+    "max_cluster_exposure": 0.1,
+    "realized_vol_60d": 0.009225,
+    "var_95_1d": 0.0103,
+    "cvar_95_1d": 0.020558,
+    "cvar_95_1d_stress": 0.031432,
+    "cvar_stress_ratio": 1.529,
     "n_assets": 10
   },
   "validation_report": {
-    "passed": false,
-    "violations": [
-      {
-        "rule": "single_etf_cap",
-        "description": "A0061Z0 weight 0.2078 > 0.2",
-        "severity": "hard",
-        "suggested_fix": "Reduce A0061Z0 to ≤0.2"
-      }
-    ],
+    "passed": true,
+    "violations": [],
     "suggestions": []
   },
   "rebalance_mode": "initial",
   "allocation_attribution": {
     "as_of_date": "2026-05-15",
     "config": {
-      "attempts": 1,
+      "attempts": 0,
       "selection_strategy": "enb_greedy",
       "capital_krw": 1000000000.0,
       "regime_quadrant": "growth_inflation",
       "regime_confidence": 0.9,
-      "systemic_score": 6.0,
+      "systemic_score": 4.0,
       "systemic_regime": "neutral",
       "dominant_scenario": "late_cycle",
       "legacy_scenario": "late_cycle",
       "conviction": "medium",
-      "bond_tips_share": 0.30244572420829313,
+      "bond_tips_share": 0.3007957242082931,
       "bucket_target": {
-        "kr_equity": 0.12881304609925537,
-        "global_equity": 0.11870188807370188,
-        "fx_commodity": 0.20188391908111722,
-        "bond": 0.1753692024724677,
-        "cash_mmf": 0.37523194427345785
+        "kr_equity": 0.12867172868388596,
+        "global_equity": 0.12114084720331872,
+        "fx_commodity": 0.20139579424011592,
+        "bond": 0.1751725207851359,
+        "cash_mmf": 0.3736191090875435
       },
       "regime_staleness": 0,
       "systemic_staleness": 0,
@@ -293,28 +265,28 @@
       "correlation_threshold": 0.85,
       "longlist_multiplier": 3,
       "bucket_target_stage2": {
-        "kr_equity": 0.13555978484881892,
-        "global_equity": 0.13979058490873505,
-        "fx_commodity": 0.20188391908111722,
-        "bond": 0.2476429601376865,
-        "cash_mmf": 0.27512275102364236,
-        "bond_tips_share": 0.30244572420829313
+        "kr_equity": 0.1357196605626327,
+        "global_equity": 0.14266285197061992,
+        "fx_commodity": 0.20139579424011592,
+        "bond": 0.24736522131827568,
+        "cash_mmf": 0.27285647190835577,
+        "bond_tips_share": 0.3007957242082931
       },
       "bucket_target_post_spillover": {
-        "kr_equity": 0.12881304609925537,
-        "global_equity": 0.11870188807370188,
-        "fx_commodity": 0.20188391908111722,
-        "bond": 0.1753692024724677,
-        "cash_mmf": 0.37523194427345785
+        "kr_equity": 0.12867172868388596,
+        "global_equity": 0.12114084720331872,
+        "fx_commodity": 0.20139579424011592,
+        "bond": 0.1751725207851359,
+        "cash_mmf": 0.3736191090875435
       }
     },
     "research_safety": {
-      "pre_projection_risk_asset": 0.39284184997930005,
+      "pre_projection_risk_asset": 0.3968304430886386,
       "pre_projection_negatives": [],
-      "pre_projection_sum": 0.8972216724437999,
+      "pre_projection_sum": 0.8998312039201619,
       "mandate_violated_pre_projection": false,
       "extreme_factor_active": false,
-      "projection_l2_distance": 0.0459638654058807,
+      "projection_l2_distance": 0.04479684745176652,
       "projection_intervened": true,
       "cap_hits": 0,
       "cap_hits_detail": [],
@@ -354,13 +326,13 @@
         }
       ],
       "factor_scores": {
-        "F1_growth": 0.22535258470415073,
-        "F2_inflation": 0.5307802054191347,
+        "F1_growth": 0.22035258470415073,
+        "F2_inflation": 0.5237802054191347,
         "F3_real_rate": 0.7929411764705884,
         "F4_term_premium": -0.048947368421052836,
         "F5_credit_cycle": -0.3715382684654878,
         "F6_krw_regime": 0.13721728410201994,
-        "F7_equity_vol_regime": 0.28616425365943715,
+        "F7_equity_vol_regime": 0.25124078683383144,
         "F8_valuation": 0.21097989082056004,
         "F9_liquidity_regime": 0.6890835530946421,
         "F10_systemic_liquidity": -0.671764705882353
@@ -373,11 +345,11 @@
       "n_tickers_with_te": 0,
       "n_tickers_with_pd": 0,
       "n_tickers_with_vol_aum": 0,
-      "fetch_duration_seconds": 0.22510108404094353
+      "fetch_duration_seconds": 0.25696316704852507
     },
     "buckets": {
       "kr_equity": {
-        "bucket_weight": 0.13555978484881892,
+        "bucket_weight": 0.1357196605626327,
         "skipped": false,
         "eligible_count": 53,
         "bond_split": false,
@@ -471,7 +443,7 @@
           "A466940": -0.10044070512820515,
           "A463250": -0.16028846153846155,
           "A139260": 0.11905448717948719,
-          "A462010": 0.32553886969026535,
+          "A462010": 0.32448886969026536,
           "A434730": -0.03977564102564101,
           "A091180": -0.335536858974359,
           "A091170": -0.16790064102564106,
@@ -482,12 +454,12 @@
           "A139270": -0.19117788461538462,
           "A227540": -0.024110576923076943,
           "A147970": -0.14697115384615383,
-          "A139250": 0.3543209209723166,
+          "A139250": 0.3532709209723166,
           "A174350": -0.23078525641025643,
           "A227550": -0.1469871794871795,
           "A227570": -0.11514423076923078,
           "A139290": -0.3996794871794872,
-          "A139240": 0.2572456004594961,
+          "A139240": 0.25619560045949613,
           "A315270": -0.29715544871794874,
           "A227560": -0.2849278846153846
         },
@@ -2238,11 +2210,11 @@
             },
             "macro_align_boost": {
               "fx_group": "inflation_hedge",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
-              "boost": 0.07961703081287021
+              "boost": 0.07856703081287021
             },
-            "final_score": 0.32553886969026535
+            "final_score": 0.32448886969026536
           },
           "A434730": {
             "raw": {
@@ -2772,11 +2744,11 @@
             },
             "macro_align_boost": {
               "fx_group": "inflation_hedge",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
-              "boost": 0.07961703081287021
+              "boost": 0.07856703081287021
             },
-            "final_score": 0.3543209209723166
+            "final_score": 0.3532709209723166
           },
           "A174350": {
             "raw": {
@@ -3018,11 +2990,11 @@
             },
             "macro_align_boost": {
               "fx_group": "inflation_hedge",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
-              "boost": 0.07961703081287021
+              "boost": 0.07856703081287021
             },
-            "final_score": 0.2572456004594961
+            "final_score": 0.25619560045949613
           },
           "A315270": {
             "raw": {
@@ -3290,7 +3262,7 @@
         ]
       },
       "global_equity": {
-        "bucket_weight": 0.13979058490873505,
+        "bucket_weight": 0.14266285197061992,
         "skipped": false,
         "eligible_count": 78,
         "bond_split": false,
@@ -7540,7 +7512,7 @@
         ]
       },
       "fx_commodity": {
-        "bucket_weight": 0.20188391908111722,
+        "bucket_weight": 0.20139579424011592,
         "skipped": false,
         "eligible_count": 7,
         "bond_split": false,
@@ -7554,13 +7526,13 @@
           "A271060"
         ],
         "alpha_scores": {
-          "A411060": 0.06774203081287018,
-          "A144600": 0.1628809197017591,
-          "A132030": -0.01600796918712981,
-          "A261220": 0.5942142674340831,
+          "A411060": 0.06669203081287019,
+          "A144600": 0.1618309197017591,
+          "A132030": -0.017057969187129804,
+          "A261220": 0.5931642674340831,
           "A261240": -0.059373950931229,
           "A292560": -0.20958228426456238,
-          "A271060": -0.23100796918712985
+          "A271060": -0.23205796918712984
         },
         "impl_scores": {
           "A411060": 0.165,
@@ -7631,11 +7603,11 @@
             },
             "macro_align_boost": {
               "fx_group": "inflation_hedge",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
-              "boost": 0.07961703081287021
+              "boost": 0.07856703081287021
             },
-            "final_score": 0.06774203081287018
+            "final_score": 0.06669203081287019
           },
           "A144600": {
             "raw": {
@@ -7685,11 +7657,11 @@
             },
             "macro_align_boost": {
               "fx_group": "inflation_hedge",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
-              "boost": 0.07961703081287021
+              "boost": 0.07856703081287021
             },
-            "final_score": 0.1628809197017591
+            "final_score": 0.1618309197017591
           },
           "A132030": {
             "raw": {
@@ -7739,11 +7711,11 @@
             },
             "macro_align_boost": {
               "fx_group": "inflation_hedge",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
-              "boost": 0.07961703081287021
+              "boost": 0.07856703081287021
             },
-            "final_score": -0.01600796918712981
+            "final_score": -0.017057969187129804
           },
           "A261220": {
             "raw": {
@@ -7793,11 +7765,11 @@
             },
             "macro_align_boost": {
               "fx_group": "inflation_hedge",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
-              "boost": 0.07961703081287021
+              "boost": 0.07856703081287021
             },
-            "final_score": 0.5942142674340831
+            "final_score": 0.5931642674340831
           },
           "A261240": {
             "raw": {
@@ -7847,7 +7819,7 @@
             },
             "macro_align_boost": {
               "fx_group": "safe_haven",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
               "boost": 0.03715382684654878
             },
@@ -7901,7 +7873,7 @@
             },
             "macro_align_boost": {
               "fx_group": "safe_haven",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
               "boost": 0.03715382684654878
             },
@@ -7955,11 +7927,11 @@
             },
             "macro_align_boost": {
               "fx_group": "inflation_hedge",
-              "f2_z": 0.5307802054191347,
+              "f2_z": 0.5237802054191347,
               "f5_z": -0.3715382684654878,
-              "boost": 0.07961703081287021
+              "boost": 0.07856703081287021
             },
-            "final_score": -0.23100796918712985
+            "final_score": -0.23205796918712984
           }
         },
         "selection_trace": {
@@ -8016,11 +7988,11 @@
         ]
       },
       "bond": {
-        "bucket_weight": 0.2476429601376865,
+        "bucket_weight": 0.24736522131827568,
         "skipped": false,
         "eligible_count": 41,
         "bond_split": true,
-        "tips_share": 0.30244572420829313,
+        "tips_share": 0.3007957242082931,
         "tips_quota": 1,
         "nominal_quota": 3,
         "sub_pools": {
@@ -9888,7 +9860,7 @@
         }
       },
       "cash_mmf": {
-        "bucket_weight": 0.27512275102364236,
+        "bucket_weight": 0.27285647190835577,
         "skipped": false,
         "eligible_count": 9,
         "bond_split": false,
@@ -10414,7 +10386,7 @@
           "alpha_impl_blend_used": 0.85,
           "n_max_components": {
             "n_positive_alpha": 0,
-            "weight_cap": 11,
+            "weight_cap": 10,
             "capital_cap": 5,
             "abs_max": 8,
             "n_max_chosen": 0
@@ -10426,23 +10398,23 @@
     },
     "cash_spillover": {
       "adjusted_bucket_target": {
-        "kr_equity": 0.12881304609925537,
-        "global_equity": 0.11870188807370188,
-        "fx_commodity": 0.20188391908111722,
-        "bond": 0.1753692024724677,
-        "cash_mmf": 0.37523194427345785,
-        "rationale": "Factor model: dominant_scenario=late_cycle, conviction=medium. Top contributors: F3_real_rate=+0.79, F9_liquidity_regime=+0.69, F10_systemic_liquidity=-0.67 | spillover 0.100 → cash",
-        "bond_tips_share": 0.30244572420829313
+        "kr_equity": 0.12867172868388596,
+        "global_equity": 0.12114084720331872,
+        "fx_commodity": 0.20139579424011592,
+        "bond": 0.1751725207851359,
+        "cash_mmf": 0.3736191090875435,
+        "rationale": "Factor model: dominant_scenario=late_cycle, conviction=medium. Top contributors: F3_real_rate=+0.79, F9_liquidity_regime=+0.69, F10_systemic_liquidity=-0.67 | spillover 0.101 → cash",
+        "bond_tips_share": 0.3007957242082931
       },
       "convictions": {
         "kr_equity": {
           "bucket": "kr_equity",
           "n_chosen": 2,
-          "mean_alpha": 0.23089443484513267,
+          "mean_alpha": 0.23036943484513267,
           "enb": 1.746030261907313,
           "threshold": 0.3,
-          "conviction": 0.9502305292304222,
-          "spillover_ratio": 0.04976947076957783
+          "conviction": 0.9480699270133068,
+          "spillover_ratio": 0.051930072986693165
         },
         "global_equity": {
           "bucket": "global_equity",
@@ -10456,10 +10428,10 @@
         "fx_commodity": {
           "bucket": "fx_commodity",
           "n_chosen": 2,
-          "mean_alpha": 0.3785475935679211,
+          "mean_alpha": 0.3774975935679211,
           "enb": 1.9970741006001427,
           "threshold": 0.15,
-          "conviction": 3.5637596992561402,
+          "conviction": 3.553874686782675,
           "spillover_ratio": 0.0
         },
         "bond": {
@@ -10482,7 +10454,7 @@
         }
       },
       "cash_overflow_to_buckets": {},
-      "total_spillover_to_cash": 0.10010919324981551,
+      "total_spillover_to_cash": 0.10076263717918771,
       "cash_cap_triggered": false,
       "thresholds": {
         "kr_equity": 0.3,
@@ -10494,97 +10466,145 @@
     },
     "optimization": {
       "cov_breakdown": {
-        "estimator": "ledoit_wolf",
-        "shrinkage_intensity": 0.12061900457666828,
+        "estimator": "qis",
+        "shrinkage_intensity": -0.2795351799239727,
         "n_obs": 218,
         "n_assets": 10
       },
-      "bl_views_breakdown": {
-        "scenario": "late_cycle",
-        "regime_confidence_raw": 0.9,
-        "confidence_used": 0.9,
-        "n_views_per_bucket": {
-          "kr_equity": 2,
-          "global_equity": 2,
-          "fx_commodity": 2,
-          "bond": 4,
-          "cash_mmf": 0
+      "nco_final_norm_intervened": true,
+      "nco_breakdown_per_pool": {
+        "kr_equity": {
+          "n_clusters": 1,
+          "silhouette": null,
+          "cluster_labels": {
+            "A139250": 0,
+            "A091160": 0
+          },
+          "intra_weights": {
+            "A139250": 0.9051672735290367,
+            "A091160": 0.09483272647096334
+          },
+          "inter_weights": {
+            "0": 1.0
+          },
+          "mu_provided": false
         },
-        "rulebook_returns_used": {
-          "kr_equity": 0.02,
-          "global_equity": 0.04,
-          "fx_commodity": 0.08,
-          "bond": 0.06,
-          "cash_mmf": 0.025
+        "global_equity": {
+          "n_clusters": 1,
+          "silhouette": null,
+          "cluster_labels": {
+            "A133690": 0,
+            "A283580": 0
+          },
+          "intra_weights": {
+            "A133690": 0.4823049513187982,
+            "A283580": 0.5176950486812018
+          },
+          "inter_weights": {
+            "0": 1.0
+          },
+          "mu_provided": false
         },
-        "tilt_params": {
-          "tau": 0.05,
-          "view_conf_multi": 0.8,
-          "view_conf_multi_applied": true
+        "fx_commodity": {
+          "n_clusters": 1,
+          "silhouette": null,
+          "cluster_labels": {
+            "A261220": 0,
+            "A144600": 0
+          },
+          "intra_weights": {
+            "A261220": 0.5483769508430903,
+            "A144600": 0.4516230491569097
+          },
+          "inter_weights": {
+            "0": 1.0
+          },
+          "mu_provided": false
+        },
+        "bond_tips": {
+          "n_assets": 1,
+          "fallback": "single_asset"
+        },
+        "bond_nominal": {
+          "cov_breakdown": {
+            "estimator": "qis",
+            "shrinkage_intensity": -0.06576428368464556,
+            "n_obs": 218,
+            "n_assets": 3
+          },
+          "n_clusters": 2,
+          "silhouette": 0.030923243658909676,
+          "cluster_labels": {
+            "A157450": 1,
+            "A0061Z0": 2,
+            "A272560": 1
+          },
+          "intra_weights": {
+            "1": {
+              "A157450": 0.7001186101305293,
+              "A0061Z0": 0.0,
+              "A272560": 0.2998813898694708
+            },
+            "2": {
+              "A157450": 0.0,
+              "A0061Z0": 1.0,
+              "A272560": 0.0
+            }
+          },
+          "inter_weights": {
+            "1": 0.471754098199633,
+            "2": 0.528245901800367
+          },
+          "mu_provided": false
         }
       },
       "subcategory_capped": [
         {
           "bucket": "kr_equity",
           "sub_category": "materials_energy",
-          "original_sum": 0.05494,
-          "capped_to": 0.03941,
+          "original_sum": 0.18594027934568466,
+          "capped_to": 0.10271045185976883,
           "redistributed_to_others": 1
         },
         {
           "bucket": "global_equity",
-          "sub_category": "us_tech_nasdaq",
-          "original_sum": 0.06614,
-          "capped_to": 0.05935,
+          "sub_category": "china",
+          "original_sum": 0.10012121649951335,
+          "capped_to": 0.09669902846720899,
           "redistributed_to_others": 1
         },
         {
           "bucket": "fx_commodity",
           "sub_category": "oil_energy",
-          "original_sum": 0.09779,
-          "capped_to": 0.07594000000000001,
+          "original_sum": 0.17631574200345854,
+          "capped_to": 0.16076144496261713,
           "redistributed_to_others": 1
-        },
-        {
-          "bucket": "bond",
-          "sub_category": "kr_treasury",
-          "original_sum": 0.36541,
-          "capped_to": 0.3253,
-          "redistributed_to_others": 2
         }
       ]
     },
     "cov_breakdown": {
-      "estimator": "ledoit_wolf",
-      "shrinkage_intensity": 0.12061900457666828,
+      "estimator": "qis",
+      "shrinkage_intensity": -0.2795351799239727,
       "n_obs": 218,
       "n_assets": 10
     },
-    "enb": 3.3061099292182203,
-    "enb_action": "none",
+    "enb": 1.8714068109067474,
+    "enb_post_fallback": 2.312305263603854,
+    "enb_action": "equal_weight_fallback",
     "method_picker": {
-      "method": "black_litterman",
-      "rule_fired": "bl_high_confidence",
-      "rule_index": 2,
-      "reasoning": "regime_confidence=0.90 ≥ 0.7, scenario=late_cycle: BL views from rulebook.",
+      "method": "nco",
+      "rule_fired": "state_override",
+      "rule_index": -1,
+      "reasoning": "forced via state['force_method']=nco",
       "inputs": {
-        "regime_quadrant": "growth_inflation",
-        "regime_confidence": 0.9,
-        "systemic_score": 6.0,
-        "systemic_regime": "neutral",
-        "dominant_scenario": "late_cycle",
-        "conviction": "medium",
-        "feedback_present": true,
-        "degraded_inputs": false,
-        "regime_staleness": 0,
-        "systemic_staleness": 0
+        "force_method": "nco"
       }
     },
     "weight_vector_summary": {
       "n_positions": 10,
-      "max_single_weight": 0.20776813703145275,
-      "expected_vol": 0.07741353572251806,
-      "expected_sharpe": 0.5323570083942138
+      "max_single_weight": 0.1,
+      "expected_vol": null,
+      "expected_sharpe": null
     }
   },
   "risk_judge_attribution": null,
