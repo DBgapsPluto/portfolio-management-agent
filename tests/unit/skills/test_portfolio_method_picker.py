@@ -169,7 +169,12 @@ def test_degraded_inputs_forces_min_variance():
 
 
 def test_normal_staleness_does_not_trigger_strict_mode():
-    """정상 stale (1-7d) 은 통과 — 둘 다 ≥99 일 때만 발동."""
+    """정상 stale (1-7d) 은 통과 — 둘 다 ≥99 일 때만 발동.
+
+    Phase 3b: regime_confidence=0.8 ≥ BL_TRIGGER_CONFIDENCE=0.7 이므로 goldilocks 는
+    bl_high_confidence rule(2) 로 BLACK_LITTERMAN 으로 전환됨. degraded_inputs rule(0) 은
+    발동되지 않음 (정상 경로 통과 확인이 이 테스트의 핵심).
+    """
     out = pick_optimization_method(
         regime_quadrant="growth_disinflation",
         regime_confidence=0.8,
@@ -180,9 +185,11 @@ def test_normal_staleness_does_not_trigger_strict_mode():
         regime_staleness=3,
         systemic_staleness=2,
     )
-    # goldilocks → HRP
-    assert out.method == OptimizationMethod.HRP
-    assert out.rule_fired == "scenario_mapping"
+    # degraded_inputs rule 0 발동 안 됨 (정상 경로)
+    assert out.rule_fired != "degraded_inputs_strict"
+    # Phase 3b: goldilocks + conf=0.8 → BL trigger (rule 2)
+    assert out.method == OptimizationMethod.BLACK_LITTERMAN
+    assert out.rule_fired == "bl_high_confidence"
 
 
 def test_low_conviction_downgrade_attribution():
@@ -203,3 +210,59 @@ def test_named_const_present():
     assert mp.SYSTEMIC_EXTREME_THRESHOLD == 8.0
     assert hasattr(mp, "LOW_CONVICTION_HRP_DOWNGRADE")
     assert mp.LOW_CONVICTION_HRP_DOWNGRADE is True
+
+
+# === Phase 3b: BL trigger rule tests ===
+
+from tradingagents.skills.portfolio.method_picker import BL_TRIGGER_CONFIDENCE
+
+
+def test_picker_bl_trigger_high_confidence_known_scenario():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_inflation",
+        regime_confidence=0.8,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="goldilocks",
+        conviction="high",
+    )
+    assert choice.method == OptimizationMethod.BLACK_LITTERMAN
+    assert choice.rule_fired == "bl_high_confidence"
+    assert choice.params == {"_bl_trigger": True}
+
+
+def test_picker_bl_not_triggered_low_confidence():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_inflation",
+        regime_confidence=0.5,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="goldilocks",
+        conviction="high",
+    )
+    assert choice.method != OptimizationMethod.BLACK_LITTERMAN
+    assert choice.rule_fired == "scenario_mapping"
+
+
+def test_picker_bl_not_triggered_no_scenario():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_inflation",
+        regime_confidence=0.9,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario=None,
+        conviction="high",
+    )
+    assert choice.method != OptimizationMethod.BLACK_LITTERMAN
+
+
+def test_picker_bl_trigger_precedes_scenario_mapping():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_inflation",
+        regime_confidence=BL_TRIGGER_CONFIDENCE,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="goldilocks",
+        conviction="high",
+    )
+    assert choice.method == OptimizationMethod.BLACK_LITTERMAN

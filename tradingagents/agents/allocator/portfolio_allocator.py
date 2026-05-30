@@ -330,6 +330,9 @@ def create_portfolio_allocator(
             attempts=attempts,
             sub_category_lookup=sub_category_lookup,
             attribution=attribution["optimization"],
+            # Phase 3b: BL views adapter context
+            scenario=dominant_scenario,
+            regime_confidence=regime.confidence if regime else 0.5,
         )
 
         # Phase 1 — ENB 사후 측정 (warning-only)
@@ -483,6 +486,9 @@ def _optimize_with_bucket_constraints(
     attempts: int,
     sub_category_lookup: dict[str, str | None] | None = None,
     attribution: dict | None = None,
+    *,
+    scenario: str | None = None,
+    regime_confidence: float = 0.5,
 ) -> tuple[WeightVector, pd.DataFrame]:
     """Optimize with simultaneous (single-cap, bucket sum) constraints.
 
@@ -552,8 +558,23 @@ def _optimize_with_bucket_constraints(
 
     if method == OptimizationMethod.BLACK_LITTERMAN:
         from pypfopt import BlackLittermanModel
-        views = method_params.get("views", {})
-        confs = method_params.get("view_confidences", [])
+        from tradingagents.skills.portfolio.bl_views import generate_bl_views
+
+        if method_params.get("_bl_trigger"):
+            bl_breakdown: dict = {}
+            views, confs = generate_bl_views(
+                scenario=scenario,
+                regime_confidence=regime_confidence,
+                candidates=candidates.bucket_to_tickers,
+                sub_category_lookup=sub_category_lookup,
+                breakdown_out=bl_breakdown,
+            )
+            if attribution is not None:
+                attribution["bl_views_breakdown"] = bl_breakdown
+        else:
+            views = method_params.get("views", {})
+            confs = method_params.get("view_confidences", [])
+
         if views:
             bl = BlackLittermanModel(
                 S, absolute_views=views, omega="idzorek", view_confidences=confs,
@@ -561,6 +582,8 @@ def _optimize_with_bucket_constraints(
             mu = bl.bl_returns()
         else:
             mu = expected_returns.mean_historical_return(returns, returns_data=True)
+            if attribution is not None:
+                attribution["bl_views_fallback"] = "empty_views_historical_fallback"
     else:
         mu = expected_returns.mean_historical_return(returns, returns_data=True)
 
