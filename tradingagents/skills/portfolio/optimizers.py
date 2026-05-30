@@ -3,6 +3,7 @@ import pandas as pd
 from pypfopt import HRPOpt, EfficientFrontier, BlackLittermanModel, risk_models, expected_returns
 
 from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
+from tradingagents.skills.portfolio.cov_estimator import compute_robust_cov
 from tradingagents.skills.registry import register_skill
 
 
@@ -36,7 +37,7 @@ def optimize_hrp(returns: pd.DataFrame) -> WeightVector:
 @register_skill(name="optimize_risk_parity", category="portfolio")
 def optimize_risk_parity(returns: pd.DataFrame) -> WeightVector:
     """Risk Parity optimization (min volatility approximation with 20% cap)."""
-    S = risk_models.sample_cov(returns)
+    S = compute_robust_cov(returns)
     ef = EfficientFrontier(None, S, weight_bounds=(0, 0.20))
     ef.min_volatility()
     weights = {k: float(v) for k, v in ef.clean_weights().items() if v > 1e-4}
@@ -53,7 +54,7 @@ def optimize_risk_parity(returns: pd.DataFrame) -> WeightVector:
 def optimize_min_variance(returns: pd.DataFrame) -> WeightVector:
     """Minimum Variance optimization with single-asset cap 20%."""
     mu = expected_returns.mean_historical_return(returns, returns_data=True)
-    S = risk_models.sample_cov(returns)
+    S = compute_robust_cov(returns)
     ef = EfficientFrontier(mu, S, weight_bounds=(0, 0.20))
     ef.min_volatility()
     weights = {k: float(v) for k, v in ef.clean_weights().items() if v > 1e-4}
@@ -85,7 +86,7 @@ def optimize_black_litterman(
     Returns:
         WeightVector with optimized weights respecting 20% single-asset cap.
     """
-    S = risk_models.sample_cov(returns)
+    S = compute_robust_cov(returns)
     bl = BlackLittermanModel(
         S, absolute_views=views, omega="idzorek", view_confidences=view_confidences
     )

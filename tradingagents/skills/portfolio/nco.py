@@ -13,6 +13,8 @@ from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
 from sklearn.metrics import silhouette_score
 
+from tradingagents.skills.portfolio.cov_estimator import compute_robust_cov
+
 logger = logging.getLogger(__name__)
 
 
@@ -139,7 +141,7 @@ def compute_nco_weights(
         raise ValueError(f"NCO requires >= 2 assets, got {n_assets}")
 
     if n_assets == 2:
-        cov = returns.cov()
+        cov = compute_robust_cov(returns)
         weights = _opt_port(cov, mu)
         if breakdown_out is not None:
             breakdown_out["n_clusters"] = 1
@@ -150,8 +152,11 @@ def compute_nco_weights(
             breakdown_out["mu_provided"] = mu is not None
         return weights
 
-    cov = returns.cov()
-    corr = returns.corr().fillna(0.0)
+    cov_bd: dict = {}
+    cov = compute_robust_cov(returns, breakdown_out=cov_bd)
+    if breakdown_out is not None:
+        breakdown_out["cov_breakdown"] = cov_bd
+    corr = returns.corr().fillna(0.0)  # unchanged — clustering distance 용 raw
 
     if max_num_clusters is None:
         max_num_clusters = max(

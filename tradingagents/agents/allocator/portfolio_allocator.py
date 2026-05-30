@@ -26,6 +26,7 @@ from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
 from tradingagents.skills.portfolio.cash_spillover import adjust_bucket_targets
 from tradingagents.skills.portfolio.diversification import compute_enb
 from tradingagents.skills.portfolio.nco import compute_nco_weights
+from tradingagents.skills.portfolio.cov_estimator import compute_robust_cov
 
 logger = logging.getLogger(__name__)
 
@@ -335,6 +336,10 @@ def create_portfolio_allocator(
             regime_confidence=regime.confidence if regime else 0.5,
         )
 
+        # Phase 4a — top-level cov_breakdown 노출 (optimization 하위에도 존재)
+        if "cov_breakdown" in attribution.get("optimization", {}):
+            attribution["cov_breakdown"] = attribution["optimization"]["cov_breakdown"]
+
         # Phase 1 — ENB 사후 측정 (warning-only)
         try:
             enb_value = compute_enb(wv.weights, sigma_df, method="minimum_torsion")
@@ -534,7 +539,10 @@ def _optimize_with_bucket_constraints(
                 attribution["cov_excluded_tickers"] = list(excluded)
                 attribution["cov_final_obs"] = int(len(returns))
 
-    S = risk_models.sample_cov(returns)
+    cov_breakdown: dict = {}
+    S = compute_robust_cov(returns, breakdown_out=cov_breakdown)
+    if attribution is not None:
+        attribution["cov_breakdown"] = cov_breakdown
 
     if method == OptimizationMethod.HRP:
         wv = _hrp_per_bucket(
