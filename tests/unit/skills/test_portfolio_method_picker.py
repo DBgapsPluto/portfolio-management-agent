@@ -40,21 +40,21 @@ def test_scenario_stagflation_to_risk_parity():
     assert out.method == OptimizationMethod.RISK_PARITY
 
 
-def test_scenario_goldilocks_to_hrp():
+def test_scenario_goldilocks_to_nco():
     out = pick_optimization_method(
         regime_quadrant="growth_disinflation", systemic_score=4.0,
         systemic_regime="risk_on",
         research_decision=_decision("goldilocks", "high"),
     )
-    assert out.method == OptimizationMethod.HRP
+    assert out.method == OptimizationMethod.NCO
 
 
-def test_low_conviction_downgrades_hrp_to_risk_parity():
+def test_low_conviction_goldilocks_stays_nco():
     out = pick_optimization_method(
         regime_quadrant="growth_disinflation", systemic_score=4.0,
         research_decision=_decision("goldilocks", "low"),
     )
-    assert out.method == OptimizationMethod.RISK_PARITY
+    assert out.method == OptimizationMethod.NCO
 
 
 def test_recession_regime_to_min_variance_without_scenario():
@@ -81,20 +81,20 @@ def test_growth_inflation_to_risk_parity():
     assert out.method == OptimizationMethod.RISK_PARITY
 
 
-def test_default_is_hrp():
+def test_default_is_nco():
     out = pick_optimization_method(
         regime_quadrant="growth_disinflation",
         systemic_score=4.0, systemic_regime="risk_on",
     )
-    assert out.method == OptimizationMethod.HRP
+    assert out.method == OptimizationMethod.NCO
 
 
-def test_kr_boom_high_conviction_hrp():
+def test_kr_boom_high_conviction_nco():
     out = pick_optimization_method(
         systemic_score=4.5,
         research_decision=_decision("kr_boom", "high"),
     )
-    assert out.method == OptimizationMethod.HRP
+    assert out.method == OptimizationMethod.NCO
 
 
 def test_kr_stress_min_variance():
@@ -112,31 +112,30 @@ def test_returns_method_choice_with_reasoning():
     assert len(out.reasoning) <= 300
 
 
-# === Issue #7: B cycle (overheating) ≠ stagflation, separate HRP processing ===
+# === Issue #7: B cycle (overheating) ≠ stagflation, separate NCO processing ===
 
 
-def test_method_picker_overheating_returns_hrp():
+def test_method_picker_overheating_returns_nco():
     """Issue #7: B cycle (growth+inflation) 은 stagflation 아니라 overheating.
 
-    overheating 처방: equity tilt 살아있되 inflation 위험 분산 → HRP.
+    overheating 처방: equity tilt 살아있되 inflation 위험 분산 → NCO (Phase 3c cutover).
     (이전엔 "stagflation" mis-label → RISK_PARITY 잘못 트리거.)
     """
     out = pick_optimization_method(
         regime_quadrant="growth_inflation", systemic_score=5.0,
         research_decision=_decision("overheating", "high"),
     )
-    assert out.method == OptimizationMethod.HRP
+    assert out.method == OptimizationMethod.NCO
     assert "overheating" in out.reasoning.lower()
 
 
-def test_method_picker_overheating_low_conviction_downgrade():
-    """overheating + low conviction → 기존 HRP downgrade 룰로 RISK_PARITY."""
+def test_method_picker_overheating_low_conviction_stays_nco():
+    """overheating + low conviction → Phase 3c: NCO (no downgrade)."""
     out = pick_optimization_method(
         regime_quadrant="growth_inflation", systemic_score=5.0,
         research_decision=_decision("overheating", "low"),
     )
-    # method_picker.py line 82-84: low conviction + HRP → RISK_PARITY 격하
-    assert out.method == OptimizationMethod.RISK_PARITY
+    assert out.method == OptimizationMethod.NCO
 
 
 # ---------- Stage 3 audit (2026-05-26): degraded_inputs strict mode ----------
@@ -192,15 +191,15 @@ def test_normal_staleness_does_not_trigger_strict_mode():
     assert out.rule_fired == "bl_high_confidence"
 
 
-def test_low_conviction_downgrade_attribution():
-    """Stage 3 audit Task 2: HRP→RISK_PARITY downgrade 시 inputs_trace 기록."""
+def test_low_conviction_nco_no_downgrade():
+    """Phase 3c: NCO backbone 에서 low conviction 은 더 이상 downgrade 없음."""
     out = pick_optimization_method(
         regime_quadrant="growth_disinflation",
         systemic_score=5.0,
-        research_decision=_decision("goldilocks", "low"),  # HRP → downgrade
+        research_decision=_decision("goldilocks", "low"),
     )
-    assert out.method == OptimizationMethod.RISK_PARITY
-    assert out.inputs.get("downgraded_from_hrp") is True
+    assert out.method == OptimizationMethod.NCO
+    assert "downgraded_from_hrp" not in out.inputs
 
 
 def test_named_const_present():
@@ -208,8 +207,6 @@ def test_named_const_present():
     from tradingagents.skills.portfolio import method_picker as mp
     assert hasattr(mp, "SYSTEMIC_EXTREME_THRESHOLD")
     assert mp.SYSTEMIC_EXTREME_THRESHOLD == 8.0
-    assert hasattr(mp, "LOW_CONVICTION_HRP_DOWNGRADE")
-    assert mp.LOW_CONVICTION_HRP_DOWNGRADE is True
 
 
 # === Phase 3b: BL trigger rule tests ===
@@ -266,3 +263,93 @@ def test_picker_bl_trigger_precedes_scenario_mapping():
         conviction="high",
     )
     assert choice.method == OptimizationMethod.BLACK_LITTERMAN
+
+
+# === Phase 3c: NCO backbone cutover tests ===
+
+
+def test_picker_default_regime_returns_nco():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_disinflation",
+        regime_confidence=0.5,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario=None,
+        conviction="high",
+    )
+    assert choice.method == OptimizationMethod.NCO
+    assert choice.rule_fired == "default"
+
+
+def test_picker_overheating_returns_nco():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_inflation",
+        regime_confidence=0.5,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="overheating",
+        conviction="high",
+    )
+    assert choice.method == OptimizationMethod.NCO
+    assert choice.rule_fired == "scenario_mapping"
+
+
+def test_picker_goldilocks_returns_nco():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_disinflation",
+        regime_confidence=0.5,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="goldilocks",
+        conviction="high",
+    )
+    assert choice.method == OptimizationMethod.NCO
+
+
+def test_picker_ai_concentration_returns_nco():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_disinflation",
+        regime_confidence=0.5,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="ai_concentration",
+        conviction="high",
+    )
+    assert choice.method == OptimizationMethod.NCO
+
+
+def test_picker_kr_boom_returns_nco():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_disinflation",
+        regime_confidence=0.5,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="kr_boom",
+        conviction="high",
+    )
+    assert choice.method == OptimizationMethod.NCO
+
+
+def test_picker_low_conviction_does_not_downgrade_nco():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_inflation",
+        regime_confidence=0.5,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="overheating",
+        conviction="low",
+    )
+    assert choice.method == OptimizationMethod.NCO
+    assert choice.rule_fired == "scenario_mapping"
+
+
+def test_picker_no_downgrade_flag_in_inputs_trace():
+    choice = pick_optimization_method(
+        regime_quadrant="growth_inflation",
+        regime_confidence=0.5,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="overheating",
+        conviction="low",
+    )
+    assert "downgraded_from_hrp" not in choice.inputs
