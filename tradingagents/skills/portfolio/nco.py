@@ -84,3 +84,37 @@ def _hierarchical_cluster(
         return np.ones(n, dtype=int), None
 
     return best_labels, float(best_score)
+
+
+def _intra_cluster_weights(
+    cov: pd.DataFrame,
+    labels: np.ndarray,
+    mu: pd.Series | None = None,
+) -> pd.DataFrame:
+    """n_assets × n_clusters DataFrame.
+
+    한 ticker (row) 는 자기 cluster (column) 에만 non-zero weight.
+    """
+    tickers = list(cov.index)
+    unique_clusters = sorted(set(labels))
+    intra = pd.DataFrame(0.0, index=tickers, columns=unique_clusters)
+
+    for k in unique_clusters:
+        members = [tickers[i] for i, lbl in enumerate(labels) if lbl == k]
+        if len(members) == 1:
+            intra.loc[members[0], k] = 1.0
+            continue
+        cov_sub = cov.loc[members, members]
+        mu_sub = mu.reindex(members) if mu is not None else None
+        w = _opt_port(cov_sub, mu_sub)
+        intra.loc[members, k] = w.values
+
+    return intra
+
+
+def _inter_cluster_weights(
+    reduced_cov: pd.DataFrame,
+    reduced_mu: pd.Series | None = None,
+) -> pd.Series:
+    """Inter-cluster CVO."""
+    return _opt_port(reduced_cov, reduced_mu)
