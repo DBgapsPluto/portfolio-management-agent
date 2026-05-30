@@ -94,9 +94,11 @@ def test_kr_boom_scenario_boosts_semiconductor_over_dividend():
     panel = _trivial_panel(tickers)
 
     # KR boom: semiconductor 1.7배 → A111111 (semiconductor) 우선
+    sigma = returns.dropna(axis=0, how="any").cov()
     kr_boom = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
-        per_bucket_n=1, returns=returns, factor_panel=panel,
+        returns=returns, factor_panel=panel,
+        sigma=sigma, capital_krw=1_000_000_000,
         regime_quadrant="growth_disinflation", regime_confidence=0.8,
         dominant_scenario="kr_boom",  # legacy 이름, A_N_boom으로 매핑
     )
@@ -106,7 +108,8 @@ def test_kr_boom_scenario_boosts_semiconductor_over_dividend():
     # (Factor model PR: cell key path 제거 — legacy name 만 사용)
     rec = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
-        per_bucket_n=1, returns=returns, factor_panel=panel,
+        returns=returns, factor_panel=panel,
+        sigma=sigma, capital_krw=1_000_000_000,
         regime_quadrant="recession_disinflation", regime_confidence=0.8,
         dominant_scenario="broad_recession",  # legacy name
     )
@@ -130,16 +133,19 @@ def test_no_subcategory_means_no_boost_effect():
     tickers = ["A111111", "A222222"]
     returns = _trivial_returns(tickers)
     panel = _trivial_panel(tickers)
+    sigma = returns.dropna(axis=0, how="any").cov()
 
     chosen_no_scenario = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
-        per_bucket_n=2, returns=returns, factor_panel=panel,
+        returns=returns, factor_panel=panel,
+        sigma=sigma, capital_krw=1_000_000_000,
         dominant_scenario=None,
     ).bucket_to_tickers["kr_equity"]
 
     chosen_with_scenario = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
-        per_bucket_n=2, returns=returns, factor_panel=panel,
+        returns=returns, factor_panel=panel,
+        sigma=sigma, capital_krw=1_000_000_000,
         dominant_scenario="kr_boom",
     ).bucket_to_tickers["kr_equity"]
 

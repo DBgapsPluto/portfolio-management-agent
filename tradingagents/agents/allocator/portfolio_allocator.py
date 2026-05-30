@@ -105,18 +105,7 @@ def create_portfolio_allocator(
                 regime_staleness, systemic_staleness,
             )
 
-        # per_bucket_n: low conviction이면 후보 다양화, retry 시 확장.
-        per_bucket_n = 4
-        if research_decision is not None and getattr(research_decision, "conviction", "medium") == "low":
-            per_bucket_n = 5
-        if attempts > 0:
-            per_bucket_n = max(per_bucket_n + 2, 6)
-        logger.info(
-            "allocator: per_bucket_n=%d, conviction=%s, dominant_scenario=%s",
-            per_bucket_n,
-            getattr(research_decision, "conviction", None) if research_decision else None,
-            getattr(research_decision, "dominant_scenario", None) if research_decision else None,
-        )
+        # Phase 2b — per_bucket_n 결정 로직 폐기 (adaptive n_max 가 candidate_selector 안에서 자동).
 
         # 1. eligible 후보 universe로 returns matrix fetch
         start = as_of - timedelta(days=PRICE_LOOKBACK_DAYS_ALLOC)
@@ -133,6 +122,10 @@ def create_portfolio_allocator(
         if returns is None or returns.empty:
             raise RuntimeError("returns matrix empty — Stage 3 cannot proceed")
 
+        # Phase 2b — sigma 사전 계산 (candidate_selector + optimize 모두 사용)
+        sigma = returns.dropna(axis=0, how="any").cov()
+        capital_krw = float(state.get("capital_krw") or state.get("capital") or 1_000_000_000)
+
         # 2. Multi-factor + corr de-dup + (Phase C) scenario sub_category boost.
         # Factor model PR (2026-05-22): dominant_cell 제거. 항상 legacy scenario name string 사용.
         # log_boost 가 cell key 받던 path 도 해당 path 제거됨 (sub_category.py).
@@ -148,7 +141,8 @@ def create_portfolio_allocator(
             "as_of_date": state["as_of_date"],
             "config": {
                 "attempts":             attempts,
-                "per_bucket_n":         per_bucket_n,
+                "selection_strategy":   "enb_greedy",
+                "capital_krw":          capital_krw,
                 "regime_quadrant":      regime.quadrant if regime else None,
                 "regime_confidence":    regime.confidence if regime else 0.5,
                 "systemic_score":       risk_score.score if risk_score else None,
@@ -216,9 +210,10 @@ def create_portfolio_allocator(
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,
-            per_bucket_n=per_bucket_n,
             returns=returns,
             factor_panel=factor_panel,
+            sigma=sigma,
+            capital_krw=capital_krw,
             regime_quadrant=regime.quadrant if regime else None,
             regime_confidence=regime.confidence if regime else 0.5,
             correlation_threshold=CORRELATION_THRESHOLD_ALLOC,

@@ -391,237 +391,6 @@ def test_impl_score_missing_ticker_in_signal_neutral():
     assert "A111111" in impl and "A222222" in impl
 
 
-# ---------- Stage 3: cluster-aware select ----------
-
-
-from tradingagents.schemas.technical import Cluster
-from tradingagents.skills.portfolio.factor_scorer import select_cluster_aware
-
-
-def test_cluster_aware_within_picks_best_impl_not_alpha():
-    # A1/A2 같은 cluster(대체재). A1 alpha 높지만 impl 낮음; A2 alpha 낮지만 impl 높음.
-    # 그룹 내 대표 = impl 기준 → A2 선택. B는 singleton.
-    alpha = {"A111111": 2.0, "A222222": 0.0, "B111111": 1.0}
-    impl = {"A111111": 0.0, "A222222": 2.0, "B111111": 1.0}
-    clusters = [Cluster(
-        cluster_id="c1", members=["A111111", "A222222"],
-        avg_internal_correlation=0.95, category_label="dup",
-    )]
-    chosen = select_cluster_aware(
-        ["A111111", "A222222", "B111111"], alpha, impl, clusters, n=2, returns=None,
-    )
-    assert "A222222" in chosen and "A111111" not in chosen
-    assert "B111111" in chosen
-
-
-def test_cluster_aware_across_groups_ranked_by_alpha():
-    alpha = {"X111111": 2.0, "Y111111": 0.5}
-    impl = {"X111111": 0.0, "Y111111": 5.0}
-    chosen = select_cluster_aware(
-        ["X111111", "Y111111"], alpha, impl, clusters=[], n=1, returns=None,
-    )
-    assert chosen == ["X111111"]
-
-
-def test_cluster_aware_pads_when_groups_fewer_than_n():
-    # 그룹 1개(A1,A2 대체재), n=2 → 대표 1 + 패딩으로 2개.
-    alpha = {"A111111": 2.0, "A222222": 1.0}
-    impl = {"A111111": 2.0, "A222222": 0.0}
-    clusters = [Cluster(
-        cluster_id="c1", members=["A111111", "A222222"],
-        avg_internal_correlation=0.95, category_label="dup",
-    )]
-    chosen = select_cluster_aware(
-        ["A111111", "A222222"], alpha, impl, clusters, n=2, returns=None,
-    )
-    assert len(chosen) == 2
-    assert set(chosen) == {"A111111", "A222222"}
-
-
-def test_cluster_aware_singleton_not_in_any_cluster():
-    # X 는 어느 cluster 에도 안 들어감 → singleton 으로 자동 처리
-    alpha = {"X111111": 2.0, "A111111": 1.0, "A222222": 0.5}
-    impl = {"X111111": 1.0, "A111111": 0.0, "A222222": 2.0}
-    clusters = [Cluster(
-        cluster_id="c1", members=["A111111", "A222222"],
-        avg_internal_correlation=0.95, category_label="dup",
-    )]
-    chosen = select_cluster_aware(
-        ["X111111", "A111111", "A222222"], alpha, impl, clusters, n=2, returns=None,
-    )
-    # 그룹 간 alpha 순: X(alpha=2.0) > A_group(max alpha=1.0)
-    # 그룹 내 대표: X singleton → X / A_group → impl 최고 A222222
-    assert set(chosen) == {"X111111", "A222222"}
-
-
-def test_cluster_aware_fallback_to_corr_when_clusters_empty():
-    # clusters 빈 dict + returns 제공 → corr-based fallback grouping.
-    # A, B 강상관 (대체재) — 그룹 내 impl 최고 선택.
-    import numpy as np, pandas as pd
-    rng = np.random.default_rng(0)
-    base = rng.normal(0, 0.01, 200)
-    df = pd.DataFrame({
-        "A111111": base,
-        "A222222": base + rng.normal(0, 0.001, 200),  # ~corr 0.99
-        "B111111": rng.normal(0, 0.01, 200),
-    })
-    alpha = {"A111111": 2.0, "A222222": 0.0, "B111111": 1.0}
-    impl = {"A111111": 0.0, "A222222": 2.0, "B111111": 1.0}
-    chosen = select_cluster_aware(
-        ["A111111", "A222222", "B111111"], alpha, impl, clusters=None,
-        n=2, returns=df, correlation_threshold=0.85,
-    )
-    # A 그룹 내 대표 impl 최고 = A222222, B singleton
-    assert "A222222" in chosen and "B111111" in chosen
-    assert "A111111" not in chosen
-
-
-def test_cluster_aware_empty_inputs():
-    assert select_cluster_aware([], {}, {}, [], n=3, returns=None) == []
-    assert select_cluster_aware(["X111111"], {"X111111": 1.0}, {"X111111": 1.0},
-                                [], n=0, returns=None) == []
-
-
-def test_cluster_aware_skips_ticker_without_alpha():
-    # alpha 에 없는 ticker는 eligible 에서 자동 제거 (Stage 1 누락 데이터 가드)
-    alpha = {"A111111": 1.0}
-    impl = {"A111111": 1.0, "A222222": 2.0}
-    chosen = select_cluster_aware(
-        ["A111111", "A222222"], alpha, impl, clusters=[], n=2, returns=None,
-    )
-    assert chosen == ["A111111"]
-
-
-# ---- 2026-05-26 #1 fix: underlying_index 강제 cluster 통합 ----
-
-
-def test_cluster_aware_underlying_index_forces_merge():
-    """동일 underlying_index 의 ETF 가 다른 cluster 였더라도 강제 merge.
-
-    S&P 500 추종 TIGER/KODEX/RISE 3 ETF 시나리오 (실제 backtest 버그).
-    correlation cluster 가 분리해도 underlying_lookup 으로 같은 group.
-    """
-    tickers = ["A360750", "A379800", "A379780", "B999999"]
-    alpha = {"A360750": 1.5, "A379800": 1.0, "A379780": 0.8, "B999999": 2.0}
-    impl = {"A360750": 1.0, "A379800": 0.8, "A379780": 0.6, "B999999": 1.0}
-    # cluster 가 분리 (S&P 500 3개가 singleton 으로 들어감 — 기존 silent bug 시나리오)
-    clusters = []  # 빈 cluster
-    underlying_lookup = {
-        "A360750": "S&P 500",
-        "A379800": "S&P 500",
-        "A379780": "S&P 500",
-        "B999999": "",  # 다른 ETF
-    }
-    chosen = select_cluster_aware(
-        tickers, alpha, impl, clusters, n=4, returns=None,
-        underlying_lookup=underlying_lookup,
-    )
-    # S&P 500 3개 중 1개만 + B999999 = 2개 선택 (n=4 padding 적용)
-    sp500_chosen = [t for t in chosen if t in ("A360750", "A379800", "A379780")]
-    assert len(sp500_chosen) == 1, f"expected 1 S&P 500 rep, got {sp500_chosen}"
-    assert "B999999" in chosen
-
-
-def test_cluster_aware_underlying_lookup_none_preserves_legacy():
-    """underlying_lookup=None 면 기존 동작 그대로 (regression 안전)."""
-    tickers = ["A111111", "A222222"]
-    alpha = {"A111111": 2.0, "A222222": 1.0}
-    impl = {"A111111": 1.0, "A222222": 1.0}
-    chosen = select_cluster_aware(
-        tickers, alpha, impl, clusters=[], n=2, returns=None,
-        underlying_lookup=None,
-    )
-    assert set(chosen) == {"A111111", "A222222"}
-
-
-def test_cluster_aware_underlying_empty_string_treated_as_unique():
-    """underlying_index 가 빈 문자열인 ticker 는 grouping 안 함 (singleton 유지)."""
-    tickers = ["A1", "A2", "A3"]
-    alpha = {"A1": 1.0, "A2": 1.0, "A3": 1.0}
-    impl = {"A1": 1.0, "A2": 1.0, "A3": 1.0}
-    underlying_lookup = {"A1": "", "A2": "", "A3": ""}  # 모두 빈 underlying
-    chosen = select_cluster_aware(
-        tickers, alpha, impl, clusters=[], n=3, returns=None,
-        underlying_lookup=underlying_lookup,
-    )
-    # 모두 unique → 3개 다 선택됨
-    assert set(chosen) == {"A1", "A2", "A3"}
-
-
-# ---- 2026-05-26 fix-C: alpha 음수 group 자동 제외 ----
-
-
-def test_cluster_aware_excludes_negative_alpha_groups():
-    """alpha ≤ 0 group 은 chosen 에서 자동 제외 (default require_positive_alpha=True)."""
-    tickers = ["A1", "A2", "A3", "A4"]
-    alpha = {"A1": 0.5, "A2": 0.2, "A3": -0.1, "A4": -0.3}
-    impl = {t: 1.0 for t in tickers}
-    chosen = select_cluster_aware(
-        tickers, alpha, impl, clusters=[], n=4, returns=None,
-    )
-    # 양수 alpha (A1, A2) 만 chosen — n=4 라도 padding 안 함 (alpha 음수 제외)
-    assert "A1" in chosen
-    assert "A2" in chosen
-    assert "A3" not in chosen
-    assert "A4" not in chosen
-
-
-def test_cluster_aware_keeps_top_when_all_negative():
-    """모든 alpha 음수면 top-1 만 keep (bucket 비우는 거 방지)."""
-    tickers = ["A1", "A2", "A3"]
-    alpha = {"A1": -0.1, "A2": -0.3, "A3": -0.5}
-    impl = {t: 1.0 for t in tickers}
-    chosen = select_cluster_aware(
-        tickers, alpha, impl, clusters=[], n=3, returns=None,
-    )
-    # 모두 음수 — 가장 덜 나쁜 A1 만 chosen
-    assert chosen == ["A1"]
-
-
-def test_cluster_aware_legacy_mode_no_positive_filter():
-    """require_positive_alpha=False 면 기존 동작 (음수도 chosen)."""
-    tickers = ["A1", "A2"]
-    alpha = {"A1": 0.5, "A2": -0.3}
-    impl = {t: 1.0 for t in tickers}
-    chosen = select_cluster_aware(
-        tickers, alpha, impl, clusters=[], n=2, returns=None,
-        require_positive_alpha=False,
-    )
-    # 양쪽 모두 chosen (legacy)
-    assert set(chosen) == {"A1", "A2"}
-
-
-def test_select_cluster_aware_no_negative_fill_in_group_phase():
-    """양수 group < n//2 면 음수 fill 안 함, 짧은 chosen 반환 (group phase)."""
-    eligible = ["A", "B", "C", "D"]
-    alpha = {"A": 0.5, "B": -0.1, "C": -0.2, "D": -0.3}
-    impl = {t: 1.0 for t in eligible}
-    chosen = select_cluster_aware(
-        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
-        clusters=None, n=4, returns=None,
-        require_positive_alpha=True,
-    )
-    # 양수 1개(A) + 음수 fill 없음 → chosen 1개 (A 만)
-    # OLD: 양수 부족하면 음수로 fill (B도 들어감)
-    assert chosen == ["A"]
-
-
-def test_select_cluster_aware_no_negative_fill_in_padding_phase():
-    """padding 단계도 양수만 fill — 양수 부족해도 음수 추가하지 않음."""
-    eligible = ["A", "B", "C", "D", "E"]
-    # 그룹이 모두 singleton, 양수 2개, 나머지 음수. n=5 요청.
-    alpha = {"A": 0.5, "B": 0.4, "C": -0.1, "D": -0.2, "E": -0.3}
-    impl = {t: 1.0 for t in eligible}
-    chosen = select_cluster_aware(
-        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
-        clusters=None, n=5, returns=None,
-        require_positive_alpha=True,
-    )
-    # 양수 2개(A, B)만 + padding 도 양수만 (C/D/E 음수므로 제외)
-    # OLD: padding 도 음수 fill (C/D/E도 들어갈 수 있음)
-    assert chosen == ["A", "B"]
-
-
 # ---------- Phase 2a Task 7: impl_score 4-요소 weighted composite ----------
 
 
@@ -742,3 +511,261 @@ def test_impl_score_high_volume_per_aum_raises_score():
         premium_discount=premium_discount,
     )
     assert impl["high_vol"] > impl["low_vol"]
+
+
+# ---------- Phase 2b Task 1: compute_adaptive_n_max ----------
+
+
+def test_compute_adaptive_n_max_alpha_cap():
+    """양수 alpha 후보 수가 가장 작으면 그 값이 n_max."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=3,
+        bucket_weight=0.30,
+        capital_krw=1_000_000_000_000,
+    )
+    assert n == 3
+
+
+def test_compute_adaptive_n_max_weight_cap():
+    """작은 bucket weight → weight cap."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=100,
+        bucket_weight=0.05,
+        capital_krw=1_000_000_000_000,
+    )
+    assert n == 2
+
+
+def test_compute_adaptive_n_max_capital_cap():
+    """1B 자본 + 10% bucket → 100M / 50M = 2."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=10,
+        bucket_weight=0.10,
+        capital_krw=1_000_000_000,
+    )
+    assert n == 2
+
+
+def test_compute_adaptive_n_max_abs_max():
+    """모든 cap 큼 → 8."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=20,
+        bucket_weight=0.50,
+        capital_krw=100_000_000_000,
+    )
+    assert n == 8
+
+
+def test_compute_adaptive_n_max_zero_bucket_weight():
+    """bucket_weight = 0 → 0."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=10, bucket_weight=0.0, capital_krw=1_000_000_000,
+    )
+    assert n == 0
+
+
+def test_compute_adaptive_n_max_zero_positive_alpha():
+    """positive_alpha = 0 → 0."""
+    from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+    n = compute_adaptive_n_max(
+        n_positive_alpha=0, bucket_weight=0.30, capital_krw=1_000_000_000,
+    )
+    assert n == 0
+
+
+# ---------- Phase 2b Task 2: _enb_equal_weight ----------
+
+
+def test_enb_equal_weight_single_ticker():
+    """1 종목 → ENB = 1.0."""
+    import pandas as pd
+    import numpy as np
+    from tradingagents.skills.portfolio.factor_scorer import _enb_equal_weight
+
+    sigma = pd.DataFrame(
+        np.eye(3) * 0.04,
+        index=["A", "B", "C"], columns=["A", "B", "C"],
+    )
+    assert _enb_equal_weight(["A"], sigma) == 1.0
+
+
+def test_enb_equal_weight_empty():
+    """0 종목 → 0.0."""
+    import pandas as pd
+    import numpy as np
+    from tradingagents.skills.portfolio.factor_scorer import _enb_equal_weight
+
+    sigma = pd.DataFrame(np.eye(2) * 0.04, index=["A", "B"], columns=["A", "B"])
+    assert _enb_equal_weight([], sigma) == 0.0
+
+
+def test_enb_equal_weight_uncorrelated_pair_close_to_two():
+    """2 종목 uncorrelated → ENB ≈ 2."""
+    import pandas as pd
+    import numpy as np
+    from tradingagents.skills.portfolio.factor_scorer import _enb_equal_weight
+
+    sigma = pd.DataFrame(
+        np.eye(2) * 0.04,
+        index=["A", "B"], columns=["A", "B"],
+    )
+    enb = _enb_equal_weight(["A", "B"], sigma)
+    assert 1.95 < enb < 2.05
+
+
+# ---------- Phase 2b Task 3: select_by_enb_greedy ----------
+
+
+def _make_diag_sigma(tickers, vol=0.04):
+    import pandas as pd
+    import numpy as np
+    n = len(tickers)
+    return pd.DataFrame(np.eye(n) * vol, index=tickers, columns=tickers)
+
+
+def _make_dup_sigma(tickers, vol=0.04, rho=0.999):
+    import pandas as pd
+    import numpy as np
+    n = len(tickers)
+    corr = np.full((n, n), rho)
+    np.fill_diagonal(corr, 1.0)
+    return pd.DataFrame(corr * vol, index=tickers, columns=tickers)
+
+
+def test_select_by_enb_greedy_seed_from_top_composite():
+    """Seed = (alpha_impl_blend × z(alpha) + (1 - blend) × z(impl)) 1등."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C"]
+    alpha = {"A": 0.1, "B": 0.5, "C": 0.3}
+    impl = {"A": 0.0, "B": 0.0, "C": 0.0}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=1,
+    )
+    assert chosen == ["B"]
+
+
+def test_select_by_enb_greedy_alpha_floor_only_positive():
+    """음수 alpha 제외."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C", "D"]
+    alpha = {"A": 0.5, "B": -0.1, "C": -0.2, "D": -0.3}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=4,
+    )
+    assert chosen == ["A"]
+
+
+def test_select_by_enb_greedy_handles_no_positive_alpha():
+    """양수 alpha 없으면 빈 list."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B"]
+    alpha = {"A": -0.1, "B": -0.2}
+    impl = {"A": 0.0, "B": 0.0}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=3,
+    )
+    assert chosen == []
+
+
+def test_select_by_enb_greedy_n_max_zero_returns_empty():
+    """n_max = 0 → 빈 list."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B"]
+    alpha = {"A": 0.5, "B": 0.3}
+    impl = {"A": 0.0, "B": 0.0}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=0,
+    )
+    assert chosen == []
+
+
+def test_select_by_enb_greedy_stops_at_n_max():
+    """n_max=2 도달 시 중단."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C", "D"]
+    alpha = {t: 0.5 for t in eligible}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=2,
+    )
+    assert len(chosen) == 2
+
+
+def test_select_by_enb_greedy_duplicates_picked_once():
+    """corr ≈ 1 인 3 ETF → seed 1개만."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C"]
+    alpha = {t: 0.5 for t in eligible}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_dup_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=3,
+    )
+    assert len(chosen) == 1
+
+
+def test_select_by_enb_greedy_attribution_progression_recorded():
+    """selection_trace 채움."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C", "D"]
+    alpha = {"A": 0.5, "B": 0.3, "C": -0.1, "D": 0.4}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_diag_sigma(eligible)
+    trace: dict = {}
+    select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=3, selection_trace=trace,
+    )
+    assert "stop_reason" in trace
+    assert "enb_progression" in trace
+    assert "rejected" in trace
+    assert "alpha_impl_blend_used" in trace
+    rejected_alpha_neg = [r for r in trace["rejected"] if r.get("reason") == "alpha_negative"]
+    assert any(r["ticker"] == "C" for r in rejected_alpha_neg)
+
+
+def test_select_by_enb_greedy_alpha_impl_blend_weighting():
+    """alpha 동등 → impl 큰 쪽 우선."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B"]
+    alpha = {"A": 0.5, "B": 0.5}
+    impl = {"A": 0.1, "B": 0.9}
+    sigma = _make_diag_sigma(eligible)
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=1,
+    )
+    assert chosen == ["B"]
+
+
+def test_select_by_enb_greedy_stops_at_delta_threshold():
+    """corr ≈ 1 시 delta 미달 stop."""
+    from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
+    eligible = ["A", "B", "C"]
+    alpha = {t: 0.5 for t in eligible}
+    impl = {t: 0.0 for t in eligible}
+    sigma = _make_dup_sigma(eligible)
+    trace: dict = {}
+    chosen = select_by_enb_greedy(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        sigma=sigma, n_max=3, selection_trace=trace,
+    )
+    assert len(chosen) == 1
+    assert trace["stop_reason"] == "delta_below_threshold"

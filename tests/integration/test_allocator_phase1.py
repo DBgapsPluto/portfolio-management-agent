@@ -44,22 +44,151 @@ def synthetic_universe(tmp_path):
     return path
 
 
-@pytest.mark.skip(reason="state mocking 헬퍼 후속 작업 — Task 15 의 regression_compare 가 더 직접적")
-def test_allocator_with_normal_universe(synthetic_universe):
-    """5 bucket 양수 충분 → spillover 0, ENB > ENB_WARNING_THRESHOLD."""
-    pass
+def test_allocator_with_normal_universe(tmp_path, monkeypatch):
+    """5 bucket 양수 alpha 충분 → spillover ≈ 0, ENB > 2.0."""
+    from tests.integration._allocator_state_helpers import (
+        make_synthetic_universe, make_synthetic_returns, make_factor_panel,
+        make_bucket_target, make_macro_report, make_risk_report,
+        make_research_decision, make_technical_report, make_allocator_state,
+    )
+    from tradingagents.agents.allocator.portfolio_allocator import create_portfolio_allocator
+
+    universe = make_synthetic_universe(n_per_bucket=4)
+    universe_path = tmp_path / "universe.json"
+    universe_path.write_text(universe.model_dump_json())
+
+    tickers = [e.ticker for e in universe.etfs]
+    returns = make_synthetic_returns(tickers, n_days=252, seed=7)
+    factor_panel = make_factor_panel(tickers)  # default alpha 0.05 (양수)
+
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        lambda tickers, start, end, cache_path=None: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.allocator.portfolio_allocator.fetch_returns_matrix",
+        lambda eligible, start, end, cache_path=None: returns[eligible],
+    )
+
+    state = make_allocator_state(
+        as_of=date(2026, 5, 28),
+        universe_path=str(universe_path),
+        bucket_target=make_bucket_target(),
+        technical_report=make_technical_report(factor_panel),
+        macro_report=make_macro_report(),
+        risk_report=make_risk_report(),
+        research_decision=make_research_decision(),
+    )
+
+    node_func = create_portfolio_allocator()
+    result = node_func(state)
+
+    spillover = result["allocation_attribution"]["cash_spillover"]
+    assert spillover["total_spillover_to_cash"] < 0.10
+    assert result["allocation_attribution"]["enb"] > 1.5
 
 
-@pytest.mark.skip(reason="state mocking 헬퍼 후속 작업")
-def test_allocator_with_fx_negative_only(synthetic_universe):
-    """fx_commodity 음수만 → fx bucket weight 감소, cash 증가."""
-    pass
+def test_allocator_with_fx_negative_only(tmp_path, monkeypatch):
+    """fx_commodity alpha 음수 → bucket weight 감소, cash 증가."""
+    from tests.integration._allocator_state_helpers import (
+        make_synthetic_universe, make_synthetic_returns, make_factor_panel,
+        make_bucket_target, make_macro_report, make_risk_report,
+        make_research_decision, make_technical_report, make_allocator_state,
+        BUCKET_CATEGORIES,
+    )
+    from tradingagents.agents.allocator.portfolio_allocator import create_portfolio_allocator
+
+    universe = make_synthetic_universe(n_per_bucket=4)
+    universe_path = tmp_path / "universe.json"
+    universe_path.write_text(universe.model_dump_json())
+
+    tickers = [e.ticker for e in universe.etfs]
+    fx_cat = BUCKET_CATEGORIES["fx_commodity"][0]
+    fx_tickers = [e.ticker for e in universe.etfs if e.category == fx_cat]
+    returns = make_synthetic_returns(tickers, n_days=252, seed=11)
+    factor_panel = make_factor_panel(
+        tickers,
+        alpha_overrides={t: -0.05 for t in fx_tickers},  # fx alpha 음수
+    )
+
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        lambda tickers, start, end, cache_path=None: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.allocator.portfolio_allocator.fetch_returns_matrix",
+        lambda eligible, start, end, cache_path=None: returns[eligible],
+    )
+
+    state = make_allocator_state(
+        as_of=date(2026, 5, 28),
+        universe_path=str(universe_path),
+        bucket_target=make_bucket_target(),
+        technical_report=make_technical_report(factor_panel),
+        macro_report=make_macro_report(),
+        risk_report=make_risk_report(),
+        research_decision=make_research_decision(),
+    )
+
+    node_func = create_portfolio_allocator()
+    result = node_func(state)
+
+    config = result["allocation_attribution"]["config"]
+    bt_stage2 = config["bucket_target_stage2"]
+    bt_post = config["bucket_target_post_spillover"]
+    assert bt_post["fx_commodity"] < bt_stage2["fx_commodity"]
+    assert bt_post["cash_mmf"] > bt_stage2["cash_mmf"]
 
 
-@pytest.mark.skip(reason="state mocking 헬퍼 후속 작업")
-def test_allocator_with_global_low_conviction(synthetic_universe):
-    """global 알파 낮음 → 부분 spillover."""
-    pass
+def test_allocator_with_global_low_conviction(tmp_path, monkeypatch):
+    """global alpha 낮음 → 부분 spillover."""
+    from tests.integration._allocator_state_helpers import (
+        make_synthetic_universe, make_synthetic_returns, make_factor_panel,
+        make_bucket_target, make_macro_report, make_risk_report,
+        make_research_decision, make_technical_report, make_allocator_state,
+        BUCKET_CATEGORIES,
+    )
+    from tradingagents.agents.allocator.portfolio_allocator import create_portfolio_allocator
+
+    universe = make_synthetic_universe(n_per_bucket=4)
+    universe_path = tmp_path / "universe.json"
+    universe_path.write_text(universe.model_dump_json())
+
+    tickers = [e.ticker for e in universe.etfs]
+    global_cat = BUCKET_CATEGORIES["global_equity"][0]
+    global_tickers = [e.ticker for e in universe.etfs if e.category == global_cat]
+    returns = make_synthetic_returns(tickers, n_days=252, seed=13)
+    factor_panel = make_factor_panel(
+        tickers,
+        alpha_overrides={t: 0.005 for t in global_tickers},  # 낮은 양수
+    )
+
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        lambda tickers, start, end, cache_path=None: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.allocator.portfolio_allocator.fetch_returns_matrix",
+        lambda eligible, start, end, cache_path=None: returns[eligible],
+    )
+
+    state = make_allocator_state(
+        as_of=date(2026, 5, 28),
+        universe_path=str(universe_path),
+        bucket_target=make_bucket_target(),
+        technical_report=make_technical_report(factor_panel),
+        macro_report=make_macro_report(),
+        risk_report=make_risk_report(),
+        research_decision=make_research_decision(),
+    )
+
+    node_func = create_portfolio_allocator()
+    result = node_func(state)
+
+    # global 의 conviction 이 낮아 일부 spillover 일어남 (full 또는 부분)
+    spillover = result["allocation_attribution"]["cash_spillover"]
+    convictions = spillover["convictions"]
+    assert convictions["global_equity"]["conviction"] < 0.6
 
 
 def test_allocator_attribution_completeness_via_smoke(tmp_path):
@@ -86,7 +215,57 @@ def test_allocator_attribution_completeness_via_smoke(tmp_path):
     assert isinstance(attribution["enb"], (int, float))
 
 
-@pytest.mark.skip(reason="state mocking 헬퍼 후속 작업")
-def test_allocator_cash_overflow_redistribution(synthetic_universe):
-    """동시 다 bucket spillover → cash > 40% → overflow → high-conv 로."""
-    pass
+def test_allocator_cash_overflow_redistribution(tmp_path, monkeypatch):
+    """global+fx+bond 음수 → cash > 40% → overflow → kr_equity 로."""
+    from tests.integration._allocator_state_helpers import (
+        make_synthetic_universe, make_synthetic_returns, make_factor_panel,
+        make_bucket_target, make_macro_report, make_risk_report,
+        make_research_decision, make_technical_report, make_allocator_state,
+        BUCKET_CATEGORIES,
+    )
+    from tradingagents.agents.allocator.portfolio_allocator import create_portfolio_allocator
+
+    universe = make_synthetic_universe(n_per_bucket=4)
+    universe_path = tmp_path / "universe.json"
+    universe_path.write_text(universe.model_dump_json())
+
+    tickers = [e.ticker for e in universe.etfs]
+    # global, fx, bond ticker 들 모두 alpha 음수
+    neg_categories = [
+        BUCKET_CATEGORIES["global_equity"][0],
+        BUCKET_CATEGORIES["fx_commodity"][0],
+        BUCKET_CATEGORIES["bond"][0],
+    ]
+    neg_tickers = [e.ticker for e in universe.etfs if e.category in neg_categories]
+    returns = make_synthetic_returns(tickers, n_days=252, seed=17)
+    factor_panel = make_factor_panel(
+        tickers,
+        alpha_overrides={t: -0.05 for t in neg_tickers},
+    )
+
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        lambda tickers, start, end, cache_path=None: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.allocator.portfolio_allocator.fetch_returns_matrix",
+        lambda eligible, start, end, cache_path=None: returns[eligible],
+    )
+
+    state = make_allocator_state(
+        as_of=date(2026, 5, 28),
+        universe_path=str(universe_path),
+        bucket_target=make_bucket_target(cash_mmf=0.15),  # cash 작게 → overflow 유도
+        technical_report=make_technical_report(factor_panel),
+        macro_report=make_macro_report(),
+        risk_report=make_risk_report(),
+        research_decision=make_research_decision(),
+    )
+
+    node_func = create_portfolio_allocator()
+    result = node_func(state)
+
+    spillover = result["allocation_attribution"]["cash_spillover"]
+    assert spillover["cash_cap_triggered"] is True
+    # overflow 가 kr_equity 또는 cash_mmf 로 분배됨
+    assert spillover["adjusted_bucket_target"]["cash_mmf"] <= 0.40 + 1e-6
