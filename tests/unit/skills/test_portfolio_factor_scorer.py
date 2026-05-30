@@ -359,7 +359,7 @@ def test_impl_score_prefers_larger_aum_phase1():
 
 def test_impl_score_adds_adv_when_provided():
     panels = {"A111111": _panel_for(aum=1e12), "A222222": _panel_for(aum=1e12)}
-    impl = compute_impl_score(panels, adv={"A111111": 1e10, "A222222": 1e8})
+    impl = compute_impl_score(panels, volume_per_aum={"A111111": 1e10, "A222222": 1e8})
     assert impl["A111111"] > impl["A222222"]
 
 
@@ -374,7 +374,7 @@ def test_impl_score_penalizes_tracking_error():
 def test_impl_score_penalizes_abs_deviation():
     panels = {"A111111": _panel_for(aum=1e12), "A222222": _panel_for(aum=1e12)}
     impl = compute_impl_score(
-        panels, deviation={"A111111": 0.001, "A222222": -0.05},
+        panels, premium_discount={"A111111": 0.001, "A222222": -0.05},
     )
     # |0.001| < |-0.05| → A111111 우대
     assert impl["A111111"] > impl["A222222"]
@@ -385,9 +385,9 @@ def test_impl_score_empty_panels():
 
 
 def test_impl_score_missing_ticker_in_signal_neutral():
-    # adv 에 한 ticker만 있어도 깨지지 않음, 누락은 None → neutral
+    # volume_per_aum 에 한 ticker만 있어도 깨지지 않음, 누락은 None → neutral
     panels = {"A111111": _panel_for(aum=1e12), "A222222": _panel_for(aum=1e12)}
-    impl = compute_impl_score(panels, adv={"A111111": 1e10})
+    impl = compute_impl_score(panels, volume_per_aum={"A111111": 1e10})
     assert "A111111" in impl and "A222222" in impl
 
 
@@ -589,3 +589,156 @@ def test_cluster_aware_legacy_mode_no_positive_filter():
     )
     # 양쪽 모두 chosen (legacy)
     assert set(chosen) == {"A1", "A2"}
+
+
+def test_select_cluster_aware_no_negative_fill_in_group_phase():
+    """양수 group < n//2 면 음수 fill 안 함, 짧은 chosen 반환 (group phase)."""
+    eligible = ["A", "B", "C", "D"]
+    alpha = {"A": 0.5, "B": -0.1, "C": -0.2, "D": -0.3}
+    impl = {t: 1.0 for t in eligible}
+    chosen = select_cluster_aware(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        clusters=None, n=4, returns=None,
+        require_positive_alpha=True,
+    )
+    # 양수 1개(A) + 음수 fill 없음 → chosen 1개 (A 만)
+    # OLD: 양수 부족하면 음수로 fill (B도 들어감)
+    assert chosen == ["A"]
+
+
+def test_select_cluster_aware_no_negative_fill_in_padding_phase():
+    """padding 단계도 양수만 fill — 양수 부족해도 음수 추가하지 않음."""
+    eligible = ["A", "B", "C", "D", "E"]
+    # 그룹이 모두 singleton, 양수 2개, 나머지 음수. n=5 요청.
+    alpha = {"A": 0.5, "B": 0.4, "C": -0.1, "D": -0.2, "E": -0.3}
+    impl = {t: 1.0 for t in eligible}
+    chosen = select_cluster_aware(
+        eligible=eligible, alpha_scores=alpha, impl_scores=impl,
+        clusters=None, n=5, returns=None,
+        require_positive_alpha=True,
+    )
+    # 양수 2개(A, B)만 + padding 도 양수만 (C/D/E 음수므로 제외)
+    # OLD: padding 도 음수 fill (C/D/E도 들어갈 수 있음)
+    assert chosen == ["A", "B"]
+
+
+# ---------- Phase 2a Task 7: impl_score 4-요소 weighted composite ----------
+
+
+def test_impl_score_weight_magnitudes_sum_to_one():
+    """IMPL_SCORE_WEIGHTS 의 절댓값 합 = 1.0."""
+    from tradingagents.skills.portfolio.factor_scorer import IMPL_SCORE_WEIGHTS
+    total = sum(abs(v) for v in IMPL_SCORE_WEIGHTS.values())
+    assert abs(total - 1.0) < 1e-9
+
+
+def test_impl_score_4factor_composite():
+    """4-요소 가중치 합성 — log_aum + TE + |pd| + volume/AUM."""
+    import math
+
+    from tradingagents.skills.portfolio.factor_scorer import (
+        FactorPanel, compute_impl_score,
+    )
+
+    panels = {
+        "A": FactorPanel(log_aum=math.log(10_000_000_000_000)),  # 10조
+        "B": FactorPanel(log_aum=math.log(1_000_000_000_000)),   # 1조
+        "C": FactorPanel(log_aum=math.log(100_000_000_000)),     # 1000억
+    }
+    # A 최고 quality, C 최저 quality
+    tracking_error = {"A": 0.05, "B": 0.20, "C": 0.50}
+    premium_discount = {"A": 0.001, "B": 0.005, "C": 0.020}
+    volume_per_aum = {"A": 0.005, "B": 0.001, "C": 0.0001}
+    impl = compute_impl_score(
+        panels,
+        tracking_error=tracking_error,
+        premium_discount=premium_discount,
+        volume_per_aum=volume_per_aum,
+    )
+    assert impl["A"] > impl["B"] > impl["C"]
+
+
+def test_impl_score_missing_signals_falls_back_to_log_aum():
+    """모든 metrics 신호 None → impl_score 가 log_aum 단독 ordering."""
+    import math
+
+    from tradingagents.skills.portfolio.factor_scorer import (
+        FactorPanel, compute_impl_score,
+    )
+
+    panels = {
+        "A": FactorPanel(log_aum=math.log(10_000_000_000_000)),
+        "B": FactorPanel(log_aum=math.log(1_000_000_000_000)),
+        "C": FactorPanel(log_aum=math.log(100_000_000_000)),
+    }
+    impl_no_metrics = compute_impl_score(panels)
+    assert impl_no_metrics["A"] > impl_no_metrics["B"] > impl_no_metrics["C"]
+
+
+def test_impl_score_high_te_lowers_score():
+    """동일 log_aum 일 때 TE 높은 ETF 가 낮은 impl."""
+    import math
+
+    from tradingagents.skills.portfolio.factor_scorer import (
+        FactorPanel, compute_impl_score,
+    )
+
+    panels = {
+        "low_te": FactorPanel(log_aum=math.log(1_000_000_000_000)),
+        "high_te": FactorPanel(log_aum=math.log(1_000_000_000_000)),
+    }
+    tracking_error = {"low_te": 0.05, "high_te": 0.50}
+    premium_discount = {"low_te": 0.001, "high_te": 0.001}
+    volume_per_aum = {"low_te": 0.001, "high_te": 0.001}
+    impl = compute_impl_score(
+        panels, tracking_error=tracking_error,
+        premium_discount=premium_discount,
+        volume_per_aum=volume_per_aum,
+    )
+    assert impl["low_te"] > impl["high_te"]
+
+
+def test_impl_score_high_premium_discount_lowers_score():
+    """동일 log_aum 일 때 |괴리율| 큰 ETF 가 낮은 impl."""
+    import math
+
+    from tradingagents.skills.portfolio.factor_scorer import (
+        FactorPanel, compute_impl_score,
+    )
+
+    panels = {
+        "low_pd": FactorPanel(log_aum=math.log(1_000_000_000_000)),
+        "high_pd": FactorPanel(log_aum=math.log(1_000_000_000_000)),
+    }
+    premium_discount = {"low_pd": 0.0005, "high_pd": 0.020}
+    tracking_error = {"low_pd": 0.05, "high_pd": 0.05}
+    volume_per_aum = {"low_pd": 0.001, "high_pd": 0.001}
+    impl = compute_impl_score(
+        panels, premium_discount=premium_discount,
+        tracking_error=tracking_error,
+        volume_per_aum=volume_per_aum,
+    )
+    assert impl["low_pd"] > impl["high_pd"]
+
+
+def test_impl_score_high_volume_per_aum_raises_score():
+    """동일 log_aum 일 때 volume/AUM 큰 ETF 가 높은 impl."""
+    import math
+
+    from tradingagents.skills.portfolio.factor_scorer import (
+        FactorPanel, compute_impl_score,
+    )
+
+    panels = {
+        "high_vol": FactorPanel(log_aum=math.log(1_000_000_000_000)),
+        "low_vol": FactorPanel(log_aum=math.log(1_000_000_000_000)),
+    }
+    volume_per_aum = {"high_vol": 0.010, "low_vol": 0.0001}
+    tracking_error = {"high_vol": 0.05, "low_vol": 0.05}
+    premium_discount = {"high_vol": 0.001, "low_vol": 0.001}
+    impl = compute_impl_score(
+        panels, volume_per_aum=volume_per_aum,
+        tracking_error=tracking_error,
+        premium_discount=premium_discount,
+    )
+    assert impl["high_vol"] > impl["low_vol"]

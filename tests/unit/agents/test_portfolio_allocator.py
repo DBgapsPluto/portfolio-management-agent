@@ -119,14 +119,17 @@ def test_sector_mapper_strict_then_relaxed():
 
 
 def test_sector_mapper_splits_bond_when_tips_share_positive():
-    """bond_tips_share > 0이면 bond bucket이 bond_tips + bond_nominal로 split."""
+    """bond_tips_share > 0이면 bond bucket이 bond_tips + bond_nominal로 split.
+
+    Phase 1 guard: cash_mmf 후보 필요 (없으면 cash 대상이 bond 로 흡수돼서 split 검증 흐트러짐).
+    """
     candidates = CandidateSet(
         bucket_to_tickers={
             "kr_equity": [], "global_equity": [], "fx_commodity": [],
             "bond": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
-            "cash_mmf": [],
+            "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
         },
-        selection_criteria="test", total_candidates=4,
+        selection_criteria="test", total_candidates=7,
     )
     target = BucketTarget(
         kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
@@ -163,14 +166,17 @@ def test_sector_mapper_keeps_single_bond_when_tips_share_zero():
 
 
 def test_sector_mapper_absorbs_missing_tips_pool():
-    """후보에 inflation_linked 없으면 bond_tips target을 bond_nominal로 흡수."""
+    """후보에 inflation_linked 없으면 bond_tips target을 bond_nominal로 흡수.
+
+    Phase 1 guard: cash_mmf 후보 필요 (없으면 cash 가 bond 로 흡수돼서 nominal 합산 변경).
+    """
     candidates = CandidateSet(
         bucket_to_tickers={
             "kr_equity": [], "global_equity": [], "fx_commodity": [],
             "bond": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
-            "cash_mmf": [],
+            "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
         },
-        selection_criteria="test", total_candidates=2,
+        selection_criteria="test", total_candidates=5,
     )
     target = BucketTarget(
         kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,

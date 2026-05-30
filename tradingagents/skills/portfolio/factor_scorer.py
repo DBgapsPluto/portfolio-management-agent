@@ -340,20 +340,38 @@ def score_candidates(
     return scores
 
 
+# Phase 2a (2026-05-29). impl_score 4-요소 weighted composite.
+# Signed weights — 부호가 contribution 방향. 절댓값 합 = 1.0.
+IMPL_SCORE_WEIGHTS: dict[str, float] = {
+    "log_aum":            0.33,   # 클수록 좋음
+    "premium_discount":  -0.28,   # |괴리율| 클수록 나쁨
+    "tracking_error":    -0.22,   # 클수록 나쁨
+    "volume_per_aum":     0.17,   # 클수록 좋음
+}
+
+
 def compute_impl_score(
     panels: dict[str, FactorPanel],
     *,
-    adv: dict[str, float | None] | None = None,
-    deviation: dict[str, float | None] | None = None,
+    volume_per_aum: dict[str, float | None] | None = None,
+    premium_discount: dict[str, float | None] | None = None,
     tracking_error: dict[str, float | None] | None = None,
     normalization: str = "rank_percentile",
 ) -> dict[str, float]:
-    """Implementation-quality score (Stage 3 cluster-aware selection).
+    """4-요소 weighted composite (Phase 2a, 2026-05-29).
 
-    "대체재 중 최선 vehicle" — 그룹 내 선택에 사용. 높을수록 좋음.
-    - Phase 1: log_aum (큰 ETF = 더 유동, 좁은 spread proxy)
-    - Phase 2 (optional): + ADV↑, |괴리율|↓, 추적오차율↓
-    미제공 신호는 neutral(0 기여). normalization은 alpha와 동일 기본값.
+    공식 (rank-percentile normalize 후 signed weight 합성):
+      impl_score(t) = +0.33 × z(log_aum)
+                    + 0.17 × z(volume_per_aum)
+                    + (-0.28) × z(|premium_discount|)
+                    + (-0.22) × z(tracking_error)
+
+    각 signal 의 raw 값 (premium_discount 는 절댓값) 을 normalize 후 signed weight
+    와 합성. 큰 |premium_discount| → 큰 z → 음수 가중치 × 큰 z = 음수 기여.
+
+    누락 신호 (입력 None 또는 dict value None) 는 0 (neutral z) 기여.
+    Backward-compat: 모든 signal None 시 impl_score = 0.33 × z(log_aum),
+    Phase 1 의 log_aum-단독 ordering 동일.
     """
     if not panels:
         return {}
@@ -364,25 +382,43 @@ def compute_impl_score(
         normalize = _zscore
     else:
         raise ValueError(
-            f"unknown normalization {normalization!r} (expected 'rank_percentile' or 'zscore')"
+            f"unknown normalization {normalization!r} "
+            f"(expected 'rank_percentile' or 'zscore')"
         )
 
-    parts: list[dict[str, float]] = [
-        normalize({t: p.log_aum for t, p in panels.items()})
-    ]
-    if adv is not None:
-        parts.append(normalize({t: adv.get(t) for t in panels}))
-    if deviation is not None:
-        parts.append(normalize({
-            t: (-abs(deviation[t]) if deviation.get(t) is not None else None)
+    # 1. log_aum 항상 존재 (FactorPanel.log_aum 필수)
+    n_log_aum = normalize({t: p.log_aum for t, p in panels.items()})
+
+    # 2. volume_per_aum (positive direction)
+    if volume_per_aum is not None:
+        n_vol_aum = normalize({t: volume_per_aum.get(t) for t in panels})
+    else:
+        n_vol_aum = {t: 0.0 for t in panels}
+
+    # 3. |premium_discount| (절댓값 normalize → signed weight 음수)
+    if premium_discount is not None:
+        n_pd = normalize({
+            t: (abs(premium_discount[t]) if premium_discount.get(t) is not None else None)
             for t in panels
-        }))
+        })
+    else:
+        n_pd = {t: 0.0 for t in panels}
+
+    # 4. tracking_error (signed weight 음수)
     if tracking_error is not None:
-        parts.append(normalize({
-            t: (-tracking_error[t] if tracking_error.get(t) is not None else None)
-            for t in panels
-        }))
-    return {t: float(np.mean([p[t] for p in parts])) for t in panels}
+        n_te = normalize({t: tracking_error.get(t) for t in panels})
+    else:
+        n_te = {t: 0.0 for t in panels}
+
+    out: dict[str, float] = {}
+    for t in panels:
+        out[t] = (
+            IMPL_SCORE_WEIGHTS["log_aum"]           * n_log_aum[t]
+            + IMPL_SCORE_WEIGHTS["volume_per_aum"]    * n_vol_aum[t]
+            + IMPL_SCORE_WEIGHTS["premium_discount"]  * n_pd[t]
+            + IMPL_SCORE_WEIGHTS["tracking_error"]    * n_te[t]
+        )
+    return out
 
 
 def _timing_overlay(
@@ -549,24 +585,14 @@ def select_cluster_aware(
     group_repr.sort(key=lambda x: x[0], reverse=True)
 
     # 2026-05-26 fix-C — alpha 음수 group 제외 (require_positive_alpha=True).
-    # 단 bucket cap 부족 (Stage 3 solver infeasible) 방지 위해 최소 chosen 수
-    # 보장: 양수 group 이 충분하면 양수만, 부족하면 음수로 fill (alpha 순 top).
-    # 최소 보장 수 = max(1, n // 2) — bucket 의 단일 자산 cap 20% 고려하면 평균
-    # 50% target 도달 가능.
+    # 양수 group 만 선택 (음수 fill fallback 제거). chosen 이 n 보다 짧을 수 있음 —
+    # caller (cash_spillover) 가 짧은 chosen 을 conviction 으로 처리.
+    # 단, 모든 group 이 alpha 음수면 (특수 case) 최소 1개는 keep (bucket 비울 수 없음).
     if require_positive_alpha:
-        positive_groups = [(a, r, g) for (a, r, g) in group_repr if a > 0]
-        min_required = max(1, n // 2)
-        if len(positive_groups) >= min_required:
-            group_repr_filtered = positive_groups
-        elif group_repr:
-            # 양수 group 부족 — 음수도 top 순으로 fill (덜 나쁜 것부터)
-            negative_groups = [(a, r, g) for (a, r, g) in group_repr if a <= 0]
-            shortfall = min_required - len(positive_groups)
-            group_repr_filtered = (
-                positive_groups + negative_groups[:shortfall]
-            )
-        else:
-            group_repr_filtered = []
+        group_repr_filtered = [(a, r, g) for (a, r, g) in group_repr if a > 0]
+        # Special case: 양수 group 이 없으면 top-1 음수만 보관 (bucket 비우지 않음)
+        if not group_repr_filtered and group_repr:
+            group_repr_filtered = [group_repr[0]]
     else:
         group_repr_filtered = group_repr
 
@@ -605,17 +631,11 @@ def select_cluster_aware(
                 if (underlying_lookup or {}).get(t) not in chosen_underlyings
             ]
         remaining.sort(key=lambda t: alpha_scores.get(t, float("-inf")), reverse=True)
-        # 2026-05-26 fix-C — padding 도 alpha 양수 우선. 단 chosen 이 min_required
-        # (n//2) 미만이면 음수도 fill (bucket cap 보장).
+        # 2026-05-26 fix-C — padding 도 양수만 fill (음수 fill fallback 제거).
         if require_positive_alpha:
-            min_required_total = max(1, n // 2)
-            positive_remaining = [
+            remaining = [
                 t for t in remaining if alpha_scores.get(t, float("-inf")) > 0
             ]
-            if len(chosen) + len(positive_remaining) >= min_required_total:
-                # 양수만으로 충분 → 음수 제외
-                remaining = positive_remaining
-            # else: 양수 부족 → remaining 그대로 (alpha 순 정렬됨, 음수 포함)
         for t in remaining:
             chosen.append(t)
             if underlying_lookup and underlying_lookup.get(t):
