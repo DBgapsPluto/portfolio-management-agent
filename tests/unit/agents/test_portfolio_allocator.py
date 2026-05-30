@@ -403,3 +403,45 @@ def test_node_force_method_override_uses_state_value(tmp_path, monkeypatch):
     method_picker = result["allocation_attribution"]["method_picker"]
     assert method_picker["method"] == "nco"
     assert method_picker["rule_fired"] == "state_override"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4c — _apply_single_cap_redistribution unit tests
+# ---------------------------------------------------------------------------
+from tradingagents.agents.allocator.portfolio_allocator import (
+    _apply_single_cap_redistribution,
+)
+
+
+def test_apply_single_cap_redistribution_basic():
+    weights = {f"A{i:03d}": 0.10 for i in range(10)}
+    out = _apply_single_cap_redistribution(weights, cap=0.20)
+    assert all(0.0 <= w <= 0.20 + 1e-9 for w in out.values())
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_apply_single_cap_redistribution_cap_clipped_all():
+    weights = {"A": 1/3, "B": 1/3, "C": 1/3}
+    out = _apply_single_cap_redistribution(weights, cap=0.20)
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_apply_single_cap_redistribution_partial_cap():
+    weights = {"A": 0.50, "B": 0.10, "C": 0.10, "D": 0.10, "E": 0.10, "F": 0.10}
+    out = _apply_single_cap_redistribution(weights, cap=0.20)
+    assert out["A"] <= 0.20 + 1e-9
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+    for k in ["B", "C", "D", "E", "F"]:
+        assert 0.15 <= out[k] <= 0.20 + 1e-9
+
+
+def test_apply_single_cap_redistribution_iterative():
+    weights = {"A": 0.80, "B": 0.05, "C": 0.05, "D": 0.05, "E": 0.05}
+    out = _apply_single_cap_redistribution(weights, cap=0.20)
+    assert all(w <= 0.20 + 1e-9 for w in out.values())
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_apply_single_cap_redistribution_empty():
+    out = _apply_single_cap_redistribution({}, cap=0.20)
+    assert out == {}

@@ -54,6 +54,9 @@ MAX_SUBCATEGORY_BUCKET_SHARE: float = 0.50
 
 # Phase 1 (Stage 3 phase1-cash-spillover spec, 2026-05-28).
 ENB_WARNING_THRESHOLD: float = 3.0
+# Phase 4c (Stage 3 phase4c-enb-critical spec, 2026-05-30).
+ENB_CRITICAL_THRESHOLD: float = 2.0
+ENB_FALLBACK_MIN_TICKERS: int = 5
 
 
 def create_portfolio_allocator(
@@ -340,18 +343,54 @@ def create_portfolio_allocator(
         if "cov_breakdown" in attribution.get("optimization", {}):
             attribution["cov_breakdown"] = attribution["optimization"]["cov_breakdown"]
 
-        # Phase 1 — ENB 사후 측정 (warning-only)
+        # Phase 1 ENB 사후 측정 + Phase 4c critical threshold + EW fallback
         try:
             enb_value = compute_enb(wv.weights, sigma_df, method="minimum_torsion")
         except Exception as e:
             logger.warning("ENB 계산 실패: %s", e)
             enb_value = 0.0
         attribution["enb"] = float(enb_value)
-        if enb_value > 0 and enb_value < ENB_WARNING_THRESHOLD:
+
+        enb_action = "none"
+        if 0 < enb_value < ENB_CRITICAL_THRESHOLD:
+            n_selected = len(wv.weights)
+            if n_selected >= ENB_FALLBACK_MIN_TICKERS:
+                ew_weights = {t: 1.0 / n_selected for t in wv.weights}
+                ew_weights = _apply_single_cap_redistribution(
+                    ew_weights, SINGLE_ASSET_CAP,
+                )
+                wv = WeightVector(
+                    weights=ew_weights,
+                    method=wv.method,
+                    rationale="ENB CRITICAL fallback — equal weight + cap clip",
+                )
+                try:
+                    enb_post = compute_enb(
+                        wv.weights, sigma_df, method="minimum_torsion",
+                    )
+                except Exception:
+                    enb_post = 0.0
+                attribution["enb_post_fallback"] = float(enb_post)
+                enb_action = "equal_weight_fallback"
+                logger.warning(
+                    "ENB %.2f < %.2f (CRITICAL) — EW fallback (n=%d, ENB→%.2f)",
+                    enb_value, ENB_CRITICAL_THRESHOLD, n_selected, enb_post,
+                )
+            else:
+                enb_action = "warning_only_n_too_small"
+                logger.warning(
+                    "ENB %.2f < %.2f (CRITICAL) but n=%d < %d — fallback skipped",
+                    enb_value, ENB_CRITICAL_THRESHOLD,
+                    n_selected, ENB_FALLBACK_MIN_TICKERS,
+                )
+        elif 0 < enb_value < ENB_WARNING_THRESHOLD:
+            enb_action = "warning_only"
             logger.warning(
                 "ENB %.2f < %.2f — possible insufficient diversification",
                 enb_value, ENB_WARNING_THRESHOLD,
             )
+
+        attribution["enb_action"] = enb_action
 
         attribution["method_picker"] = {
             "method":       method_choice.method.value,
@@ -779,6 +818,39 @@ def _apply_subcategory_cap(
         if attribution is not None:
             attribution["subcategory_capped"] = capped_subcats
     return new_weights
+
+
+def _apply_single_cap_redistribution(
+    weights: dict[str, float],
+    cap: float,
+    max_iter: int = 10,
+) -> dict[str, float]:
+    """Cap-clip + 잔여를 non-capped 자산에 비례 분배 (iterative).
+
+    Phase 4c ENB CRITICAL EW fallback path. {t: 1/n} starting weights 시
+    n >= 5 이면 cap (0.20) 이하라 no-op.
+
+    Returns: sum ≈ 1.0, max(w) ≤ cap (수렴 가능 시). 빈 dict → 빈 dict.
+    """
+    weights = dict(weights)
+    if not weights:
+        return weights
+    for _ in range(max_iter):
+        excess = {t: max(0.0, w - cap) for t, w in weights.items()}
+        total_excess = sum(excess.values())
+        if total_excess < 1e-9:
+            break
+        weights = {t: min(w, cap) for t, w in weights.items()}
+        non_capped = [t for t, w in weights.items() if w < cap - 1e-9]
+        if not non_capped:
+            break
+        share = total_excess / len(non_capped)
+        for t in non_capped:
+            weights[t] += share
+    total = sum(weights.values())
+    if total > 0:
+        weights = {t: w / total for t, w in weights.items()}
+    return weights
 
 
 def _apply_min_weight_threshold(
