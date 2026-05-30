@@ -5,6 +5,7 @@ from typing import Literal
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
+from tradingagents.skills.portfolio.cov_estimator import compute_robust_cov
 
 
 MAX_ALLOCATION_ATTEMPTS = 2
@@ -45,7 +46,7 @@ def create_fallback_normalizer(cache_path: str | None = None):
             start = as_of - timedelta(days=365 * 3)
             returns = fetch_returns_matrix(tickers, start, as_of, cache_path=cache_path)
 
-            S = risk_models.sample_cov(returns)
+            S = compute_robust_cov(returns)
             ef = EfficientFrontier(None, S, weight_bounds=(0, 0.20))
             ef.min_volatility()
             constrained_weights = {
