@@ -81,3 +81,68 @@ def test_generate_bl_views_ticker_returns_match_bucket_rulebook():
         candidates=candidates,
     )
     assert views["A1"] == views["A2"] == views["A3"] == 0.13
+
+
+def test_generate_bl_views_unknown_scenario_returns_empty():
+    breakdown: dict = {}
+    views, confs = generate_bl_views(
+        scenario="xyz_unknown",
+        regime_confidence=0.8,
+        candidates={"kr_equity": ["A069500"]},
+        breakdown_out=breakdown,
+    )
+    assert views == {}
+    assert confs == []
+    assert breakdown["fallback_reason"] == "unknown_scenario"
+    assert breakdown["scenario"] == "xyz_unknown"
+
+
+def test_generate_bl_views_none_scenario_returns_empty():
+    breakdown: dict = {}
+    views, confs = generate_bl_views(
+        scenario=None,
+        regime_confidence=0.8,
+        candidates={"kr_equity": ["A069500"]},
+        breakdown_out=breakdown,
+    )
+    assert views == {}
+    assert confs == []
+    assert breakdown["fallback_reason"] == "unknown_scenario"
+
+
+def test_generate_bl_views_confidence_floor():
+    views, confs = generate_bl_views(
+        scenario="goldilocks",
+        regime_confidence=0.05,
+        candidates={"kr_equity": ["A069500"]},
+    )
+    assert confs[0] == BL_VIEW_MIN_CONFIDENCE
+
+
+def test_generate_bl_views_bucket_agnostic():
+    candidates = {
+        "kr_equity":     ["A069500"],
+        "alt_realestate": ["AXYZ"],
+        "bond":          ["A148070"],
+    }
+    breakdown: dict = {}
+    views, confs = generate_bl_views(
+        scenario="goldilocks",
+        regime_confidence=0.8,
+        candidates=candidates,
+        breakdown_out=breakdown,
+    )
+    assert "A069500" in views
+    assert "A148070" in views
+    assert "AXYZ" not in views
+    assert "alt_realestate" not in breakdown["n_views_per_bucket"]
+
+
+def test_generate_bl_views_empty_candidates():
+    views, confs = generate_bl_views(
+        scenario="goldilocks",
+        regime_confidence=0.8,
+        candidates={},
+    )
+    assert views == {}
+    assert confs == []
