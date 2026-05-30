@@ -63,19 +63,25 @@ def make_factor_panel(
     aum_by_ticker: dict[str, float] | None = None,
     alpha_overrides: dict[str, float] | None = None,
 ) -> dict[str, FactorPanel]:
-    """FactorPanel dict. alpha 는 skip1m mom 으로 표현."""
+    """FactorPanel dict. alpha 는 skip1m mom 으로 표현.
+
+    rank_normalize 가 동일 값에서 0 을 반환하는 특성 때문에, override 가 없는 ticker
+    는 소폭 다른 alpha (base + i * 0.001) 를 부여해 정렬 구별을 보장한다.
+    """
     aum_by_ticker = aum_by_ticker or {}
     alpha_overrides = alpha_overrides or {}
     panels: dict[str, FactorPanel] = {}
-    for t in tickers:
+    base_alpha = 0.05
+    for i, t in enumerate(tickers):
         aum = aum_by_ticker.get(t, 50_000_000_000)
-        alpha = alpha_overrides.get(t, 0.05)
+        # override 없는 경우 소폭 차이를 둬 rank_normalize 가 0 을 반환하지 않게 함
+        alpha = alpha_overrides.get(t, base_alpha + i * 0.001)
         panels[t] = FactorPanel(
             skip1m_mom_3m=alpha,
             skip1m_mom_6m=alpha,
             skip1m_mom_12m=alpha,
             realized_vol_60d=0.10,
-            sharpe_60d=0.5,
+            sharpe_60d=0.5 + i * 0.01,
             log_aum=math.log(aum),
         )
     return panels
