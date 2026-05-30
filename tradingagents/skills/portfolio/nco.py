@@ -9,6 +9,9 @@ import logging
 
 import numpy as np
 import pandas as pd
+from scipy.cluster.hierarchy import fcluster, linkage
+from scipy.spatial.distance import squareform
+from sklearn.metrics import silhouette_score
 
 logger = logging.getLogger(__name__)
 
@@ -50,3 +53,34 @@ def _opt_port(cov: pd.DataFrame, mu: pd.Series | None = None) -> pd.Series:
         w = np.ones(n) / n
 
     return pd.Series(w, index=cov.index)
+
+
+def _hierarchical_cluster(
+    corr: pd.DataFrame,
+    max_num_clusters: int,
+) -> tuple[np.ndarray, float | None]:
+    """Single-linkage clustering on √((1-corr)/2) distance.
+
+    silhouette score 평가 후 best k 선택. 단일 cluster fallback 시 silhouette=None.
+    """
+    n = corr.shape[0]
+    dist_matrix = np.sqrt(((1 - corr.values).clip(min=0)) / 2.0)
+    np.fill_diagonal(dist_matrix, 0.0)
+    cond_dist = squareform(dist_matrix, checks=False)
+    Z = linkage(cond_dist, method=NCO_LINKAGE_METHOD)
+
+    best_score = -np.inf
+    best_labels = None
+    for k in range(NCO_MIN_NUM_CLUSTERS, max_num_clusters + 1):
+        labels = fcluster(Z, k, criterion="maxclust")
+        if len(set(labels)) < 2:
+            continue
+        score = silhouette_score(dist_matrix, labels, metric="precomputed")
+        if score > best_score:
+            best_score = score
+            best_labels = labels
+
+    if best_labels is None:
+        return np.ones(n, dtype=int), None
+
+    return best_labels, float(best_score)
