@@ -8,6 +8,7 @@ class OptimizationMethod(str, Enum):
     RISK_PARITY = "risk_parity"
     MIN_VARIANCE = "min_variance"
     BLACK_LITTERMAN = "black_litterman"
+    NCO = "nco"   # Phase 3a (2026-05-30)
 
 
 class BucketTarget(BaseModel):

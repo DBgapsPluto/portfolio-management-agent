@@ -34,6 +34,13 @@ def main() -> int:
     parser.add_argument("--as-of", default="2026-05-15", help="YYYY-MM-DD")
     parser.add_argument("--capital", type=int, default=1_000_000_000)
     parser.add_argument("--preset", default="db_gaps")
+    parser.add_argument(
+        "--force-method",
+        type=str,
+        default=None,
+        choices=["min_variance", "risk_parity", "max_sharpe", "black_litterman", "hrp", "nco"],
+        help="Force optimizer method (Phase 3a A/B testing).",
+    )
     args = parser.parse_args()
 
     # date 검증
@@ -66,6 +73,7 @@ def main() -> int:
         result = graph.run(
             as_of_date=args.as_of,
             capital_krw=args.capital,
+            force_method=args.force_method,
         )
     except Exception as e:
         logger.exception("Pipeline run failed: %s", e)

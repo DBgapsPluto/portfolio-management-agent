@@ -101,6 +101,12 @@ class AgentState(MessagesState):
         "Previous week ResearchDecision — Stage 2 EMA blend prior (Issue #11)",
     ]
 
+    # === Phase 3a A/B testing ===
+    force_method: Annotated[
+        Optional[str],
+        "Force optimizer method (Phase 3a A/B testing). None = auto-select via method_picker.",
+    ]
+
 
 def _create_empty_state(
     as_of_date: str,
@@ -108,6 +114,7 @@ def _create_empty_state(
     capital_krw: int,
     preset_name: str,
     previous_portfolio: dict | None = None,
+    force_method: str | None = None,
 ) -> AgentState:
     return AgentState(
         messages=[],
@@ -135,6 +142,7 @@ def _create_empty_state(
         warnings=[],
         previous_portfolio=previous_portfolio,
         prior_research_decision=None,
+        force_method=force_method,
     )
 
 
