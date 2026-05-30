@@ -131,6 +131,7 @@ class TradingAgentsGraph:
         as_of_date: str,
         capital_krw: int = 1_000_000_000,
         previous_portfolio: Optional[dict] = None,
+        force_method: Optional[str] = None,
     ) -> dict:
         state = _create_empty_state(
             as_of_date=as_of_date,
@@ -138,6 +139,7 @@ class TradingAgentsGraph:
             capital_krw=capital_krw,
             preset_name=self.preset_name,
             previous_portfolio=previous_portfolio,
+            force_method=force_method,
         )
         try:
             archive_metadata(as_of_date, {
