@@ -14,8 +14,9 @@ from tradingagents.dataflows.universe import Universe
 from tradingagents.schemas.portfolio import BucketTarget, CandidateSet
 from tradingagents.schemas.technical import ETFRanking
 from tradingagents.skills.portfolio.factor_scorer import (
-    FactorPanel, compute_factor_panel, compute_impl_score, score_candidates,
-    score_candidates_with_components, select_cluster_aware, select_diverse,
+    FactorPanel, compute_adaptive_n_max, compute_factor_panel, compute_impl_score,
+    score_candidates, score_candidates_with_components, select_by_enb_greedy,
+    select_diverse,
 )
 from tradingagents.skills.portfolio.sub_category import (
     _scenario_to_axes, compose_boost, log_boost,
@@ -92,7 +93,8 @@ def select_etf_candidates(
     *,
     returns: pd.DataFrame,
     factor_panel: dict[str, FactorPanel],
-    per_bucket_n: int = 5,
+    sigma: pd.DataFrame,
+    capital_krw: float,
     regime_quadrant: str | None = None,
     regime_confidence: float = 0.5,
     correlation_threshold: float = 0.85,
@@ -201,7 +203,7 @@ def select_etf_candidates(
             "regime_quadrant":       regime_quadrant,
             "regime_confidence":     regime_confidence,
             "dominant_scenario":     dominant_scenario,
-            "per_bucket_n":          per_bucket_n,
+            "capital_krw":           capital_krw,
             "correlation_threshold": correlation_threshold,
             "longlist_multiplier":   longlist_multiplier,
         })
@@ -243,10 +245,18 @@ def select_etf_candidates(
             continue
 
         if bucket_name == "bond" and bucket_target.bond_tips_share > 0.0:
+            bond_eligible_tickers = [e.ticker for e in eligible]
+            # Use eligible count as n_positive_alpha upper bound — bond TIPS path
+            # uses select_diverse (not ENB greedy), so alpha sign filter is not applied.
+            bond_n = compute_adaptive_n_max(
+                n_positive_alpha=len(bond_eligible_tickers),
+                bucket_weight=weight,
+                capital_krw=capital_krw,
+            )
             chosen = _select_bond_with_tips_quota(
                 eligible, returns, aum_lookup,
                 regime_quadrant, regime_confidence, factor_panel,
-                dominant_scenario, per_bucket_n,
+                dominant_scenario, bond_n,
                 correlation_threshold, longlist_multiplier,
                 tips_share=bucket_target.bond_tips_share,
                 breakdown_out=bucket_attr,
@@ -277,18 +287,37 @@ def select_etf_candidates(
             ranked = sorted(
                 alpha_scores.keys(), key=lambda t: alpha_scores[t], reverse=True,
             )
-            sel_trace: dict | None = {} if bucket_attr is not None else None
-            chosen = select_cluster_aware(
-                [e.ticker for e in eligible],
-                alpha_scores, impl_scores,
-                clusters=clusters,
-                n=per_bucket_n,
-                returns=returns,
-                correlation_threshold=correlation_threshold,
-                selection_trace=sel_trace,
-                underlying_lookup=underlying_lookup,
-                require_positive_alpha=require_positive_alpha,
+            # Phase 2b — adaptive n_max + ENB greedy
+            bucket_eligible_tickers = [e.ticker for e in eligible]
+            n_positive_alpha = sum(
+                1 for t in bucket_eligible_tickers if alpha_scores.get(t, 0.0) > 0
             )
+            n_max = compute_adaptive_n_max(
+                n_positive_alpha=n_positive_alpha,
+                bucket_weight=weight,
+                capital_krw=capital_krw,
+            )
+            sigma_sub = sigma.reindex(
+                index=bucket_eligible_tickers, columns=bucket_eligible_tickers,
+            ).dropna(how="all").dropna(axis=1, how="all")
+            valid_eligible = [t for t in bucket_eligible_tickers if t in sigma_sub.index]
+            selection_trace: dict = {}
+            chosen = select_by_enb_greedy(
+                eligible=valid_eligible,
+                alpha_scores=alpha_scores,
+                impl_scores=impl_scores,
+                sigma=sigma_sub,
+                n_max=n_max,
+                selection_trace=selection_trace,
+            )
+            n_max_components = {
+                "n_positive_alpha": n_positive_alpha,
+                "weight_cap": max(1, int(weight / 0.025)) if weight > 0 else 0,
+                "capital_cap": max(1, int(weight * capital_krw / 50_000_000)) if weight > 0 else 0,
+                "abs_max": 8,
+                "n_max_chosen": n_max,
+            }
+            selection_trace["n_max_components"] = n_max_components
             if bucket_attr is not None:
                 bucket_attr["bond_split"] = False
                 bucket_attr["ranked_order"] = ranked
@@ -297,11 +326,11 @@ def select_etf_candidates(
                 bucket_attr["regime_weights"] = (rank_break or {}).get("regime_weights")
                 bucket_attr["scenario_axes"] = (rank_break or {}).get("scenario_axes")
                 bucket_attr["per_ticker"] = (rank_break or {}).get("per_ticker", {})
-                bucket_attr["selection_trace"] = sel_trace or {}
-                bucket_attr["clusters_used"] = bool(clusters)
-                bucket_attr["chosen"] = chosen[:per_bucket_n]
+                bucket_attr["selection_trace"] = selection_trace
+                bucket_attr["n_max_computed"] = n_max
+                bucket_attr["chosen"] = chosen
 
-        bucket_to_tickers[bucket_name] = chosen[:per_bucket_n]
+        bucket_to_tickers[bucket_name] = chosen
 
     total = sum(len(v) for v in bucket_to_tickers.values())
     mode_label = (
@@ -310,8 +339,7 @@ def select_etf_candidates(
     return CandidateSet(
         bucket_to_tickers=bucket_to_tickers,
         selection_criteria=(
-            f"mode={mode_label}, "
-            f"per_bucket_n={per_bucket_n}, corr_thresh={correlation_threshold}"
+            f"mode={mode_label}, capital={capital_krw/1e9:.1f}B KRW, strategy=enb_greedy"
         )[:300],
         total_candidates=max(total, 1),
     )

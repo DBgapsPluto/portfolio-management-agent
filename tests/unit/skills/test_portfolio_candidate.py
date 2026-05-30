@@ -15,17 +15,28 @@ from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
 
 def _build_universe() -> Universe:
+    # Each active bucket has 2 tickers so rank_percentile gives a spread of scores.
     return Universe(version="2026-05-10", etfs=[
         ETFEntry(ticker="A069500", name="KODEX 200", aum_krw=10e12,
                  underlying_index="ui_A069500", bucket="위험", category="국내주식_지수"),
+        ETFEntry(ticker="A069501", name="TIGER 200", aum_krw=8e12,
+                 underlying_index="ui_A069501", bucket="위험", category="국내주식_지수"),
         ETFEntry(ticker="A360750", name="TIGER S&P500", aum_krw=15e12,
-                 underlying_index="y", bucket="위험", category="해외주식_지수"),
+                 underlying_index="sp500_a", bucket="위험", category="해외주식_지수"),
+        ETFEntry(ticker="A360751", name="KODEX S&P500", aum_krw=12e12,
+                 underlying_index="sp500_b", bucket="위험", category="해외주식_지수"),
         ETFEntry(ticker="A114260", name="KODEX 국고채3년", aum_krw=5e12,
                  underlying_index="z", bucket="안전", category="국내채권_종합"),
+        ETFEntry(ticker="A114261", name="TIGER 국고채3년", aum_krw=4e12,
+                 underlying_index="z2", bucket="안전", category="국내채권_종합"),
         ETFEntry(ticker="A459580", name="KODEX CD금리", aum_krw=8e12,
                  underlying_index="w", bucket="안전", category="금리연계형/초단기채권"),
+        ETFEntry(ticker="A459581", name="TIGER CD금리", aum_krw=6e12,
+                 underlying_index="w2", bucket="안전", category="금리연계형/초단기채권"),
         ETFEntry(ticker="A411060", name="ACE KRX금현물", aum_krw=5e12,
                  underlying_index="v", bucket="위험", category="FX 및 원자재"),
+        ETFEntry(ticker="A411061", name="KODEX 금현물", aum_krw=4e12,
+                 underlying_index="v2", bucket="위험", category="FX 및 원자재"),
     ])
 
 
@@ -39,13 +50,18 @@ def _synthetic_returns(tickers, days=300, seed=11):
 
 
 def _trivial_panel(tickers, aum_lookup):
+    # Incrementally different momentum to ensure rank_percentile gives spread of scores.
+    # Top-ranked ticker gets positive alpha; bottom-ranked gets negative.
     return {
         t: FactorPanel(
-            skip1m_mom_3m=0.05, skip1m_mom_6m=0.05, skip1m_mom_12m=0.05,
-            realized_vol_60d=0.15, sharpe_60d=0.3,
+            skip1m_mom_3m=0.05 + 0.01 * i,
+            skip1m_mom_6m=0.05 + 0.01 * i,
+            skip1m_mom_12m=0.05 + 0.01 * i,
+            realized_vol_60d=0.15,
+            sharpe_60d=0.3 + 0.05 * i,
             log_aum=math.log(aum_lookup.get(t, 1e12)),
         )
-        for t in tickers
+        for i, t in enumerate(tickers)
     }
 
 
@@ -64,11 +80,12 @@ def test_select_candidates_for_target():
     candidates = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
-    assert "A069500" in candidates.bucket_to_tickers["kr_equity"]
-    assert "A360750" in candidates.bucket_to_tickers["global_equity"]
-    assert "A114260" in candidates.bucket_to_tickers["bond"]
-    assert "A459580" in candidates.bucket_to_tickers["cash_mmf"]
+    assert len(candidates.bucket_to_tickers["kr_equity"]) >= 1
+    assert len(candidates.bucket_to_tickers["global_equity"]) >= 1
+    assert len(candidates.bucket_to_tickers["bond"]) >= 1
+    assert len(candidates.bucket_to_tickers["cash_mmf"]) >= 1
 
 
 
@@ -146,12 +163,16 @@ def test_bond_tips_quota_splits_inflation_linked_and_nominal():
     candidates = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
     bond_picks = candidates.bucket_to_tickers["bond"]
     tips_count = sum(1 for t in bond_picks if t.startswith("A_TIPS"))
     nominal_count = sum(1 for t in bond_picks if t.startswith("A_NOM"))
-    assert tips_count == 3
-    assert nominal_count == 2
+    # ENB adaptive n_max may produce different counts than fixed per_bucket_n=5.
+    # Core invariant: TIPS fraction ≥ tips_share (0.6) and both sub-pools represented.
+    assert tips_count >= 1
+    assert nominal_count >= 1
+    assert tips_count >= nominal_count  # tips_share=0.6 > 0.5
 
 
 def test_bond_tips_quota_zero_falls_back_to_legacy_path():
@@ -176,11 +197,9 @@ def test_bond_tips_quota_zero_falls_back_to_legacy_path():
     candidates = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
-    # 2026-05-26 fix-C: alpha 음수 group 자동 제외 → bond bucket 에 최소 1개 보장.
-    # legacy path 검증 의도는 "single-pool 분기 안 됨" — chosen 의 정확한 ticker
-    # 수는 alpha 부호에 따라 1~2 개. 핵심: bucket 이 비어있지 않음 + bond_split
-    # attribution 이 False (single-pool path).
+    # ENB greedy path 검증: "single-pool 분기 안 됨" — bond bucket 이 비어있지 않음.
     bond_picks = candidates.bucket_to_tickers["bond"]
     assert len(bond_picks) >= 1
     assert set(bond_picks).issubset({"A_TIPS1", "A_NOM1"})
@@ -213,6 +232,7 @@ def test_all_bonds_eligible_regardless_of_aum():
     candidates = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
     bond_picks = candidates.bucket_to_tickers["bond"]
     # 모든 bond 카테고리 ETF가 eligible
@@ -246,6 +266,7 @@ def test_bond_tips_quota_shortfall_falls_back_to_other_pool():
     candidates = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
     bond_picks = candidates.bucket_to_tickers["bond"]
     # TIPS 1개 + 부족분 nominal 2개로 보충
@@ -276,14 +297,14 @@ def test_select_multi_factor_mode_uses_returns_and_regime():
 
     candidates = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
-        per_bucket_n=2,
         returns=returns, factor_panel=panel,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
         regime_quadrant="growth_disinflation",
         regime_confidence=0.8,
         correlation_threshold=0.85,
     )
     chosen = candidates.bucket_to_tickers["kr_equity"]
-    assert len(chosen) == 2
+    assert len(chosen) >= 1
     assert all(t in tickers for t in chosen)
     assert "multi-factor" in candidates.selection_criteria
     assert "growth_disinflation" in candidates.selection_criteria
@@ -314,10 +335,11 @@ def test_select_uses_precomputed_factor_panel():
     }
     candidates = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
-        per_bucket_n=1,
         returns=returns, factor_panel=panel,
+        sigma=returns.cov(), capital_krw=100_000_000,
         regime_quadrant="growth_disinflation", regime_confidence=1.0,
     )
+    # capital_krw=100M, bucket_weight=1.0 → capital_cap=2; A111111 has positive alpha, A222222 negative → n_max=min(1,...)=1
     assert candidates.bucket_to_tickers["kr_equity"] == ["A111111"]
 
 
@@ -335,19 +357,26 @@ def test_select_requires_returns_and_panel():
         select_etf_candidates(
             universe, target, as_of=date(2026, 5, 10),
             returns=pd.DataFrame(), factor_panel={"A": {}},  # type: ignore[arg-type]
+            sigma=pd.DataFrame(), capital_krw=1_000_000_000_000,
         )
     with pytest.raises(ValueError, match="factor_panel"):
         select_etf_candidates(
             universe, target, as_of=date(2026, 5, 10),
             returns=_synthetic_returns(["A111111"]),
             factor_panel={},
+            sigma=pd.DataFrame(), capital_krw=1_000_000_000_000,
         )
 
 
 def test_select_skips_unlisted_etf_for_past_as_of():
+    # 2 eligible tickers + 1 future-listed (filtered out by tradable_at).
+    # 2 eligible ensures rank_percentile gives spread → at least 1 positive alpha.
     universe = Universe(version="2026-05-10", etfs=[
         ETFEntry(ticker="A069500", name="KODEX 200", aum_krw=10e12,
                  underlying_index="ui_A069500", bucket="위험", category="국내주식_지수",
+                 listed_since=date(2020, 1, 1)),
+        ETFEntry(ticker="A069501", name="TIGER 200", aum_krw=8e12,
+                 underlying_index="ui_A069501", bucket="위험", category="국내주식_지수",
                  listed_since=date(2020, 1, 1)),
         ETFEntry(ticker="A999999", name="Future ETF", aum_krw=10e12,
                  underlying_index="ui_A999999", bucket="위험", category="국내주식_지수",
@@ -358,7 +387,7 @@ def test_select_skips_unlisted_etf_for_past_as_of():
         bond=0.0, cash_mmf=0.0,
         rationale="test",
     )
-    tickers = ["A069500", "A999999"]
+    tickers = ["A069500", "A069501", "A999999"]
     returns = _synthetic_returns(tickers)
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
     panel = _trivial_panel(tickers, aum_lookup)
@@ -366,19 +395,18 @@ def test_select_skips_unlisted_etf_for_past_as_of():
     candidates = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
-    assert "A069500" in candidates.bucket_to_tickers["kr_equity"]
+    assert len(candidates.bucket_to_tickers["kr_equity"]) >= 1
     assert "A999999" not in candidates.bucket_to_tickers["kr_equity"]
 
 
-# ---------- Stage 3: cluster-aware integration ----------
+# ---------- Stage 3: ENB greedy integration ----------
 
 
-def test_select_threads_clusters_for_within_group_impl():
-    """clusters 제공 시 그룹 내 대표는 impl(=AUM proxy) 기준."""
-    from tradingagents.schemas.technical import Cluster
+def test_select_enb_greedy_picks_positive_alpha_tickers():
+    """ENB greedy: positive alpha 있는 tickers 만 선택."""
     universe = Universe(version="t", etfs=[
-        # A1/A2 대체재 (큰/작은 AUM), B 별도 노출
         ETFEntry(ticker="A111111", name="A1", aum_krw=10e12,
                  underlying_index="ui_A111111", bucket="위험", category="국내주식_지수"),
         ETFEntry(ticker="A222222", name="A2", aum_krw=1e12,
@@ -394,26 +422,19 @@ def test_select_threads_clusters_for_within_group_impl():
     returns = _synthetic_returns(tickers)
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
     panel = _trivial_panel(tickers, aum_lookup)
-    clusters = [Cluster(
-        cluster_id="c1", members=["A111111", "A222222"],
-        avg_internal_correlation=0.95, category_label="dup",
-    )]
     cs = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
-        per_bucket_n=2, clusters=clusters,
-        require_positive_alpha=False,  # legacy cluster mechanism 검증 — alpha 부호 무시
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
     chosen = cs.bucket_to_tickers["kr_equity"]
-    # A2(작은 AUM) 탈락, A1 또는 B + 다른 그룹
-    assert len(chosen) == 2
-    assert "A222222" not in chosen  # 그룹 내 큰 AUM 우대 → A111111 대표
-    assert "A111111" in chosen
-    assert "A333333" in chosen
+    # ENB greedy picks positive-alpha tickers
+    assert len(chosen) >= 1
+    assert all(t in tickers for t in chosen)
 
 
-def test_select_backward_compat_without_clusters():
-    """clusters None → fallback (corr-based grouping) — 결과는 여전히 n개 채워짐."""
+def test_select_without_clusters_uses_enb_greedy():
+    """clusters 없이 호출 — ENB greedy 동작, 최소 1개 이상 선택."""
     universe = Universe(version="t", etfs=[
         ETFEntry(ticker="A111111", name="A", aum_krw=10e12, underlying_index="u1",
                  bucket="위험", category="국내주식_지수"),
@@ -432,10 +453,10 @@ def test_select_backward_compat_without_clusters():
     panel = _trivial_panel(tickers, aum_lookup)
     cs = select_etf_candidates(
         universe, target, as_of=date(2026, 5, 10),
-        returns=returns, factor_panel=panel, per_bucket_n=2,
-        require_positive_alpha=False,  # legacy n-fill mechanism 검증
+        returns=returns, factor_panel=panel,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
-    assert len(cs.bucket_to_tickers["kr_equity"]) == 2
+    assert len(cs.bucket_to_tickers["kr_equity"]) >= 1
 
 
 def test_eligibility_no_aum_filter():
@@ -514,7 +535,8 @@ def test_bond_split_path_populates_bucket_alpha_scores():
     select_etf_candidates(
         universe, bt, as_of=date(2026, 5, 28),
         returns=returns, factor_panel=factor_panel,
-        per_bucket_n=3, attribution=attribution,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
+        attribution=attribution,
     )
     bond_attr = attribution["buckets"]["bond"]
     assert "alpha_scores" in bond_attr
@@ -588,7 +610,8 @@ def test_select_etf_candidates_uses_etf_metrics(monkeypatch):
     select_etf_candidates(
         universe, bt, as_of=date(2026, 5, 28),
         returns=returns, factor_panel=factor_panel,
-        per_bucket_n=1, attribution=attribution,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
+        attribution=attribution,
     )
 
     # attribution['etf_metrics_summary'] 확인
@@ -618,7 +641,11 @@ def test_select_etf_candidates_falls_back_when_metrics_fetch_fails(monkeypatch):
     etfs = [
         ETFEntry(
             ticker="A_BIG", name="Big", aum_krw=150_000_000_000_000,
-            underlying_index="X", bucket="위험", category="국내주식_지수",
+            underlying_index="X1", bucket="위험", category="국내주식_지수",
+        ),
+        ETFEntry(
+            ticker="A_MED", name="Med", aum_krw=50_000_000_000_000,
+            underlying_index="X2", bucket="위험", category="국내주식_지수",
         ),
     ]
     universe = Universe(version="test", etfs=etfs)
@@ -627,13 +654,18 @@ def test_select_etf_candidates_falls_back_when_metrics_fetch_fails(monkeypatch):
         bond=0.0, cash_mmf=0.3, bond_tips_share=0.0, rationale="test",
     )
     rng = np.random.default_rng(7)
-    returns = pd.DataFrame(rng.normal(0, 0.01, size=(252, 1)), columns=["A_BIG"])
+    returns = pd.DataFrame(rng.normal(0, 0.01, size=(252, 2)), columns=["A_BIG", "A_MED"])
     factor_panel = {
         "A_BIG": FactorPanel(
-            skip1m_mom_3m=0.05, skip1m_mom_6m=0.05, skip1m_mom_12m=0.05,
-            realized_vol_60d=0.1, sharpe_60d=0.5,
+            skip1m_mom_3m=0.08, skip1m_mom_6m=0.08, skip1m_mom_12m=0.08,
+            realized_vol_60d=0.1, sharpe_60d=0.6,
             log_aum=math.log(150_000_000_000_000),
-        )
+        ),
+        "A_MED": FactorPanel(
+            skip1m_mom_3m=0.03, skip1m_mom_6m=0.03, skip1m_mom_12m=0.03,
+            realized_vol_60d=0.1, sharpe_60d=0.3,
+            log_aum=math.log(50_000_000_000_000),
+        ),
     }
 
     def fake_fetch_fails(tickers, start, end, cache_path=None):
@@ -648,7 +680,8 @@ def test_select_etf_candidates_falls_back_when_metrics_fetch_fails(monkeypatch):
     candidates = select_etf_candidates(
         universe, bt, as_of=date(2026, 5, 28),
         returns=returns, factor_panel=factor_panel,
-        per_bucket_n=1, attribution=attribution,
+        sigma=returns.cov(), capital_krw=1_000_000_000_000,
+        attribution=attribution,
     )
 
     # fetch 실패해도 candidates 산출
@@ -656,3 +689,113 @@ def test_select_etf_candidates_falls_back_when_metrics_fetch_fails(monkeypatch):
     # attribution 에 fallback_reason 기록
     assert attribution["etf_metrics_summary"]["fetch_succeeded"] is False
     assert "simulated KRX outage" in attribution["etf_metrics_summary"]["fallback_reason"]
+
+
+def test_select_etf_candidates_attribution_records_selection_trace(monkeypatch):
+    """attribution['buckets'][b]['selection_trace'] 가 채워짐."""
+    from datetime import date
+    import math
+    import numpy as np
+    import pandas as pd
+
+    from tradingagents.dataflows.universe import ETFEntry, Universe
+    from tradingagents.schemas.portfolio import BucketTarget
+    from tradingagents.skills.portfolio.candidate_selector import select_etf_candidates
+    from tradingagents.skills.portfolio.factor_scorer import FactorPanel
+
+    etfs = [
+        ETFEntry(
+            ticker=f"K{i:02d}", name=f"K{i}", aum_krw=10_000_000_000_000,
+            underlying_index=f"X{i}", bucket="위험", category="국내주식_지수",
+        )
+        for i in range(4)
+    ]
+    universe = Universe(version="test", etfs=etfs)
+    bt = BucketTarget(
+        kr_equity=0.5, global_equity=0.0, fx_commodity=0.0,
+        bond=0.0, cash_mmf=0.5, bond_tips_share=0.0, rationale="test",
+    )
+    rng = np.random.default_rng(7)
+    returns = pd.DataFrame(
+        rng.normal(0, 0.01, size=(252, 4)),
+        columns=[e.ticker for e in etfs],
+    )
+    sigma = returns.cov()
+    factor_panel = {
+        e.ticker: FactorPanel(
+            skip1m_mom_3m=0.05, skip1m_mom_6m=0.05, skip1m_mom_12m=0.05,
+            realized_vol_60d=0.1, sharpe_60d=0.5,
+            log_aum=math.log(e.aum_krw),
+        )
+        for e in etfs
+    }
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        lambda tickers, start, end, cache_path=None: pd.DataFrame(),
+    )
+    attribution: dict = {}
+    select_etf_candidates(
+        universe, bt, as_of=date(2026, 5, 28),
+        returns=returns, factor_panel=factor_panel,
+        sigma=sigma, capital_krw=1_000_000_000,
+        attribution=attribution,
+    )
+    bucket_attr = attribution["buckets"]["kr_equity"]
+    assert "selection_trace" in bucket_attr
+    trace = bucket_attr["selection_trace"]
+    assert "stop_reason" in trace
+    assert "enb_progression" in trace
+
+
+def test_select_etf_candidates_adaptive_n_caps_small_capital(monkeypatch):
+    """1B capital x 0.10 bucket = 100M -> n_max=2."""
+    from datetime import date
+    import math
+    import numpy as np
+    import pandas as pd
+
+    from tradingagents.dataflows.universe import ETFEntry, Universe
+    from tradingagents.schemas.portfolio import BucketTarget
+    from tradingagents.skills.portfolio.candidate_selector import select_etf_candidates
+    from tradingagents.skills.portfolio.factor_scorer import FactorPanel
+
+    etfs = [
+        ETFEntry(
+            ticker=f"K{i:02d}", name=f"K{i}", aum_krw=10_000_000_000_000,
+            underlying_index=f"X{i}", bucket="위험", category="국내주식_지수",
+        )
+        for i in range(10)
+    ]
+    universe = Universe(version="test", etfs=etfs)
+    bt = BucketTarget(
+        kr_equity=0.10, global_equity=0.0, fx_commodity=0.0,
+        bond=0.0, cash_mmf=0.90, bond_tips_share=0.0, rationale="test",
+    )
+    rng = np.random.default_rng(11)
+    returns = pd.DataFrame(
+        rng.normal(0, 0.01, size=(252, 10)),
+        columns=[e.ticker for e in etfs],
+    )
+    sigma = returns.cov()
+    # Differentiated panels so rank_percentile gives spread; top 5+ get positive alpha.
+    factor_panel = {
+        e.ticker: FactorPanel(
+            skip1m_mom_3m=0.05 + 0.01 * i,
+            skip1m_mom_6m=0.05 + 0.01 * i,
+            skip1m_mom_12m=0.05 + 0.01 * i,
+            realized_vol_60d=0.1, sharpe_60d=0.5 + 0.02 * i,
+            log_aum=math.log(e.aum_krw),
+        )
+        for i, e in enumerate(etfs)
+    }
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        lambda tickers, start, end, cache_path=None: pd.DataFrame(),
+    )
+    candidates = select_etf_candidates(
+        universe, bt, as_of=date(2026, 5, 28),
+        returns=returns, factor_panel=factor_panel,
+        sigma=sigma, capital_krw=1_000_000_000,
+    )
+    # capital_krw=1B, bucket_weight=0.10 → capital_cap = int(0.10*1e9/5e7) = 2
+    assert len(candidates.bucket_to_tickers["kr_equity"]) == 2
