@@ -36,6 +36,30 @@ SCENARIO_BUCKET_RULEBOOK: dict[str, dict[str, float]] = {
 # Idzorek-Walters Ω 가 numerically 안정하려면 view confidence > 0 이어야 함.
 BL_VIEW_MIN_CONFIDENCE: float = 0.10
 
+# Phase 4b — BL tilt dial
+
+# Idzorek-Walters Ω 안정성 boundary (post-multiplier clipping)
+BL_VIEW_CONF_MIN_AFTER_MULTI: float = 0.05
+BL_VIEW_CONF_MAX_AFTER_MULTI: float = 1.0
+
+# Unknown scenario fallback (Phase 3b 동작 보존)
+BL_TAU_DEFAULT: float = 0.05
+BL_VIEW_CONF_MULTI_DEFAULT: float = 1.0
+
+# 9 scenario × (tau, view_conf_multi)
+# tau ∈ [0.025, 0.10], view_conf_multi ∈ [0.5, 1.5]
+SCENARIO_BL_TILT: dict[str, dict[str, float]] = {
+    "goldilocks":       {"tau": 0.10, "view_conf_multi": 1.3},
+    "kr_boom":          {"tau": 0.10, "view_conf_multi": 1.3},
+    "overheating":      {"tau": 0.07, "view_conf_multi": 1.0},
+    "ai_concentration": {"tau": 0.07, "view_conf_multi": 1.0},
+    "late_cycle":       {"tau": 0.05, "view_conf_multi": 0.8},
+    "stagflation":      {"tau": 0.05, "view_conf_multi": 0.7},
+    "broad_recession":  {"tau": 0.025, "view_conf_multi": 0.5},
+    "kr_stress":        {"tau": 0.025, "view_conf_multi": 0.5},
+    "global_credit":    {"tau": 0.025, "view_conf_multi": 0.5},
+}
+
 
 def generate_bl_views(
     *,
@@ -44,25 +68,41 @@ def generate_bl_views(
     candidates: dict[str, list[str]],
     sub_category_lookup: dict[str, str] | None = None,
     breakdown_out: dict | None = None,
-) -> tuple[dict[str, float], list[float]]:
+) -> tuple[dict[str, float], list[float], dict[str, float | bool]]:
     """
-    Generate absolute Black-Litterman views from rulebook.
+    Generate absolute BL views + post-multiplier confidences + tilt params.
 
-    Each ticker in bucket B gets SCENARIO_BUCKET_RULEBOOK[scenario][B] as its
-    absolute view return. Each view's confidence = max(regime_confidence,
-    BL_VIEW_MIN_CONFIDENCE).
-
-    Returns ({}, []) when scenario unknown to rulebook — caller should fall
-    back to historical mu.
+    Returns:
+        absolute_views: {ticker: expected_return}
+        view_confidences: list[float] — post-multiplier, clipped [0.05, 1.0]
+        tilt_params: {"tau", "view_conf_multi", "view_conf_multi_applied"}
     """
+    default_tilt: dict[str, float | bool] = {
+        "tau": BL_TAU_DEFAULT,
+        "view_conf_multi": BL_VIEW_CONF_MULTI_DEFAULT,
+        "view_conf_multi_applied": False,
+    }
+
     if scenario is None or scenario not in SCENARIO_BUCKET_RULEBOOK:
         if breakdown_out is not None:
             breakdown_out["fallback_reason"] = "unknown_scenario"
             breakdown_out["scenario"] = scenario
-        return {}, []
+            breakdown_out["tilt_params"] = default_tilt
+        return {}, [], default_tilt
 
     bucket_returns = SCENARIO_BUCKET_RULEBOOK[scenario]
     conf_value = max(regime_confidence, BL_VIEW_MIN_CONFIDENCE)
+
+    tilt_raw = SCENARIO_BL_TILT.get(scenario)
+    if tilt_raw is None:
+        tilt_params: dict[str, float | bool] = dict(default_tilt)
+    else:
+        tilt_params = {
+            "tau": tilt_raw["tau"],
+            "view_conf_multi": tilt_raw["view_conf_multi"],
+            "view_conf_multi_applied": True,
+        }
+    multi = float(tilt_params["view_conf_multi"])
 
     absolute_views: dict[str, float] = {}
     view_confidences: list[float] = []
@@ -73,7 +113,12 @@ def generate_bl_views(
         expected_ret = bucket_returns[bucket]
         for ticker in tickers:
             absolute_views[ticker] = expected_ret
-            view_confidences.append(conf_value)
+            post = conf_value * multi
+            clipped = min(
+                BL_VIEW_CONF_MAX_AFTER_MULTI,
+                max(BL_VIEW_CONF_MIN_AFTER_MULTI, post),
+            )
+            view_confidences.append(clipped)
         n_per_bucket[bucket] = len(tickers)
 
     if breakdown_out is not None:
@@ -84,5 +129,6 @@ def generate_bl_views(
         breakdown_out["rulebook_returns_used"] = {
             b: bucket_returns[b] for b in n_per_bucket
         }
+        breakdown_out["tilt_params"] = tilt_params
 
-    return absolute_views, view_confidences
+    return absolute_views, view_confidences, tilt_params
