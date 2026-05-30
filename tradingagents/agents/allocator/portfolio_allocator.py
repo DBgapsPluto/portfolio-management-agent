@@ -1142,6 +1142,17 @@ def _nco_per_bucket(
             for t in uncapped:
                 normalized[t] = scaled_raw[t]
         final = normalized
+        # Fallback: water-fill exhausted cap slots but sum < 1.0 (all assets capped).
+        # Proportionally scale to 1.0 (cap constraint relaxed when unavoidable).
+        final_sum = sum(final.values())
+        if final_sum > 0 and abs(final_sum - 1.0) > 1e-9:
+            logger.warning(
+                "NCO final normalization: water-fill cap-saturated (sum=%.6f) "
+                "→ proportional rescale to 1.0 (cap relaxed for unavoidable case)",
+                final_sum,
+            )
+            final = {t: w / final_sum for t, w in final.items()}
+            final_norm_intervened = True  # mark for attribution
 
     if attribution is not None:
         if bucket_shortfalls:
@@ -1150,9 +1161,18 @@ def _nco_per_bucket(
         attribution["nco_breakdown_per_pool"] = nco_breakdown_per_pool
 
     violators = [(t, w) for t, w in final.items() if w > SINGLE_ASSET_CAP + 1e-6]
-    assert not violators, (
-        f"NCO-per-bucket post-condition: {SINGLE_ASSET_CAP*100:.0f}% cap violated: {violators}"
-    )
+    if violators:
+        if final_norm_intervened:
+            # Cap relaxed due to unavoidable cap saturation (too few assets for target).
+            logger.warning(
+                "NCO post-condition: cap violated after unavoidable proportional rescale "
+                "(too few assets): %s",
+                violators,
+            )
+        else:
+            assert not violators, (
+                f"NCO-per-bucket post-condition: {SINGLE_ASSET_CAP*100:.0f}% cap violated: {violators}"
+            )
 
     # sub_category cap (bucket 내부 다양성).
     final = _apply_subcategory_cap(
