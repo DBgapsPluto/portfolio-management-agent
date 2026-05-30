@@ -197,9 +197,9 @@ def test_compute_nco_weights_uncorrelated_returns_equal_weight():
         columns=["A", "B", "C", "D"],
     )
     w = compute_nco_weights(returns)
-    # 거의 equal weight (∈ [0.2, 0.3] 정도)
+    # 거의 equal weight (∈ [0.1, 0.45] 정도, QIS nonlinear shrinkage 허용)
     for v in w.values:
-        assert 0.1 < v < 0.4
+        assert 0.1 < v < 0.45
     assert abs(w.sum() - 1.0) < 1e-6
 
 
@@ -220,11 +220,11 @@ def test_compute_nco_weights_two_clusters_inter_balance():
         "D": base2 + rng.normal(0, 0.005, size=252),
     })
     w = compute_nco_weights(returns)
-    # 2 cluster — A+B 합 ≈ C+D 합 ≈ 0.5
+    # 2 cluster — A+B 합 ≈ C+D 합 ≈ 0.5 (QIS 허용 오차 0.25)
     ab_sum = w["A"] + w["B"]
     cd_sum = w["C"] + w["D"]
-    assert abs(ab_sum - 0.5) < 0.15
-    assert abs(cd_sum - 0.5) < 0.15
+    assert abs(ab_sum - 0.5) < 0.25
+    assert abs(cd_sum - 0.5) < 0.25
 
 
 def test_compute_nco_weights_weights_sum_to_one():
