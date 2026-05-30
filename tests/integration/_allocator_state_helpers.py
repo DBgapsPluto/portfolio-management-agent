@@ -131,7 +131,7 @@ def make_research_decision(
 def make_macro_report(
     *,
     regime_quadrant: str = "growth_disinflation",
-    regime_confidence: float = 0.7,
+    regime_confidence: float = 0.6,
     staleness_days: int = 1,
 ):
     """MacroReport with RegimeClassification."""
