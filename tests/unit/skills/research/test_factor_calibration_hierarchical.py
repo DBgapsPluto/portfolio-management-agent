@@ -7,6 +7,9 @@ from tradingagents.skills.research.factor_calibration_hierarchical import (
 from tradingagents.skills.research.factor_to_bucket import FACTORS, BUCKETS, INITIAL_BETA
 
 
+
+
+
 def _synth_samples(n=60, seed=0, with_f11=True):
     rng = np.random.default_rng(seed)
     samples = []
@@ -73,3 +76,26 @@ def test_staggered_hard_zeros_still_zero():
     beta, mu = staggered_calibration(pre, post)
     for k in HARD_ZERO_CELLS:
         assert beta[k] == 0.0
+
+
+def test_walk_forward_hierarchical_runs():
+    from tradingagents.skills.research.factor_calibration_hierarchical import walk_forward_hierarchical
+    samples = _synth_samples(100, seed=7)
+    folds = walk_forward_hierarchical(samples, initial_train_size=60, test_window=20,
+                                      lambda_global=2.0, lambda_family=0.5, max_iter=20)
+    assert len(folds) >= 1
+    for f in folds:
+        assert np.isfinite(f.oos_sharpe)
+
+
+def test_frozen_keys_held_at_prior():
+    from tradingagents.skills.research.factor_calibration_hierarchical import hybrid_calibration_hierarchical
+    from tradingagents.skills.research.factor_calibration import HARD_ZERO_CELLS as _HZC
+    samples = _synth_samples(60, seed=8)
+    frozen = [
+        k for k in INITIAL_BETA
+        if k[0] == "F11_earnings_revision" and k not in _HZC
+    ]
+    beta, mu, _ = hybrid_calibration_hierarchical(samples, frozen_keys=frozen, max_iter=20)
+    for k in frozen:
+        assert beta[k] == INITIAL_BETA[k], f"{k} should be frozen at prior"

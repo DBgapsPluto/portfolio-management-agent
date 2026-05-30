@@ -43,6 +43,29 @@ def test_validate_on_synthetic_samples(tmp_path):
         for i in range(100)
     ]
     report = val.validate(samples, lambda_global=2.0, out_dir=tmp_path)
-    assert "vif_max" in report and "effective_df" in report and "median_oos_sharpe" in report
+    assert "vif_max" in report and "collinearity_df" in report and "median_oos_sharpe" in report
+    assert "n_free_beta_params" in report and "sample_per_param" in report
     assert (tmp_path / "validation_report.json").exists()
     assert (tmp_path / "validation_report.md").exists()
+
+
+def test_validate_reports_honest_overfit_metric(tmp_path):
+    from tradingagents.skills.research.factor_calibration import HistoricalSample
+    from tradingagents.skills.research.factor_to_bucket import FACTORS, BUCKETS
+
+    rng = np.random.default_rng(0)
+    samples = [
+        HistoricalSample(
+            date=f"{2000+i//4}-03-31",
+            factor_z={f: float(rng.normal(0, 1)) for f in FACTORS},
+            bucket_returns_next={b: float(rng.normal(0, 0.05)) for b in BUCKETS},
+        )
+        for i in range(100)
+    ]
+    report = val.validate(samples, lambda_global=2.0, out_dir=tmp_path, lambda_family=0.5)
+    assert report["n_free_beta_params"] == 73
+    assert "sample_per_param" in report
+    assert "collinearity_df" in report
+    # old vacuous gate must be gone
+    assert "df_pass" not in report
+    assert "effective_df" not in report

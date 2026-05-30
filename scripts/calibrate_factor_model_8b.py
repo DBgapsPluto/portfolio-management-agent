@@ -24,7 +24,7 @@ import numpy as np
 import pandas as pd
 
 from tradingagents.skills.research.factor_calibration import (
-    HistoricalSample, walk_forward,
+    HistoricalSample,
 )
 from tradingagents.skills.research.factor_calibration_hierarchical import (
     staggered_calibration,
@@ -92,13 +92,21 @@ def load_samples_8b(samples_parquet: Path = SAMPLES_8B_PATH) -> list[HistoricalS
 
 
 def grid_search_shrinkage(samples, prior_beta):
+    """Grid search over (lambda_global, lambda_family) using the HIERARCHICAL
+    walk-forward — λ_family is a real optimisation axis (not a no-op).
+
+    This is O(grid × folds) hierarchical fits (slow; run once when real data exists).
+    """
+    from tradingagents.skills.research.factor_calibration_hierarchical import walk_forward_hierarchical
     lambda_global_grid = [0.5, 1.0, 2.0, 3.0, 5.0, 10.0]
     lambda_family_grid = [0.1, 0.3, 1.0]
     results = []
     for lg in lambda_global_grid:
         for lf in lambda_family_grid:
-            folds = walk_forward(samples, initial_train_size=80, test_window=8,
-                                 shrinkage=lg, prior_beta=prior_beta)
+            folds = walk_forward_hierarchical(
+                samples, initial_train_size=80, test_window=8,
+                lambda_global=lg, lambda_family=lf, prior_beta=prior_beta,
+            )
             median_oos = float(np.median([f.oos_sharpe for f in folds])) if folds else float("nan")
             results.append({"lambda_global": lg, "lambda_family": lf,
                             "median_oos_sharpe": median_oos, "n_folds": len(folds)})

@@ -12,6 +12,7 @@ Hard-zero cells are clamped to 0 (not free variables). L-BFGS-B over
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import numpy as np
 from scipy.optimize import minimize
@@ -45,14 +46,21 @@ def hybrid_calibration_hierarchical(
     lambda_global: float = 2.0,
     lambda_family: float = 0.5,
     max_iter: int = 100,
+    frozen_keys: list[tuple[str, str]] | None = None,
 ) -> tuple[dict[tuple[str, str], float], dict[tuple[str, str], float], float]:
     """Returns (calibrated_beta, calibrated_mu, in_sample_sharpe).
 
     calibrated_beta: full 96-entry dict (hard-zero cells = 0.0).
     calibrated_mu: {(factor, family): value} — 12×5 = 60 entries.
+
+    frozen_keys: β cells held FIXED at prior (excluded from free vars).
+    Used by staggered_calibration to hold F11 at prior during Phase A,
+    ensuring true isolation — F11 does not couple into the other factors'
+    optimum via the shared Sharpe + family penalty.
     """
     prior = prior_beta if prior_beta is not None else INITIAL_BETA
-    free_beta_keys = sorted(set(prior.keys()) - HARD_ZERO_CELLS)
+    frozen = frozenset(frozen_keys or ())
+    free_beta_keys = sorted(set(prior.keys()) - HARD_ZERO_CELLS - frozen)
     # mu_keys: (factor, family_name) — one entry per factor × family
     mu_keys = sorted([(f, fam) for f in FACTORS for fam in BUCKET_FAMILIES])
     n_beta = len(free_beta_keys)
@@ -72,7 +80,11 @@ def hybrid_calibration_hierarchical(
 
     def _unpack(x: np.ndarray) -> tuple[dict, dict]:
         beta_free = {k: float(x[i]) for i, k in enumerate(free_beta_keys)}
-        beta = {**beta_free, **{k: 0.0 for k in HARD_ZERO_CELLS}}
+        beta = {
+            **beta_free,
+            **{k: 0.0 for k in HARD_ZERO_CELLS},
+            **{k: prior[k] for k in frozen if k not in HARD_ZERO_CELLS},
+        }
         mu = {k: float(x[n_beta + i]) for i, k in enumerate(mu_keys)}
         return beta, mu
 
@@ -111,11 +123,13 @@ def staggered_calibration(
     f11_keys = frozenset(k for k in prior if k[0] == "F11_earnings_revision")
 
     train_all = train_pre_2010 + train_2010_plus
+    f11_free = [k for k in sorted(f11_keys) if k not in HARD_ZERO_CELLS]
     beta_main, mu_main, _ = hybrid_calibration_hierarchical(
         train_all, prior_beta=prior,
         lambda_global=lambda_global, lambda_family=lambda_family,
+        frozen_keys=f11_free,   # hold F11 at prior — true isolation
     )
-    # Phase A treats F11 as fixed → restore F11 cells to prior
+    # Phase A treats F11 as fixed → restore F11 cells to prior (redundant but harmless)
     for k in f11_keys:
         if k not in HARD_ZERO_CELLS:
             beta_main[k] = prior[k]
@@ -144,4 +158,52 @@ def staggered_calibration(
     return beta_main, mu_main
 
 
-__all__ = ["hybrid_calibration_hierarchical", "staggered_calibration"]
+@dataclass
+class HierFold:
+    fold_idx: int
+    train_end_idx: int
+    test_start_idx: int
+    test_end_idx: int
+    in_sample_sharpe: float
+    oos_sharpe: float
+
+
+def walk_forward_hierarchical(
+    samples: list[HistoricalSample],
+    initial_train_size: int = 80,
+    test_window: int = 8,
+    lambda_global: float = 2.0,
+    lambda_family: float = 0.5,
+    prior_beta: dict[tuple[str, str], float] | None = None,
+    max_iter: int = 60,
+) -> list[HierFold]:
+    """Expanding-window walk-forward using the HIERARCHICAL fit + per-factor-aware
+    OOS simulation — so λ selection matches the deployed objective.
+
+    This is O(grid × folds) hierarchical fits (slow; run once when real data exists).
+    λ_family is a real optimisation axis here, not a dead no-op.
+    """
+    folds: list[HierFold] = []
+    n = len(samples)
+    fi = 0
+    for end in range(initial_train_size, n - test_window + 1, test_window):
+        train = samples[:end]
+        test = samples[end:end + test_window]
+        beta, _mu, is_sharpe = hybrid_calibration_hierarchical(
+            train, prior_beta=prior_beta,
+            lambda_global=lambda_global, lambda_family=lambda_family,
+            max_iter=max_iter,
+        )
+        oos_returns = simulate_portfolio_returns_per_factor_aware(test, beta)
+        oos = compute_sharpe(oos_returns)
+        folds.append(HierFold(fi, end, end, end + test_window, is_sharpe, oos))
+        fi += 1
+    return folds
+
+
+__all__ = [
+    "hybrid_calibration_hierarchical",
+    "staggered_calibration",
+    "HierFold",
+    "walk_forward_hierarchical",
+]
