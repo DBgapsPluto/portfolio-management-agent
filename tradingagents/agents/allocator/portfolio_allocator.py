@@ -21,7 +21,7 @@ from tradingagents.skills.portfolio.candidate_selector import (
     BUCKET_TO_CATEGORIES, list_eligible_tickers,
     select_etf_candidates,
 )
-from tradingagents.skills.portfolio.method_picker import pick_optimization_method
+from tradingagents.skills.portfolio.method_picker import MethodChoice, pick_optimization_method
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
 from tradingagents.skills.portfolio.cash_spillover import adjust_bucket_targets
 from tradingagents.skills.portfolio.diversification import compute_enb
@@ -294,17 +294,28 @@ def create_portfolio_allocator(
                 for v in feedback_violations[:3]
             )
 
-        method_choice = pick_optimization_method(
-            regime_quadrant=regime.quadrant if regime else "unknown",
-            regime_confidence=regime.confidence if regime else 0.5,
-            systemic_score=risk_score.score if risk_score else 5.0,
-            systemic_regime=risk_score.regime if risk_score else "neutral",
-            research_decision=research_decision,
-            feedback=feedback_str,
-            degraded_inputs=degraded_inputs,
-            regime_staleness=regime_staleness,
-            systemic_staleness=systemic_staleness,
-        )
+        # Phase 3a — method override (A/B 테스트용)
+        force_method = state.get("force_method")
+        if force_method is not None:
+            method_choice = MethodChoice(
+                method=OptimizationMethod(force_method),
+                reasoning=f"forced via state['force_method']={force_method}",
+                rule_fired="state_override",
+                rule_index=-1,
+                inputs={"force_method": force_method},
+            )
+        else:
+            method_choice = pick_optimization_method(
+                regime_quadrant=regime.quadrant if regime else "unknown",
+                regime_confidence=regime.confidence if regime else 0.5,
+                systemic_score=risk_score.score if risk_score else 5.0,
+                systemic_regime=risk_score.regime if risk_score else "neutral",
+                research_decision=research_decision,
+                feedback=feedback_str,
+                degraded_inputs=degraded_inputs,
+                regime_staleness=regime_staleness,
+                systemic_staleness=systemic_staleness,
+            )
 
         # 4. Optimize WITH bucket-constraints (D12).
         # bond bucket의 sub-bucket(TIPS/nominal) weight 강제 위해 sub_category lookup 전달.

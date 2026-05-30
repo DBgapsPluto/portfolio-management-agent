@@ -358,3 +358,48 @@ def test_subcategory_cap_no_lookup_returns_unchanged():
     cs = _candidate_set_fx_test()
     assert _apply_subcategory_cap(weights, cs, sub_category_lookup=None) == weights
     assert _apply_subcategory_cap(weights, cs, sub_category_lookup={}) == weights
+
+
+def test_node_force_method_override_uses_state_value(tmp_path, monkeypatch):
+    """state['force_method']='nco' 시 method_picker 호출 안 함, NCO 강제."""
+    from datetime import date
+    import pandas as pd
+    from tests.integration._allocator_state_helpers import (
+        make_synthetic_universe, make_synthetic_returns, make_factor_panel,
+        make_bucket_target, make_macro_report, make_risk_report,
+        make_research_decision, make_technical_report, make_allocator_state,
+    )
+    from tradingagents.agents.allocator.portfolio_allocator import create_portfolio_allocator
+
+    universe = make_synthetic_universe(n_per_bucket=4)
+    universe_path = tmp_path / "universe.json"
+    universe_path.write_text(universe.model_dump_json())
+
+    tickers = [e.ticker for e in universe.etfs]
+    returns = make_synthetic_returns(tickers, n_days=252, seed=31)
+    factor_panel = make_factor_panel(tickers)
+
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        lambda tickers, start, end, cache_path=None: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.allocator.portfolio_allocator.fetch_returns_matrix",
+        lambda eligible, start, end, cache_path=None: returns[[t for t in eligible if t in returns.columns]],
+    )
+
+    state = make_allocator_state(
+        as_of=date(2026, 5, 28),
+        universe_path=str(universe_path),
+        bucket_target=make_bucket_target(),
+        technical_report=make_technical_report(factor_panel),
+        macro_report=make_macro_report(),
+        risk_report=make_risk_report(),
+        research_decision=make_research_decision(),
+    )
+    state["force_method"] = "nco"
+
+    result = create_portfolio_allocator()(state)
+    method_picker = result["allocation_attribution"]["method_picker"]
+    assert method_picker["method"] == "nco"
+    assert method_picker["rule_fired"] == "state_override"
