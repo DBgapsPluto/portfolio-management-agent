@@ -18,6 +18,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from tradingagents.schemas.portfolio import OptimizationMethod
+from tradingagents.skills.portfolio.bl_views import SCENARIO_BUCKET_RULEBOOK
 from tradingagents.skills.registry import register_skill
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,9 @@ SYSTEMIC_EXTREME_THRESHOLD: float = 8.0
 # Low conviction 시 HRP → RISK_PARITY downgrade (D5: HRP 는 정확한 corr 필요,
 # low conviction 에서는 단순한 inverse-vol 가중 더 안전).
 LOW_CONVICTION_HRP_DOWNGRADE: bool = True
+# Phase 3b: regime_confidence 가 이 임계치 이상이고 알려진 scenario 가 있으면
+# BL views 어댑터를 통해 BLACK_LITTERMAN 으로 전환 (scenario_mapping 보다 우선).
+BL_TRIGGER_CONFIDENCE: float = 0.7
 
 
 class MethodChoice(BaseModel):
@@ -75,6 +79,8 @@ def pick_optimization_method(
     systemic_score: float = 5.0,
     systemic_regime: str = "neutral",
     research_decision=None,
+    dominant_scenario: str | None = None,
+    conviction: str | None = None,
     feedback: str = "",
     degraded_inputs: bool = False,
     regime_staleness: int | None = None,
@@ -83,19 +89,19 @@ def pick_optimization_method(
     """Deterministic method selection.
 
     research_decision: Stage 2 ResearchDecision (있으면 scenario·conviction 활용).
+    dominant_scenario, conviction: research_decision 없이 직접 전달 가능
+        (research_decision 이 있으면 그 쪽이 우선).
     feedback: D4 retry feedback string (logging만, decision에 영향 없음).
     degraded_inputs: Stage 3 audit Task 0 — regime + systemic 둘 다 sentinel(staleness≥99)
         인 경우 True. rule 0 가 발동되어 MIN_VARIANCE 강제 (fail-safe).
     regime_staleness, systemic_staleness: inputs_trace 기록용. attribution 가시화.
     """
-    scenario_in = (
-        getattr(research_decision, "dominant_scenario", None)
-        if research_decision is not None else None
-    )
-    conviction_in = (
-        getattr(research_decision, "conviction", "medium")
-        if research_decision is not None else None
-    )
+    if research_decision is not None:
+        scenario_in = getattr(research_decision, "dominant_scenario", None)
+        conviction_in = getattr(research_decision, "conviction", "medium")
+    else:
+        scenario_in = dominant_scenario
+        conviction_in = conviction
     inputs_trace: dict[str, Any] = {
         "regime_quadrant":     regime_quadrant,
         "regime_confidence":   regime_confidence,
@@ -149,7 +155,31 @@ def pick_optimization_method(
         )
         return choice
 
-    # 2. Stage 2 dominant scenario 우선
+    # 2. Phase 3b: Black-Litterman trigger — scenario_mapping 보다 먼저 평가.
+    if (
+        scenario_in
+        and regime_confidence >= BL_TRIGGER_CONFIDENCE
+        and scenario_in in SCENARIO_BUCKET_RULEBOOK
+    ):
+        choice = MethodChoice(
+            method=OptimizationMethod.BLACK_LITTERMAN,
+            reasoning=(
+                f"regime_confidence={regime_confidence:.2f} ≥ "
+                f"{BL_TRIGGER_CONFIDENCE}, scenario={scenario_in}: "
+                f"BL views from rulebook."
+            )[:300],
+            rule_fired="bl_high_confidence",
+            rule_index=2,
+            inputs=inputs_trace,
+            params={"_bl_trigger": True},
+        )
+        logger.info(
+            "method_picker rule 2 (bl_high_confidence): conf=%.2f scenario=%s → BL",
+            regime_confidence, scenario_in,
+        )
+        return choice
+
+    # 3. Stage 2 dominant scenario 우선
     if scenario_in and scenario_in in _SCENARIO_METHOD:
         method, reason = _SCENARIO_METHOD[scenario_in]
         downgraded = False
@@ -168,41 +198,41 @@ def pick_optimization_method(
                 f"scenario={scenario_in}, conviction={conviction_in}: {reason}"
             )[:300],
             rule_fired="scenario_mapping",
-            rule_index=2,
+            rule_index=3,
             inputs=inputs_trace,
         )
         logger.info(
-            "method_picker rule 2 (scenario=%s, conviction=%s) → %s%s",
+            "method_picker rule 3 (scenario=%s, conviction=%s) → %s%s",
             scenario_in, conviction_in, method.value,
             " (HRP downgraded to RISK_PARITY)" if downgraded else "",
         )
         return choice
 
-    # 3. macro regime quadrant (recession)
+    # 4. macro regime quadrant (recession)
     if regime_quadrant in ("recession_disinflation", "recession_inflation"):
         choice = MethodChoice(
             method=OptimizationMethod.MIN_VARIANCE,
             reasoning=f"regime={regime_quadrant} → defensive MV.",
             rule_fired="regime_recession",
-            rule_index=3,
+            rule_index=4,
             inputs=inputs_trace,
         )
         logger.info(
-            "method_picker rule 3 (regime=%s) → MIN_VARIANCE", regime_quadrant,
+            "method_picker rule 4 (regime=%s) → MIN_VARIANCE", regime_quadrant,
         )
         return choice
 
-    # 4. systemic risk regime
+    # 5. systemic risk regime
     if systemic_regime == "risk_off":
         choice = MethodChoice(
             method=OptimizationMethod.MIN_VARIANCE,
             reasoning=f"systemic_regime=risk_off (score={systemic_score:.1f}) → MV.",
             rule_fired="systemic_risk_off",
-            rule_index=4,
+            rule_index=5,
             inputs=inputs_trace,
         )
         logger.info(
-            "method_picker rule 4 (systemic_regime=risk_off, score=%.1f) → MIN_VARIANCE",
+            "method_picker rule 5 (systemic_regime=risk_off, score=%.1f) → MIN_VARIANCE",
             systemic_score,
         )
         return choice
@@ -212,15 +242,15 @@ def pick_optimization_method(
             method=OptimizationMethod.RISK_PARITY,
             reasoning="growth_inflation → balanced risk_parity.",
             rule_fired="regime_growth_inflation",
-            rule_index=5,
+            rule_index=6,
             inputs=inputs_trace,
         )
         logger.info(
-            "method_picker rule 5 (regime=growth_inflation) → RISK_PARITY",
+            "method_picker rule 6 (regime=growth_inflation) → RISK_PARITY",
         )
         return choice
 
-    # 6. Default — 분산 친화
+    # 7. Default — 분산 친화
     choice = MethodChoice(
         method=OptimizationMethod.HRP,
         reasoning=(
@@ -228,11 +258,11 @@ def pick_optimization_method(
             f"systemic={systemic_score:.1f}/{systemic_regime})"
         )[:300],
         rule_fired="default",
-        rule_index=6,
+        rule_index=7,
         inputs=inputs_trace,
     )
     logger.info(
-        "method_picker rule 6 (default, regime=%s, systemic=%.1f/%s) → HRP",
+        "method_picker rule 7 (default, regime=%s, systemic=%.1f/%s) → HRP",
         regime_quadrant, systemic_score, systemic_regime,
     )
     return choice
