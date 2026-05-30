@@ -807,3 +807,43 @@ def test_compute_adaptive_n_max_zero_positive_alpha():
         n_positive_alpha=0, bucket_weight=0.30, capital_krw=1_000_000_000,
     )
     assert n == 0
+
+
+# ---------- Phase 2b Task 2: _enb_equal_weight ----------
+
+
+def test_enb_equal_weight_single_ticker():
+    """1 종목 → ENB = 1.0."""
+    import pandas as pd
+    import numpy as np
+    from tradingagents.skills.portfolio.factor_scorer import _enb_equal_weight
+
+    sigma = pd.DataFrame(
+        np.eye(3) * 0.04,
+        index=["A", "B", "C"], columns=["A", "B", "C"],
+    )
+    assert _enb_equal_weight(["A"], sigma) == 1.0
+
+
+def test_enb_equal_weight_empty():
+    """0 종목 → 0.0."""
+    import pandas as pd
+    import numpy as np
+    from tradingagents.skills.portfolio.factor_scorer import _enb_equal_weight
+
+    sigma = pd.DataFrame(np.eye(2) * 0.04, index=["A", "B"], columns=["A", "B"])
+    assert _enb_equal_weight([], sigma) == 0.0
+
+
+def test_enb_equal_weight_uncorrelated_pair_close_to_two():
+    """2 종목 uncorrelated → ENB ≈ 2."""
+    import pandas as pd
+    import numpy as np
+    from tradingagents.skills.portfolio.factor_scorer import _enb_equal_weight
+
+    sigma = pd.DataFrame(
+        np.eye(2) * 0.04,
+        index=["A", "B"], columns=["A", "B"],
+    )
+    enb = _enb_equal_weight(["A", "B"], sigma)
+    assert 1.95 < enb < 2.05

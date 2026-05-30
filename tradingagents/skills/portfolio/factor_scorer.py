@@ -15,11 +15,16 @@ The candidate_selector wires it into the pipeline.
 """
 from __future__ import annotations
 
+import logging
 import math
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel
+
+from tradingagents.skills.portfolio.diversification import compute_enb
+
+logger = logging.getLogger(__name__)
 
 
 # Factor weights per macro regime quadrant.
@@ -685,6 +690,18 @@ def compute_adaptive_n_max(
     weight_cap = max(1, int(bucket_weight / MIN_BUCKET_POSITION_RATIO))
     capital_cap = max(1, int(bucket_weight * capital_krw / MIN_POSITION_KRW))
     return min(n_positive_alpha, weight_cap, capital_cap, ABS_MAX_PER_BUCKET)
+
+
+def _enb_equal_weight(selected: list[str], sigma: pd.DataFrame) -> float:
+    """Equal-weight ENB for selected tickers."""
+    n = len(selected)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return 1.0
+    sub_sigma = sigma.loc[selected, selected]
+    equal_w = {t: 1.0 / n for t in selected}
+    return compute_enb(equal_w, sub_sigma, method="minimum_torsion")
 
 
 def select_diverse(
