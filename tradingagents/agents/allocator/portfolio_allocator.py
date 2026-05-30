@@ -343,18 +343,54 @@ def create_portfolio_allocator(
         if "cov_breakdown" in attribution.get("optimization", {}):
             attribution["cov_breakdown"] = attribution["optimization"]["cov_breakdown"]
 
-        # Phase 1 — ENB 사후 측정 (warning-only)
+        # Phase 1 ENB 사후 측정 + Phase 4c critical threshold + EW fallback
         try:
             enb_value = compute_enb(wv.weights, sigma_df, method="minimum_torsion")
         except Exception as e:
             logger.warning("ENB 계산 실패: %s", e)
             enb_value = 0.0
         attribution["enb"] = float(enb_value)
-        if enb_value > 0 and enb_value < ENB_WARNING_THRESHOLD:
+
+        enb_action = "none"
+        if 0 < enb_value < ENB_CRITICAL_THRESHOLD:
+            n_selected = len(wv.weights)
+            if n_selected >= ENB_FALLBACK_MIN_TICKERS:
+                ew_weights = {t: 1.0 / n_selected for t in wv.weights}
+                ew_weights = _apply_single_cap_redistribution(
+                    ew_weights, SINGLE_ASSET_CAP,
+                )
+                wv = WeightVector(
+                    weights=ew_weights,
+                    method=wv.method,
+                    rationale="ENB CRITICAL fallback — equal weight + cap clip",
+                )
+                try:
+                    enb_post = compute_enb(
+                        wv.weights, sigma_df, method="minimum_torsion",
+                    )
+                except Exception:
+                    enb_post = 0.0
+                attribution["enb_post_fallback"] = float(enb_post)
+                enb_action = "equal_weight_fallback"
+                logger.warning(
+                    "ENB %.2f < %.2f (CRITICAL) — EW fallback (n=%d, ENB→%.2f)",
+                    enb_value, ENB_CRITICAL_THRESHOLD, n_selected, enb_post,
+                )
+            else:
+                enb_action = "warning_only_n_too_small"
+                logger.warning(
+                    "ENB %.2f < %.2f (CRITICAL) but n=%d < %d — fallback skipped",
+                    enb_value, ENB_CRITICAL_THRESHOLD,
+                    n_selected, ENB_FALLBACK_MIN_TICKERS,
+                )
+        elif 0 < enb_value < ENB_WARNING_THRESHOLD:
+            enb_action = "warning_only"
             logger.warning(
                 "ENB %.2f < %.2f — possible insufficient diversification",
                 enb_value, ENB_WARNING_THRESHOLD,
             )
+
+        attribution["enb_action"] = enb_action
 
         attribution["method_picker"] = {
             "method":       method_choice.method.value,
