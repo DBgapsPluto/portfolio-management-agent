@@ -54,6 +54,9 @@ MAX_SUBCATEGORY_BUCKET_SHARE: float = 0.50
 
 # Phase 1 (Stage 3 phase1-cash-spillover spec, 2026-05-28).
 ENB_WARNING_THRESHOLD: float = 3.0
+# Phase 4c (Stage 3 phase4c-enb-critical spec, 2026-05-30).
+ENB_CRITICAL_THRESHOLD: float = 2.0
+ENB_FALLBACK_MIN_TICKERS: int = 5
 
 
 def create_portfolio_allocator(
@@ -779,6 +782,39 @@ def _apply_subcategory_cap(
         if attribution is not None:
             attribution["subcategory_capped"] = capped_subcats
     return new_weights
+
+
+def _apply_single_cap_redistribution(
+    weights: dict[str, float],
+    cap: float,
+    max_iter: int = 10,
+) -> dict[str, float]:
+    """Cap-clip + 잔여를 non-capped 자산에 비례 분배 (iterative).
+
+    Phase 4c ENB CRITICAL EW fallback path. {t: 1/n} starting weights 시
+    n >= 5 이면 cap (0.20) 이하라 no-op.
+
+    Returns: sum ≈ 1.0, max(w) ≤ cap (수렴 가능 시). 빈 dict → 빈 dict.
+    """
+    weights = dict(weights)
+    if not weights:
+        return weights
+    for _ in range(max_iter):
+        excess = {t: max(0.0, w - cap) for t, w in weights.items()}
+        total_excess = sum(excess.values())
+        if total_excess < 1e-9:
+            break
+        weights = {t: min(w, cap) for t, w in weights.items()}
+        non_capped = [t for t, w in weights.items() if w < cap - 1e-9]
+        if not non_capped:
+            break
+        share = total_excess / len(non_capped)
+        for t in non_capped:
+            weights[t] += share
+    total = sum(weights.values())
+    if total > 0:
+        weights = {t: w / total for t, w in weights.items()}
+    return weights
 
 
 def _apply_min_weight_threshold(
