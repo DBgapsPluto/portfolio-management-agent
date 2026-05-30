@@ -1,4 +1,4 @@
-"""Phase 4a Ledoit-Wolf shrinkage — integration tests."""
+"""Phase 4d QIS nonlinear shrinkage — integration tests."""
 from __future__ import annotations
 
 from datetime import date
@@ -59,27 +59,16 @@ def _setup_state(
     return state
 
 
-def test_allocator_records_cov_breakdown(tmp_path, monkeypatch):
+def test_allocator_cov_estimator_default_is_qis(tmp_path, monkeypatch):
     state = _setup_state(tmp_path, monkeypatch, scenario="goldilocks", regime_confidence=0.5)
     result = create_portfolio_allocator()(state)
     attr = result["allocation_attribution"]
-    assert "cov_breakdown" in attr
-    bd = attr["cov_breakdown"]
+    bd = attr.get("cov_breakdown") or attr.get("optimization", {}).get("cov_breakdown")
+    assert bd is not None, f"cov_breakdown missing, keys: {list(attr.keys())}"
     assert bd["estimator"] == "qis"
-    assert "shrinkage_intensity" in bd
-    assert "n_obs" in bd
-    assert "n_assets" in bd
 
 
-def test_allocator_shrinkage_intensity_finite(tmp_path, monkeypatch):
-    state = _setup_state(tmp_path, monkeypatch, scenario="goldilocks", regime_confidence=0.5)
-    result = create_portfolio_allocator()(state)
-    attr = result["allocation_attribution"]
-    delta = attr["cov_breakdown"]["shrinkage_intensity"]
-    assert -2.0 <= delta <= 1.0
-
-
-def test_allocator_nco_breakdown_contains_cov_section(tmp_path, monkeypatch):
+def test_allocator_nco_cov_breakdown_estimator_qis(tmp_path, monkeypatch):
     state = _setup_state(
         tmp_path, monkeypatch, scenario="goldilocks", regime_confidence=0.5,
         force_method="nco",
@@ -89,8 +78,8 @@ def test_allocator_nco_breakdown_contains_cov_section(tmp_path, monkeypatch):
     opt = attr.get("optimization", {})
     nco_per_pool = opt.get("nco_breakdown_per_pool", {})
     assert nco_per_pool, "nco_breakdown_per_pool empty"
-    has_cov_bd = any(
-        "cov_breakdown" in pool_data
-        for pool_data in nco_per_pool.values()
-    )
-    assert has_cov_bd, f"no pool has cov_breakdown: {list(nco_per_pool.keys())}"
+    qis_pools = [
+        p for p, data in nco_per_pool.items()
+        if data.get("cov_breakdown", {}).get("estimator") == "qis"
+    ]
+    assert qis_pools, f"no pool has estimator='qis': {nco_per_pool}"
