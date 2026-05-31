@@ -100,3 +100,9 @@ def test_sum_preserved_after_high_confidence():
     new_bucket, _ = _apply_confidence_to_bucket(bucket, confidence=0.9)
     total = sum(new_bucket.values())
     assert abs(total - 1.0) < 1e-9, f"sum={total}"
+
+
+def test_tier3_flags_default_off():
+    from tradingagents.default_config import DEFAULT_CONFIG
+    assert DEFAULT_CONFIG.get("tier3_llm_overlay_enabled") is False
+    assert DEFAULT_CONFIG.get("tier3_llm_k_samples") == 5

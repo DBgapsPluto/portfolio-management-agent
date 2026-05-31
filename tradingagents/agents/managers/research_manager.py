@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.schemas.research import ResearchDecision
 from tradingagents.skills.research.factor_estimators import (
@@ -34,6 +35,10 @@ from tradingagents.skills.research.factor_to_bucket import (
 # Temporal smoothing (factor space). EMA infrastructure 유지 — default no-op.
 # λ=1.0 → 100% new (prior 무시). λ<1.0 → λ·new + (1-λ)·prior. 시간 안정성 vs 반응성.
 _EMA_LAMBDA: float = 1.0
+
+# Tier 3 LLM overlay feature flags (sourced from DEFAULT_CONFIG; default OFF).
+_TIER3_OVERLAY_ENABLED: bool = DEFAULT_CONFIG.get("tier3_llm_overlay_enabled", False)
+_TIER3_K_SAMPLES: int = DEFAULT_CONFIG.get("tier3_llm_k_samples", 5)
 
 
 # Stage 2 audit (2026-05-26, Task 1): scenario / conviction mapping thresholds.
@@ -377,6 +382,50 @@ def create_research_manager(deep_llm):
             )
         safety_diag["regime_confidence"] = regime_confidence
         safety_diag["confidence_risk_multiplier"] = confidence_mult
+
+        # 3.5 Tier 3 — LLM bucket overlay (feature-flagged OFF by default).
+        # Salience history is appended every run (cheap); the overlay itself only
+        # runs when tier3_llm_overlay_enabled. On any failure → fall back to quant.
+        from tradingagents.skills.overlay.novelty import append_daily_salience
+        news_report = state.get("news_report")
+        as_of_str = state.get("as_of_date")
+        try:
+            _as_of = datetime.strptime(as_of_str, "%Y-%m-%d").date() if as_of_str else date.today()
+        except Exception:
+            _as_of = date.today()
+        if news_report is not None:
+            try:
+                append_daily_salience(news_report, _as_of)
+            except Exception as e:
+                logger.warning("Tier 3 salience persistence failed: %s", e)
+
+        if _TIER3_OVERLAY_ENABLED:
+            try:
+                import asyncio
+                from tradingagents.skills.overlay.novelty import compute_novelty
+                from tradingagents.skills.overlay.consensus import compute_consensus
+                from tradingagents.skills.overlay.credibility import load_credibility
+                from tradingagents.skills.overlay.apply import apply_llm_overlay
+                from tradingagents.agents.overlay.llm_bucket_overlay import generate_llm_views
+
+                _views = asyncio.run(generate_llm_views(
+                    state=state, factor_z=factor_scores.to_dict(),
+                    quant_target=bucket, safety_diag=safety_diag,
+                    k=_TIER3_K_SAMPLES,
+                ))
+                _novelty = compute_novelty(news_report, _as_of)
+                _consensus = compute_consensus(_views)
+                _cred = load_credibility()
+                bucket, _overlay_audit = apply_llm_overlay(
+                    quant_target=bucket, views=_views,
+                    novelty=_novelty, consensus=_consensus, credibility=_cred,
+                )
+                safety_diag["tier3_overlay_applied"] = True
+                safety_diag["tier3_novelty"] = _novelty
+                logger.info("Tier 3 overlay applied (novelty=%.2f)", _novelty)
+            except Exception as e:
+                logger.warning("Tier 3 overlay failed, keeping quant bucket: %s", e)
+                safety_diag["tier3_overlay_applied"] = False
 
         # 2026-05-26 #3 fix — component-level outlier signal extraction.
         # factor aggregate z 는 (예: F6=+0.137) 가 묻히지만 그 안의 단일 component

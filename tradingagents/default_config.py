@@ -148,4 +148,10 @@ DEFAULT_CONFIG.update({
     # Tier 0: expanding-window z-baseline (Pesaran-Timmermann 1995). Default off
     # for backward compat — opt-in per run or backtest sweep.
     "use_dynamic_baseline": False,
+    # Tier 3 LLM overlay (default OFF — opt-in; forward-tuning required)
+    "tier3_llm_overlay_enabled": False,
+    "tier3_llm_k_samples": 5,
+    "tier3_band": 0.05,
+    "tier3_ewma_alpha": 0.10,
+    "tier3_cred_cold_start": 0.30,
 })
