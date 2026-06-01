@@ -11,15 +11,26 @@ from tradingagents.backtest.benchmarks import (
     kr_tilted_60_40,
     risk_parity,
 )
-from tradingagents.skills.research.factor_to_bucket import BUCKETS, FACTORS
+from tradingagents.skills.research.factor_to_bucket import BUCKETS
+
+# HAND_CODED_BETA_PR2A_PRE 는 PR2b 벤치마크용으로 동결된 pre-PR2a 역사적
+# 스냅샷(git 3572d03)이다. live INITIAL_BETA 가 아니므로 현재의 12-factor/
+# 8-bucket 스키마로 확장하면 안 된다. 아래 OLD_* 는 스냅샷 자체 키에서
+# 직접 도출한 OLD 스키마(10 factor × 5 bucket)다.
+OLD_FACTORS: tuple[str, ...] = tuple(
+    sorted({f for (f, _b) in HAND_CODED_BETA_PR2A_PRE}),
+)
+OLD_BUCKETS: tuple[str, ...] = tuple(
+    sorted({b for (_f, b) in HAND_CODED_BETA_PR2A_PRE}),
+)
 
 
 def test_equal_weight_sums_to_one_per_bucket() -> None:
-    """1/N: 각 bucket = 0.2, sum=1.0."""
+    """1/N: 각 bucket = 1/len(BUCKETS), sum=1.0 (live 8-bucket 스키마 추종)."""
     w = equal_weight()
     assert set(w.keys()) == set(BUCKETS)
     for b in BUCKETS:
-        assert w[b] == pytest.approx(0.2)
+        assert w[b] == pytest.approx(1.0 / len(BUCKETS))
     assert sum(w.values()) == pytest.approx(1.0)
 
 
@@ -48,18 +59,20 @@ def test_risk_parity_weights_sum_to_one_and_inverse_to_vol() -> None:
     assert w[BUCKETS[0]] > w[BUCKETS[-1]]
 
 
-def test_hand_coded_beta_pr2a_pre_45_entries() -> None:
-    """50 entries (10 factors × 5 buckets) — 2026-05-27 F10 systemic_liquidity 추가."""
+def test_hand_coded_beta_pr2a_pre_50_entries() -> None:
+    """50 entries (10 OLD factors × 5 OLD buckets) — 동결 스냅샷이라 OLD 스키마로 검증."""
     assert len(HAND_CODED_BETA_PR2A_PRE) == 50
-    for f in FACTORS:
-        for b in BUCKETS:
+    assert len(OLD_FACTORS) == 10
+    assert len(OLD_BUCKETS) == 5
+    for f in OLD_FACTORS:
+        for b in OLD_BUCKETS:
             assert (f, b) in HAND_CODED_BETA_PR2A_PRE
 
 
 def test_hand_coded_beta_pr2a_pre_row_sums_zero() -> None:
-    """Hand-coded prior 의 row sum = 0 invariant (pre-PR2a 설계)."""
-    for f in FACTORS:
+    """Hand-coded prior 의 row sum = 0 invariant (pre-PR2a 설계, OLD 스키마)."""
+    for f in OLD_FACTORS:
         row_sum = sum(
-            HAND_CODED_BETA_PR2A_PRE.get((f, b), 0.0) for b in BUCKETS
+            HAND_CODED_BETA_PR2A_PRE.get((f, b), 0.0) for b in OLD_BUCKETS
         )
         assert abs(row_sum) < 1e-6, f"{f}: row sum {row_sum}"

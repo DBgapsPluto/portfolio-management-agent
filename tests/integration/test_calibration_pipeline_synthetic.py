@@ -26,7 +26,8 @@ from tradingagents.skills.research.factor_to_bucket import (
 _DATACLASS_FACTOR_NAMES = (
     "growth_surprise", "inflation_surprise", "real_rate",
     "term_premium", "credit_cycle", "krw_regime",
-    "equity_vol_regime", "valuation", "liquidity_regime",
+    "equity_vol_regime", "valuation", "market_dispersion",
+    "systemic_liquidity", "earnings_revision", "china_credit_impulse",
 )
 
 
@@ -76,8 +77,9 @@ def test_load_samples_from_parquet(tmp_path: Path) -> None:
     samples = load_samples_from_parquet(p)
     assert len(samples) == 10
     s0 = samples[0]
-    # factor_z keys are mapped from dataclass names → FACTORS constant.
-    assert set(s0.factor_z.keys()) == set(FACTORS)
+    # Legacy 9-factor loader (calibrate_factor_model.py, superseded by _8b for the
+    # full 12-factor path) maps exactly the keys it declares in _PARQUET_TO_FACTOR_KEY.
+    assert set(s0.factor_z.keys()) == set(_calibrate_mod._PARQUET_TO_FACTOR_KEY.values())
     assert set(s0.bucket_returns_next.keys()) == set(BUCKETS)
 
 
