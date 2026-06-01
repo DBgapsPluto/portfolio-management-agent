@@ -25,7 +25,7 @@ import pandas as pd
 from tradingagents.dataflows.universe import Universe
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.skills.portfolio.candidate_selector import (
-    BUCKET_TO_CATEGORIES, select_etf_candidates,
+    select_etf_candidates,
 )
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
@@ -175,7 +175,7 @@ def run_ablation(
         jaccards = []
         spearmans = []
         n_diff_picks_total = 0
-        for bucket in BUCKET_TO_CATEGORIES.keys():
+        for bucket in base_cs.bucket_to_tickers.keys():
             base_picks = base_cs.bucket_to_tickers.get(bucket, [])
             var_picks = cs.bucket_to_tickers.get(bucket, [])
             base_ranked = _extract_ranked(base_attr, bucket)

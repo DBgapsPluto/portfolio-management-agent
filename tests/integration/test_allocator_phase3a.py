@@ -69,11 +69,16 @@ def test_allocator_nco_attribution_records_breakdown(tmp_path, monkeypatch):
     nco = opt_attr["nco_breakdown_per_pool"]
     # 적어도 1 bucket 의 breakdown 있어야
     assert len(nco) > 0
-    # 각 pool 의 breakdown 에 핵심 키 있어야
+    # multi-asset pool 의 breakdown 은 clustering 정보 기록.
+    # single-asset pool(n_assets=1)은 cluster 불가 → 정당하게 skip.
+    multi_asset_checked = 0
     for pool_label, breakdown in nco.items():
-        if "error" in breakdown:
-            continue  # fallback case
+        if "error" in breakdown or breakdown.get("fallback") == "single_asset":
+            continue  # cluster 불가 (표본 부족 또는 단일 자산)
         assert "n_clusters" in breakdown or "silhouette" in breakdown
+        multi_asset_checked += 1
+    # 적어도 하나의 multi-asset pool 이 clustering 을 기록했는지 확인 (의미 보존)
+    assert multi_asset_checked > 0
 
 
 def test_allocator_nco_respects_single_asset_cap(tmp_path, monkeypatch):
@@ -88,8 +93,9 @@ def test_allocator_nco_respects_single_asset_cap(tmp_path, monkeypatch):
 def test_allocator_nco_bucket_sum_approximates_target(tmp_path, monkeypatch):
     """Bucket weight ≈ bucket_target."""
     bt = make_bucket_target(
-        kr_equity=0.20, global_equity=0.20, fx_commodity=0.10,
-        bond=0.30, cash_mmf=0.20,
+        kr_equity=0.20, global_equity=0.20,
+        precious_metals=0.05, cyclical_commodity_fx=0.05,
+        kr_bond=0.15, credit=0.05, global_duration=0.10, cash_mmf=0.20,
     )
     state = _setup_state_nco(tmp_path, monkeypatch, bt=bt)
     result = create_portfolio_allocator()(state)
@@ -99,7 +105,9 @@ def test_allocator_nco_bucket_sum_approximates_target(tmp_path, monkeypatch):
 
     # 각 bucket 의 chosen 종목 weight 합 ≈ bucket_target (band 허용)
     bt_post = attr["config"]["bucket_target_post_spillover"]
-    for bucket_name in ("kr_equity", "global_equity", "fx_commodity", "bond", "cash_mmf"):
+    for bucket_name in ("kr_equity", "global_equity", "precious_metals",
+                        "cyclical_commodity_fx", "kr_bond", "credit",
+                        "global_duration", "cash_mmf"):
         chosen = bucket_to_tickers.get(bucket_name, {}).get("chosen", [])
         bucket_sum = sum(weights.get(t, 0.0) for t in chosen)
         target = bt_post[bucket_name]
@@ -114,8 +122,9 @@ def test_allocator_nco_handles_single_ticker_bucket(tmp_path, monkeypatch):
     """chosen 1 개인 bucket 정상 (weight=bucket_target)."""
     # 매우 strict bucket → adaptive N 으로 chosen 1 개만 통과
     bt = make_bucket_target(
-        kr_equity=0.05, global_equity=0.05, fx_commodity=0.05,
-        bond=0.05, cash_mmf=0.80,
+        kr_equity=0.05, global_equity=0.05,
+        precious_metals=0.025, cyclical_commodity_fx=0.025,
+        kr_bond=0.02, credit=0.01, global_duration=0.02, cash_mmf=0.80,
     )
     state = _setup_state_nco(
         tmp_path, monkeypatch, bt=bt, capital_krw=1_000_000_000,

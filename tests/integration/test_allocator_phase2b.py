@@ -49,8 +49,9 @@ def _setup_state(tmp_path, monkeypatch, *, capital_krw: float = 1_000_000_000,
 def test_adaptive_n_max_small_bucket_uses_capacity_cap(tmp_path, monkeypatch):
     """1B × kr_equity 0.10 = 100M → n_max = 2."""
     bt = make_bucket_target(
-        kr_equity=0.10, global_equity=0.20, fx_commodity=0.10,
-        bond=0.30, cash_mmf=0.30,
+        kr_equity=0.10, global_equity=0.20,
+        precious_metals=0.05, cyclical_commodity_fx=0.05,
+        kr_bond=0.15, credit=0.05, global_duration=0.10, cash_mmf=0.30,
     )
     state = _setup_state(tmp_path, monkeypatch, bt=bt, n_per_bucket=10)
     result = create_portfolio_allocator()(state)
@@ -65,8 +66,9 @@ def test_adaptive_n_max_small_bucket_uses_capacity_cap(tmp_path, monkeypatch):
 def test_adaptive_n_max_large_bucket_uses_abs_max(tmp_path, monkeypatch):
     """대형 자본 + 큰 bucket → abs_max 8 도달."""
     bt = make_bucket_target(
-        kr_equity=0.50, global_equity=0.20, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.30,
+        kr_equity=0.50, global_equity=0.20,
+        precious_metals=0.0, cyclical_commodity_fx=0.0,
+        kr_bond=0.0, credit=0.0, global_duration=0.0, cash_mmf=0.30,
     )
     state = _setup_state(
         tmp_path, monkeypatch, bt=bt, n_per_bucket=15,
@@ -83,7 +85,7 @@ def test_enb_greedy_attribution_has_progression(tmp_path, monkeypatch):
     """selection_trace 의 progression / stop_reason 채워짐."""
     state = _setup_state(tmp_path, monkeypatch)
     result = create_portfolio_allocator()(state)
-    for bucket_name in ("kr_equity", "global_equity", "bond"):
+    for bucket_name in ("kr_equity", "global_equity", "kr_bond"):
         bucket_attr = result["allocation_attribution"]["buckets"][bucket_name]
         trace = bucket_attr["selection_trace"]
         assert "enb_progression" in trace

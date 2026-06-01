@@ -9,28 +9,48 @@ with params={"_bl_trigger": True}, or when state["force_method"]="black_litterma
 """
 from __future__ import annotations
 
-# 9 scenario × 5 bucket → annualized expected return (decimal).
+# 9 scenario × 8 bucket → annualized expected return (decimal).
 # scenario keys MUST equal method_picker._SCENARIO_METHOD keys (test enforced).
 # cash_mmf ≈ KOFR floor (2.5%). Returns capped at |0.30| (test enforced).
+# fx_commodity → precious_metals + cyclical_commodity_fx;
+# bond → kr_bond + credit + global_duration (Tier 1 INITIAL_BETA 부호 파생).
 SCENARIO_BUCKET_RULEBOOK: dict[str, dict[str, float]] = {
     "goldilocks":       {"kr_equity": 0.10, "global_equity": 0.12,
-                         "fx_commodity": 0.02, "bond": 0.04,  "cash_mmf": 0.025},
+                         "precious_metals": 0.02, "cyclical_commodity_fx": 0.03,
+                         "kr_bond": 0.02, "credit": 0.05, "global_duration": 0.03,
+                         "cash_mmf": 0.025},
     "overheating":      {"kr_equity": 0.06, "global_equity": 0.08,
-                         "fx_commodity": 0.10, "bond": 0.02,  "cash_mmf": 0.025},
+                         "precious_metals": 0.06, "cyclical_commodity_fx": 0.12,
+                         "kr_bond": 0.01, "credit": 0.03, "global_duration": -0.01,
+                         "cash_mmf": 0.025},
     "late_cycle":       {"kr_equity": 0.02, "global_equity": 0.04,
-                         "fx_commodity": 0.08, "bond": 0.06,  "cash_mmf": 0.025},
+                         "precious_metals": 0.07, "cyclical_commodity_fx": 0.06,
+                         "kr_bond": 0.06, "credit": 0.00, "global_duration": 0.07,
+                         "cash_mmf": 0.025},
     "stagflation":      {"kr_equity": -0.05, "global_equity": -0.03,
-                         "fx_commodity": 0.12, "bond": 0.01,  "cash_mmf": 0.025},
+                         "precious_metals": 0.13, "cyclical_commodity_fx": 0.10,
+                         "kr_bond": 0.00, "credit": -0.03, "global_duration": 0.00,
+                         "cash_mmf": 0.025},
     "broad_recession":  {"kr_equity": -0.08, "global_equity": -0.05,
-                         "fx_commodity": -0.02, "bond": 0.08, "cash_mmf": 0.025},
+                         "precious_metals": 0.04, "cyclical_commodity_fx": -0.06,
+                         "kr_bond": 0.07, "credit": -0.04, "global_duration": 0.10,
+                         "cash_mmf": 0.025},
     "kr_stress":        {"kr_equity": -0.10, "global_equity": 0.05,
-                         "fx_commodity": 0.03, "bond": 0.05,  "cash_mmf": 0.025},
+                         "precious_metals": 0.06, "cyclical_commodity_fx": 0.04,
+                         "kr_bond": 0.03, "credit": 0.01, "global_duration": 0.07,
+                         "cash_mmf": 0.025},
     "global_credit":    {"kr_equity": -0.05, "global_equity": -0.08,
-                         "fx_commodity": -0.02, "bond": 0.07, "cash_mmf": 0.025},
+                         "precious_metals": 0.02, "cyclical_commodity_fx": -0.05,
+                         "kr_bond": 0.05, "credit": -0.08, "global_duration": 0.10,
+                         "cash_mmf": 0.025},
     "ai_concentration": {"kr_equity": 0.05, "global_equity": 0.10,
-                         "fx_commodity": 0.02, "bond": 0.03,  "cash_mmf": 0.025},
+                         "precious_metals": 0.02, "cyclical_commodity_fx": 0.02,
+                         "kr_bond": 0.03, "credit": 0.04, "global_duration": 0.02,
+                         "cash_mmf": 0.025},
     "kr_boom":          {"kr_equity": 0.13, "global_equity": 0.08,
-                         "fx_commodity": 0.02, "bond": 0.03,  "cash_mmf": 0.025},
+                         "precious_metals": 0.01, "cyclical_commodity_fx": 0.04,
+                         "kr_bond": 0.00, "credit": 0.04, "global_duration": 0.01,
+                         "cash_mmf": 0.025},
 }
 
 # Idzorek-Walters Ω 가 numerically 안정하려면 view confidence > 0 이어야 함.

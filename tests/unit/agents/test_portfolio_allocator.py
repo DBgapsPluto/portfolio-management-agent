@@ -146,8 +146,8 @@ def test_sector_mapper_splits_bond_when_tips_share_positive():
     """
     candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": [], "global_equity": [], "fx_commodity": [],
-            "bond": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
+            "kr_equity": [], "global_equity": [], "cyclical_commodity_fx": [],
+            "global_duration": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
             "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
         },
         selection_criteria="test", total_candidates=7,
@@ -195,6 +195,51 @@ def test_sector_mapper_keeps_single_bond_when_tips_share_zero():
     assert lower["kr_bond"] == pytest.approx(0.20)
 
 
+def test_sector_mapper_cash_guard_absorbs_into_global_duration_when_not_split():
+    """REGRESSION: cash-infeasibility guard must absorb cash into global_duration
+    (the 8-bucket bond-equivalent) when split_bond is False — NOT a phantom 'bond' key.
+
+    cash_mmf has positive target but too few candidate tickers to reach it under
+    SINGLE_ASSET_CAP (1 ticker × 0.20 cap = 0.20 < 0.30 target) → guard fires. With
+    bond_tips_share=0 (no split), the raw 8-bucket weights have 'global_duration',
+    not 'bond'. The absorbed cash weight must land in global_duration; a phantom
+    'bond' key would silently drop the weight (no ticker maps to it).
+    """
+    candidates = CandidateSet(
+        bucket_to_tickers={
+            "kr_equity": ["A_EQ_1"],
+            "global_duration": ["A_DUR_1", "A_DUR_2"],
+            "cash_mmf": ["A_CASH_1"],  # 1개뿐 → 1 × 0.20 cap = 0.20 < 0.30 target
+        },
+        selection_criteria="test", total_candidates=4,
+    )
+    target = BucketTarget(
+        weights={
+            "kr_equity":             0.50,
+            "global_equity":         0.00,
+            "precious_metals":       0.00,
+            "cyclical_commodity_fx": 0.00,
+            "kr_bond":               0.00,
+            "credit":                0.00,
+            "global_duration":       0.20,
+            "cash_mmf":              0.30,
+        },
+        rationale="t",
+        bond_tips_share=0.0,  # split_bond False
+    )
+    sm, lower, upper = _build_sector_mapper_and_bounds(
+        candidates, target, attempts=0,
+    )
+    # 흡수 후 phantom 'bond' 키가 없어야 함
+    assert "bond" not in lower
+    assert "bond" not in upper
+    assert "bond" not in sm.values()
+    # cash_mmf target은 제거되고 global_duration이 흡수 (0.30 + 0.20 = 0.50)
+    assert "cash_mmf" not in lower
+    assert lower["global_duration"] == pytest.approx(0.50)
+    assert upper["global_duration"] == pytest.approx(0.50)
+
+
 def test_sector_mapper_absorbs_missing_tips_pool():
     """후보에 inflation_linked 없으면 bond_tips target을 bond_nominal로 흡수.
 
@@ -202,8 +247,8 @@ def test_sector_mapper_absorbs_missing_tips_pool():
     """
     candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": [], "global_equity": [], "fx_commodity": [],
-            "bond": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
+            "kr_equity": [], "global_equity": [], "cyclical_commodity_fx": [],
+            "global_duration": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
             "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
         },
         selection_criteria="test", total_candidates=5,

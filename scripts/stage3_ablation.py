@@ -37,7 +37,7 @@ from tradingagents.observability.stage3_ablation import (
 )
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
 from tradingagents.skills.portfolio.candidate_selector import (
-    BUCKET_TO_CATEGORIES, list_eligible_tickers,
+    list_eligible_tickers,
 )
 
 

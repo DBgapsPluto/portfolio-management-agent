@@ -51,17 +51,21 @@ def _build_universe() -> Universe:
         ETFEntry(ticker="A360751", name="KODEX S&P500", aum_krw=12e12,
                  underlying_index="sp500_b", bucket="위험", category="해외주식_지수"),
         ETFEntry(ticker="A114260", name="KODEX 국고채3년", aum_krw=5e12,
-                 underlying_index="z", bucket="안전", category="국내채권_종합"),
+                 underlying_index="z", bucket="안전", category="국내채권_종합",
+                 sub_category="kr_treasury"),
         ETFEntry(ticker="A114261", name="TIGER 국고채3년", aum_krw=4e12,
-                 underlying_index="z2", bucket="안전", category="국내채권_종합"),
+                 underlying_index="z2", bucket="안전", category="국내채권_종합",
+                 sub_category="kr_treasury"),
         ETFEntry(ticker="A459580", name="KODEX CD금리", aum_krw=8e12,
                  underlying_index="w", bucket="안전", category="금리연계형/초단기채권"),
         ETFEntry(ticker="A459581", name="TIGER CD금리", aum_krw=6e12,
                  underlying_index="w2", bucket="안전", category="금리연계형/초단기채권"),
         ETFEntry(ticker="A411060", name="ACE KRX금현물", aum_krw=5e12,
-                 underlying_index="v", bucket="위험", category="FX 및 원자재"),
+                 underlying_index="v", bucket="위험", category="FX 및 원자재",
+                 sub_category="gold"),
         ETFEntry(ticker="A411061", name="KODEX 금현물", aum_krw=4e12,
-                 underlying_index="v2", bucket="위험", category="FX 및 원자재"),
+                 underlying_index="v2", bucket="위험", category="FX 및 원자재",
+                 sub_category="gold"),
     ])
 
 
@@ -108,7 +112,7 @@ def test_select_candidates_for_target():
     )
     assert len(candidates.bucket_to_tickers["kr_equity"]) >= 1
     assert len(candidates.bucket_to_tickers["global_equity"]) >= 1
-    assert len(candidates.bucket_to_tickers["bond"]) >= 1
+    assert len(candidates.bucket_to_tickers["kr_bond"]) >= 1
     assert len(candidates.bucket_to_tickers["cash_mmf"]) >= 1
 
 
@@ -122,18 +126,13 @@ def test_no_aum_floor_admits_all_categories():
         ETFEntry(ticker="A222222", name="small", aum_krw=1e11, underlying_index="u2",
                  bucket="위험", category="국내주식_지수"),
     ])
-    bt = BucketTarget(kr_equity=1.0, global_equity=0, fx_commodity=0, bond=0,
-                      cash_mmf=0, rationale="t")
+    bt = _bt(kr_equity=1.0)
     out = list_eligible_tickers(universe, bt, as_of=date(2025, 1, 2))
     assert set(out["kr_equity"]) == {"A111111", "A222222"}
 
 
 def test_list_eligible_tickers_filters_by_category():
-    target = BucketTarget(
-        kr_equity=0.5, global_equity=0.0, fx_commodity=0.0,
-        bond=0.5, cash_mmf=0.0,
-        rationale="t",
-    )
+    target = _bt(kr_equity=0.5, kr_bond=0.5)
     universe = Universe(version="t", etfs=[
         ETFEntry(ticker="A111111", name="big kr", aum_krw=10e12,
                  underlying_index="ui_A111111", bucket="위험", category="국내주식_지수"),
@@ -148,7 +147,7 @@ def test_list_eligible_tickers_filters_by_category():
     ])
     eligible = list_eligible_tickers(universe, target, as_of=date(2026, 5, 10))
     assert set(eligible["kr_equity"]) == {"A111111", "A222222"}
-    assert eligible["bond"] == ["A333333"]
+    assert eligible["kr_bond"] == ["A333333"]
     assert eligible["cash_mmf"] == []
     assert eligible["global_equity"] == []
 
@@ -190,7 +189,7 @@ def test_bond_tips_quota_splits_inflation_linked_and_nominal():
         returns=returns, factor_panel=panel,
         sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
-    bond_picks = candidates.bucket_to_tickers["bond"]
+    bond_picks = candidates.bucket_to_tickers["global_duration"]
     tips_count = sum(1 for t in bond_picks if t.startswith("A_TIPS"))
     nominal_count = sum(1 for t in bond_picks if t.startswith("A_NOM"))
     # ENB adaptive n_max may produce different counts than fixed per_bucket_n=5.
@@ -228,8 +227,8 @@ def test_bond_tips_quota_zero_falls_back_to_legacy_path():
         returns=returns, factor_panel=panel,
         sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
-    # ENB greedy path 검증: "single-pool 분기 안 됨" — bond bucket 이 비어있지 않음.
-    bond_picks = candidates.bucket_to_tickers["bond"]
+    # ENB greedy path 검증: "single-pool 분기 안 됨" — global_duration bucket 이 비어있지 않음.
+    bond_picks = candidates.bucket_to_tickers["global_duration"]
     assert len(bond_picks) >= 1
     assert set(bond_picks).issubset({"A_TIPS1", "A_NOM1"})
 
@@ -238,16 +237,16 @@ def test_all_bonds_eligible_regardless_of_aum():
     """AUM 필터 제거 후: 모든 bond 카테고리 ETF가 eligible."""
     universe = Universe(version="t", etfs=[
         # 200억 — AUM 필터 제거 후 통과
-        ETFEntry(ticker="A_TIPS_SMALL", name="KR-TIPS small", aum_krw=20_000_000_000,
+        ETFEntry(ticker="A_TIPS_SMALL", name="US-TIPS small", aum_krw=20_000_000_000,
                  underlying_index="ui_A_TIPS_SMALL", bucket="안전", category="해외채권_종합",
                  sub_category="inflation_linked"),
-        ETFEntry(ticker="A_NOM_BIG", name="KTB big", aum_krw=2_000_000_000_000,
-                 underlying_index="ui_A_NOM_BIG", bucket="안전", category="국내채권_종합",
-                 sub_category="kr_treasury"),
+        ETFEntry(ticker="A_NOM_BIG", name="UST big", aum_krw=2_000_000_000_000,
+                 underlying_index="ui_A_NOM_BIG", bucket="안전", category="해외채권_종합",
+                 sub_category="us_treasury"),
         # 200억 — AUM 필터 제거 후 통과
-        ETFEntry(ticker="A_NOM_SMALL", name="KTB small", aum_krw=20_000_000_000,
-                 underlying_index="ui_A_NOM_SMALL", bucket="안전", category="국내채권_종합",
-                 sub_category="kr_treasury"),
+        ETFEntry(ticker="A_NOM_SMALL", name="UST small", aum_krw=20_000_000_000,
+                 underlying_index="ui_A_NOM_SMALL", bucket="안전", category="해외채권_종합",
+                 sub_category="us_treasury"),
     ])
     target = BucketTarget(
         weights={
@@ -267,7 +266,7 @@ def test_all_bonds_eligible_regardless_of_aum():
         returns=returns, factor_panel=panel,
         sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
-    bond_picks = candidates.bucket_to_tickers["bond"]
+    bond_picks = candidates.bucket_to_tickers["global_duration"]
     # 모든 bond 카테고리 ETF가 eligible
     assert "A_TIPS_SMALL" in bond_picks
     assert "A_NOM_BIG" in bond_picks
@@ -407,11 +406,7 @@ def test_select_skips_unlisted_etf_for_past_as_of():
                  underlying_index="ui_A999999", bucket="위험", category="국내주식_지수",
                  listed_since=date(2027, 1, 1)),
     ])
-    target = BucketTarget(
-        kr_equity=1.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.0,
-        rationale="test",
-    )
+    target = _bt(kr_equity=1.0)
     tickers = ["A069500", "A069501", "A999999"]
     returns = _synthetic_returns(tickers)
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
@@ -490,11 +485,7 @@ def test_eligibility_no_aum_filter():
             underlying_index="X", bucket="위험", category="국내주식_지수",
         ),
     ])
-    bt = BucketTarget(
-        kr_equity=0.5, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.5, bond_tips_share=0.0,
-        rationale="test",
-    )
+    bt = _bt(kr_equity=0.5, cash_mmf=0.5)
     eligible = list_eligible_tickers(universe, bt, as_of=date(2026, 5, 28))
     assert "A111111" in eligible["kr_equity"]
     assert "A222222" in eligible["kr_equity"]  # 100억도 통과
@@ -512,7 +503,7 @@ def test_bond_split_path_populates_bucket_alpha_scores():
     from tradingagents.skills.portfolio.candidate_selector import select_etf_candidates
     from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
-    # bond bucket 후보: TIPS 1개 + nominal 2개
+    # global_duration bucket 후보: TIPS 1개 + nominal(us_treasury) 2개
     etfs = [
         ETFEntry(
             ticker="A_TIPS01", name="TIPS01", aum_krw=10_000_000_000,
@@ -521,19 +512,23 @@ def test_bond_split_path_populates_bucket_alpha_scores():
         ),
         ETFEntry(
             ticker="A_NOM01", name="NOM01", aum_krw=50_000_000_000,
-            underlying_index="KIS A", bucket="안전", category="국내채권_종합",
-            sub_category="nominal",
+            underlying_index="KIS A", bucket="안전", category="해외채권_종합",
+            sub_category="us_treasury",
         ),
         ETFEntry(
             ticker="A_NOM02", name="NOM02", aum_krw=30_000_000_000,
-            underlying_index="KIS B", bucket="안전", category="국내채권_종합",
-            sub_category="nominal",
+            underlying_index="KIS B", bucket="안전", category="해외채권_종합",
+            sub_category="us_treasury",
         ),
     ]
     universe = Universe(version="test", etfs=etfs)
     bt = BucketTarget(
-        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.7, cash_mmf=0.3, bond_tips_share=0.3,
+        weights={
+            "kr_equity": 0.0, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0, "credit": 0.0,
+            "global_duration": 0.7, "cash_mmf": 0.3,
+        },
+        bond_tips_share=0.3,
         rationale="test",
     )
     # 가짜 returns + factor_panel
@@ -557,7 +552,7 @@ def test_bond_split_path_populates_bucket_alpha_scores():
         sigma=returns.cov(), capital_krw=1_000_000_000_000,
         attribution=attribution,
     )
-    bond_attr = attribution["buckets"]["bond"]
+    bond_attr = attribution["buckets"]["global_duration"]
     assert "alpha_scores" in bond_attr
     # TIPS + nominal 모든 ticker 가 통합 alpha_scores 에 포함
     assert set(bond_attr["alpha_scores"].keys()) >= {"A_TIPS01", "A_NOM01", "A_NOM02"}
@@ -587,8 +582,12 @@ def test_select_etf_candidates_uses_etf_metrics(monkeypatch):
     ]
     universe = Universe(version="test", etfs=etfs)
     bt = BucketTarget(
-        kr_equity=0.0, global_equity=0.7, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.3, bond_tips_share=0.0, rationale="test",
+        weights={
+            "kr_equity": 0.0, "global_equity": 0.7, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0, "credit": 0.0,
+            "global_duration": 0.0, "cash_mmf": 0.3,
+        },
+        bond_tips_share=0.0, rationale="test",
     )
     rng = np.random.default_rng(42)
     returns = pd.DataFrame(
@@ -669,8 +668,12 @@ def test_select_etf_candidates_falls_back_when_metrics_fetch_fails(monkeypatch):
     ]
     universe = Universe(version="test", etfs=etfs)
     bt = BucketTarget(
-        kr_equity=0.7, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.3, bond_tips_share=0.0, rationale="test",
+        weights={
+            "kr_equity": 0.7, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0, "credit": 0.0,
+            "global_duration": 0.0, "cash_mmf": 0.3,
+        },
+        bond_tips_share=0.0, rationale="test",
     )
     rng = np.random.default_rng(7)
     returns = pd.DataFrame(rng.normal(0, 0.01, size=(252, 2)), columns=["A_BIG", "A_MED"])
@@ -731,8 +734,12 @@ def test_select_etf_candidates_attribution_records_selection_trace(monkeypatch):
     ]
     universe = Universe(version="test", etfs=etfs)
     bt = BucketTarget(
-        kr_equity=0.5, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.5, bond_tips_share=0.0, rationale="test",
+        weights={
+            "kr_equity": 0.5, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0, "credit": 0.0,
+            "global_duration": 0.0, "cash_mmf": 0.5,
+        },
+        bond_tips_share=0.0, rationale="test",
     )
     rng = np.random.default_rng(7)
     returns = pd.DataFrame(
@@ -787,8 +794,12 @@ def test_select_etf_candidates_adaptive_n_caps_small_capital(monkeypatch):
     ]
     universe = Universe(version="test", etfs=etfs)
     bt = BucketTarget(
-        kr_equity=0.10, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.90, bond_tips_share=0.0, rationale="test",
+        weights={
+            "kr_equity": 0.10, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0, "credit": 0.0,
+            "global_duration": 0.0, "cash_mmf": 0.90,
+        },
+        bond_tips_share=0.0, rationale="test",
     )
     rng = np.random.default_rng(11)
     returns = pd.DataFrame(

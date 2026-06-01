@@ -1,6 +1,7 @@
 """Phase 4a Ledoit-Wolf shrinkage — integration tests."""
 from __future__ import annotations
 
+import math
 from datetime import date
 
 import pandas as pd
@@ -76,7 +77,11 @@ def test_allocator_shrinkage_intensity_finite(tmp_path, monkeypatch):
     result = create_portfolio_allocator()(state)
     attr = result["allocation_attribution"]
     delta = attr["cov_breakdown"]["shrinkage_intensity"]
-    assert -2.0 <= delta <= 1.0
+    # QIS intensity is signed: negative when tiny eigenvalues are expanded (legitimate,
+    # and more pronounced at larger n — the 8-bucket synthetic pool has n_assets=18).
+    # Intent of this test is finiteness; bound is a generous sanity range, not a tuned threshold.
+    assert math.isfinite(delta)
+    assert -10.0 < delta < 1.0
 
 
 def test_allocator_nco_breakdown_contains_cov_section(tmp_path, monkeypatch):

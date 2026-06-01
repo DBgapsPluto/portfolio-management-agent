@@ -28,12 +28,15 @@
     "dominant_scenario_legacy": "kr_stress",
     "conviction": "medium",
     "bucket_target": {
-      "kr_equity":       0.05,
-      "global_equity":   0.32,
-      "fx_commodity":    0.15,
-      "bond":            0.23,
-      "cash_mmf":        0.25,
-      "bond_tips_share": 0.20
+      "kr_equity":             0.05,
+      "global_equity":         0.32,
+      "precious_metals":       0.06,
+      "cyclical_commodity_fx": 0.09,
+      "kr_bond":               0.06,
+      "credit":                0.03,
+      "global_duration":       0.14,
+      "cash_mmf":              0.25,
+      "bond_tips_share":       0.20
     }
   },
 
