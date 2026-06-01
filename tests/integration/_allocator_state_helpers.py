@@ -16,12 +16,17 @@ from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
 
 
+# bucket → (universe category, risk_label, sub_category) for synthetic ETFs.
+# category+sub_category must classify via sub_category.bucket_for_etf().
 BUCKET_CATEGORIES: dict[str, tuple[str, str, str | None]] = {
-    "kr_equity":     ("국내주식_지수",         "위험", None),
-    "global_equity": ("해외주식_지수",         "위험", None),
-    "fx_commodity":  ("FX 및 원자재",          "위험", "gold"),
-    "bond":          ("국내채권_종합",         "안전", "nominal"),
-    "cash_mmf":      ("금리연계형/초단기채권", "안전", None),
+    "kr_equity":             ("국내주식_지수",         "위험", "index_broad"),
+    "global_equity":         ("해외주식_지수",         "위험", "us_broad"),
+    "precious_metals":       ("FX 및 원자재",          "위험", "gold"),
+    "cyclical_commodity_fx": ("FX 및 원자재",          "위험", "oil_energy"),
+    "kr_bond":               ("국내채권_종합",         "안전", "kr_treasury"),
+    "credit":                ("해외채권_회사채",       "안전", "us_high_yield"),
+    "global_duration":       ("해외채권_종합",         "안전", "us_treasury"),
+    "cash_mmf":              ("금리연계형/초단기채권", "안전", "mmf_kr"),
 }
 
 
@@ -29,19 +34,25 @@ def make_synthetic_universe(
     n_per_bucket: int = 4,
     base_aum: float = 50_000_000_000,
 ) -> Universe:
-    """5 bucket × n_per_bucket ETFs."""
+    """8 bucket × n_per_bucket ETFs (bucket_for_etf 분류 가능).
+
+    global_duration 은 짝/홀 인덱스로 us_treasury / inflation_linked 를 번갈아
+    부여해 TIPS quota split(bond_tips_share>0) 경로를 테스트 가능하게 한다.
+    """
     etfs: list[ETFEntry] = []
-    for bucket_name, (category, risk, sub_cat) in BUCKET_CATEGORIES.items():
-        prefix = bucket_name[:2].upper()
+    for b_idx, (bucket_name, (category, risk, sub_cat)) in enumerate(BUCKET_CATEGORIES.items()):
         for i in range(n_per_bucket):
+            sc = sub_cat
+            if bucket_name == "global_duration":
+                sc = "inflation_linked" if i % 2 == 1 else "us_treasury"
             etfs.append(ETFEntry(
-                ticker=f"A_{prefix}{i:02d}",
+                ticker=f"A_{b_idx}{i:02d}",
                 name=f"{bucket_name}_{i}",
                 aum_krw=base_aum * (i + 1),
-                underlying_index=f"{prefix}_idx_{i}",
+                underlying_index=f"idx_{b_idx}_{i}",
                 bucket=risk,
                 category=category,
-                sub_category=sub_cat,
+                sub_category=sc,
             ))
     return Universe(version="test", etfs=etfs)
 
@@ -89,22 +100,27 @@ def make_factor_panel(
 
 def make_bucket_target(
     *,
-    kr_equity: float = 0.20,
+    kr_equity: float = 0.15,
     global_equity: float = 0.20,
-    fx_commodity: float = 0.15,
-    bond: float = 0.30,
-    cash_mmf: float = 0.15,
+    precious_metals: float = 0.08,
+    cyclical_commodity_fx: float = 0.14,
+    kr_bond: float = 0.15,
+    credit: float = 0.05,
+    global_duration: float = 0.13,
+    cash_mmf: float = 0.10,
     bond_tips_share: float = 0.0,
     rationale: str = "test",
 ) -> BucketTarget:
-    """합 검증된 BucketTarget."""
-    total = kr_equity + global_equity + fx_commodity + bond + cash_mmf
+    """합 검증된 8-bucket BucketTarget (default = INITIAL_BASELINE)."""
+    weights = {
+        "kr_equity": kr_equity, "global_equity": global_equity,
+        "precious_metals": precious_metals, "cyclical_commodity_fx": cyclical_commodity_fx,
+        "kr_bond": kr_bond, "credit": credit, "global_duration": global_duration,
+        "cash_mmf": cash_mmf,
+    }
+    total = sum(weights.values())
     assert abs(total - 1.0) < 1e-9, f"bucket weights sum {total} != 1.0"
-    return BucketTarget(
-        kr_equity=kr_equity, global_equity=global_equity,
-        fx_commodity=fx_commodity, bond=bond, cash_mmf=cash_mmf,
-        bond_tips_share=bond_tips_share, rationale=rationale,
-    )
+    return BucketTarget(weights=weights, bond_tips_share=bond_tips_share, rationale=rationale)
 
 
 def make_research_decision(

@@ -103,7 +103,7 @@ def test_allocator_with_fx_negative_only(tmp_path, monkeypatch):
     universe_path.write_text(universe.model_dump_json())
 
     tickers = [e.ticker for e in universe.etfs]
-    fx_cat = BUCKET_CATEGORIES["fx_commodity"][0]
+    fx_cat = BUCKET_CATEGORIES["precious_metals"][0]
     fx_tickers = [e.ticker for e in universe.etfs if e.category == fx_cat]
     returns = make_synthetic_returns(tickers, n_days=252, seed=11)
     factor_panel = make_factor_panel(
@@ -233,8 +233,8 @@ def test_allocator_cash_overflow_redistribution(tmp_path, monkeypatch):
     # global, fx, bond ticker 들 모두 alpha 음수
     neg_categories = [
         BUCKET_CATEGORIES["global_equity"][0],
-        BUCKET_CATEGORIES["fx_commodity"][0],
-        BUCKET_CATEGORIES["bond"][0],
+        BUCKET_CATEGORIES["precious_metals"][0],
+        BUCKET_CATEGORIES["kr_bond"][0],
     ]
     neg_tickers = [e.ticker for e in universe.etfs if e.category in neg_categories]
     returns = make_synthetic_returns(tickers, n_days=252, seed=17)
@@ -255,7 +255,11 @@ def test_allocator_cash_overflow_redistribution(tmp_path, monkeypatch):
     state = make_allocator_state(
         as_of=date(2026, 5, 28),
         universe_path=str(universe_path),
-        bucket_target=make_bucket_target(cash_mmf=0.15),  # cash 작게 → overflow 유도
+        bucket_target=make_bucket_target(  # cash 작게 → overflow 유도
+            kr_equity=0.15, global_equity=0.25,
+            precious_metals=0.10, cyclical_commodity_fx=0.10,
+            kr_bond=0.15, credit=0.05, global_duration=0.05, cash_mmf=0.15,
+        ),
         technical_report=make_technical_report(factor_panel),
         macro_report=make_macro_report(),
         risk_report=make_risk_report(),
