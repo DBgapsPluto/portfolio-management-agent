@@ -7,7 +7,7 @@ Sub-modules:
 - fetcher_pykrx: pykrx KR market data + parquet cache
 - aggregate: daily/monthly → quarterly indicator panel + derived
 - stage1_builder: date-parameterized minimal-proxy Stage 1 builder
-- bucket_returns: KRW basis 5-bucket quarterly returns
+- bucket_returns_8b: KRW basis 8-bucket quarterly returns
 
 본 패키지는 PR1 의 production code (factor_estimators, factor_calibration)
 를 그대로 호출. 단 factor_estimators 는 mode='historical' 로 호출.
