@@ -3,11 +3,14 @@
 Phase 1 도입. Stage 2 macro bucket_target 을 micro evidence (alpha + ENB) 기반
 conviction 으로 조정.
 
+spill 대상은 RISK_BUCKET (kr_equity/global_equity/precious_metals/cyclical_commodity_fx)
+뿐. 안전자산(kr_bond/credit/global_duration)은 alpha-conviction 평가/spill 안 함.
+
 3-step:
-  1. 각 bucket weight 의 일부를 cash 로 spillover (spillover_ratio = 1 - conviction).
+  1. 각 RISK_BUCKET weight 의 일부를 cash 로 spillover (spillover_ratio = 1 - conviction).
   2. cash_new > effective_cap (= max(0.40, macro cash)) 면 overflow 발생.
-  3. overflow → conviction ≥ threshold 인 bucket 들로 conviction 가중 비례 재분배.
-     high-conviction bucket 이 없으면 cash 가 cap 초과 허용 + WARNING.
+  3. overflow → conviction ≥ threshold 인 RISK_BUCKET 들로 conviction 가중 비례 재분배.
+     high-conviction RISK_BUCKET 이 없으면 cash 가 cap 초과 허용 + WARNING.
 """
 from __future__ import annotations
 
@@ -24,9 +27,16 @@ logger = logging.getLogger(__name__)
 
 
 SPILLOVER_THRESHOLD_DEFAULT: float = 0.3
+# 옛 fx_commodity:0.15 → 분할된 두 자식이 계승
 SPILLOVER_THRESHOLD_BY_BUCKET: dict[str, float] = {
-    "fx_commodity": 0.15,
+    "precious_metals": 0.15,
+    "cyclical_commodity_fx": 0.15,
 }
+# conviction(alpha 기반)은 위험자산에만 유효 → 안전자산(kr_bond/credit/global_duration)은
+# spill 대상 제외 (Tier 1 RISK_BUCKETS 와 일치).
+SPILLOVER_RISK_BUCKETS: tuple[str, ...] = (
+    "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+)
 CASH_CAP_FOR_SPILLOVER_TARGET: float = 0.40
 SPILLOVER_NUMERICAL_TOLERANCE: float = 1e-9
 
@@ -108,27 +118,27 @@ def adjust_bucket_targets(
     alpha_scores_by_bucket: dict[str, dict[str, float]],
     returns: pd.DataFrame,
 ) -> SpilloverResult:
-    """5 bucket conviction 계산 → 3-step redistribution.
+    """RISK_BUCKET conviction 계산 → 3-step redistribution (8-bucket).
 
-    Step 1: bucket → cash_mmf 비례 spillover (cash_mmf 자체는 대상 아님)
-    Step 2: effective_cap = max(0.40, bucket_target.cash_mmf) — macro 보존
-    Step 3: overflow → high-conviction bucket conviction 가중 비례
+    Step 1: RISK_BUCKET → cash_mmf 비례 spillover (현금 자체는 대상 아님)
+    Step 2: effective_cap = max(0.40, macro cash) — macro 보존
+    Step 3: overflow → high-conviction RISK_BUCKET conviction 가중 비례
+
+    안전자산(kr_bond/credit/global_duration)은 alpha-conviction 평가/spill 안 함
+    (Stage 2 거시 판단대로 보존). convictions/thresholds 는 weight>0 인
+    RISK_BUCKET 만 포함(≤4 키, partial dict).
     """
-    # 입력 sanity
-    total_in = (
-        bucket_target.kr_equity + bucket_target.global_equity
-        + bucket_target.fx_commodity + bucket_target.bond
-        + bucket_target.cash_mmf
-    )
+    weights = dict(bucket_target.weights)
+    total_in = sum(weights.values())
     assert abs(total_in - 1.0) < SPILLOVER_NUMERICAL_TOLERANCE, (
         f"bucket_target sum {total_in} != 1.0"
     )
 
-    bucket_names = ("kr_equity", "global_equity", "fx_commodity", "bond", "cash_mmf")
+    risk_buckets = [b for b in SPILLOVER_RISK_BUCKETS if weights.get(b, 0.0) > 0.0]
 
-    # 1. 5 bucket conviction 계산
+    # 1. RISK_BUCKET conviction
     convictions: dict[str, ConvictionResult] = {}
-    for b in bucket_names:
+    for b in risk_buckets:
         convictions[b] = compute_bucket_conviction(
             bucket=b,
             chosen=bucket_chosen.get(b, []),
@@ -136,17 +146,18 @@ def adjust_bucket_targets(
             returns=returns,
         )
 
-    # 2. Step 1 — bucket → cash 비례 spillover (cash_mmf 제외)
-    adjusted = {b: getattr(bucket_target, b) for b in bucket_names}
+    adjusted = dict(weights)
+
+    # 2. Step 1 — RISK_BUCKET → cash 비례 spillover
     spillover_amounts: dict[str, float] = {}
-    for b in ("kr_equity", "global_equity", "fx_commodity", "bond"):
+    for b in risk_buckets:
         amt = adjusted[b] * convictions[b].spillover_ratio
         spillover_amounts[b] = amt
         adjusted[b] -= amt
     cash_new = adjusted["cash_mmf"] + sum(spillover_amounts.values())
 
-    # 3. Step 2 — effective_cap = max(0.40, macro cash) → macro 보존
-    effective_cap = max(CASH_CAP_FOR_SPILLOVER_TARGET, bucket_target.cash_mmf)
+    # 3. Step 2 — effective_cap = max(0.40, macro cash)
+    effective_cap = max(CASH_CAP_FOR_SPILLOVER_TARGET, weights["cash_mmf"])
     if cash_new <= effective_cap:
         adjusted["cash_mmf"] = cash_new
         overflow = 0.0
@@ -156,12 +167,12 @@ def adjust_bucket_targets(
         overflow = cash_new - effective_cap
         cash_cap_triggered = True
 
-    # 4. Step 3 — overflow → high-conviction bucket
+    # 4. Step 3 — overflow → high-conviction RISK_BUCKET
     cash_overflow_to_buckets: dict[str, float] = {}
     if overflow > 0:
         high_conv = {
             b: convictions[b].conviction
-            for b in ("kr_equity", "global_equity", "fx_commodity", "bond")
+            for b in risk_buckets
             if convictions[b].conviction >= convictions[b].threshold
         }
         if high_conv:
@@ -173,27 +184,24 @@ def adjust_bucket_targets(
         else:
             adjusted["cash_mmf"] += overflow
             logger.warning(
-                "all buckets low-conviction; cash_mmf %.3f exceeds cap %.2f",
+                "all risk buckets low-conviction; cash_mmf %.3f exceeds cap %.2f",
                 adjusted["cash_mmf"], effective_cap,
             )
 
-    # 5. 합 invariant 검증
+    # 5. 합 invariant
     total_out = sum(adjusted.values())
     if abs(total_out - 1.0) > SPILLOVER_NUMERICAL_TOLERANCE:
         raise RuntimeError(
             f"spillover sum invariant broken: total_out={total_out}"
         )
 
-    # 6. BucketTarget 새 instance (bond_tips_share 보존)
+    # 6. 새 BucketTarget (weights dict, bond_tips_share 보존)
     adjusted_bt = BucketTarget(
-        kr_equity=adjusted["kr_equity"],
-        global_equity=adjusted["global_equity"],
-        fx_commodity=adjusted["fx_commodity"],
-        bond=adjusted["bond"],
-        cash_mmf=adjusted["cash_mmf"],
+        weights=adjusted,
         bond_tips_share=bucket_target.bond_tips_share,
         rationale=(
-            f"{bucket_target.rationale or ''} | spillover {sum(spillover_amounts.values()):.3f} → cash"
+            f"{bucket_target.rationale or ''} | spillover "
+            f"{sum(spillover_amounts.values()):.3f} → cash"
         )[:300],
     )
 
@@ -203,5 +211,5 @@ def adjust_bucket_targets(
         cash_overflow_to_buckets=cash_overflow_to_buckets,
         total_spillover_to_cash=sum(spillover_amounts.values()),
         cash_cap_triggered=cash_cap_triggered,
-        thresholds={b: _threshold_for(b) for b in bucket_names},
+        thresholds={b: _threshold_for(b) for b in risk_buckets},
     )
