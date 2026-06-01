@@ -30,6 +30,14 @@ SYSTEMIC_EXTREME_THRESHOLD: float = 8.0
 # Phase 3b: regime_confidence 가 이 임계치 이상이고 알려진 scenario 가 있으면
 # BL views 어댑터를 통해 BLACK_LITTERMAN 으로 전환 (scenario_mapping 보다 우선).
 BL_TRIGGER_CONFIDENCE: float = 0.7
+# Phase 3b BL trigger is gated to GROWTH/risk-on scenarios where leaning into a
+# directional view (BL + max_sharpe) is appropriate. DEFENSIVE scenarios
+# (stagflation, broad_recession, kr_stress, global_credit) keep their
+# capital-preservation scenario→method (min_variance/risk_parity) — anchor eval
+# showed BL over-rode defensive regimes (e.g. tariff/stagflation) inappropriately.
+BL_TRIGGER_SCENARIOS: frozenset[str] = frozenset({
+    "goldilocks", "overheating", "late_cycle", "ai_concentration", "kr_boom",
+})
 
 
 class MethodChoice(BaseModel):
@@ -157,6 +165,7 @@ def pick_optimization_method(
         scenario_in
         and regime_confidence >= BL_TRIGGER_CONFIDENCE
         and scenario_in in SCENARIO_BUCKET_RULEBOOK
+        and scenario_in in BL_TRIGGER_SCENARIOS
     ):
         choice = MethodChoice(
             method=OptimizationMethod.BLACK_LITTERMAN,
