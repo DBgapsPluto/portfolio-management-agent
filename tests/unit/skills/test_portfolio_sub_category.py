@@ -102,9 +102,14 @@ def test_classify_batch_splits_into_batches():
 def test_all_valid_labels_have_no_overlap_across_buckets():
     """라벨 이름은 bucket 안에서만 유효. 서로 다른 bucket에 같은 이름 X (혼란 회피)."""
     seen = {}
+    # Intentional cross-bucket overlap, disambiguated elsewhere by category:
+    #   thematic_other — generic fallback shared by kr_equity/global_equity.
+    #   inflation_linked — KR 물가채(kr_bond) vs US TIPS(global_duration); Tier1 §6
+    #     bucket_for_etf() resolves via _SPLIT_TARGETS (category → valid buckets).
+    _OVERLAP_ALLOWED = {"thematic_other", "inflation_linked"}
     for bucket, labels in VALID_SUB_CATEGORIES.items():
         for label in labels:
-            if label == "thematic_other":
+            if label in _OVERLAP_ALLOWED:
                 continue  # 공유 OK
             assert label not in seen, (
                 f"label {label} duplicated across buckets {seen[label]} and {bucket}"

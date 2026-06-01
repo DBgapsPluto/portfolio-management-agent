@@ -146,8 +146,8 @@ def test_sector_mapper_splits_bond_when_tips_share_positive():
     """
     candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": [], "global_equity": [], "fx_commodity": [],
-            "bond": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
+            "kr_equity": [], "global_equity": [], "cyclical_commodity_fx": [],
+            "global_duration": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
             "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
         },
         selection_criteria="test", total_candidates=7,
@@ -202,8 +202,8 @@ def test_sector_mapper_absorbs_missing_tips_pool():
     """
     candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": [], "global_equity": [], "fx_commodity": [],
-            "bond": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
+            "kr_equity": [], "global_equity": [], "cyclical_commodity_fx": [],
+            "global_duration": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
             "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
         },
         selection_criteria="test", total_candidates=5,
