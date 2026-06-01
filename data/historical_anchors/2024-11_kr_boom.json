@@ -43,7 +43,7 @@
   },
 
   "expected_stage3": {
-    "acceptable_methods": ["hrp"],
+    "acceptable_methods": ["hrp", "black_litterman"],
     "min_sub_category_weights": {
       "us_broad": 0.04
     },
