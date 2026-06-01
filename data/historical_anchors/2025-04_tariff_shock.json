@@ -30,12 +30,15 @@
     "dominant_scenario_legacy": "stagflation",
     "conviction": "high",
     "bucket_target": {
-      "kr_equity":       0.07,
-      "global_equity":   0.13,
-      "fx_commodity":    0.30,
-      "bond":            0.25,
-      "cash_mmf":        0.25,
-      "bond_tips_share": 0.70
+      "kr_equity":             0.07,
+      "global_equity":         0.13,
+      "precious_metals":       0.18,
+      "cyclical_commodity_fx": 0.12,
+      "kr_bond":               0.05,
+      "credit":                0.02,
+      "global_duration":       0.18,
+      "cash_mmf":              0.25,
+      "bond_tips_share":       0.70
     }
   },
 

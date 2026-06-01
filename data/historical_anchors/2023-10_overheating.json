@@ -29,12 +29,15 @@
     "dominant_scenario_legacy": "overheating",
     "conviction": "medium",
     "bucket_target": {
-      "kr_equity":       0.10,
-      "global_equity":   0.20,
-      "fx_commodity":    0.25,
-      "bond":            0.20,
-      "cash_mmf":        0.25,
-      "bond_tips_share": 0.50
+      "kr_equity":             0.10,
+      "global_equity":         0.20,
+      "precious_metals":       0.08,
+      "cyclical_commodity_fx": 0.17,
+      "kr_bond":               0.06,
+      "credit":                0.04,
+      "global_duration":       0.10,
+      "cash_mmf":              0.25,
+      "bond_tips_share":       0.50
     }
   },
 

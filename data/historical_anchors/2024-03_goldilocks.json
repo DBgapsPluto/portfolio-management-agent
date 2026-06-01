@@ -29,12 +29,15 @@
     "dominant_scenario_legacy": "goldilocks",
     "conviction": "high",
     "bucket_target": {
-      "kr_equity":       0.18,
-      "global_equity":   0.35,
-      "fx_commodity":    0.08,
-      "bond":            0.25,
-      "cash_mmf":        0.14,
-      "bond_tips_share": 0.20
+      "kr_equity":             0.18,
+      "global_equity":         0.35,
+      "precious_metals":       0.04,
+      "cyclical_commodity_fx": 0.04,
+      "kr_bond":               0.07,
+      "credit":                0.06,
+      "global_duration":       0.12,
+      "cash_mmf":              0.14,
+      "bond_tips_share":       0.20
     }
   },
 

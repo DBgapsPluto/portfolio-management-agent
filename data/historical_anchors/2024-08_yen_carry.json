@@ -29,12 +29,15 @@
     "dominant_scenario_legacy": "global_credit",
     "conviction": "medium",
     "bucket_target": {
-      "kr_equity":       0.08,
-      "global_equity":   0.17,
-      "fx_commodity":    0.15,
-      "bond":            0.30,
-      "cash_mmf":        0.30,
-      "bond_tips_share": 0.25
+      "kr_equity":             0.08,
+      "global_equity":         0.17,
+      "precious_metals":       0.08,
+      "cyclical_commodity_fx": 0.07,
+      "kr_bond":               0.10,
+      "credit":                0.02,
+      "global_duration":       0.18,
+      "cash_mmf":              0.30,
+      "bond_tips_share":       0.25
     }
   },
 
