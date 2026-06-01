@@ -506,7 +506,7 @@ def test_compute_all_factors_with_real_schema_after_c1(
         "krw_regime":         0.70,
         "equity_vol_regime":  0.60,
         "valuation":          0.40,
-        "liquidity_regime":   0.30,
+        "market_dispersion":   0.30,
     }
     for factor_name, min_cov in expected_min.items():
         score = getattr(scores, factor_name)
@@ -536,7 +536,7 @@ def test_no_silent_path_mismatch(
         "krw_regime",
         "equity_vol_regime",
         "valuation",
-        "liquidity_regime",
+        "market_dispersion",
     ):
         score = getattr(scores, factor_name)
         assert score.confidence > 0, (
@@ -616,7 +616,7 @@ def test_compute_all_factors_with_real_schema_after_c8(
         "krw_regime":         0.80,
         "equity_vol_regime":  0.85,
         "valuation":          0.85,
-        "liquidity_regime":   0.85,
+        "market_dispersion":   0.85,
     }
     for factor_name, min_cov in expected_min.items():
         score = getattr(scores, factor_name)
@@ -674,11 +674,11 @@ def test_realized_vol_affects_vol_and_liquidity(
         f"new {new_scores.equity_vol_regime.z_score:.2f}"
     )
     # F9 VRP component should respond — sign convention 의존 — *값 자체 의 변화* 검증.
-    assert (new_scores.liquidity_regime.z_score
-            != baseline_scores.liquidity_regime.z_score), (
+    assert (new_scores.market_dispersion.z_score
+            != baseline_scores.market_dispersion.z_score), (
         f"F9 should respond to VRP change, "
-        f"baseline={baseline_scores.liquidity_regime.z_score:.2f} "
-        f"new={new_scores.liquidity_regime.z_score:.2f}"
+        f"baseline={baseline_scores.market_dispersion.z_score:.2f} "
+        f"new={new_scores.market_dispersion.z_score:.2f}"
     )
 
 
@@ -722,11 +722,11 @@ def test_sector_dispersion_affects_liquidity(
 
     new_scores = compute_all_factors(state)
     assert (
-        new_scores.liquidity_regime.z_score != baseline_scores.liquidity_regime.z_score
+        new_scores.market_dispersion.z_score != baseline_scores.market_dispersion.z_score
     ), (
         f"F9 should respond to sector_dispersion perturbation, "
-        f"baseline={baseline_scores.liquidity_regime.z_score:.2f} "
-        f"new={new_scores.liquidity_regime.z_score:.2f}"
+        f"baseline={baseline_scores.market_dispersion.z_score:.2f} "
+        f"new={new_scores.market_dispersion.z_score:.2f}"
     )
 
 

@@ -111,7 +111,7 @@ def test_2026_05_15_like_full_factor_attribution():
     node = create_research_manager(deep_llm=None)
     result = node(_mock_state_2026_05_15_like())
     rd = result["research_decision"]
-    # 9 factor 모두 contributions
-    assert len(rd.factor_contributions) == 9
+    # 12 factor 모두 contributions
+    assert len(rd.factor_contributions) == 12
     # baseline 가 INITIAL_BASELINE
-    assert rd.baseline_bucket["bond"] == INITIAL_BASELINE["bond"]
+    assert rd.baseline_bucket["cash_mmf"] == INITIAL_BASELINE["cash_mmf"]
