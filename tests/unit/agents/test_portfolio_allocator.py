@@ -591,3 +591,47 @@ def test_optimizer_infeasibility_falls_back_to_min_volatility():
     # Fallback path recorded in attribution.
     assert "optimization_fallback" in attribution
     assert attribution["optimization_fallback"].startswith("max_sharpe_infeasible→")
+
+
+def test_bl_view_on_ticker_not_in_cov_universe_is_dropped():
+    """Stage 3 anchor-tuning: a BL view on a ticker absent from returns/S must
+    be filtered out, not crash pypfopt with "Providing a view on an asset not
+    in the universe".
+
+    Pre-fix: BlackLittermanModel raises ValueError ('A_ORPHAN' is not in list).
+    Post-fix: orphan view dropped, recorded in attribution, valid allocation.
+    """
+    rng = np.random.default_rng(11)
+    n = 200
+    # POSITIVE drift so max_sharpe stays feasible — isolates the view-filter path.
+    returns = pd.DataFrame({
+        "A069500":  rng.normal(0.001, 0.010, n),
+        "A360750":  rng.normal(0.001, 0.010, n),
+        "A411060":  rng.normal(0.001, 0.010, n),
+        "A114260":  rng.normal(0.001, 0.005, n),
+        "A_CREDIT": rng.normal(0.001, 0.004, n),
+        "A459580":  rng.normal(0.001, 0.002, n),
+    })
+    # One view on a ticker NOT in returns columns → not in S.index.
+    views = {"A069500": 0.10, "A360750": 0.12, "A_ORPHAN": 0.08}
+    confs = [0.5, 0.5, 0.5]  # parallel to views insertion order
+    attribution: dict = {}
+
+    wv, sigma_df = _optimize_with_bucket_constraints(
+        method=OptimizationMethod.BLACK_LITTERMAN,
+        returns=returns,
+        candidates=_candidates(),
+        bucket_target=_bucket_target(),
+        method_params={"views": views, "view_confidences": confs},
+        attempts=0,
+        attribution=attribution,
+    )
+
+    # No ValueError/RuntimeError → valid allocation produced.
+    assert wv.weights, "view-filter produced no weights"
+    assert abs(sum(wv.weights.values()) - 1.0) < 1e-6, (
+        f"weights must sum to 1, got {sum(wv.weights.values())}"
+    )
+    assert all(w >= 0 for w in wv.weights.values()), "weights must be non-negative"
+    # Orphan view recorded as dropped.
+    assert attribution.get("bl_views_dropped_not_in_cov") == ["A_ORPHAN"]

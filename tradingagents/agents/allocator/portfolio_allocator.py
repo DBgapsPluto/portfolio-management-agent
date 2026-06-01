@@ -624,6 +624,18 @@ def _optimize_with_bucket_constraints(
                 "view_conf_multi_applied": False,
             }
 
+        # Filter BL views to the cov universe: tickers excluded from returns/S
+        # (insufficient cov samples) must not carry a BL view, else pypfopt raises
+        # "Providing a view on an asset not in the universe".
+        cov_universe = set(S.index) if hasattr(S, "index") else set(returns.columns)
+        if views:
+            _kept = [(t, v, c) for (t, v), c in zip(views.items(), confs) if t in cov_universe]
+            dropped = [t for t in views if t not in cov_universe]
+            views = {t: v for t, v, c in _kept}
+            confs = [c for t, v, c in _kept]
+            if dropped and attribution is not None:
+                attribution["bl_views_dropped_not_in_cov"] = dropped
+
         if views:
             bl = BlackLittermanModel(
                 S, absolute_views=views, omega="idzorek", view_confidences=confs,
