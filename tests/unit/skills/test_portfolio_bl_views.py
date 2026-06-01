@@ -20,8 +20,11 @@ def test_rulebook_returns_finite_decimals():
             assert -0.30 <= ret <= 0.30, f"{scenario}/{bucket}: {ret} out of range"
 
 
-def test_rulebook_has_all_5_buckets():
-    expected_buckets = {"kr_equity", "global_equity", "fx_commodity", "bond", "cash_mmf"}
+def test_rulebook_has_all_8_buckets():
+    expected_buckets = {
+        "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+        "kr_bond", "credit", "global_duration", "cash_mmf",
+    }
     for scenario, bucket_returns in SCENARIO_BUCKET_RULEBOOK.items():
         assert set(bucket_returns.keys()) == expected_buckets, scenario
 
@@ -35,10 +38,10 @@ from tradingagents.skills.portfolio.bl_views import generate_bl_views
 
 def test_generate_bl_views_known_scenario_basic():
     candidates = {
-        "kr_equity":     ["A069500", "A102110"],
-        "global_equity": ["A360750"],
-        "bond":          ["A148070"],
-        "cash_mmf":      ["A130730"],
+        "kr_equity":       ["A069500", "A102110"],
+        "global_equity":   ["A360750"],
+        "global_duration": ["A148070"],
+        "cash_mmf":        ["A130730"],
     }
     views, confs, _ = generate_bl_views(
         scenario="goldilocks",
@@ -48,7 +51,7 @@ def test_generate_bl_views_known_scenario_basic():
     assert views["A069500"] == 0.10
     assert views["A102110"] == 0.10
     assert views["A360750"] == 0.12
-    assert views["A148070"] == 0.04
+    assert views["A148070"] == 0.03
     assert views["A130730"] == 0.025
     assert len(views) == 5
     assert len(confs) == 5
@@ -57,7 +60,7 @@ def test_generate_bl_views_known_scenario_basic():
 
 
 def test_generate_bl_views_records_breakdown():
-    candidates = {"kr_equity": ["A069500"], "bond": ["A148070", "A114260"]}
+    candidates = {"kr_equity": ["A069500"], "global_duration": ["A148070", "A114260"]}
     breakdown: dict = {}
     views, confs, _ = generate_bl_views(
         scenario="late_cycle",
@@ -68,9 +71,9 @@ def test_generate_bl_views_records_breakdown():
     assert breakdown["scenario"] == "late_cycle"
     assert breakdown["regime_confidence_raw"] == 0.75
     assert breakdown["confidence_used"] == 0.75
-    assert breakdown["n_views_per_bucket"] == {"kr_equity": 1, "bond": 2}
+    assert breakdown["n_views_per_bucket"] == {"kr_equity": 1, "global_duration": 2}
     assert breakdown["rulebook_returns_used"] == {
-        "kr_equity": 0.02, "bond": 0.06,
+        "kr_equity": 0.02, "global_duration": 0.07,
     }
 
 
@@ -122,9 +125,9 @@ def test_generate_bl_views_confidence_floor():
 
 def test_generate_bl_views_bucket_agnostic():
     candidates = {
-        "kr_equity":     ["A069500"],
-        "alt_realestate": ["AXYZ"],
-        "bond":          ["A148070"],
+        "kr_equity":       ["A069500"],
+        "alt_realestate":  ["AXYZ"],
+        "global_duration": ["A148070"],
     }
     breakdown: dict = {}
     views, confs, _ = generate_bl_views(
