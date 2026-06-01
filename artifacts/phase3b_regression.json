@@ -1,0 +1,109 @@
+[
+  {
+    "as_of": "2025-04-15",
+    "weight_jaccard": 0.05555555555555555,
+    "weight_l1": 1.8589414105858941,
+    "sharpe_baseline": null,
+    "sharpe_new": null,
+    "sharpe_ratio": null,
+    "vol_baseline": null,
+    "vol_new": null,
+    "vol_ratio": null,
+    "bucket_delta": {
+      "kr_equity": -0.06711110390376082,
+      "global_equity": -0.31161377998616013,
+      "fx_commodity": 0.14273466845146274,
+      "bond": -0.03238518296590248,
+      "cash_mmf": 0.26837539840436075
+    },
+    "tickers_added": [
+      "A423160",
+      "A459580",
+      "A469830",
+      "A488770"
+    ],
+    "tickers_removed": [
+      "A069500",
+      "A133690",
+      "A144600",
+      "A229200",
+      "A273130",
+      "A360750",
+      "A371460",
+      "A411060",
+      "A449450",
+      "A453850",
+      "A458730",
+      "A466920",
+      "A468370"
+    ],
+    "cash_spillover_present": true,
+    "enb_value": 1.9263517338248481,
+    "fx_bucket_baseline": 0.09757222660710144,
+    "fx_bucket_new": 0.24030689505856417,
+    "fx_chosen_all_positive": true,
+    "acceptance": {
+      "(a) sharpe": true,
+      "(b) volatility": true,
+      "(c) attribution": true,
+      "(d) fx_commodity": false
+    }
+  },
+  {
+    "as_of": "2026-05-15",
+    "weight_jaccard": 0.1111111111111111,
+    "weight_l1": 1.4546205726809749,
+    "sharpe_baseline": null,
+    "sharpe_new": 0.002146152910736102,
+    "sharpe_ratio": null,
+    "vol_baseline": null,
+    "vol_new": 22.66175573130876,
+    "vol_ratio": null,
+    "bucket_delta": {
+      "kr_equity": -0.08829009579341393,
+      "global_equity": 0.16755241463147935,
+      "fx_commodity": -0.03491877365411333,
+      "bond": 0.0729586347688122,
+      "cash_mmf": -0.11730217995276421
+    },
+    "tickers_added": [
+      "A0016X0",
+      "A133690",
+      "A139250",
+      "A157450",
+      "A241180",
+      "A261220",
+      "A272560",
+      "A283580",
+      "A462010"
+    ],
+    "tickers_removed": [
+      "A144600",
+      "A229200",
+      "A379800",
+      "A381180",
+      "A385540",
+      "A395160",
+      "A411060",
+      "A423160",
+      "A453850",
+      "A455890",
+      "A458730",
+      "A459580",
+      "A487230",
+      "A487240",
+      "A488770"
+    ],
+    "cash_spillover_present": true,
+    "enb_value": 4.46086156958434,
+    "fx_bucket_baseline": 0.11998968287591219,
+    "fx_bucket_new": 0.08507090922179886,
+    "fx_chosen_all_positive": true,
+    "acceptance": {
+      "(a) sharpe": true,
+      "(b) volatility": true,
+      "(c) attribution": true,
+      "(d) fx_commodity": false
+    }
+  }
+]

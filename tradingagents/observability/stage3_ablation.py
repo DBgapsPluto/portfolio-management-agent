@@ -122,12 +122,15 @@ def run_ablation(
     factor_panel: dict[str, FactorPanel],
     baseline_kwargs: dict,
     variants: list[str] | None = None,
+    capital_krw: float = 1_000_000_000,
 ) -> AblationReport:
     """Run candidate selection for each variant, compare rankings.
 
     baseline_kwargs: select_etf_candidates에 그대로 넘길 kwargs (universe, bucket_target,
-        as_of, returns, factor_panel은 별도 인자). 보통 dict(regime_quadrant=...,
-        regime_confidence=..., dominant_scenario=..., per_bucket_n=..., ...).
+        as_of, returns, factor_panel, sigma, capital_krw 는 별도 인자). 보통
+        dict(regime_quadrant=..., regime_confidence=..., dominant_scenario=..., ...).
+
+    Phase 2b: per_bucket_n 인자 폐기됨 — adaptive n_max 자동. sigma 는 returns 로 계산.
     """
     if variants is None:
         variants = list(VARIANT_OVERRIDES.keys())
@@ -135,17 +138,24 @@ def run_ablation(
     if unknown:
         raise ValueError(f"Unknown variants: {sorted(unknown)}")
 
+    # Phase 2b — sigma 사전 계산
+    sigma = returns.dropna(axis=0, how="any").cov()
+
     # 각 변형마다 candidate 선정 실행
     results: dict[str, tuple[Any, dict]] = {}  # variant → (candidate_set, attribution)
     for v in variants:
         kwargs = dict(baseline_kwargs)
         kwargs.update(VARIANT_OVERRIDES[v])
+        # Phase 2b backward compat — per_bucket_n 무시
+        kwargs.pop("per_bucket_n", None)
         attr: dict = {}
         cs = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,
             returns=returns,
             factor_panel=factor_panel,
+            sigma=sigma,
+            capital_krw=capital_krw,
             attribution=attr,
             **kwargs,
         )

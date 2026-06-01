@@ -310,6 +310,19 @@ def test_5_28_dry_run_produces_artifacts(
         lambda *a, **kw: controlled_candidates,
     )
 
+    # Phase 1 cash_spillover: 이 mock 은 attribution["buckets"] 를 채우지 않아 spillover
+    # 가 모든 bucket 을 0 conviction 으로 보고 cash 로 전부 흘리려 함. dry_run 테스트는
+    # 와이어 검증 용도이므로 spillover 는 no-op (bucket_target 그대로) 로 패치.
+    from tradingagents.skills.portfolio.cash_spillover import SpilloverResult as _SR
+    monkeypatch.setattr(
+        "tradingagents.agents.allocator.portfolio_allocator.adjust_bucket_targets",
+        lambda bucket_target, **kw: _SR(
+            adjusted_bucket_target=bucket_target,
+            convictions={}, cash_overflow_to_buckets={},
+            total_spillover_to_cash=0.0, cash_cap_triggered=False, thresholds={},
+        ),
+    )
+
     # 12. Build config pointing at tmp paths
     from tradingagents.default_config import DEFAULT_CONFIG
     test_config = dict(DEFAULT_CONFIG)

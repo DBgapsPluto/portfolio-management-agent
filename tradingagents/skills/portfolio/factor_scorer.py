@@ -15,11 +15,16 @@ The candidate_selector wires it into the pipeline.
 """
 from __future__ import annotations
 
+import logging
 import math
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel
+
+from tradingagents.skills.portfolio.diversification import compute_enb
+
+logger = logging.getLogger(__name__)
 
 
 # Factor weights per macro regime quadrant.
@@ -33,6 +38,14 @@ from pydantic import BaseModel
 # 신호당 가감점 δ + 양방향 bound. backtest 튜닝 대상이라 named const로 노출.
 TIMING_DELTA: float = 0.1
 TIMING_CAP: float = 0.3
+
+# Phase 2b (2026-05-30). ENB greedy + adaptive n_max constants.
+ENB_DELTA_THRESHOLD: float = 0.15
+ABS_MAX_PER_BUCKET: int = 8
+MIN_POSITION_KRW: float = 50_000_000
+MIN_BUCKET_POSITION_RATIO: float = 0.025
+N_MIN_HARD_FLOOR: int = 1
+ALPHA_IMPL_BLEND_DEFAULT: float = 0.85
 
 
 REGIME_FACTOR_WEIGHTS: dict[str, dict[str, float]] = {
@@ -340,20 +353,38 @@ def score_candidates(
     return scores
 
 
+# Phase 2a (2026-05-29). impl_score 4-요소 weighted composite.
+# Signed weights — 부호가 contribution 방향. 절댓값 합 = 1.0.
+IMPL_SCORE_WEIGHTS: dict[str, float] = {
+    "log_aum":            0.33,   # 클수록 좋음
+    "premium_discount":  -0.28,   # |괴리율| 클수록 나쁨
+    "tracking_error":    -0.22,   # 클수록 나쁨
+    "volume_per_aum":     0.17,   # 클수록 좋음
+}
+
+
 def compute_impl_score(
     panels: dict[str, FactorPanel],
     *,
-    adv: dict[str, float | None] | None = None,
-    deviation: dict[str, float | None] | None = None,
+    volume_per_aum: dict[str, float | None] | None = None,
+    premium_discount: dict[str, float | None] | None = None,
     tracking_error: dict[str, float | None] | None = None,
     normalization: str = "rank_percentile",
 ) -> dict[str, float]:
-    """Implementation-quality score (Stage 3 cluster-aware selection).
+    """4-요소 weighted composite (Phase 2a, 2026-05-29).
 
-    "대체재 중 최선 vehicle" — 그룹 내 선택에 사용. 높을수록 좋음.
-    - Phase 1: log_aum (큰 ETF = 더 유동, 좁은 spread proxy)
-    - Phase 2 (optional): + ADV↑, |괴리율|↓, 추적오차율↓
-    미제공 신호는 neutral(0 기여). normalization은 alpha와 동일 기본값.
+    공식 (rank-percentile normalize 후 signed weight 합성):
+      impl_score(t) = +0.33 × z(log_aum)
+                    + 0.17 × z(volume_per_aum)
+                    + (-0.28) × z(|premium_discount|)
+                    + (-0.22) × z(tracking_error)
+
+    각 signal 의 raw 값 (premium_discount 는 절댓값) 을 normalize 후 signed weight
+    와 합성. 큰 |premium_discount| → 큰 z → 음수 가중치 × 큰 z = 음수 기여.
+
+    누락 신호 (입력 None 또는 dict value None) 는 0 (neutral z) 기여.
+    Backward-compat: 모든 signal None 시 impl_score = 0.33 × z(log_aum),
+    Phase 1 의 log_aum-단독 ordering 동일.
     """
     if not panels:
         return {}
@@ -364,25 +395,43 @@ def compute_impl_score(
         normalize = _zscore
     else:
         raise ValueError(
-            f"unknown normalization {normalization!r} (expected 'rank_percentile' or 'zscore')"
+            f"unknown normalization {normalization!r} "
+            f"(expected 'rank_percentile' or 'zscore')"
         )
 
-    parts: list[dict[str, float]] = [
-        normalize({t: p.log_aum for t, p in panels.items()})
-    ]
-    if adv is not None:
-        parts.append(normalize({t: adv.get(t) for t in panels}))
-    if deviation is not None:
-        parts.append(normalize({
-            t: (-abs(deviation[t]) if deviation.get(t) is not None else None)
+    # 1. log_aum 항상 존재 (FactorPanel.log_aum 필수)
+    n_log_aum = normalize({t: p.log_aum for t, p in panels.items()})
+
+    # 2. volume_per_aum (positive direction)
+    if volume_per_aum is not None:
+        n_vol_aum = normalize({t: volume_per_aum.get(t) for t in panels})
+    else:
+        n_vol_aum = {t: 0.0 for t in panels}
+
+    # 3. |premium_discount| (절댓값 normalize → signed weight 음수)
+    if premium_discount is not None:
+        n_pd = normalize({
+            t: (abs(premium_discount[t]) if premium_discount.get(t) is not None else None)
             for t in panels
-        }))
+        })
+    else:
+        n_pd = {t: 0.0 for t in panels}
+
+    # 4. tracking_error (signed weight 음수)
     if tracking_error is not None:
-        parts.append(normalize({
-            t: (-tracking_error[t] if tracking_error.get(t) is not None else None)
-            for t in panels
-        }))
-    return {t: float(np.mean([p[t] for p in parts])) for t in panels}
+        n_te = normalize({t: tracking_error.get(t) for t in panels})
+    else:
+        n_te = {t: 0.0 for t in panels}
+
+    out: dict[str, float] = {}
+    for t in panels:
+        out[t] = (
+            IMPL_SCORE_WEIGHTS["log_aum"]           * n_log_aum[t]
+            + IMPL_SCORE_WEIGHTS["volume_per_aum"]    * n_vol_aum[t]
+            + IMPL_SCORE_WEIGHTS["premium_discount"]  * n_pd[t]
+            + IMPL_SCORE_WEIGHTS["tracking_error"]    * n_te[t]
+        )
+    return out
 
 
 def _timing_overlay(
@@ -428,210 +477,148 @@ def _timing_overlay(
     return max(-TIMING_CAP, min(TIMING_CAP, score))
 
 
-def _corr_groups(
-    elig: list[str], returns: "pd.DataFrame", threshold: float,
-) -> list[list[str]]:
-    """Greedy corr 그룹화 (cluster_aware fallback).
+def compute_adaptive_n_max(
+    *,
+    n_positive_alpha: int,
+    bucket_weight: float,
+    capital_krw: float,
+) -> int:
+    """Adaptive n_max — 4 cap 의 min.
 
-    각 ticker 를 순회하며 |corr| ≥ threshold 면 기존 그룹의 head 와 같은 그룹으로
-    배정, 아니면 새 그룹. 이전 `select_diverse` 의 의미와 동등.
+    n_max = min(
+        n_positive_alpha,
+        max(1, int(bucket_weight / MIN_BUCKET_POSITION_RATIO)),
+        max(1, int(bucket_weight * capital_krw / MIN_POSITION_KRW)),
+        ABS_MAX_PER_BUCKET,
+    )
+    bucket_weight = 0 또는 n_positive_alpha = 0 시 즉시 0.
     """
-    groups: list[list[str]] = []
-    for t in elig:
-        placed = False
-        for g in groups:
-            head = g[0]
-            if t in returns.columns and head in returns.columns:
-                c = returns[t].corr(returns[head])
-                if pd.notna(c) and abs(float(c)) >= threshold:
-                    g.append(t)
-                    placed = True
-                    break
-        if not placed:
-            groups.append([t])
-    return groups
+    if bucket_weight <= 0:
+        return 0
+    if n_positive_alpha <= 0:
+        return 0
+    weight_cap = max(1, int(bucket_weight / MIN_BUCKET_POSITION_RATIO))
+    capital_cap = max(1, int(bucket_weight * capital_krw / MIN_POSITION_KRW))
+    return min(n_positive_alpha, weight_cap, capital_cap, ABS_MAX_PER_BUCKET)
 
 
-def select_cluster_aware(
+def _enb_equal_weight(selected: list[str], sigma: pd.DataFrame) -> float:
+    """Equal-weight ENB for selected tickers."""
+    n = len(selected)
+    if n == 0:
+        return 0.0
+    if n == 1:
+        return 1.0
+    sub_sigma = sigma.loc[selected, selected]
+    equal_w = {t: 1.0 / n for t in selected}
+    return compute_enb(equal_w, sub_sigma, method="minimum_torsion")
+
+
+def select_by_enb_greedy(
+    *,
     eligible: list[str],
     alpha_scores: dict[str, float],
     impl_scores: dict[str, float],
-    clusters: list | None,
-    n: int,
-    returns: "pd.DataFrame | None",
-    correlation_threshold: float = 0.85,
+    sigma: pd.DataFrame,
+    n_max: int,
+    n_min: int = N_MIN_HARD_FLOOR,
+    enb_delta_threshold: float = ENB_DELTA_THRESHOLD,
+    alpha_impl_blend: float = ALPHA_IMPL_BLEND_DEFAULT,
     selection_trace: dict | None = None,
-    underlying_lookup: dict[str, str] | None = None,
-    require_positive_alpha: bool = True,
 ) -> list[str]:
-    """Cluster-aware selection (Stage 3).
+    """Forward greedy ENB-incremental selection.
 
-    그룹 간(다른 노출/sector) = alpha 랭킹. 그룹 내(대체재) = impl 랭킹.
-
-    clusters 가 제공되면 그것으로 그룹화; cluster 멤버 아닌 ticker 는 singleton.
-    clusters 가 None/빈이면 returns 의 pairwise corr 로 fallback grouping
-    (이전 select_diverse 의미). returns 도 없으면 모든 eligible = singleton.
-
-    2026-05-26 #1 fix — underlying_lookup 추가: 동일 underlying_index 의 ETF (예:
-    S&P 500 추종 TIGER/KODEX/RISE 3사) 는 *강제 같은 group* 으로 통합. 기존
-    correlation cluster 는 top 5/카테고리 만 cover 해서 운영사 다른 동일 지수
-    ETF 가 분리되는 silent bug 가 있었음. underlying_lookup 이 ground truth.
-
-    2026-05-26 fix-C — require_positive_alpha: alpha 음수 group 자동 제외.
-    이전엔 cluster-aware 가 group 4 개면 alpha 음수여도 padding 으로 chosen 에
-    들어감 (자리 채움). 결과: HRP 가 vol 낮은 alpha-음수 자산에 큰 weight 부여
-    (엔선물 13% 사례). True 이면 alpha > 0 인 group 만 chosen + padding.
-    단 모든 alpha 가 음수면 (특수 case) 최소 1개는 keep (bucket 비울 수 없음).
-
-    얇은 pool(그룹 수 < n)에서는 남은 ticker 를 alpha 순으로 패딩.
+    1. Pool = {t in eligible | alpha_scores[t] > 0}
+    2. Composite = blend × z(alpha) + (1 - blend) × z(impl)
+    3. Seed = composite top-1
+    4. While pool and len < n_max:
+         j* = argmax (ENB(selected ∪ {j}) - ENB(selected))
+         if ΔENB < threshold and len ≥ n_min: stop
+         selected.append(j*)
     """
-    if n <= 0 or not eligible:
+    rejected_alpha_negative = [
+        {"ticker": t, "reason": "alpha_negative"}
+        for t in eligible if alpha_scores.get(t, 0.0) <= 0
+    ]
+
+    pool = [t for t in eligible if alpha_scores.get(t, 0.0) > 0]
+    if not pool:
+        if selection_trace is not None:
+            selection_trace["stop_reason"] = "no_positive_alpha"
+            selection_trace["enb_progression"] = []
+            selection_trace["rejected"] = rejected_alpha_negative
+            selection_trace["alpha_impl_blend_used"] = alpha_impl_blend
         return []
-    elig = [t for t in eligible if t in alpha_scores]
-    if not elig:
+
+    if n_max <= 0:
+        if selection_trace is not None:
+            selection_trace["stop_reason"] = "capacity_zero"
+            selection_trace["enb_progression"] = []
+            selection_trace["rejected"] = rejected_alpha_negative
+            selection_trace["alpha_impl_blend_used"] = alpha_impl_blend
         return []
 
-    # 1. 그룹화
-    groups: list[list[str]]
-    if clusters:
-        member_to_cluster: dict[str, str] = {}
-        for c in clusters:
-            for m in getattr(c, "members", []):
-                member_to_cluster.setdefault(m, getattr(c, "cluster_id"))
-        groups = []
-        by_cluster: dict[str, list[str]] = {}
-        for t in elig:
-            cid = member_to_cluster.get(t)
-            if cid is None:
-                groups.append([t])
-            else:
-                by_cluster.setdefault(cid, []).append(t)
-        groups.extend(by_cluster.values())
-    elif returns is not None and not returns.empty:
-        groups = _corr_groups(elig, returns, correlation_threshold)
-    else:
-        groups = [[t] for t in elig]
+    z_alpha = _rank_normalize({t: alpha_scores[t] for t in pool})
+    z_impl = _rank_normalize({t: impl_scores.get(t, 0.0) for t in pool})
+    composite = {
+        t: alpha_impl_blend * z_alpha[t] + (1 - alpha_impl_blend) * z_impl[t]
+        for t in pool
+    }
+    pool.sort(key=lambda t: composite[t], reverse=True)
 
-    # 2026-05-26 #1 fix — underlying_index 강제 cluster 통합 (post-grouping merge).
-    # 위 cluster grouping 후 동일 underlying_index 의 ETF (예: S&P 500 추종
-    # TIGER/KODEX/RISE 3사) 가 다른 group 에 분리됐으면 강제 merge. correlation
-    # cluster 는 top 5/카테고리 만 cover 라 운영사 다른 동일 지수 ETF 분리되는
-    # silent bug. underlying_index 가 ground truth.
-    if underlying_lookup:
-        ui_to_group_idx: dict[str, int] = {}
-        merged: list[list[str]] = []
-        for g in groups:
-            # 이 group 의 ticker 들 중 underlying 가 있는 것 (None/"" 제외).
-            uis = [underlying_lookup.get(t) for t in g if underlying_lookup.get(t)]
-            target_idx: int | None = None
-            for ui in uis:
-                if ui in ui_to_group_idx:
-                    target_idx = ui_to_group_idx[ui]
-                    break
-            if target_idx is not None:
-                merged[target_idx].extend(g)
-                # 이 group 의 모든 underlying 을 target_idx 로 매핑 (새 underlying 도 등록)
-                for ui in uis:
-                    ui_to_group_idx[ui] = target_idx
-            else:
-                merged.append(list(g))
-                new_idx = len(merged) - 1
-                for ui in uis:
-                    ui_to_group_idx[ui] = new_idx
-        groups = merged
+    seed = pool.pop(0)
+    selected = [seed]
+    progression: list[dict] = [{"step": 0, "ticker": seed, "enb": 1.0}]
+    rejected_deltas: list[dict] = []
+    stop_reason = "pool_exhausted"
 
-    # 2. 각 그룹의 대표(impl 최고) + group alpha(멤버 alpha 최고)
-    group_repr: list[tuple[float, str, list[str]]] = []
-    for g in groups:
-        rep = max(g, key=lambda t: impl_scores.get(t, 0.0))
-        g_alpha = max(alpha_scores.get(t, float("-inf")) for t in g)
-        group_repr.append((g_alpha, rep, g))
-    group_repr.sort(key=lambda x: x[0], reverse=True)
+    while pool and len(selected) < n_max:
+        prev_enb = _enb_equal_weight(selected, sigma)
+        best_t = None
+        best_delta = -float("inf")
+        for j in pool:
+            candidate_set = selected + [j]
+            try:
+                new_enb = _enb_equal_weight(candidate_set, sigma)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("enb compute failed for %s: %s", j, e)
+                continue
+            delta = new_enb - prev_enb
+            if delta > best_delta:
+                best_delta = delta
+                best_t = j
 
-    # 2026-05-26 fix-C — alpha 음수 group 제외 (require_positive_alpha=True).
-    # 단 bucket cap 부족 (Stage 3 solver infeasible) 방지 위해 최소 chosen 수
-    # 보장: 양수 group 이 충분하면 양수만, 부족하면 음수로 fill (alpha 순 top).
-    # 최소 보장 수 = max(1, n // 2) — bucket 의 단일 자산 cap 20% 고려하면 평균
-    # 50% target 도달 가능.
-    if require_positive_alpha:
-        positive_groups = [(a, r, g) for (a, r, g) in group_repr if a > 0]
-        min_required = max(1, n // 2)
-        if len(positive_groups) >= min_required:
-            group_repr_filtered = positive_groups
-        elif group_repr:
-            # 양수 group 부족 — 음수도 top 순으로 fill (덜 나쁜 것부터)
-            negative_groups = [(a, r, g) for (a, r, g) in group_repr if a <= 0]
-            shortfall = min_required - len(positive_groups)
-            group_repr_filtered = (
-                positive_groups + negative_groups[:shortfall]
+        if best_t is None:
+            stop_reason = "numerical_failure"
+            break
+
+        if best_delta < enb_delta_threshold and len(selected) >= n_min:
+            stop_reason = "delta_below_threshold"
+            rejected_deltas.extend(
+                {"ticker": t, "reason": "delta_too_small", "delta": float(best_delta)}
+                for t in pool
             )
-        else:
-            group_repr_filtered = []
-    else:
-        group_repr_filtered = group_repr
+            break
 
-    chosen: list[str] = [rep for _a, rep, _g in group_repr_filtered[:n]]
+        selected.append(best_t)
+        pool.remove(best_t)
+        progression.append({
+            "step": len(selected) - 1,
+            "ticker": best_t,
+            "enb": float(prev_enb + best_delta),
+            "delta": float(best_delta),
+        })
+
+    if len(selected) >= n_max and stop_reason == "pool_exhausted":
+        stop_reason = "n_max_reached"
 
     if selection_trace is not None:
-        chosen_set = set(chosen)
-        for g_alpha, rep, g in group_repr:
-            is_in_chosen = rep in chosen_set
-            reason = f"cluster-aware (group_alpha={g_alpha:.4f}, group_size={len(g)})"
-            if require_positive_alpha and not is_in_chosen and g_alpha <= 0:
-                reason += " [excluded: alpha ≤ 0]"
-            selection_trace[rep] = {
-                "selected":  is_in_chosen,
-                "reason":    reason,
-                "group_members": list(g),
-                "group_alpha":   g_alpha,
-            }
+        selection_trace["stop_reason"] = stop_reason
+        selection_trace["enb_progression"] = progression
+        selection_trace["rejected"] = rejected_alpha_negative + rejected_deltas
+        selection_trace["alpha_impl_blend_used"] = alpha_impl_blend
 
-    # 3. 패딩 — 그룹 수 < n 이면 남은 ticker 를 alpha 순.
-    # 2026-05-26 #1 fix — padding 도 underlying-aware: 이미 chosen 에 있는
-    # underlying 의 ticker 는 padding 에서도 제외 (cluster 강제 merge 의 의도가
-    # 패딩에 의해 깨지지 않도록).
-    if len(chosen) < n:
-        seen = set(chosen)
-        chosen_underlyings: set[str] = set()
-        if underlying_lookup:
-            chosen_underlyings = {
-                underlying_lookup.get(t) for t in chosen
-                if underlying_lookup.get(t)
-            }
-        remaining = [t for t in elig if t not in seen]
-        if chosen_underlyings:
-            remaining = [
-                t for t in remaining
-                if (underlying_lookup or {}).get(t) not in chosen_underlyings
-            ]
-        remaining.sort(key=lambda t: alpha_scores.get(t, float("-inf")), reverse=True)
-        # 2026-05-26 fix-C — padding 도 alpha 양수 우선. 단 chosen 이 min_required
-        # (n//2) 미만이면 음수도 fill (bucket cap 보장).
-        if require_positive_alpha:
-            min_required_total = max(1, n // 2)
-            positive_remaining = [
-                t for t in remaining if alpha_scores.get(t, float("-inf")) > 0
-            ]
-            if len(chosen) + len(positive_remaining) >= min_required_total:
-                # 양수만으로 충분 → 음수 제외
-                remaining = positive_remaining
-            # else: 양수 부족 → remaining 그대로 (alpha 순 정렬됨, 음수 포함)
-        for t in remaining:
-            chosen.append(t)
-            if underlying_lookup and underlying_lookup.get(t):
-                chosen_underlyings.add(underlying_lookup[t])
-            if selection_trace is not None:
-                selection_trace.setdefault(t, {})
-                selection_trace[t].update({
-                    "selected": True,
-                    "reason": (
-                        f"padding fallback (alpha={alpha_scores.get(t, 0.0):.4f}, "
-                        f"was: {selection_trace.get(t, {}).get('reason', 'not-rep')})"
-                    ),
-                })
-            if len(chosen) >= n:
-                break
-    return chosen[:n]
+    return selected
 
 
 def select_diverse(

@@ -18,4 +18,6 @@ class ImpactClassifier(BaseSubagent):
 
 @register_subagent(name="classify_event_impact", category="news")
 def classify_event_impact(llm_quick, llm_deep, **inputs) -> ImpactAssessment:
+    # 2026-05-28 Tier 1: description_block default = "" (legacy callsite 호환).
+    inputs.setdefault("description_block", "")
     return ImpactClassifier(llm_quick, llm_deep).invoke(**inputs)

@@ -21,8 +21,12 @@ from tradingagents.skills.portfolio.candidate_selector import (
     BUCKET_TO_CATEGORIES, list_eligible_tickers,
     select_etf_candidates,
 )
-from tradingagents.skills.portfolio.method_picker import pick_optimization_method
+from tradingagents.skills.portfolio.method_picker import MethodChoice, pick_optimization_method
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
+from tradingagents.skills.portfolio.cash_spillover import adjust_bucket_targets
+from tradingagents.skills.portfolio.diversification import compute_enb
+from tradingagents.skills.portfolio.nco import compute_nco_weights
+from tradingagents.skills.portfolio.cov_estimator import compute_robust_cov
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +51,12 @@ MIN_POSITION_WEIGHT: float = 0.015
 # 분산 약함"). 단일 sub_category 가 bucket 합의 이 비율을 초과하지 못하게 cap.
 # 0.5 = bucket 의 50%. 예: fx_commodity 19% 면 jpy_fx 최대 9.5%.
 MAX_SUBCATEGORY_BUCKET_SHARE: float = 0.50
+
+# Phase 1 (Stage 3 phase1-cash-spillover spec, 2026-05-28).
+ENB_WARNING_THRESHOLD: float = 3.0
+# Phase 4c (Stage 3 phase4c-enb-critical spec, 2026-05-30).
+ENB_CRITICAL_THRESHOLD: float = 2.0
+ENB_FALLBACK_MIN_TICKERS: int = 5
 
 
 def create_portfolio_allocator(
@@ -100,18 +110,7 @@ def create_portfolio_allocator(
                 regime_staleness, systemic_staleness,
             )
 
-        # per_bucket_n: low conviction이면 후보 다양화, retry 시 확장.
-        per_bucket_n = 4
-        if research_decision is not None and getattr(research_decision, "conviction", "medium") == "low":
-            per_bucket_n = 5
-        if attempts > 0:
-            per_bucket_n = max(per_bucket_n + 2, 6)
-        logger.info(
-            "allocator: per_bucket_n=%d, conviction=%s, dominant_scenario=%s",
-            per_bucket_n,
-            getattr(research_decision, "conviction", None) if research_decision else None,
-            getattr(research_decision, "dominant_scenario", None) if research_decision else None,
-        )
+        # Phase 2b — per_bucket_n 결정 로직 폐기 (adaptive n_max 가 candidate_selector 안에서 자동).
 
         # 1. eligible 후보 universe로 returns matrix fetch
         start = as_of - timedelta(days=PRICE_LOOKBACK_DAYS_ALLOC)
@@ -128,6 +127,10 @@ def create_portfolio_allocator(
         if returns is None or returns.empty:
             raise RuntimeError("returns matrix empty — Stage 3 cannot proceed")
 
+        # Phase 2b — sigma 사전 계산 (candidate_selector + optimize 모두 사용)
+        sigma = returns.dropna(axis=0, how="any").cov()
+        capital_krw = float(state.get("capital_krw") or state.get("capital") or 1_000_000_000)
+
         # 2. Multi-factor + corr de-dup + (Phase C) scenario sub_category boost.
         # Factor model PR (2026-05-22): dominant_cell 제거. 항상 legacy scenario name string 사용.
         # log_boost 가 cell key 받던 path 도 해당 path 제거됨 (sub_category.py).
@@ -143,7 +146,8 @@ def create_portfolio_allocator(
             "as_of_date": state["as_of_date"],
             "config": {
                 "attempts":             attempts,
-                "per_bucket_n":         per_bucket_n,
+                "selection_strategy":   "enb_greedy",
+                "capital_krw":          capital_krw,
                 "regime_quadrant":      regime.quadrant if regime else None,
                 "regime_confidence":    regime.confidence if regime else 0.5,
                 "systemic_score":       risk_score.score if risk_score else None,
@@ -205,9 +209,10 @@ def create_portfolio_allocator(
         candidates = select_etf_candidates(
             universe, bucket_target,
             as_of=as_of,
-            per_bucket_n=per_bucket_n,
             returns=returns,
             factor_panel=factor_panel,
+            sigma=sigma,
+            capital_krw=capital_krw,
             regime_quadrant=regime.quadrant if regime else None,
             regime_confidence=regime.confidence if regime else 0.5,
             correlation_threshold=CORRELATION_THRESHOLD_ALLOC,
@@ -223,6 +228,47 @@ def create_portfolio_allocator(
                 getattr(research_decision, "factor_scores", None)
                 if research_decision is not None else None
             ),
+        )
+
+        # Phase 2a — Stage 2 원본 bucket_target 별도 보존 (spillover 전 macro 결정)
+        attribution["config"]["bucket_target_stage2"] = {
+            "kr_equity":      bucket_target.kr_equity,
+            "global_equity":  bucket_target.global_equity,
+            "fx_commodity":   bucket_target.fx_commodity,
+            "bond":           bucket_target.bond,
+            "cash_mmf":       bucket_target.cash_mmf,
+            "bond_tips_share": bucket_target.bond_tips_share,
+        }
+
+        # Phase 1 — cash spillover (Stage 2 macro ↔ Stage 3 micro 화해)
+        alpha_scores_by_bucket = _collect_alpha_scores_per_bucket(attribution)
+        spillover_result = adjust_bucket_targets(
+            bucket_target=bucket_target,
+            bucket_chosen=candidates.bucket_to_tickers,
+            alpha_scores_by_bucket=alpha_scores_by_bucket,
+            returns=returns,
+        )
+        bucket_target = spillover_result.adjusted_bucket_target
+        attribution["cash_spillover"] = spillover_result.model_dump()
+        logger.info(
+            "spillover: total_to_cash=%.4f, cap_triggered=%s, overflow_buckets=%s",
+            spillover_result.total_spillover_to_cash,
+            spillover_result.cash_cap_triggered,
+            list(spillover_result.cash_overflow_to_buckets.keys()),
+        )
+        # attribution config 의 bucket_target snapshot 도 update (감사 용이).
+        attribution["config"]["bucket_target"] = {
+            "kr_equity":     bucket_target.kr_equity,
+            "global_equity": bucket_target.global_equity,
+            "fx_commodity":  bucket_target.fx_commodity,
+            "bond":          bucket_target.bond,
+            "cash_mmf":      bucket_target.cash_mmf,
+        }
+        attribution["config"]["bond_tips_share"] = bucket_target.bond_tips_share
+
+        # Phase 2a — post-spillover snapshot 도 별도 키로 저장 (audit trail)
+        attribution["config"]["bucket_target_post_spillover"] = dict(
+            attribution["config"]["bucket_target"]
         )
 
         all_candidates = [
@@ -246,23 +292,34 @@ def create_portfolio_allocator(
                 for v in feedback_violations[:3]
             )
 
-        method_choice = pick_optimization_method(
-            regime_quadrant=regime.quadrant if regime else "unknown",
-            regime_confidence=regime.confidence if regime else 0.5,
-            systemic_score=risk_score.score if risk_score else 5.0,
-            systemic_regime=risk_score.regime if risk_score else "neutral",
-            research_decision=research_decision,
-            feedback=feedback_str,
-            degraded_inputs=degraded_inputs,
-            regime_staleness=regime_staleness,
-            systemic_staleness=systemic_staleness,
-        )
+        # Phase 3a — method override (A/B 테스트용)
+        force_method = state.get("force_method")
+        if force_method is not None:
+            method_choice = MethodChoice(
+                method=OptimizationMethod(force_method),
+                reasoning=f"forced via state['force_method']={force_method}",
+                rule_fired="state_override",
+                rule_index=-1,
+                inputs={"force_method": force_method},
+            )
+        else:
+            method_choice = pick_optimization_method(
+                regime_quadrant=regime.quadrant if regime else "unknown",
+                regime_confidence=regime.confidence if regime else 0.5,
+                systemic_score=risk_score.score if risk_score else 5.0,
+                systemic_regime=risk_score.regime if risk_score else "neutral",
+                research_decision=research_decision,
+                feedback=feedback_str,
+                degraded_inputs=degraded_inputs,
+                regime_staleness=regime_staleness,
+                systemic_staleness=systemic_staleness,
+            )
 
         # 4. Optimize WITH bucket-constraints (D12).
         # bond bucket의 sub-bucket(TIPS/nominal) weight 강제 위해 sub_category lookup 전달.
         sub_category_lookup = {e.ticker: e.sub_category for e in universe.etfs}
         attribution["optimization"] = {}
-        wv = _optimize_with_bucket_constraints(
+        wv, sigma_df = _optimize_with_bucket_constraints(
             method=method_choice.method,
             returns=returns,
             candidates=candidates,
@@ -271,7 +328,63 @@ def create_portfolio_allocator(
             attempts=attempts,
             sub_category_lookup=sub_category_lookup,
             attribution=attribution["optimization"],
+            # Phase 3b: BL views adapter context
+            scenario=dominant_scenario,
+            regime_confidence=regime.confidence if regime else 0.5,
         )
+
+        # Phase 4a — top-level cov_breakdown 노출 (optimization 하위에도 존재)
+        if "cov_breakdown" in attribution.get("optimization", {}):
+            attribution["cov_breakdown"] = attribution["optimization"]["cov_breakdown"]
+
+        # Phase 1 ENB 사후 측정 + Phase 4c critical threshold + EW fallback
+        try:
+            enb_value = compute_enb(wv.weights, sigma_df, method="minimum_torsion")
+        except Exception as e:
+            logger.warning("ENB 계산 실패: %s", e)
+            enb_value = 0.0
+        attribution["enb"] = float(enb_value)
+
+        enb_action = "none"
+        if 0 < enb_value < ENB_CRITICAL_THRESHOLD:
+            n_selected = len(wv.weights)
+            if n_selected >= ENB_FALLBACK_MIN_TICKERS:
+                ew_weights = {t: 1.0 / n_selected for t in wv.weights}
+                ew_weights = _apply_single_cap_redistribution(
+                    ew_weights, SINGLE_ASSET_CAP,
+                )
+                wv = WeightVector(
+                    weights=ew_weights,
+                    method=wv.method,
+                    rationale="ENB CRITICAL fallback — equal weight + cap clip",
+                )
+                try:
+                    enb_post = compute_enb(
+                        wv.weights, sigma_df, method="minimum_torsion",
+                    )
+                except Exception:
+                    enb_post = 0.0
+                attribution["enb_post_fallback"] = float(enb_post)
+                enb_action = "equal_weight_fallback"
+                logger.warning(
+                    "ENB %.2f < %.2f (CRITICAL) — EW fallback (n=%d, ENB→%.2f)",
+                    enb_value, ENB_CRITICAL_THRESHOLD, n_selected, enb_post,
+                )
+            else:
+                enb_action = "warning_only_n_too_small"
+                logger.warning(
+                    "ENB %.2f < %.2f (CRITICAL) but n=%d < %d — fallback skipped",
+                    enb_value, ENB_CRITICAL_THRESHOLD,
+                    n_selected, ENB_FALLBACK_MIN_TICKERS,
+                )
+        elif 0 < enb_value < ENB_WARNING_THRESHOLD:
+            enb_action = "warning_only"
+            logger.warning(
+                "ENB %.2f < %.2f — possible insufficient diversification",
+                enb_value, ENB_WARNING_THRESHOLD,
+            )
+
+        attribution["enb_action"] = enb_action
 
         attribution["method_picker"] = {
             "method":       method_choice.method.value,
@@ -355,6 +468,24 @@ def _build_sector_mapper_and_bounds(
             if b in active_buckets
         }
 
+    # Infeasibility 방어 — cash_mmf 후보가 없거나 부족하면 (Phase 1 spillover가
+    # candidates 선택 이후에 bucket_target을 수정해서 cash_mmf 비중이 생겼을 때,
+    # 또는 require_positive_alpha 필터로 후보가 줄어서 n × SINGLE_ASSET_CAP <
+    # target 이 될 때) target 초과분을 bond bucket으로 흡수해 EF infeasibility 방지.
+    sectors_present = set(sector_mapper.values())
+    from collections import Counter as _SectorCounter
+    _n_cash = _SectorCounter(sector_mapper.values()).get("cash_mmf", 0)
+    _cash_target = target_map.get("cash_mmf", 0.0)
+    _cash_achievable = _n_cash * SINGLE_ASSET_CAP  # max realizable with cap
+    if _cash_target > 0 and (_n_cash == 0 or _cash_achievable < _cash_target - 1e-9):
+        bond_key = "bond_nominal" if split_bond else "bond"
+        target_map[bond_key] = target_map.get(bond_key, 0.0) + target_map.pop("cash_mmf")
+        logger.warning(
+            "cash_mmf infeasibility guard: n_cash=%d, achievable=%.4f < target=%.4f"
+            " — merging into %s",
+            _n_cash, _cash_achievable, _cash_target, bond_key,
+        )
+
     # Infeasibility 방어 — 후보 풀에 한쪽 sub-bucket이 0이면 그 target도 0,
     # 다른 sub-bucket에 합쳐서 처리. (candidate_selector가 fallback으로
     # nominal로 채워도 sector_mapper에 따라 'bond_nominal'로 매핑됨)
@@ -377,6 +508,21 @@ def _build_sector_mapper_and_bounds(
     return sector_mapper, sector_lower, sector_upper
 
 
+def _collect_alpha_scores_per_bucket(
+    attribution: dict,
+) -> dict[str, dict[str, float]]:
+    """attribution['buckets'][bucket]['alpha_scores'] 에서 추출.
+
+    candidate_selector 가 이미 bucket_attr['alpha_scores'] = {ticker: alpha}
+    형태로 채워둠. bond bucket 의 split path 도 Task 8 의 보강으로 같은 키 사용.
+    """
+    out: dict[str, dict[str, float]] = {}
+    for bucket_name, bucket_attr in (attribution.get("buckets") or {}).items():
+        alpha_scores = bucket_attr.get("alpha_scores") or {}
+        out[bucket_name] = dict(alpha_scores)
+    return out
+
+
 def _optimize_with_bucket_constraints(
     method: OptimizationMethod,
     returns: pd.DataFrame,
@@ -386,7 +532,10 @@ def _optimize_with_bucket_constraints(
     attempts: int,
     sub_category_lookup: dict[str, str | None] | None = None,
     attribution: dict | None = None,
-) -> WeightVector:
+    *,
+    scenario: str | None = None,
+    regime_confidence: float = 0.5,
+) -> tuple[WeightVector, pd.DataFrame]:
     """Optimize with simultaneous (single-cap, bucket sum) constraints.
 
     sub_category_lookup이 주어지면 bond bucket이 (bond_tips, bond_nominal)로
@@ -394,6 +543,9 @@ def _optimize_with_bucket_constraints(
 
     attribution (Stage 3 audit Task 1/3): 제공 시 cov 표본 부족 제외 ticker,
     cap 발동 ticker 등 진단 정보를 dict 에 기록.
+
+    Returns (WeightVector, sigma_df): sigma_df 는 sample covariance DataFrame
+    (ticker × ticker). HRP 와 EF 경로 양쪽에서 모두 반환 — Task 13 ENB 측정용.
     """
     sector_mapper, sector_lower, sector_upper = _build_sector_mapper_and_bounds(
         candidates, bucket_target, attempts, sub_category_lookup,
@@ -405,8 +557,8 @@ def _optimize_with_bucket_constraints(
 
     # 표본 부족 (cov가 비양정부호 → eigenvalue 수렴 실패) 방지.
     # 늦게 상장된 ETF가 적은 수의 NaN-free row만 남기는 경우 데이터 적은 ticker
-    # 부터 제거해서 표본 회복. _hrp_per_bucket은 sub-pool 단위라 영향 적어 skip.
-    if method != OptimizationMethod.HRP and len(returns) < MIN_COV_OBS:
+    # 부터 제거해서 표본 회복. _hrp_per_bucket / _nco_per_bucket은 sub-pool 단위라 영향 적어 skip.
+    if method not in (OptimizationMethod.HRP, OptimizationMethod.NCO) and len(returns) < MIN_COV_OBS:
         valid = list(valid)
         days_per_ticker = {
             t: int(returns_raw[t].dropna().shape[0]) for t in valid
@@ -428,25 +580,70 @@ def _optimize_with_bucket_constraints(
                 attribution["cov_excluded_tickers"] = list(excluded)
                 attribution["cov_final_obs"] = int(len(returns))
 
+    cov_breakdown: dict = {}
+    S = compute_robust_cov(returns, breakdown_out=cov_breakdown)
+    if attribution is not None:
+        attribution["cov_breakdown"] = cov_breakdown
+
     if method == OptimizationMethod.HRP:
-        return _hrp_per_bucket(
+        wv = _hrp_per_bucket(
             returns, candidates, bucket_target, sub_category_lookup,
             attribution=attribution,
         )
+        sigma_df = S if isinstance(S, pd.DataFrame) else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
+        return wv, sigma_df
 
-    S = risk_models.sample_cov(returns)
+    # NCO 분기 (Phase 3a NEW)
+    if method == OptimizationMethod.NCO:
+        wv = _nco_per_bucket(
+            returns, candidates, bucket_target, sub_category_lookup,
+            attribution=attribution,
+        )
+        sigma_df = (
+            S if isinstance(S, pd.DataFrame)
+            else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
+        )
+        return wv, sigma_df
 
     if method == OptimizationMethod.BLACK_LITTERMAN:
         from pypfopt import BlackLittermanModel
-        views = method_params.get("views", {})
-        confs = method_params.get("view_confidences", [])
+        from tradingagents.skills.portfolio.bl_views import (
+            generate_bl_views,
+            BL_TAU_DEFAULT,
+            BL_VIEW_CONF_MULTI_DEFAULT,
+        )
+
+        tilt_params: dict
+        if method_params.get("_bl_trigger"):
+            bl_breakdown: dict = {}
+            views, confs, tilt_params = generate_bl_views(
+                scenario=scenario,
+                regime_confidence=regime_confidence,
+                candidates=candidates.bucket_to_tickers,
+                sub_category_lookup=sub_category_lookup,
+                breakdown_out=bl_breakdown,
+            )
+            if attribution is not None:
+                attribution["bl_views_breakdown"] = bl_breakdown
+        else:
+            views = method_params.get("views", {})
+            confs = method_params.get("view_confidences", [])
+            tilt_params = {
+                "tau": BL_TAU_DEFAULT,
+                "view_conf_multi": BL_VIEW_CONF_MULTI_DEFAULT,
+                "view_conf_multi_applied": False,
+            }
+
         if views:
             bl = BlackLittermanModel(
                 S, absolute_views=views, omega="idzorek", view_confidences=confs,
+                tau=tilt_params["tau"],
             )
             mu = bl.bl_returns()
         else:
             mu = expected_returns.mean_historical_return(returns, returns_data=True)
+            if attribution is not None:
+                attribution["bl_views_fallback"] = "empty_views_historical_fallback"
     else:
         mu = expected_returns.mean_historical_return(returns, returns_data=True)
 
@@ -526,6 +723,7 @@ def _optimize_with_bucket_constraints(
     weights = _apply_min_weight_threshold(
         weights, candidates, attribution=attribution,
     )
+    sigma_df = S if isinstance(S, pd.DataFrame) else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
     return WeightVector(
         method=method,
         weights=weights,
@@ -535,7 +733,7 @@ def _optimize_with_bucket_constraints(
         ),
         expected_volatility=expected_vol,
         expected_sharpe=expected_sharpe,
-    )
+    ), sigma_df
 
 
 def _apply_subcategory_cap(
@@ -622,6 +820,39 @@ def _apply_subcategory_cap(
         if attribution is not None:
             attribution["subcategory_capped"] = capped_subcats
     return new_weights
+
+
+def _apply_single_cap_redistribution(
+    weights: dict[str, float],
+    cap: float,
+    max_iter: int = 10,
+) -> dict[str, float]:
+    """Cap-clip + 잔여를 non-capped 자산에 비례 분배 (iterative).
+
+    Phase 4c ENB CRITICAL EW fallback path. {t: 1/n} starting weights 시
+    n >= 5 이면 cap (0.20) 이하라 no-op.
+
+    Returns: sum ≈ 1.0, max(w) ≤ cap (수렴 가능 시). 빈 dict → 빈 dict.
+    """
+    weights = dict(weights)
+    if not weights:
+        return weights
+    for _ in range(max_iter):
+        excess = {t: max(0.0, w - cap) for t, w in weights.items()}
+        total_excess = sum(excess.values())
+        if total_excess < 1e-9:
+            break
+        weights = {t: min(w, cap) for t, w in weights.items()}
+        non_capped = [t for t, w in weights.items() if w < cap - 1e-9]
+        if not non_capped:
+            break
+        share = total_excess / len(non_capped)
+        for t in non_capped:
+            weights[t] += share
+    total = sum(weights.values())
+    if total > 0:
+        weights = {t: w / total for t, w in weights.items()}
+    return weights
 
 
 def _apply_min_weight_threshold(
@@ -863,6 +1094,210 @@ def _hrp_per_bucket(
         weights=final,
         rationale=(
             f"HRP within each bucket × bucket_target weight. "
+            f"위험자산 target {bucket_target.risk_asset_weight:.1%}, single-asset cap 20%."
+        ),
+    )
+
+
+def _nco_per_bucket(
+    returns: pd.DataFrame, candidates, bucket_target,
+    sub_category_lookup: dict[str, str | None] | None = None,
+    attribution: dict | None = None,
+) -> WeightVector:
+    """NCO within each bucket × bucket target, with ITERATIVE water-filling cap.
+
+    HRP-per-bucket 패턴 재사용: bond split, single-asset cap, water-fill,
+    subcategory cap, min-weight threshold, normalize.
+
+    Inner per-pool call: compute_nco_weights (Lopez de Prado 2019 NCO).
+    fallback to equal weight if NCO fails.
+
+    attribution: 제공 시 cap-all shortfall, pool NCO breakdown, 최종 normalization
+    발동 등을 dict 에 기록.
+    """
+    bucket_shortfalls: list[dict] = []
+    nco_breakdown_per_pool: dict[str, dict] = {}
+    sub_category_lookup = sub_category_lookup or {}
+    target_map = {
+        "kr_equity": bucket_target.kr_equity,
+        "global_equity": bucket_target.global_equity,
+        "fx_commodity": bucket_target.fx_commodity,
+        "bond": bucket_target.bond,
+        "cash_mmf": bucket_target.cash_mmf,
+    }
+    split_bond = bucket_target.bond_tips_share > 0.0
+
+    final: dict[str, float] = {}
+    for bucket, tickers in candidates.bucket_to_tickers.items():
+        target = target_map.get(bucket, 0)
+        if target <= 0 or not tickers:
+            continue
+
+        if bucket == "bond" and split_bond:
+            # Sub-pool split per inflation_linked sub_category
+            tips_tickers = [
+                t for t in tickers
+                if sub_category_lookup.get(t) == "inflation_linked"
+            ]
+            nominal_tickers = [t for t in tickers if t not in tips_tickers]
+            tips_target = target * bucket_target.bond_tips_share
+            nominal_target = target * (1.0 - bucket_target.bond_tips_share)
+            # 한쪽이 비면 target을 다른 쪽으로 흡수
+            if not tips_tickers and nominal_tickers:
+                nominal_target += tips_target
+                tips_target = 0.0
+            if not nominal_tickers and tips_tickers:
+                tips_target += nominal_target
+                nominal_target = 0.0
+
+            sub_buckets = []
+            if tips_tickers and tips_target > 0:
+                sub_buckets.append((tips_tickers, tips_target, "bond_tips"))
+            if nominal_tickers and nominal_target > 0:
+                sub_buckets.append((nominal_tickers, nominal_target, "bond_nominal"))
+        else:
+            sub_buckets = [(tickers, target, bucket)]
+
+        for pool_tickers, pool_target, pool_label in sub_buckets:
+            sub = returns[[t for t in pool_tickers if t in returns.columns]].dropna(axis=0, how="any")
+            if sub.shape[1] == 0:
+                continue
+            if sub.shape[1] == 1:
+                inner = {sub.columns[0]: 1.0}
+                nco_breakdown_per_pool[pool_label] = {"n_assets": 1, "fallback": "single_asset"}
+            else:
+                pool_breakdown: dict = {}
+                try:
+                    nco_w = compute_nco_weights(sub, breakdown_out=pool_breakdown)
+                except Exception as e:
+                    logger.warning(
+                        "NCO failed for pool %s: %s — fallback equal weight",
+                        pool_label, e,
+                    )
+                    n = sub.shape[1]
+                    inner = {t: 1.0 / n for t in sub.columns}
+                    pool_breakdown = {"error": str(e), "fallback": "equal_weight"}
+                else:
+                    inner = nco_w.to_dict()
+                nco_breakdown_per_pool[pool_label] = pool_breakdown
+
+            s = sum(inner.values())
+            inner = {k: v / s for k, v in inner.items()}
+
+            scaled = {t: w * pool_target for t, w in inner.items()}
+
+            capped = {t: min(w, SINGLE_ASSET_CAP) for t, w in scaled.items()}
+            residual = sum(scaled.values()) - sum(capped.values())
+            for _ in range(HRP_WATER_FILL_MAX_ITERS):
+                if residual <= 1e-9:
+                    break
+                non_capped = [t for t, w in capped.items() if w < SINGLE_ASSET_CAP - 1e-9]
+                if not non_capped:
+                    # All assets at cap — bucket target unreachable; accept partial fill.
+                    logger.warning(
+                        "NCO: bucket %s 의 모든 자산이 cap 도달 — target=%.3f, "
+                        "실제=%.3f (shortfall=%.3f)",
+                        bucket, pool_target, sum(capped.values()), residual,
+                    )
+                    bucket_shortfalls.append({
+                        "bucket": bucket,
+                        "pool_target": float(pool_target),
+                        "actual": float(sum(capped.values())),
+                        "shortfall": float(residual),
+                        "n_assets_capped": len(capped),
+                    })
+                    break
+                share = residual / len(non_capped)
+                for t in non_capped:
+                    room = SINGLE_ASSET_CAP - capped[t]
+                    add = min(share, room)
+                    capped[t] += add
+                residual = sum(scaled.values()) - sum(capped.values())
+
+            final.update(capped)
+
+    total = sum(final.values())
+    final_norm_intervened = False
+    if total > 0 and abs(total - 1.0) > 1e-9:
+        final_norm_intervened = True
+        logger.info(
+            "NCO final normalization: sum=%.6f ≠ 1.0 → water-fill redistribute",
+            total,
+        )
+        target_total = 1.0
+        remaining = target_total
+        normalized: dict[str, float] = {}
+        uncapped = list(final.keys())
+        raw = dict(final)
+        raw_total = sum(raw.values())
+        scaled_raw = {t: w / raw_total for t, w in raw.items()}
+        for _ in range(HRP_WATER_FILL_MAX_ITERS):
+            capped_tickers = [t for t in uncapped if scaled_raw[t] >= SINGLE_ASSET_CAP - 1e-9]
+            for t in capped_tickers:
+                normalized[t] = min(scaled_raw[t], SINGLE_ASSET_CAP)
+                uncapped.remove(t)
+            if not capped_tickers:
+                for t in uncapped:
+                    normalized[t] = scaled_raw[t]
+                break
+            free = remaining - sum(normalized.values())
+            if not uncapped or free <= 0:
+                break
+            sub_total = sum(scaled_raw[t] for t in uncapped)
+            if sub_total <= 0:
+                break
+            scaled_raw = {t: scaled_raw[t] / sub_total * free for t in uncapped}
+            remaining = free
+        else:
+            for t in uncapped:
+                normalized[t] = scaled_raw[t]
+        final = normalized
+        # Fallback: water-fill exhausted cap slots but sum < 1.0 (all assets capped).
+        # Proportionally scale to 1.0 (cap constraint relaxed when unavoidable).
+        final_sum = sum(final.values())
+        if final_sum > 0 and abs(final_sum - 1.0) > 1e-9:
+            logger.warning(
+                "NCO final normalization: water-fill cap-saturated (sum=%.6f) "
+                "→ proportional rescale to 1.0 (cap relaxed for unavoidable case)",
+                final_sum,
+            )
+            final = {t: w / final_sum for t, w in final.items()}
+            final_norm_intervened = True  # mark for attribution
+
+    if attribution is not None:
+        if bucket_shortfalls:
+            attribution["nco_bucket_shortfalls"] = bucket_shortfalls
+        attribution["nco_final_norm_intervened"] = final_norm_intervened
+        attribution["nco_breakdown_per_pool"] = nco_breakdown_per_pool
+
+    violators = [(t, w) for t, w in final.items() if w > SINGLE_ASSET_CAP + 1e-6]
+    if violators:
+        if final_norm_intervened:
+            # Cap relaxed due to unavoidable cap saturation (too few assets for target).
+            logger.warning(
+                "NCO post-condition: cap violated after unavoidable proportional rescale "
+                "(too few assets): %s",
+                violators,
+            )
+        else:
+            assert not violators, (
+                f"NCO-per-bucket post-condition: {SINGLE_ASSET_CAP*100:.0f}% cap violated: {violators}"
+            )
+
+    # sub_category cap (bucket 내부 다양성).
+    final = _apply_subcategory_cap(
+        final, candidates, sub_category_lookup=sub_category_lookup,
+        attribution=attribution,
+    )
+    # min weight threshold.
+    final = _apply_min_weight_threshold(
+        final, candidates, attribution=attribution,
+    )
+    return WeightVector(
+        method=OptimizationMethod.NCO,
+        weights=final,
+        rationale=(
+            f"NCO within each bucket × bucket_target weight. "
             f"위험자산 target {bucket_target.risk_asset_weight:.1%}, single-asset cap 20%."
         ),
     )

@@ -140,14 +140,17 @@ def test_sector_mapper_strict_then_relaxed():
 
 
 def test_sector_mapper_splits_bond_when_tips_share_positive():
-    """bond_tips_share > 0이면 global_duration bucket이 bond_tips + bond_nominal로 split."""
+    """bond_tips_share > 0이면 bond bucket이 bond_tips + bond_nominal로 split.
+
+    Phase 1 guard: cash_mmf 후보 필요 (없으면 cash 대상이 bond 로 흡수돼서 split 검증 흐트러짐).
+    """
     candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": [], "global_equity": [], "cyclical_commodity_fx": [],
-            "global_duration": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
-            "cash_mmf": [],
+            "kr_equity": [], "global_equity": [], "fx_commodity": [],
+            "bond": ["A_TIPS_1", "A_TIPS_2", "A_NOM_1", "A_NOM_2"],
+            "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
         },
-        selection_criteria="test", total_candidates=4,
+        selection_criteria="test", total_candidates=7,
     )
     target = BucketTarget(
         weights={
@@ -193,14 +196,17 @@ def test_sector_mapper_keeps_single_bond_when_tips_share_zero():
 
 
 def test_sector_mapper_absorbs_missing_tips_pool():
-    """후보에 inflation_linked 없으면 bond_tips target을 bond_nominal로 흡수."""
+    """후보에 inflation_linked 없으면 bond_tips target을 bond_nominal로 흡수.
+
+    Phase 1 guard: cash_mmf 후보 필요 (없으면 cash 가 bond 로 흡수돼서 nominal 합산 변경).
+    """
     candidates = CandidateSet(
         bucket_to_tickers={
-            "kr_equity": [], "global_equity": [], "cyclical_commodity_fx": [],
-            "global_duration": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
-            "cash_mmf": [],
+            "kr_equity": [], "global_equity": [], "fx_commodity": [],
+            "bond": ["A_NOM_1", "A_NOM_2"],  # TIPS 0개
+            "cash_mmf": ["A_CASH_1", "A_CASH_2", "A_CASH_3"],
         },
-        selection_criteria="test", total_candidates=2,
+        selection_criteria="test", total_candidates=5,
     )
     target = BucketTarget(
         weights={
@@ -401,3 +407,90 @@ def test_subcategory_cap_no_lookup_returns_unchanged():
     cs = _candidate_set_fx_test()
     assert _apply_subcategory_cap(weights, cs, sub_category_lookup=None) == weights
     assert _apply_subcategory_cap(weights, cs, sub_category_lookup={}) == weights
+
+
+def test_node_force_method_override_uses_state_value(tmp_path, monkeypatch):
+    """state['force_method']='nco' 시 method_picker 호출 안 함, NCO 강제."""
+    from datetime import date
+    import pandas as pd
+    from tests.integration._allocator_state_helpers import (
+        make_synthetic_universe, make_synthetic_returns, make_factor_panel,
+        make_bucket_target, make_macro_report, make_risk_report,
+        make_research_decision, make_technical_report, make_allocator_state,
+    )
+    from tradingagents.agents.allocator.portfolio_allocator import create_portfolio_allocator
+
+    universe = make_synthetic_universe(n_per_bucket=4)
+    universe_path = tmp_path / "universe.json"
+    universe_path.write_text(universe.model_dump_json())
+
+    tickers = [e.ticker for e in universe.etfs]
+    returns = make_synthetic_returns(tickers, n_days=252, seed=31)
+    factor_panel = make_factor_panel(tickers)
+
+    monkeypatch.setattr(
+        "tradingagents.skills.portfolio.candidate_selector.fetch_etf_metrics_window",
+        lambda tickers, start, end, cache_path=None: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.allocator.portfolio_allocator.fetch_returns_matrix",
+        lambda eligible, start, end, cache_path=None: returns[[t for t in eligible if t in returns.columns]],
+    )
+
+    state = make_allocator_state(
+        as_of=date(2026, 5, 28),
+        universe_path=str(universe_path),
+        bucket_target=make_bucket_target(),
+        technical_report=make_technical_report(factor_panel),
+        macro_report=make_macro_report(),
+        risk_report=make_risk_report(),
+        research_decision=make_research_decision(),
+    )
+    state["force_method"] = "nco"
+
+    result = create_portfolio_allocator()(state)
+    method_picker = result["allocation_attribution"]["method_picker"]
+    assert method_picker["method"] == "nco"
+    assert method_picker["rule_fired"] == "state_override"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4c — _apply_single_cap_redistribution unit tests
+# ---------------------------------------------------------------------------
+from tradingagents.agents.allocator.portfolio_allocator import (
+    _apply_single_cap_redistribution,
+)
+
+
+def test_apply_single_cap_redistribution_basic():
+    weights = {f"A{i:03d}": 0.10 for i in range(10)}
+    out = _apply_single_cap_redistribution(weights, cap=0.20)
+    assert all(0.0 <= w <= 0.20 + 1e-9 for w in out.values())
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_apply_single_cap_redistribution_cap_clipped_all():
+    weights = {"A": 1/3, "B": 1/3, "C": 1/3}
+    out = _apply_single_cap_redistribution(weights, cap=0.20)
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_apply_single_cap_redistribution_partial_cap():
+    weights = {"A": 0.50, "B": 0.10, "C": 0.10, "D": 0.10, "E": 0.10, "F": 0.10}
+    out = _apply_single_cap_redistribution(weights, cap=0.20)
+    assert out["A"] <= 0.20 + 1e-9
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+    for k in ["B", "C", "D", "E", "F"]:
+        assert 0.15 <= out[k] <= 0.20 + 1e-9
+
+
+def test_apply_single_cap_redistribution_iterative():
+    weights = {"A": 0.80, "B": 0.05, "C": 0.05, "D": 0.05, "E": 0.05}
+    out = _apply_single_cap_redistribution(weights, cap=0.20)
+    assert all(w <= 0.20 + 1e-9 for w in out.values())
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_apply_single_cap_redistribution_empty():
+    out = _apply_single_cap_redistribution({}, cap=0.20)
+    assert out == {}

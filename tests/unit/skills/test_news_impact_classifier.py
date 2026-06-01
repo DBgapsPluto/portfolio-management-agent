@@ -17,6 +17,7 @@ def test_classifier_uses_quick_model():
     clf = ImpactClassifier(quick_llm, deep_llm)
     result = clf.invoke(
         headline="Fed signals 25bp cut", source="Reuters", date="2026-05-10",
+        description_block="",  # 2026-05-28 Tier 1: legacy 호환 — wrapper 가 default 처리 하지만 직접 invoke 는 명시 필요
     )
     assert result.severity == 4
     quick_llm.with_structured_output.assert_called_once()

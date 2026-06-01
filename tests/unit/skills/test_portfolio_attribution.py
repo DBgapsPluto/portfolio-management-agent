@@ -155,15 +155,16 @@ def test_select_etf_candidates_populates_attribution():
         for t in tickers
     }
     attr: dict = {}
+    sigma = returns.dropna(axis=0, how="any").cov()
     cs = select_etf_candidates(
         u, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
+        sigma=sigma, capital_krw=1_000_000_000,
         # Stage 2 audit (2026-05-26, Task 4): cell-key "D_N_F" path removed
         # by 2026-05-22 PR. Use legacy 7-scenario name "stagflation" which
         # maps to (D, N, F) axes — same gold boost.
         dominant_scenario="stagflation",
         regime_quadrant="recession_inflation", regime_confidence=0.8,
-        per_bucket_n=2,
         attribution=attr,
     )
     # 기본 산출은 이전과 같이 정상
@@ -210,9 +211,11 @@ def test_select_etf_candidates_no_scenario_no_boost():
         for t in tickers
     }
     attr: dict = {}
+    sigma = returns.dropna(axis=0, how="any").cov()
     cs = select_etf_candidates(
         u, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
+        sigma=sigma, capital_krw=1_000_000_000,
         dominant_scenario=None,
         attribution=attr,
     )
@@ -331,16 +334,17 @@ def test_attribution_none_behaves_as_no_op():
                        log_aum=math.log(aum_lookup[t]))
         for t in tickers
     }
+    sigma = returns.dropna(axis=0, how="any").cov()
     cs1 = select_etf_candidates(
         u, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
-        per_bucket_n=2,
+        sigma=sigma, capital_krw=1_000_000_000,
         attribution=None,
     )
     cs2 = select_etf_candidates(
         u, target, as_of=date(2026, 5, 10),
         returns=returns, factor_panel=panel,
-        per_bucket_n=2,
+        sigma=sigma, capital_krw=1_000_000_000,
         attribution={},
     )
     assert cs1.bucket_to_tickers == cs2.bucket_to_tickers

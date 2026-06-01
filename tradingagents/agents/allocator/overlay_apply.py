@@ -25,6 +25,7 @@ import logging
 import numpy as np
 import pandas as pd
 from pypfopt import EfficientFrontier, expected_returns, risk_models
+from tradingagents.skills.portfolio.cov_estimator import compute_robust_cov
 
 from tradingagents.schemas.portfolio import (
     BucketTarget, CandidateSet, OptimizationMethod, WeightVector,
@@ -76,7 +77,7 @@ def _filter_returns_for_cov(
 
 def _ridge_cov(returns: pd.DataFrame, lam: float) -> pd.DataFrame:
     """sample_cov + λ·mean(diag)·I — PSD 보장 (numerical stability)."""
-    S = risk_models.sample_cov(returns)
+    S = compute_robust_cov(returns)
     ridge = lam * float(np.diag(S).mean())
     return S + ridge * np.eye(len(S))
 
