@@ -707,8 +707,14 @@ def test_select_by_enb_greedy_stops_at_n_max():
     assert len(chosen) == 2
 
 
-def test_select_by_enb_greedy_duplicates_picked_once():
-    """corr ≈ 1 인 3 ETF → seed 1개만."""
+def test_select_by_enb_greedy_correlated_equal_vol_all_picked():
+    """등상관·등분산 3 ETF → minimum_torsion ENB 가 1→2→3 으로 증가하므로 3개 모두 선택.
+
+    (이전엔 len==1 을 기대했으나, 그것은 eigenvalue 오용 버그가 상관 자산의 ENB 를
+     ~1 로 붕괴시킨 PCA-식 거동이었음. 최소-LINEAR-torsion 은 등상관·등분산·등가중에서
+     permutation symmetric → ENB = N 이라 상관 자산을 중복으로 제거하지 않는다.
+     순수 상관 기반 dedup 은 minimum_torsion ENB 의 성질이 아님.)
+    """
     from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
     eligible = ["A", "B", "C"]
     alpha = {t: 0.5 for t in eligible}
@@ -718,7 +724,7 @@ def test_select_by_enb_greedy_duplicates_picked_once():
         eligible=eligible, alpha_scores=alpha, impl_scores=impl,
         sigma=sigma, n_max=3,
     )
-    assert len(chosen) == 1
+    assert len(chosen) == 3
 
 
 def test_select_by_enb_greedy_attribution_progression_recorded():
@@ -755,17 +761,33 @@ def test_select_by_enb_greedy_alpha_impl_blend_weighting():
     assert chosen == ["B"]
 
 
-def test_select_by_enb_greedy_stops_at_delta_threshold():
-    """corr ≈ 1 시 delta 미달 stop."""
+def test_select_by_enb_greedy_stops_at_delta_threshold(monkeypatch):
+    """ΔENB < threshold 이고 n_min 충족 시 'delta_below_threshold' stop (control-flow 검증).
+
+    ENB math 수정 후 minimum_torsion ENB 는 상관 자산도 N 으로 증가시켜 (eigenvalue
+    오용 버그가 만들던 ~1 붕괴가 사라짐) 실제 cov 로는 이 stop 경로가 거의 안 잡힌다.
+    따라서 ENB 값에 의존하지 않고 plateau 를 주입해 stop 로직 자체를 검증한다.
+    (n_min_hard_floor=2 → 2개 후 ΔENB 미달이면 stop.)
+    """
+    import tradingagents.skills.portfolio.factor_scorer as fs
     from tradingagents.skills.portfolio.factor_scorer import select_by_enb_greedy
-    eligible = ["A", "B", "C"]
+
+    # ENB plateau: 1 종목=1.0, 2 종목=2.0, 그 이후 추가해도 +0.01 (< 0.15 threshold)
+    def fake_enb(selected, sigma):
+        n = len(selected)
+        if n <= 1:
+            return float(n)
+        return 2.0 + 0.01 * (n - 2)
+    monkeypatch.setattr(fs, "_enb_equal_weight", fake_enb)
+
+    eligible = ["A", "B", "C", "D"]
     alpha = {t: 0.5 for t in eligible}
     impl = {t: 0.0 for t in eligible}
-    sigma = _make_dup_sigma(eligible)
+    sigma = _make_diag_sigma(eligible)
     trace: dict = {}
     chosen = select_by_enb_greedy(
         eligible=eligible, alpha_scores=alpha, impl_scores=impl,
-        sigma=sigma, n_max=3, selection_trace=trace,
+        sigma=sigma, n_max=4, selection_trace=trace,
     )
-    assert len(chosen) == 1
+    assert len(chosen) == 2  # n_min 충족 후 ΔENB(0.01) < 0.15 → stop
     assert trace["stop_reason"] == "delta_below_threshold"

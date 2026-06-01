@@ -57,8 +57,7 @@ def minimum_torsion_decomposition(w: np.ndarray, sigma: np.ndarray) -> np.ndarra
     """반환 p_i: 비상관 factor i 의 분산 기여 (합 1).
 
     e = T^(-T) w   (exposures, n-vector from minimum torsion)
-    λ_i = eigenvalue i of Σ
-    factor_var_i = e_i² × λ_i
+    factor_var_i = e_i² × diag(Σ)_i
     p_i = factor_var_i / (w^T Σ w)
     """
     n = len(w)
@@ -66,8 +65,8 @@ def minimum_torsion_decomposition(w: np.ndarray, sigma: np.ndarray) -> np.ndarra
         return np.array([1.0])
     T = minimum_torsion_matrix(sigma)
     exposures = np.linalg.solve(T.T, w)
-    vals, _ = np.linalg.eigh(sigma)
-    factor_var = exposures ** 2 * vals
+    # factor variances = diag(Σ) by the minimum-torsion property T Σ Tᵀ = diag(diag Σ); w^TΣw = Σ e_i²·diag(Σ)_i
+    factor_var = exposures ** 2 * np.diag(sigma)
     port_var = float(w @ sigma @ w)
     if port_var <= ENB_NUMERICAL_FLOOR:
         return np.full(n, 1.0 / n)
