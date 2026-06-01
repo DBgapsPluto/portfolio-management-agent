@@ -232,11 +232,7 @@ def create_portfolio_allocator(
 
         # Phase 2a — Stage 2 원본 bucket_target 별도 보존 (spillover 전 macro 결정)
         attribution["config"]["bucket_target_stage2"] = {
-            "kr_equity":      bucket_target.kr_equity,
-            "global_equity":  bucket_target.global_equity,
-            "fx_commodity":   bucket_target.fx_commodity,
-            "bond":           bucket_target.bond,
-            "cash_mmf":       bucket_target.cash_mmf,
+            **dict(bucket_target.weights),
             "bond_tips_share": bucket_target.bond_tips_share,
         }
 
@@ -257,13 +253,7 @@ def create_portfolio_allocator(
             list(spillover_result.cash_overflow_to_buckets.keys()),
         )
         # attribution config 의 bucket_target snapshot 도 update (감사 용이).
-        attribution["config"]["bucket_target"] = {
-            "kr_equity":     bucket_target.kr_equity,
-            "global_equity": bucket_target.global_equity,
-            "fx_commodity":  bucket_target.fx_commodity,
-            "bond":          bucket_target.bond,
-            "cash_mmf":      bucket_target.cash_mmf,
-        }
+        attribution["config"]["bucket_target"] = dict(bucket_target.weights)
         attribution["config"]["bond_tips_share"] = bucket_target.bond_tips_share
 
         # Phase 2a — post-spillover snapshot 도 별도 키로 저장 (audit trail)
@@ -1118,13 +1108,7 @@ def _nco_per_bucket(
     bucket_shortfalls: list[dict] = []
     nco_breakdown_per_pool: dict[str, dict] = {}
     sub_category_lookup = sub_category_lookup or {}
-    target_map = {
-        "kr_equity": bucket_target.kr_equity,
-        "global_equity": bucket_target.global_equity,
-        "fx_commodity": bucket_target.fx_commodity,
-        "bond": bucket_target.bond,
-        "cash_mmf": bucket_target.cash_mmf,
-    }
+    target_map = dict(bucket_target.weights)
     split_bond = bucket_target.bond_tips_share > 0.0
 
     final: dict[str, float] = {}
@@ -1133,7 +1117,7 @@ def _nco_per_bucket(
         if target <= 0 or not tickers:
             continue
 
-        if bucket == "bond" and split_bond:
+        if bucket == "global_duration" and split_bond:
             # Sub-pool split per inflation_linked sub_category
             tips_tickers = [
                 t for t in tickers
