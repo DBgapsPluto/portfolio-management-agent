@@ -25,24 +25,6 @@ from tradingagents.skills.registry import register_skill
 
 logger = logging.getLogger(__name__)
 
-# Map 8-bucket names to universe .category values.
-# Buckets that require sub_category disambiguation (precious_metals,
-# cyclical_commodity_fx, kr_bond, credit, global_duration) are filtered via
-# bucket_for_etf() rather than a simple category string match.
-BUCKET_TO_CATEGORIES = {
-    "kr_equity": ["국내주식_지수", "국내주식_섹터"],
-    "global_equity": ["해외주식_지수", "해외주식_섹터"],
-    "fx_commodity": ["FX 및 원자재"],
-    "bond": [
-        "국내채권_종합", "국내채권_회사채",
-        "해외채권_종합", "해외채권_회사채",
-    ],
-    "cash_mmf": ["금리연계형/초단기채권"],
-}
-
-
-
-
 # Scenario boost를 factor score에 가산할 때 곱하는 스케일.
 # 1.0 = 원본 log_boost 그대로 (max +0.69). rank_percentile에서 boost ratio가
 # factor 대비 ~136%까지 올라가지만, anchor 재평가 결과 시스템이 corr-aware로
@@ -52,16 +34,15 @@ DEFAULT_BOOST_SCALE: float = 1.0
 
 
 
-    Uses bucket_for_etf() which respects sub_category for ambiguous categories
-    (FX 및 원자재 → precious_metals vs cyclical_commodity_fx;
-     국내채권_종합/해외채권_종합 → kr_bond / credit / global_duration).
+def _eligible_for_bucket(universe: Universe, bucket_name: str):
+    """ETFs that classify into `bucket_name` via bucket_for_etf().
 
-def _eligible_for_bucket(universe: Universe, cats: list[str]):
-    """Single eligibility filter (Stage 3 D2/D3 — used by both list_* and select_*)."""
-    return [
-        e for e in universe.etfs
-        if e.category in cats
-    ]
+    8-bucket eligibility (Stage 3 D2/D3 — used by both list_* and select_*).
+    bucket_for_etf() handles sub_category disambiguation for split buckets
+    (FX 및 원자재 → precious_metals vs cyclical_commodity_fx; 국내채권_종합/
+    해외채권_종합 → kr_bond / credit / global_duration).
+    """
+    return [e for e in universe.etfs if bucket_for_etf(e) == bucket_name]
 
 
 def list_eligible_tickers(
@@ -82,8 +63,7 @@ def list_eligible_tickers(
         if weight <= 0:
             out[bucket_name] = []
             continue
-        cats = BUCKET_TO_CATEGORIES[bucket_name]
-        out[bucket_name] = [e.ticker for e in _eligible_for_bucket(universe, cats)]
+        out[bucket_name] = [e.ticker for e in _eligible_for_bucket(universe, bucket_name)]
     return out
 
 
@@ -230,8 +210,7 @@ def select_etf_candidates(
                 bucket_attr["skip_reason"] = "bucket_weight=0"
             continue
 
-        cats = BUCKET_TO_CATEGORIES[bucket_name]
-        eligible = _eligible_for_bucket(universe, cats)
+        eligible = _eligible_for_bucket(universe, bucket_name)
         if bucket_attr is not None:
             bucket_attr["eligible_count"] = len(eligible)
 
@@ -242,7 +221,7 @@ def select_etf_candidates(
                 bucket_attr["skip_reason"] = "no eligible tickers"
             continue
 
-        if bucket_name == "bond" and bucket_target.bond_tips_share > 0.0:
+        if bucket_name == "global_duration" and bucket_target.bond_tips_share > 0.0:
             bond_eligible_tickers = [e.ticker for e in eligible]
             # Use eligible count as n_positive_alpha upper bound — bond TIPS path
             # uses select_diverse (not ENB greedy), so alpha sign filter is not applied.

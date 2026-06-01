@@ -18,7 +18,7 @@ from pypfopt import EfficientFrontier, HRPOpt, risk_models, expected_returns
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
 from tradingagents.skills.portfolio.candidate_selector import (
-    BUCKET_TO_CATEGORIES, list_eligible_tickers,
+    list_eligible_tickers,
     select_etf_candidates,
 )
 from tradingagents.skills.portfolio.method_picker import MethodChoice, pick_optimization_method
