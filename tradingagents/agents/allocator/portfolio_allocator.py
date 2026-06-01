@@ -648,9 +648,50 @@ def _optimize_with_bucket_constraints(
         else:
             ef.max_sharpe()
     except Exception as e:
-        raise RuntimeError(
-            f"Joint optimization infeasible (method={method}, attempt={attempts}): {e}"
-        ) from e
+        # In-node graceful fallback (Stage 3 anchor-tuning): infeasible solve
+        # (esp. BL → max_sharpe, fragile under tight sector constraints) MUST
+        # NOT crash the allocator. Fall back min_volatility → HRP. Only the
+        # max_sharpe objective can reach here for a 2nd attempt: min_volatility
+        # is far more robust, so build a FRESH frontier (same constraints) and
+        # re-solve with it. If that also fails, drop to solver-free HRP.
+        logger.warning(
+            "Optimizer infeasible (method=%s, attempt=%d): %s — "
+            "falling back to fresh-EF min_volatility",
+            method, attempts, e,
+        )
+        try:
+            ef = EfficientFrontier(mu, S, weight_bounds=(0, SINGLE_ASSET_CAP))
+            ef.add_sector_constraints(sector_mapper, sector_lower, sector_upper)
+            ef.min_volatility()
+            if attribution is not None:
+                attribution["optimization_fallback"] = (
+                    "max_sharpe_infeasible→min_volatility"
+                )
+        except Exception as e2:
+            logger.warning(
+                "Fresh-EF min_volatility ALSO infeasible (method=%s, attempt=%d): "
+                "%s — falling back to solver-free HRP",
+                method, attempts, e2,
+            )
+            if attribution is not None:
+                attribution["optimization_fallback"] = (
+                    "max_sharpe_infeasible→hrp"
+                )
+            try:
+                wv = _hrp_per_bucket(
+                    returns, candidates, bucket_target, sub_category_lookup,
+                    attribution=attribution,
+                )
+            except Exception as e3:
+                raise RuntimeError(
+                    f"Joint optimization infeasible (method={method}, "
+                    f"attempt={attempts}) and HRP fallback failed: {e3}"
+                ) from e3
+            sigma_df = (
+                S if isinstance(S, pd.DataFrame)
+                else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
+            )
+            return wv, sigma_df
 
     weights = {t: float(w) for t, w in ef.clean_weights().items() if w > 1e-4}
     total = sum(weights.values())

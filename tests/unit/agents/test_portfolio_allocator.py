@@ -539,3 +539,55 @@ def test_apply_single_cap_redistribution_iterative():
 def test_apply_single_cap_redistribution_empty():
     out = _apply_single_cap_redistribution({}, cap=0.20)
     assert out == {}
+
+
+from tradingagents.agents.allocator.portfolio_allocator import (
+    _optimize_with_bucket_constraints,
+)
+
+
+def test_optimizer_infeasibility_falls_back_to_min_volatility():
+    """Stage 3 anchor-tuning: infeasible max_sharpe must NOT crash.
+
+    All-negative mean returns make pypfopt max_sharpe() raise
+    ("at least one of the assets must have an expected return exceeding the
+    risk-free rate"), but min_volatility (which ignores mu) stays feasible.
+    The node must gracefully fall back instead of raising RuntimeError.
+
+    Pre-fix: this RAISES RuntimeError. Post-fix: graceful fallback.
+    """
+    rng = np.random.default_rng(7)
+    n = 200
+    # 1 ticker per bucket (matches _candidates / _bucket_target layout); all
+    # drawn with NEGATIVE drift so mean_historical_return < risk-free rate.
+    returns = pd.DataFrame({
+        "A069500":  rng.normal(-0.001, 0.010, n),
+        "A360750":  rng.normal(-0.001, 0.010, n),
+        "A411060":  rng.normal(-0.001, 0.010, n),
+        "A114260":  rng.normal(-0.001, 0.005, n),
+        "A_CREDIT": rng.normal(-0.001, 0.004, n),
+        "A459580":  rng.normal(-0.001, 0.002, n),
+    })
+    attribution: dict = {}
+    # BLACK_LITTERMAN with empty views → mu = mean_historical_return (all neg)
+    # → reaches ef.max_sharpe() which is infeasible.
+    wv, sigma_df = _optimize_with_bucket_constraints(
+        method=OptimizationMethod.BLACK_LITTERMAN,
+        returns=returns,
+        candidates=_candidates(),
+        bucket_target=_bucket_target(),
+        method_params={},  # no _bl_trigger, no views
+        attempts=0,
+        attribution=attribution,
+    )
+
+    # No RuntimeError raised → valid allocation produced.
+    assert wv.weights, "fallback produced no weights"
+    assert abs(sum(wv.weights.values()) - 1.0) < 1e-6, (
+        f"weights must sum to 1, got {sum(wv.weights.values())}"
+    )
+    assert all(w >= 0 for w in wv.weights.values()), "weights must be non-negative"
+    assert all(w <= 0.20 + 1e-4 for w in wv.weights.values()), "single-asset cap respected"
+    # Fallback path recorded in attribution.
+    assert "optimization_fallback" in attribution
+    assert attribution["optimization_fallback"].startswith("max_sharpe_infeasible→")
