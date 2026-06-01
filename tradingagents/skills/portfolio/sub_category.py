@@ -10,86 +10,131 @@ import math
 import json
 import logging
 import re
-from typing import Iterable
+from typing import Final, Iterable
 
 logger = logging.getLogger(__name__)
 
 
 # bucket → 허용된 sub_category 라벨 목록.
-# 너무 세분화하면 LLM 일관성 떨어짐 → 각 bucket 3-9개.
+# Tier 1 (2026-05-28): 5 → 8 bucket split
 VALID_SUB_CATEGORIES: dict[str, list[str]] = {
     "kr_equity": [
-        "index_broad",         # KOSPI200, KOSPI 등 광역
-        "semiconductor",       # 반도체
-        "it_software",         # IT/소프트웨어 (AI 제외)
-        "ai_robotics",         # AI/로봇 테마
-        "battery_ev",          # 2차전지/전기차
-        "biotech_pharma",      # 바이오/제약
-        "finance",             # 금융/증권/보험
-        "consumer",            # 소비재/유통
-        "industrial_defense",  # 산업재/방산
-        "materials_energy",    # 소재/에너지
-        "factor_value_dividend",  # 가치/배당
+        "index_broad",
+        "semiconductor",
+        "it_software",
+        "ai_robotics",
+        "battery_ev",
+        "biotech_pharma",
+        "finance",
+        "consumer",
+        "industrial_defense",
+        "materials_energy",
+        "factor_value_dividend",
         "thematic_other",
     ],
     "global_equity": [
-        "us_broad",            # S&P500/Russell 등 광역
-        "us_tech_nasdaq",      # 나스닥/IT/반도체
-        "us_sector",           # 미국 섹터 (헬스/금융/에너지)
-        "europe",              # 유럽 (STOXX/DAX 등)
-        "japan",               # 일본
-        "china",               # 중국/홍콩
-        "india",               # 인도
-        "emerging_other",      # 베트남/이머징
-        "ai_theme_global",     # 글로벌 AI/반도체 테마
+        "us_broad",
+        "us_tech_nasdaq",
+        "us_sector",
+        "europe",
+        "japan",
+        "china",
+        "india",
+        "emerging_other",
+        "ai_theme_global",
         "thematic_other",
     ],
-    "fx_commodity": [
+    # NEW: split from fx_commodity
+    "precious_metals": [
         "gold",
         "silver_precious",
+    ],
+    "cyclical_commodity_fx": [
         "oil_energy",
         "agricultural",
         "broad_commodity",
         "usd_fx",
-        # 2026-05-26 #4 fix — 엔선물 (디플레/캐리 통화) 별도 분류. 기존엔
-        # "gold" 로 잘못 라벨링되어 인플레 헤지 weight 받았음.
         "jpy_fx",
     ],
-    "bond": [
-        "kr_treasury",         # 한국 국고채
-        "kr_corporate",        # 한국 회사채
-        "us_treasury",         # 미국 국채
-        "us_aggregate",        # 미국 종합/IG
-        "us_high_yield",       # 미국 HY
-        "em_bond",             # 이머징 채권
-        "inflation_linked",    # 물가연동
-        "short_duration",      # 단기
+    # NEW: split from bond
+    "kr_bond": [
+        "kr_treasury",
+        "inflation_linked",   # KR TIPS (e.g. 물가채) — domestic inflation-linked
+        "short_duration",  # NOTE: universe-level review — may be KR or global
+    ],
+    "credit": [
+        "kr_corporate",
+        "us_high_yield",
+        "us_aggregate",
+        "em_bond",
+    ],
+    "global_duration": [
+        "us_treasury",
+        "inflation_linked",
     ],
     "cash_mmf": [
         "mmf_kr",
         "mmf_usd",
-        "short_kr_bond",       # 초단기 KR 채권
+        "short_kr_bond",
     ],
 }
 
 
-# bucket → category 매핑 (sub_category 검증용; candidate_selector와 정합)
+# Tier 1 special marker — category alone is ambiguous (needs sub_category split).
+_SPLIT_MARKER: Final[str] = "_split_by_sub_category"
+
 _CATEGORY_TO_BUCKET: dict[str, str] = {
     "국내주식_지수": "kr_equity",
     "국내주식_섹터": "kr_equity",
     "해외주식_지수": "global_equity",
     "해외주식_섹터": "global_equity",
-    "FX 및 원자재": "fx_commodity",
-    "국내채권_종합": "bond",
-    "국내채권_회사채": "bond",
-    "해외채권_종합": "bond",
-    "해외채권_회사채": "bond",
+    "FX 및 원자재": _SPLIT_MARKER,         # split: precious_metals vs cyclical_commodity_fx
+    "국내채권_종합": _SPLIT_MARKER,        # split: kr_bond vs credit
+    "국내채권_회사채": "credit",
+    "해외채권_종합": _SPLIT_MARKER,        # split: credit vs global_duration
+    "해외채권_회사채": "credit",
     "금리연계형/초단기채권": "cash_mmf",
 }
 
 
+# Tier 1: for _SPLIT_MARKER categories, which buckets are valid split targets.
+# bucket_for_etf restricts the sub_category scan to these (prevents cross-category
+# leakage, e.g. a KR inflation-linked bond → global_duration).
+_SPLIT_TARGETS: dict[str, tuple[str, ...]] = {
+    "FX 및 원자재":   ("precious_metals", "cyclical_commodity_fx"),
+    "국내채권_종합":  ("kr_bond", "credit"),
+    "해외채권_종합":  ("credit", "global_duration"),
+}
+
+
 def bucket_for_category(category: str) -> str | None:
-    return _CATEGORY_TO_BUCKET.get(category)
+    """Backward-compat: legacy single-category lookup. Returns None for ambiguous."""
+    result = _CATEGORY_TO_BUCKET.get(category)
+    return result if result and result != _SPLIT_MARKER else None
+
+
+def bucket_for_etf(etf) -> str | None:
+    """8-bucket classification using (category, sub_category).
+
+    For categories with _SPLIT_MARKER (FX 및 원자재, 국내채권_종합, 해외채권_종합),
+    split by sub_category — but ONLY among the buckets valid for that category
+    (_SPLIT_TARGETS), preventing cross-category leakage.
+
+    Returns None for unknown category or unclassified sub_category.
+    """
+    cat = _CATEGORY_TO_BUCKET.get(etf.category)
+    if cat is None:
+        return None
+    if cat != _SPLIT_MARKER:
+        return cat
+    sub = getattr(etf, "sub_category", None)
+    if not sub:
+        return None
+    targets = _SPLIT_TARGETS.get(etf.category, tuple(VALID_SUB_CATEGORIES.keys()))
+    for bucket in targets:
+        if sub in VALID_SUB_CATEGORIES.get(bucket, []):
+            return bucket
+    return None
 
 
 # 24-cell framework — axis별 boost를 곱(multiplicative)으로 합성.

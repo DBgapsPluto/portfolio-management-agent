@@ -28,15 +28,17 @@ EXPECTED_COMPONENTS: frozenset[str] = frozenset({
     # F5
     "hy_oas_bps", "hy_oas_momentum", "credit_quality_bps", "funding_bps",
     "corporate_distress", "dovish_bias",
-    # F6
-    "krw_overnight_pct", "krw_level", "krw_reer", "kr_us_rate_diff",
-    "foreign_flow_z", "kr_exports_yoy", "bok_tone_balance",
-    # F7
+    # F6 — Tier 0 (2026-05-28): krw_level + foreign_flow_z removed; krw_change_6m_pct +
+    #         krw_reer + foreign_flow_normalized added.
+    "krw_overnight_pct", "krw_change_6m_pct", "krw_reer", "kr_us_rate_diff",
+    "foreign_flow_normalized", "kr_exports_yoy", "bok_tone_balance",
+    # F7 — Tier 0 (2026-05-28): geopolitical_surge → gpr_index_zscore (Caldara-Iacoviello GPR).
     "vix_level", "vix_z_score", "vix_term_ratio", "move",
     "realized_vol_60d", "skew_level", "skew_change",
-    "sentiment_dispersion", "geopolitical_surge",
-    # F8
+    "sentiment_dispersion", "gpr_index_zscore",
+    # F8 — Tier 0 (2026-05-28): us_cape + kospi_per + kospi_div_yield activated.
     "sp_pe", "earnings_yield", "erp", "kospi_pbr",
+    "us_cape", "kospi_per", "kospi_div_yield",
     # F9
     "vrp", "eq_bond_corr", "sector_dispersion", "breadth",
     "event_cluster", "rising_signal",

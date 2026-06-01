@@ -24,7 +24,7 @@ Reliability = Literal[
 ]
 
 
-AUDIT_DATE: Final[str] = "2026-05-24"
+AUDIT_DATE: Final[str] = "2026-05-28"
 
 
 COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
@@ -33,6 +33,8 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "cfnai":                 "high",
     "cfnai_3m":              "high",   # C8 (2026-05-24): 3m avg, NBER recession signal
     "nfci":                  "high",
+    "indpro_yoy":            "high",   # Tier 0 (2026-05-28): industrial production YoY
+    "real_pce_yoy":          "high",   # Tier 0 (2026-05-28): real PCE YoY
     "sahm":                  "medium-low",   # post-COVID distortion
     "curve":                 "medium-low",   # post-COVID de-anchored
     "release_surprise":      "high",
@@ -56,9 +58,10 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "fed_path_implied":   "high",
 
     # ----- F4 term_premium -----
-    "slope_2_10y":      "medium",
-    "slope_5_30y":      "high",
-    "fed_tone_balance": "high",
+    "slope_2_10y":         "medium",
+    "slope_5_30y":         "high",
+    "fed_tone_balance":    "high",
+    "acm_term_premium_10y":"high",   # Tier 0 (2026-05-28): ACM model 10Y term premium
 
     # ----- F5 credit_cycle -----
     "hy_oas_bps":         "high",
@@ -67,15 +70,18 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "funding_bps":        "high",
     "corporate_distress": "medium",
     "dovish_bias":        "medium",
+    "gz_ebp":             "high",              # Tier 0 (2026-05-28): Gilchrist-Zakrajsek excess bond premium
+    "kr_corp_spread_bps": "high",              # Tier 0 (2026-05-28): Korea corporate bond spread
 
     # ----- F6 krw_regime -----
-    "krw_overnight_pct": "high",
-    "krw_level":         "high",
-    "krw_reer":          "high",
-    "kr_us_rate_diff":   "high",
-    "foreign_flow_z":    "high",
-    "kr_exports_yoy":    "high",
-    "bok_tone_balance":  "high",
+    # Tier 0 (2026-05-28): krw_level removed, foreign_flow_z replaced by foreign_flow_normalized.
+    "krw_overnight_pct":       "high",
+    "krw_change_6m_pct":       "high",
+    "krw_reer":                "high",
+    "kr_us_rate_diff":         "high",
+    "foreign_flow_normalized": "high",
+    "kr_exports_yoy":          "high",
+    "bok_tone_balance":        "high",
 
     # ----- F7 equity_vol -----
     "vix_level":            "high",
@@ -86,15 +92,20 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "skew_level":           "medium-low",  # post-2018 structurally elevated
     "skew_change":          "medium",
     "sentiment_dispersion": "high",
-    "geopolitical_surge":   "high",
+    # Tier 0 (2026-05-28): geopolitical_surge → gpr_index_zscore (Caldara-Iacoviello GPR).
+    "gpr_index_zscore":     "high",
 
     # ----- F8 valuation -----
     "sp_pe":          "medium",
     "earnings_yield": "medium",
     "erp":            "medium-high",
     "kospi_pbr":      "high",
+    # Tier 0 (2026-05-28): US CAPE + KOSPI PER + Div Yield activated.
+    "us_cape":        "high",
+    "kospi_per":      "high",
+    "kospi_div_yield":"high",
 
-    # ----- F9 liquidity -----
+    # ----- F9 market_dispersion (renamed from F9_liquidity, Tier 0 2026-05-28) -----
     "vrp":                "high",
     "eq_bond_corr":       "high",
     "sector_dispersion":  "medium",   # C8: narrow rally regime degrades reliability
@@ -108,6 +119,15 @@ COMPONENT_RELIABILITY: Final[dict[str, Reliability]] = {
     "fed_bs_signal":      "high",     # WALCL FRED, weekly
     "sofr_tbill_spread":  "high",     # SOFR + DTB3 FRED, daily
     "aaa_oas":            "high",     # IG AAA OAS FRED (BAA10Y fallback)
+
+    # ----- F11 earnings_revision (Tier 0 2026-05-28, staggered 2010+) -----
+    "sp500_net_revision":    "medium",  # yfinance upgrades_downgrades API coverage varies
+    "kospi200_net_revision": "medium",  # pykrx PER-implied proxy — indirect
+
+    # ----- F12 china_credit_impulse (Tier 0 2026-05-28) -----
+    "credit_impulse":   "high",   # BIS Total Credit Q:CN:P:A:M:770:A (quarterly, direct)
+    "credit_yoy_pct":   "high",   # same BIS series YoY
+    "iron_ore_3m_pct":  "medium", # commodity proxy — indirect China demand signal
 }
 
 

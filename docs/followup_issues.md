@@ -814,3 +814,294 @@ C10 의 production replay 결과:
 
 ### Priority
 High — production environment verify gate.
+
+---
+
+# Tier 2 / Tier 3 Redesign Followups (recorded 2026-05-31)
+
+> Source: adversarial audits of the T0–T3 factor-model redesign
+> (docs/superpowers/specs|plans/2026-05-28-tier{0,1,2,3}-*). T0/T1 shipped clean
+> (3 production bugs found+fixed during verification). The T2/T3 *frameworks* are
+> built and unit-tested on synthetic data, but the items below are wiring /
+> data-availability gaps that must close before the new pipeline is
+> *operationally* what the design intends. Deferred (not blocking the framework),
+> analogous to the PR2a "infrastructure first, real run later" pattern (Issue #18).
+
+## Priority recalibration (2026-06-01) — supersedes per-issue Priority fields below
+
+> After a "is this fatal / what does the *best* algorithm actually need" re-triage:
+> **None of #24–#32 is fatal — the current system (quant core on hand-coded prior,
+> T3 OFF) is sound and shippable.** Ranked by *actual portfolio-quality leverage*
+> (not design completeness):
+>
+> **The real top gap — under-stated by the issue list:** the 8-bucket × 12-factor
+> β has **never been calibrated**. T1 replaced PR2a's calibrated 5-bucket β with a
+> new hand-coded 96-entry *expert prior* (commit ea5204c). So the redesign currently
+> runs on a *less-validated* β than existed pre-T1. Everything rests on β; validating
+> it (and learning whether the factor model even beats 60/40) is the foundational
+> move. → **#31 is rank 1.** Caveat: PR2b showed the old calibrated β beat 60/40 only
+> *insignificantly* (p=0.717); #31's value is the *validation/gate*, not assumed gain.
+>
+> **The LLM overlay must NOT be rushed.** It cannot be backtested (#27, by design),
+> LLMs over-extrapolate (Man Group), and a noisy hit-rule (#29) would learn market
+> beta not skill. Wiring #24/#26/#30 to "complete" T3 now would put an *unvalidated,
+> possibly-harmful* component on real money. Correct path: observability-first.
+>
+> | Rank | Issue | Action | Why |
+> |---|---|---|---|
+> | 1 | #31 (+#20/#21) | Calibrate 8-bucket β on real data **and test vs 60/40 significance** | Everything rests on β; it's currently an unvalidated guess |
+> | 2 | #25 | Journal in *shadow mode* (T3 OFF, record predictions only) | Only way to learn if the LLM has alpha — *with data*, before risking capital |
+> | 3 | (ops) | Run T3 shadow N months → evaluate hit-rate | Validate before enabling |
+> | 4 | #24 + #29 | Wire learning loop *correctly* (tilt-attributed PnL), after track record | Adaptive layer — but only once #29's signal is sound |
+> | 5 | #30 | Live LLM client adapter — *after* deciding to enable | Gating prerequisite; don't rush |
+> | low | #28, #26, #32 | Config-flag hygiene / 2nd-order auto-tune / projection sanity | Cosmetic or 2nd-order |
+>
+> **Re-grading vs the per-issue fields below:** #24 High→"gated on shadow track record";
+> #26 Medium→Low; #27 High→by-design (backtest=0 is correct) + Medium (live salience quality);
+> #30 High→"gated, not urgent"; #31 High→**Highest (foundational)**; #25 stays High.
+> #28/#32 unchanged (low/medium).
+
+### #31/#18 EMPIRICAL RESULT (2026-06-01) — calibration pursued to conclusion
+
+**Data IS available** (correcting an earlier false blocker): with `.env` loaded,
+FRED + ECOS + yfinance + pykrx (KRX login) all work live. The "#20/#21 data
+blocked" notes were an artifact of subagents not loading `.env`. Real 8-bucket
+return panel (`bucket_returns_8b.parquet`) and `samples_8b.parquet` were generated.
+
+**But the calibration CANNOT be validated as beating 60/40.** Hard numbers
+(`samples_8b`, 2006–2024; see `scripts/generate_samples_8b.py`):
+
+| Finding | Number | Implication |
+|---|---|---|
+| All-8-buckets window | **75 quarters** (2006-Q2..2024-Q4) | bounded by precious_metals/cyclical ETF inception (2006) — not fetch capability |
+| Intended walk-forward `initial_train_size=80` | **0 folds** | the designed validation protocol is *literally infeasible* at n=75 |
+| Informative factors | **9 of 12** | F6 krw_regime (std=0), F11 earnings_revision (all-NaN), F12 china_credit_impulse (std=0) carry **zero** historical info → can only sit at prior |
+| Free β cells vs samples | 73 vs ~74 | ratio ≈ 1.0 ≪ 1.5 acceptance gate |
+| Feasible WF (train≥48,test=4) IS→OOS Sharpe | 1.35 → 0.96 | **gap 0.42 = overfit signature** |
+| OOS holdout (19q) strat vs 60/40 Sharpe | 1.77 vs 0.62 | point estimate favors model… |
+| …paired significance | **p = 0.49** | **NOT significant** — same verdict as PR2b (p=0.717) |
+
+**Verdict:** On available data the 8-bucket × 12-factor β is — and must remain —
+a **prior-dominated** construction. Calibration can *lightly refine* β within the
+shrinkage band, but it **cannot establish** a statistically significant edge over
+60/40. The honest acceptance posture: the model's justification is *economic
+reasoning* (expert prior + sign restrictions + hierarchical shrinkage), NOT an
+empirical OOS edge. This is not a bug to fix — it is a structural limit of 3
+risk-bucket ETFs only existing since 2006. **Two caveats on the z used:** (a) the
+historical Stage 1 panel was only partially re-wired for T0 (has shiller_cape but
+NOT ACM/INDPRO/Real-PCE/GZ-EBP/GPR/BIS), so F1–F10 are *graceful-degradation
+proxy-z*, not the true reformed series; (b) F11/F12 are dead historically. So even
+the 9 "informative" factors are proxy-grade. A fidelity-grade re-run requires
+extending `assemble_quarterly_panel` for the 6 missing series — but **that cannot
+change the n=75 feasibility ceiling.**
+
+**Action implication:** keep #31 rank-1 *as a gate*, not as an assumed gain. Ship
+on the hand-coded prior (sound, mandate-compliant). Do NOT over-tune β to the
+75-quarter sample (overfit). The competition edge must come from elsewhere
+(philosophy score, risk discipline, the LLM overlay *if* shadow-validated), not
+from a statistically-unsupportable factor-timing claim.
+
+**`validate_factor_model_8b.py` gate output (run 2026-06-01, default λ):**
+```
+n_samples=75  n_free_beta_params=73  sample_per_param=1.03  (gate ≥1.5)  -> overfit_pass=FALSE
+vif_max=1.0 (pass)   median_oos_sharpe=NaN (walk-forward train=80 > 75 -> 0 folds)  -> sharpe_pass=FALSE
+overall_pass=FALSE
+```
+And the *calibrated* β (artifacts/2026-06-01/tier2_calibration/calibrated_beta.json)
+barely departs the prior: **mean |β_cal − β_prior| = 0.017**, median 0.010, only
+27/96 cells move >0.02. The shrinkage absorbs the thin sample — i.e. the data
+cannot move β meaningfully off the expert prior. The acceptance gate **correctly
+rejects** the free calibration. Conclusion stands: ship the prior; treat any
+calibrated β as, at most, a lightly-shrunk variant — never as a validated edge.
+(Minor housekeeping follow-up: `validate_factor_model_8b.py` + the script grid
+still hard-code `initial_train_size=80`; scale to the realized window so OOS isn't
+vacuously NaN. Does not change the verdict — `overfit_pass` fails regardless.)
+
+## Issue #24 — T3 credibility learning loop is DEAD (never wired)
+
+### Problem
+`tradingagents/skills/overlay/credibility.py:update_credibility()` (the EWMA
+hit/miss update) has **0 production callers** (grep: only tests). The
+research_manager Tier 3 hook calls `load_credibility()` (read-only) but never
+writes back. → `bucket_cred` stays cold-start 0.3 for every bucket forever, so
+`w = novelty × consensus × credibility` permanently degrades to
+`novelty × consensus × 0.3`. The advertised "learns from realized hit/miss" is
+dead scaffolding.
+
+### Proposed approach
+Add a T+1 (next-rebalance) reconciliation step: read the prior rebalance's
+per-bucket `predicted_delta` (from the journal, #25) + the realized bucket
+return, then call `update_credibility` per bucket. Live-ops cron or backtest loop.
+
+### Effort
+~1 day (reconciliation + journal read + tests)
+
+### Priority
+High — required if Tier 3 is to be the *adaptive* system the design intends.
+(The static overlay works without it.)
+
+## Issue #25 — T3 LLMOverlayJournal never written
+
+### Problem
+`schemas/llm_overlay.py:LLMOverlayJournal` exists but is **never
+instantiated/persisted** (grep: only the class def). The hook stashes 2 scalars
+in `safety_diag` but writes no journal → no data source for the credibility loop
+(#24) or forward-tuning (#26), and no audit trail of LLM decisions vs outcomes.
+
+### Proposed approach
+In the research_manager Tier 3 branch, build + append an `LLMOverlayJournal` row
+(quant_target, views, novelty, consensus, cred snapshot, final_target, audit) to
+`data/llm_overlay/journal_<date>.jsonl`; fill `realized_returns` in the #24 step.
+
+### Effort
+~0.5 day
+
+### Priority
+High — prerequisite for #24 and #26.
+
+## Issue #26 — T3 auto_tune_band never called (forward-tuning dead)
+
+### Problem
+`skills/overlay/forward_tuning.py:auto_tune_band` has **0 production callers**;
+the hook hard-uses BAND=0.05 (and doesn't even pass `tier3_band` from config).
+Even if called, its gate (`history_count ≥ 48`) depends on `update_credibility`
+(dead, #24), so it would always return unchanged. BAND is permanently 0.05.
+
+### Proposed approach
+After #24 wires `history_count`, call `auto_tune_band` per rebalance and feed
+the result into `apply_llm_overlay(..., band=...)` (the band kwarg already exists).
+
+### Effort
+~0.5 day (after #24)
+
+### Priority
+Medium.
+
+## Issue #27 — T3 novelty is structurally ~0 in backtest (primary input flat)
+
+### Problem
+`novelty` gates the entire overlay (`w = novelty × …`). In backtest,
+`tradingagents/backtest/historical/stage1_builder.py:_build_baseline_news_report()`
+hard-codes `high_importance_today=2` and `avg_sentiment.macro=0.0` for every
+date → salience is a flat constant → z-score 0 → novelty 0 on every date →
+overlay is a guaranteed no-op in backtest. (Live path has real but sparse
+novelty.) Consequence: **Tier 3 cannot be backtest-validated** as built. (The
+spec acknowledged LLM/news is not historically replayable; this records the
+concrete blocker.)
+
+### Proposed approach
+Either (a) wire time-varying per-date news salience into the backtest builder
+from a historical news/event source, or (b) accept Tier 3 as live-only and
+document its exclusion from backtest acceptance gates. Decide before enabling.
+
+### Effort
+(a) ~2-3 days (historical news salience source); (b) ~0 (documentation).
+
+### Priority
+High — determines whether Tier 3 is testable pre-deployment.
+
+## Issue #28 — T3 config sub-flags inert (quick hygiene)
+
+### Problem
+`tier3_band`, `tier3_ewma_alpha`, `tier3_cred_cold_start` in default_config are
+**read in 0 places** — the code uses module-level constants `BAND`,
+`EWMA_ALPHA`, `COLD_START_PRIOR`. The knobs are dead (false configurability).
+
+### Proposed approach
+Either read these flags where the constants are used (via the hook), or delete
+them.
+
+### Effort
+~1h
+
+### Priority
+Low.
+
+## Issue #29 — T3 credibility hit-rule is a noisy label
+
+### Problem
+`update_credibility` defines hit as `sign(predicted_delta) == sign(realized
+bucket return)`. A bucket's return is dominated by market beta, not the LLM's
+±5pp marginal tilt → the EWMA would learn market direction, not LLM skill. (Moot
+until #24 wires the loop, but should be fixed before relying on it.)
+
+### Proposed approach
+Redesign the hit label to tilt-attributed PnL: compare the LLM tilt direction to
+(realized bucket return − a peer/quant-expected baseline), isolating the marginal
+contribution rather than raw bucket sign.
+
+### Effort
+~0.5 day (after #24)
+
+### Priority
+Medium — correctness of the learning signal.
+
+## Issue #30 — T3 live LLM client not wired
+
+### Problem
+`agents/overlay/llm_bucket_overlay.py:_get_llm_client()` raises
+`NotImplementedError` — the production async `complete(system, user,
+response_schema, temperature) → LLMBucketView` adapter over
+`tradingagents.llm_clients` is not built (intentional seam; Tier 3 OFF by
+default).
+
+### Proposed approach
+Adapt `OpenAIClient.get_llm()` + langchain `with_structured_output(LLMBucketView)`
+into an async `complete` adapter; return it from `_get_llm_client`. Hard
+prerequisite for `tier3_llm_overlay_enabled=True`.
+
+### Effort
+~0.5 day
+
+### Priority
+High — prerequisite for enabling Tier 3 live.
+
+## Issue #31 — T2 actual calibration RUN pending 8-bucket samples (new-schema #18)
+
+### Problem
+The T2 calibration framework (hierarchical + staggered F11 + TIPS + VIF/df +
+honest sample/param gate) is built + synthetic-tested, but **no real β has been
+calibrated for the new 8-bucket × 12-factor schema**. `samples_8b.parquet`
+(12-factor z + 8-bucket next-quarter returns, 1991–2024) does not exist —
+generating it needs the `bucket_returns_8b` live run (pykrx KRX login + ECOS +
+FRED/Shiller/GPR/BIS full history), env-blocked on Windows (cf. #21, #20). Until
+then production uses the hand-coded 96-entry INITIAL_BETA prior
+(`factor_to_bucket.load_calibrated_beta()` returns None → fallback). This is the
+8-bucket successor to #18 (which calibrated the old 5-bucket 45-entry β).
+
+### Proposed approach
+On Linux + KRX/ECOS creds: run `bucket_returns_8b.save_bucket_returns_8b`, build
+`samples_8b.parquet`, run `scripts/calibrate_factor_model_8b.py --grid`, then
+`scripts/validate_factor_model_8b.py`. If VIF ≤ 5 / sample-per-param ≥ 1.5 / OOS
+Sharpe > 1.171 pass, hand-replace INITIAL_BETA with calibrated values (PR2a
+precedent, commit 2d81a7b) and re-run T0–T2 regression.
+
+### Effort
+~1-2 days (data fetch + verify + calibrate + validate)
+
+### Dependencies
+Blocked by #20 (Windows SSL), #21 (pykrx KOSPI200 API) for the data fetch.
+
+### Priority
+High — current production β is the uncalibrated expert prior.
+
+## Issue #32 — T2 train/serve projection skew sanity-check
+
+### Problem
+T2 calibration simulates returns under `_project_simple` (proportional risk
+scaling) but production deploys under `project_to_mandate_qp` (L2-optimal). For
+an over-cap target the two differ ~0.037 L2 — β is optimized for a slightly
+different projection geometry than it is deployed under (documented PR2a
+tradeoff, but understated in the `_project_simple` docstring).
+
+### Proposed approach
+After the #31 calibration run, pass the final calibrated β once through the real
+`project_to_mandate_qp` path on the OOS folds and confirm OOS Sharpe does not
+materially degrade vs the `_project_simple` estimate. If it does, switch the
+final-fit objective to QP (slow, run once).
+
+### Effort
+~2-3h (after #31)
+
+### Priority
+Medium.

@@ -72,6 +72,16 @@ FRED_SERIES = {
     # AAA 도 sentinel 대비 BAA10Y 가 더 나은 proxy.
     # backtest/data.py:24 와 같은 패턴.
     "us_credit_proxy": "BAA10Y",       # Moody's BAA - 10Y, daily 1986-
+    # === Tier 0 additions (2026-05-28) ===
+    # F1 reform — INDPRO + Real PCE replace nfci/curve removal
+    "us_indpro": "INDPRO",                # Industrial Production Index (1919+)
+    "us_real_pce": "PCECC96",             # Real PCE Chained 2017 Dollars (1947+, quarterly)
+    # F4 reform — ACM term premium decomposition
+    "us_acm_term_premium_10y": "THREEFYTP10",  # NY Fed 10y ACM (1990+, daily)
+    # F6 reform — BIS REER (Engel-West random walk fix companion)
+    "kr_reer": "RBKRBIS",                 # BIS Real Effective Exchange Rate KR (1994+, monthly)
+    # F10 SOFR-TED stitching (pre-2018 proxy)
+    "ted_spread": "TEDRATE",              # TED Spread (1986-2022, discontinued)
 }
 
 
@@ -168,3 +178,42 @@ def fetch_fred_series(
             return pd.Series(dtype=float, name=series_id)
 
     return series
+
+
+def fetch_funding_stress_stitched(
+    start: date, end: date, as_of_date: date | None = None,
+) -> pd.Series:
+    """SOFR-Tbill (2018+) + TED (1986-2018-04-03) stitched series, in bps.
+
+    F10 systemic_liquidity's sofr_tbill_spread component.
+    Stitch boundary: 2018-04-03 (SOFR introduction, hard switch).
+    Overlap (2018-04 ~ 2022-01) uses SOFR-Tbill (TED discontinued 2022).
+
+    Note: regime-aware z-baseline handled separately in
+    factor_baselines_dynamic.compute_expanding_baseline_funding_stress.
+    """
+    boundary = date(2018, 4, 3)
+    pieces: list[pd.Series] = []
+
+    if start < boundary:
+        ted_end = min(end, date(2018, 4, 2))
+        ted = fetch_fred_series("ted_spread", start, ted_end, as_of_date=as_of_date)
+        # Defensive: drop anything at/after boundary
+        if not ted.empty:
+            ted = ted[ted.index < pd.Timestamp(boundary)]
+        pieces.append(ted)
+
+    if end >= boundary:
+        sofr_start = max(start, boundary)
+        sofr = fetch_fred_series("us_sofr", sofr_start, end, as_of_date=as_of_date)
+        tbill = fetch_fred_series("us_3m_tbill", sofr_start, end, as_of_date=as_of_date)
+        # Align indexes (both daily). Convert percent → bps.
+        common = sofr.index.intersection(tbill.index)
+        sofr_tbill = (sofr.loc[common] - tbill.loc[common]) * 100
+        pieces.append(sofr_tbill)
+
+    if not pieces:
+        return pd.Series(dtype=float, name="funding_stress_bps")
+    result = pd.concat(pieces).sort_index()
+    result.name = "funding_stress_bps"
+    return result

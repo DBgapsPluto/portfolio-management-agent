@@ -13,7 +13,7 @@ from tradingagents.skills.research.factor_baselines import (
 _EXPECTED_FACTORS = {
     "F1_growth", "F2_inflation", "F3_real_rate", "F4_term_premium",
     "F5_credit_cycle", "F6_krw_regime", "F7_equity_vol", "F8_valuation",
-    "F9_liquidity",
+    "F9_market_dispersion",
 }
 
 
@@ -49,12 +49,13 @@ def test_z_score_sd_zero_returns_none() -> None:
         fb.LONG_RUN_BASELINE.update(orig)
 
 
-def test_geopolitical_surge_baseline_within_normal_range() -> None:
-    """2026-05-26 F7 saturate fix (#1): geopolitical_surge baseline (5, 10).
+def test_gpr_index_zscore_baseline_present() -> None:
+    """Tier 0 (2026-05-28): geopolitical_surge → gpr_index_zscore (already z-scored externally).
 
-    실측 raw=25 (24h count vs 7d avg delta) → z=2.0. 기존 (0, 1) baseline 은
-    z=25 outlier 로 F7 단독 saturate 시켰음. 재발 방지.
+    Baseline (0, 1): gpr_zscore_60m=2.0 → z=2.0 (passes through cleanly).
     """
-    z = z_score(25.0, "F7_equity_vol", "geopolitical_surge")
+    z = z_score(2.0, "F7_equity_vol", "gpr_index_zscore")
     assert z is not None
-    assert 1.5 <= z <= 2.5, f"expected ~2.0, got {z}"
+    assert z == pytest.approx(2.0), f"expected 2.0, got {z}"
+    # geopolitical_surge baseline removed (Tier 0)
+    assert z_score(25.0, "F7_equity_vol", "geopolitical_surge") is None

@@ -20,7 +20,7 @@ from tradingagents.skills.research.factor_estimators import (
     compute_growth_surprise,
     compute_inflation_surprise,
     compute_krw_regime,
-    compute_liquidity_regime,
+    compute_market_dispersion,
     compute_real_rate,
     compute_term_premium,
     compute_valuation,
@@ -245,6 +245,9 @@ def _full_stage1_baseline():
         foreign_flow=macro_ff,
         fx=macro_fx,
         tail_risk=macro_tail,
+        # Tier 0 F1 reform: baseline mean values → z=0
+        us_indpro_yoy_pct=2.0,
+        us_real_pce_yoy_pct=2.5,
     )
 
     # risk_report — corrected paths matching RiskReport schema
@@ -309,7 +312,9 @@ def _full_stage1_baseline():
 def test_compute_growth_surprise_baseline_z_zero(_pe, _krw):
     s = compute_growth_surprise(_full_stage1_baseline())
     assert isinstance(s, FactorScore)
-    assert s.z_score == pytest.approx(0.0, abs=0.05)
+    # Tier 0 reform: sahm "not triggered" encodes 0.5 (vs baseline mean=0.0),
+    # which contributes a small positive offset (~0.06). Tolerance widened to 0.1.
+    assert s.z_score == pytest.approx(0.0, abs=0.1)
     assert s.confidence > 0.5
 
 
@@ -369,7 +374,7 @@ def test_compute_valuation_baseline_z_zero(_pe, _krw):
 @patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
 @patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
 def test_compute_liquidity_baseline_z_zero(_pe, _krw):
-    s = compute_liquidity_regime(_full_stage1_baseline())
+    s = compute_market_dispersion(_full_stage1_baseline())
     # VRP = (20/100)^2 - 0.012^2 = 0.04 - 0.000144 ≈ 0.0399
     # * 10000 = 399. Baseline (50, 30) → z = (399-50)/30 = 11.6 → cap at 3.
     # 다른 components 가 0 이므로 weighted avg 가 3 보다 작을 것.
@@ -381,8 +386,8 @@ def test_compute_liquidity_baseline_z_zero(_pe, _krw):
 @patch.object(fe, "fetch_krw_usd_level", return_value=1250.0)
 @patch.object(fe, "fetch_sp_trailing_pe", return_value=18.0)
 def test_compute_all_factors_returns_9(_pe, _krw):
-    """2026-05-27 — F10 신규 추가. F10 component 가 fixture 에 모두 None 이면
-    None 으로 graceful skip → to_dict() 에 F10 키 없음. 기존 9 factor 만 검증.
+    """Tier 0 (2026-05-28): F9 renamed market_dispersion; F10+ optional.
+    Base 9 keys always present in to_dict(); F11/F12 absent (staggered).
     """
     s = compute_all_factors(_full_stage1_baseline())
     assert isinstance(s, FactorScores)
@@ -390,10 +395,13 @@ def test_compute_all_factors_returns_9(_pe, _krw):
     base_keys = {
         "F1_growth", "F2_inflation", "F3_real_rate", "F4_term_premium",
         "F5_credit_cycle", "F6_krw_regime", "F7_equity_vol_regime",
-        "F8_valuation", "F9_liquidity_regime",
+        "F8_valuation", "F9_market_dispersion",
     }
     # F10 은 fixture 에 systemic_liquidity components (nfci, funding_stress 등)
     # 가 있으면 포함, 없으면 graceful skip. base_keys 는 항상 존재.
     assert base_keys.issubset(set(d.keys()))
+    # F11/F12 staggered — not wired yet (Task 5.13)
+    assert "F11_earnings_revision" not in d
+    assert "F12_china_credit_impulse" not in d
     for v in d.values():
         assert -3.0 <= v <= 3.0

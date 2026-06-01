@@ -101,6 +101,49 @@ class AnchorEvalResult:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────
+
+_LEGACY_5_TO_8: dict[str, str] = {
+    # old key → placeholder bucket (legacy anchors use 5-bucket names)
+    "fx_commodity": "cyclical_commodity_fx",
+    "bond": "kr_bond",
+}
+_8_BUCKET_KEYS = frozenset({
+    "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+    "kr_bond", "credit", "global_duration", "cash_mmf",
+})
+
+
+def _extract_bucket_weights(bt_data: dict) -> dict[str, float]:
+    """Extract bucket weights from anchor JSON, normalising legacy 5-bucket format.
+
+    If the anchor uses the legacy 5-bucket schema (kr_equity, global_equity,
+    fx_commodity, bond, cash_mmf), the old keys are mapped to their nearest
+    8-bucket equivalents so BucketTarget validation passes.  The mapping is:
+        fx_commodity → cyclical_commodity_fx (precious_metals gets 0)
+        bond         → kr_bond              (credit, global_duration get 0)
+
+    New 8-bucket anchors pass through as-is.
+    """
+    if all(k in bt_data for k in ("kr_equity", "global_equity", "cash_mmf")):
+        if "cyclical_commodity_fx" not in bt_data:
+            # Legacy 5-bucket anchor — expand to 8 buckets
+            return {
+                "kr_equity":             float(bt_data.get("kr_equity", 0.0)),
+                "global_equity":         float(bt_data.get("global_equity", 0.0)),
+                "precious_metals":       0.0,
+                "cyclical_commodity_fx": float(bt_data.get("fx_commodity", 0.0)),
+                "kr_bond":               float(bt_data.get("bond", 0.0)),
+                "credit":                0.0,
+                "global_duration":       0.0,
+                "cash_mmf":              float(bt_data.get("cash_mmf", 0.0)),
+            }
+    # New 8-bucket format — keep only known bucket keys
+    return {k: float(v) for k, v in bt_data.items() if k in _8_BUCKET_KEYS}
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Synthetic state builders
 # ─────────────────────────────────────────────────────────────────────
 
@@ -131,14 +174,12 @@ def _build_state(
     tickers = [e.ticker for e in universe.etfs]
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
 
-    # bucket_target
+    # bucket_target — build weights dict from anchor JSON.
+    # Supports both legacy 5-bucket anchors and new 8-bucket anchors.
     bt_data = anchor["stage2"]["bucket_target"]
+    bt_weights = _extract_bucket_weights(bt_data)
     bucket_target = BucketTarget(
-        kr_equity=bt_data["kr_equity"],
-        global_equity=bt_data["global_equity"],
-        fx_commodity=bt_data["fx_commodity"],
-        bond=bt_data["bond"],
-        cash_mmf=bt_data["cash_mmf"],
+        weights=bt_weights,
         bond_tips_share=bt_data.get("bond_tips_share", 0.0),
         rationale=f"anchor: {anchor['anchor_id']}",
     )
@@ -183,7 +224,7 @@ def _build_state(
 # Check helpers
 # ─────────────────────────────────────────────────────────────────────
 
-_RISK_BUCKETS = {"kr_equity", "global_equity", "fx_commodity"}
+_RISK_BUCKETS = {"kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx"}
 
 
 def _sub_category_totals(
@@ -198,16 +239,9 @@ def _sub_category_totals(
 
 
 def _bucket_of_ticker(universe: Universe) -> dict[str, str]:
-    cat_to_bucket = {
-        "국내주식_지수": "kr_equity", "국내주식_섹터": "kr_equity",
-        "해외주식_지수": "global_equity", "해외주식_섹터": "global_equity",
-        "FX 및 원자재": "fx_commodity",
-        "국내채권_종합": "bond", "국내채권_회사채": "bond",
-        "해외채권_종합": "bond", "해외채권_회사채": "bond",
-        "금리연계형/초단기채권": "cash_mmf",
-    }
+    from tradingagents.skills.portfolio.sub_category import bucket_for_etf
     return {
-        e.ticker: cat_to_bucket.get(e.category, "_unknown")
+        e.ticker: (bucket_for_etf(e) or "_unknown")
         for e in universe.etfs
     }
 
@@ -430,13 +464,10 @@ def evaluate_anchor(
     as_of = date.fromisoformat(anchor["as_of_date"])
 
     # eligible tickers + returns matrix (1 year for factor panel)
+    bt_data2 = anchor["stage2"]["bucket_target"]
     bt = BucketTarget(
-        kr_equity=anchor["stage2"]["bucket_target"]["kr_equity"],
-        global_equity=anchor["stage2"]["bucket_target"]["global_equity"],
-        fx_commodity=anchor["stage2"]["bucket_target"]["fx_commodity"],
-        bond=anchor["stage2"]["bucket_target"]["bond"],
-        cash_mmf=anchor["stage2"]["bucket_target"]["cash_mmf"],
-        bond_tips_share=anchor["stage2"]["bucket_target"].get("bond_tips_share", 0.0),
+        weights=_extract_bucket_weights(bt_data2),
+        bond_tips_share=bt_data2.get("bond_tips_share", 0.0),
         rationale="anchor evaluation",
     )
     eligible_by_bucket = list_eligible_tickers(

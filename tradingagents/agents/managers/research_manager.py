@@ -12,10 +12,12 @@ Stage 2 추가 LLM 호출 0. macro_news_analyst 의 NewsReport structured field 
 """
 import logging
 from dataclasses import replace
+from datetime import datetime, date
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.schemas.research import ResearchDecision
 from tradingagents.skills.research.factor_estimators import (
@@ -33,6 +35,10 @@ from tradingagents.skills.research.factor_to_bucket import (
 # Temporal smoothing (factor space). EMA infrastructure 유지 — default no-op.
 # λ=1.0 → 100% new (prior 무시). λ<1.0 → λ·new + (1-λ)·prior. 시간 안정성 vs 반응성.
 _EMA_LAMBDA: float = 1.0
+
+# Tier 3 LLM overlay feature flags (sourced from DEFAULT_CONFIG; default OFF).
+_TIER3_OVERLAY_ENABLED: bool = DEFAULT_CONFIG.get("tier3_llm_overlay_enabled", False)
+_TIER3_K_SAMPLES: int = DEFAULT_CONFIG.get("tier3_llm_k_samples", 5)
 
 
 # Stage 2 audit (2026-05-26, Task 1): scenario / conviction mapping thresholds.
@@ -80,12 +86,16 @@ def _confidence_risk_multiplier(confidence: float | None) -> float:
 
 def _apply_confidence_to_bucket(
     bucket: dict[str, float], confidence: float | None,
-    risk_buckets: tuple[str, ...] = ("kr_equity", "global_equity", "fx_commodity"),
+    risk_buckets: tuple[str, ...] = (
+        "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+    ),
     mandate_risk_cap: float = 0.70,
 ) -> tuple[dict[str, float], float]:
     """bucket 의 위험자산에 confidence multiplier 적용. mandate cap enforce.
 
     Returns (new_bucket, applied_multiplier).
+    8-bucket schema: risk = 4 buckets, safe = remaining (kr_bond, credit,
+    global_duration, cash_mmf). diff redistributed proportionally over safe buckets.
     """
     mult = _confidence_risk_multiplier(confidence)
     if abs(mult - 1.0) < 1e-9:
@@ -99,12 +109,13 @@ def _apply_confidence_to_bucket(
     new_bucket = dict(bucket)
     for b in risk_buckets:
         new_bucket[b] = new_bucket.get(b, 0.0) * risk_factor
-    # diff 만큼 안전자산 (bond + cash_mmf) 에 비례 redistribute.
-    safe_total = new_bucket.get("bond", 0.0) + new_bucket.get("cash_mmf", 0.0)
+    # diff 만큼 안전자산 (risk_buckets 가 아닌 모든 bucket) 에 비례 redistribute.
+    safe_keys = [b for b in new_bucket if b not in risk_buckets]
+    safe_total = sum(new_bucket.get(b, 0.0) for b in safe_keys)
     if safe_total > 0:
-        bond_share = new_bucket.get("bond", 0.0) / safe_total
-        new_bucket["bond"] = new_bucket.get("bond", 0.0) - diff * bond_share
-        new_bucket["cash_mmf"] = new_bucket.get("cash_mmf", 0.0) - diff * (1 - bond_share)
+        for b in safe_keys:
+            share = new_bucket.get(b, 0.0) / safe_total
+            new_bucket[b] = new_bucket.get(b, 0.0) - diff * share
     return new_bucket, mult
 CONVICTION_HIGH_ALIGN: float = 0.6       # 3 중 2 동의 (3-factor sign vote)
 CONVICTION_MED_ALIGN: float = 0.3        # 3 중 1 동의
@@ -158,7 +169,7 @@ def _blend_factors_with_prior(
         krw_regime=_blend(new.krw_regime, "F6_krw_regime"),
         equity_vol_regime=_blend(new.equity_vol_regime, "F7_equity_vol_regime"),
         valuation=_blend(new.valuation, "F8_valuation"),
-        liquidity_regime=_blend(new.liquidity_regime, "F9_liquidity_regime"),
+        market_dispersion=_blend(new.market_dispersion, "F9_market_dispersion"),
     )
 
 
@@ -303,7 +314,25 @@ def create_research_manager(deep_llm):
         logger.info("research_manager start: computing 9-factor z-vector")
 
         # 1. Compute 9 factors (deterministic)
-        factor_scores = compute_all_factors(state)
+        # Tier 0: thread as_of_date + use_dynamic_baseline from state/config.
+        _config = state.get("config") if isinstance(state, dict) else getattr(state, "config", None)
+        use_dynamic = (
+            _config.get("use_dynamic_baseline", False)
+            if isinstance(_config, dict) else False
+        )
+        _as_of_str = state.get("as_of_date") if isinstance(state, dict) else getattr(state, "as_of_date", None)
+        as_of_date_val: date | None = None
+        if _as_of_str:
+            try:
+                as_of_date_val = datetime.strptime(str(_as_of_str), "%Y-%m-%d").date()
+            except Exception:
+                as_of_date_val = None
+
+        factor_scores = compute_all_factors(
+            state, mode="production",
+            as_of_date=as_of_date_val,
+            use_dynamic_baseline=use_dynamic,
+        )
         z_dict_pre = factor_scores.to_dict()
         n_active = sum(
             1 for f in [
@@ -311,7 +340,7 @@ def create_research_manager(deep_llm):
                 factor_scores.real_rate, factor_scores.term_premium,
                 factor_scores.credit_cycle, factor_scores.krw_regime,
                 factor_scores.equity_vol_regime, factor_scores.valuation,
-                factor_scores.liquidity_regime,
+                factor_scores.market_dispersion,
             ] if f.confidence > 0.0
         )
         logger.info(
@@ -354,6 +383,50 @@ def create_research_manager(deep_llm):
         safety_diag["regime_confidence"] = regime_confidence
         safety_diag["confidence_risk_multiplier"] = confidence_mult
 
+        # 3.5 Tier 3 — LLM bucket overlay (feature-flagged OFF by default).
+        # Salience history is appended every run (cheap); the overlay itself only
+        # runs when tier3_llm_overlay_enabled. On any failure → fall back to quant.
+        from tradingagents.skills.overlay.novelty import append_daily_salience
+        news_report = state.get("news_report")
+        as_of_str = state.get("as_of_date")
+        try:
+            _as_of = datetime.strptime(as_of_str, "%Y-%m-%d").date() if as_of_str else date.today()
+        except Exception:
+            _as_of = date.today()
+        if news_report is not None:
+            try:
+                append_daily_salience(news_report, _as_of)
+            except Exception as e:
+                logger.warning("Tier 3 salience persistence failed: %s", e)
+
+        if _TIER3_OVERLAY_ENABLED:
+            try:
+                import asyncio
+                from tradingagents.skills.overlay.novelty import compute_novelty
+                from tradingagents.skills.overlay.consensus import compute_consensus
+                from tradingagents.skills.overlay.credibility import load_credibility
+                from tradingagents.skills.overlay.apply import apply_llm_overlay
+                from tradingagents.agents.overlay.llm_bucket_overlay import generate_llm_views
+
+                _views = asyncio.run(generate_llm_views(
+                    state=state, factor_z=factor_scores.to_dict(),
+                    quant_target=bucket, safety_diag=safety_diag,
+                    k=_TIER3_K_SAMPLES,
+                ))
+                _novelty = compute_novelty(news_report, _as_of)
+                _consensus = compute_consensus(_views)
+                _cred = load_credibility()
+                bucket, _overlay_audit = apply_llm_overlay(
+                    quant_target=bucket, views=_views,
+                    novelty=_novelty, consensus=_consensus, credibility=_cred,
+                )
+                safety_diag["tier3_overlay_applied"] = True
+                safety_diag["tier3_novelty"] = _novelty
+                logger.info("Tier 3 overlay applied (novelty=%.2f)", _novelty)
+            except Exception as e:
+                logger.warning("Tier 3 overlay failed, keeping quant bucket: %s", e)
+                safety_diag["tier3_overlay_applied"] = False
+
         # 2026-05-26 #3 fix — component-level outlier signal extraction.
         # factor aggregate z 는 (예: F6=+0.137) 가 묻히지만 그 안의 단일 component
         # (예: foreign_flow_z 가 외국인 -43.8조 → z=-3+) 는 distribution-top 신호.
@@ -363,7 +436,7 @@ def create_research_manager(deep_llm):
         for factor_name in (
             "growth_surprise", "inflation_surprise", "real_rate",
             "term_premium", "credit_cycle", "krw_regime",
-            "equity_vol_regime", "valuation", "liquidity_regime",
+            "equity_vol_regime", "valuation", "market_dispersion",
         ):
             fs = getattr(factor_scores, factor_name, None)
             if fs is None:
@@ -434,11 +507,7 @@ def create_research_manager(deep_llm):
         )[:500]
 
         target = BucketTarget(
-            kr_equity=bucket["kr_equity"],
-            global_equity=bucket["global_equity"],
-            fx_commodity=bucket["fx_commodity"],
-            bond=bucket["bond"],
-            cash_mmf=bucket["cash_mmf"],
+            weights=dict(bucket),
             bond_tips_share=tips_share,
             rationale=rationale,
         )
@@ -484,12 +553,11 @@ def create_research_manager(deep_llm):
             f"Factor z-scores:\n"
             + "\n".join(f"  {f}: {z:+.2f}" for f, z in z_dict.items())
             + f"\n\n## Bucket Target\n"
-            f"국내주식: {target.kr_equity*100:.1f}%, "
-            f"해외주식: {target.global_equity*100:.1f}%, "
-            f"FX/원자재: {target.fx_commodity*100:.1f}%, "
-            f"채권: {target.bond*100:.1f}% (TIPS {tips_share*100:.0f}%), "
-            f"MMF: {target.cash_mmf*100:.1f}%\n"
-            f"위험자산 합: {(target.kr_equity + target.global_equity + target.fx_commodity)*100:.1f}%"
+            + "\n".join(
+                f"  {b}: {w*100:.1f}%"
+                for b, w in target.items()
+            )
+            + f"\n위험자산 합: {target.risk_asset_weight*100:.1f}%"
         )
 
         return {

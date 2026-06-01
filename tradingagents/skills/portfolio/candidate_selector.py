@@ -19,13 +19,16 @@ from tradingagents.skills.portfolio.factor_scorer import (
     select_diverse,
 )
 from tradingagents.skills.portfolio.sub_category import (
-    _scenario_to_axes, compose_boost, log_boost,
+    _scenario_to_axes, bucket_for_etf, compose_boost, log_boost,
 )
 from tradingagents.skills.registry import register_skill
 
 logger = logging.getLogger(__name__)
 
-# Map BucketTarget fields to universe categories
+# Map 8-bucket names to universe .category values.
+# Buckets that require sub_category disambiguation (precious_metals,
+# cyclical_commodity_fx, kr_bond, credit, global_duration) are filtered via
+# bucket_for_etf() rather than a simple category string match.
 BUCKET_TO_CATEGORIES = {
     "kr_equity": ["국내주식_지수", "국내주식_섹터"],
     "global_equity": ["해외주식_지수", "해외주식_섹터"],
@@ -49,6 +52,9 @@ DEFAULT_BOOST_SCALE: float = 1.0
 
 
 
+    Uses bucket_for_etf() which respects sub_category for ambiguous categories
+    (FX 및 원자재 → precious_metals vs cyclical_commodity_fx;
+     국내채권_종합/해외채권_종합 → kr_bond / credit / global_duration).
 
 def _eligible_for_bucket(universe: Universe, cats: list[str]):
     """Single eligibility filter (Stage 3 D2/D3 — used by both list_* and select_*)."""
@@ -70,13 +76,9 @@ def list_eligible_tickers(
     """
     universe = universe.tradable_at(as_of)
     out: dict[str, list[str]] = {}
-    for bucket_name, weight in [
-        ("kr_equity", bucket_target.kr_equity),
-        ("global_equity", bucket_target.global_equity),
-        ("fx_commodity", bucket_target.fx_commodity),
-        ("bond", bucket_target.bond),
-        ("cash_mmf", bucket_target.cash_mmf),
-    ]:
+    for bucket_name, weight in bucket_target.items():
+        if bucket_name == "bond_tips_share":
+            continue
         if weight <= 0:
             out[bucket_name] = []
             continue
@@ -209,13 +211,9 @@ def select_etf_candidates(
         })
         attribution["buckets"] = {}
 
-    for bucket_name, weight in [
-        ("kr_equity", bucket_target.kr_equity),
-        ("global_equity", bucket_target.global_equity),
-        ("fx_commodity", bucket_target.fx_commodity),
-        ("bond", bucket_target.bond),
-        ("cash_mmf", bucket_target.cash_mmf),
-    ]:
+    # Iterate over all 8 buckets from the BucketTarget dict.
+    # TIPS quota applies to global_duration (which holds inflation_linked ETFs).
+    for bucket_name, weight in bucket_target.items():
         bucket_attr: dict | None = None
         if attribution is not None:
             bucket_attr = {

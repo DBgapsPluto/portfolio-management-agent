@@ -76,6 +76,7 @@ markers = [
     "smoke: quick sanity-check tests",
     "slow: long-running E2E integration test",
     "eval: LLM quality eval, requires API access; skip in CI",
+    "network: tests that hit live external URLs; skip in CI",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

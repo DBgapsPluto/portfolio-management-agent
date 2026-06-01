@@ -101,9 +101,9 @@ def test_2026_05_15_like_mandate_safe():
     node = create_research_manager(deep_llm=None)
     result = node(_mock_state_2026_05_15_like())
     bt = result["bucket_target"]
-    risk = bt.kr_equity + bt.global_equity + bt.fx_commodity
+    risk = bt.risk_asset_weight
     assert risk <= 0.70 + 1e-6
-    assert abs(bt.kr_equity + bt.global_equity + bt.fx_commodity + bt.bond + bt.cash_mmf - 1.0) < 1e-6
+    assert abs(bt.total - 1.0) < 1e-6
 
 
 def test_2026_05_15_like_full_factor_attribution():

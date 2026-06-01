@@ -50,8 +50,15 @@ MULTIPLIER_CRITICAL: float = 0.65
 MULTIPLIER_HIGH: float = 0.80
 MULTIPLIER_MEDIUM: float = 0.92
 
-# Risk bucket 정의 (factor_to_bucket 의 RISK_BUCKETS 와 일치).
-RISK_BUCKETS_MC: frozenset[str] = frozenset({"kr_equity", "global_equity", "fx_commodity"})
+try:
+    from tradingagents.skills.research.factor_to_bucket import RISK_BUCKETS as _CANONICAL_RISK_BUCKETS
+    # Risk bucket 정의 (factor_to_bucket 의 RISK_BUCKETS 와 일치 — 8-bucket schema).
+    RISK_BUCKETS_MC: frozenset[str] = frozenset(_CANONICAL_RISK_BUCKETS)
+except ImportError:
+    # Circular-import fallback: hardcode the 8-bucket schema risk set.
+    RISK_BUCKETS_MC: frozenset[str] = frozenset({  # type: ignore[no-redef]
+        "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+    })
 
 
 def _portfolio_risk_weight(wv: WeightVector, candidate_set) -> float:

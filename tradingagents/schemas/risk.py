@@ -244,3 +244,15 @@ class RealVolSnapshot(StalenessAware):
         default=0.0,
         description="Variance risk premium: VIX² - realized_60d² (bps²-like)",
     )
+
+
+# ===========================================================================
+# 2026-05-28 Tier 0 — New risk factor component snapshots
+# ===========================================================================
+
+class ExcessBondPremiumSnapshot(StalenessAware):
+    """Gilchrist-Zakrajsek 2012 EBP — F5 component.
+    Source: federalreserve.gov/econres/notes/feds-notes/ebp_csv.csv.
+    """
+    ebp: float = Field(description="Monthly EBP (1973+)")
+    ebp_zscore_5y: float = Field(default=0.0, description="5-year rolling z-score")

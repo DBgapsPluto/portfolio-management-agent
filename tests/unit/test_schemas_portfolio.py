@@ -7,49 +7,59 @@ from tradingagents.schemas.portfolio import (
     OptimizationMethod,
 )
 
+_8_BUCKET_WEIGHTS = {
+    "kr_equity":             0.15,
+    "global_equity":         0.20,
+    "precious_metals":       0.08,
+    "cyclical_commodity_fx": 0.14,
+    "kr_bond":               0.15,
+    "credit":                0.05,
+    "global_duration":       0.13,
+    "cash_mmf":              0.10,
+}
+
 
 def test_bucket_target_sums_to_one():
-    bt = BucketTarget(
-        kr_equity=0.15,
-        global_equity=0.30,
-        fx_commodity=0.10,
-        bond=0.35,
-        cash_mmf=0.10,
-        rationale="Recession-disinflation regime, defensive tilt",
-    )
+    bt = BucketTarget(weights=_8_BUCKET_WEIGHTS, rationale="test")
     assert abs(bt.total - 1.0) < 1e-6
 
 
 def test_bucket_rejects_non_unit_sum():
+    bad = dict(_8_BUCKET_WEIGHTS)
+    bad["kr_equity"] = 0.50  # sum != 1.0
     with pytest.raises(ValidationError):
-        BucketTarget(
-            kr_equity=0.5,
-            global_equity=0.5,
-            fx_commodity=0.5,
-            bond=0.0,
-            cash_mmf=0.0,
-            rationale="bad",
-        )
+        BucketTarget(weights=bad, rationale="bad")
 
 
 def test_bucket_target_risk_asset_weight():
-    bt = BucketTarget(
-        kr_equity=0.20,
-        global_equity=0.25,
-        fx_commodity=0.05,
-        bond=0.35,
-        cash_mmf=0.15,
-        rationale="test",
-    )
-    expected_risk = 0.20 + 0.25 + 0.05
+    bt = BucketTarget(weights=_8_BUCKET_WEIGHTS, rationale="test")
+    expected_risk = 0.15 + 0.20 + 0.08 + 0.14  # = 0.57
     assert abs(bt.risk_asset_weight - expected_risk) < 1e-6
+
+
+def test_bucket_target_dict_access():
+    bt = BucketTarget(weights=_8_BUCKET_WEIGHTS, rationale="test")
+    assert bt["kr_equity"] == pytest.approx(0.15)
+    assert bt.get("cash_mmf") == pytest.approx(0.10)
+    assert set(bt.keys()) == set(_8_BUCKET_WEIGHTS.keys())
+    assert sum(bt.values()) == pytest.approx(1.0)
+
+
+def test_bucket_target_bond_tips_share_default():
+    bt = BucketTarget(weights=_8_BUCKET_WEIGHTS, rationale="test")
+    assert bt.bond_tips_share == 0.0
+
+
+def test_bucket_target_bond_tips_share_custom():
+    bt = BucketTarget(weights=_8_BUCKET_WEIGHTS, rationale="test", bond_tips_share=0.30)
+    assert bt.bond_tips_share == pytest.approx(0.30)
 
 
 def test_candidate_set_valid():
     cs = CandidateSet(
         bucket_to_tickers={
             "kr_equity": ["A069500", "A005930"],
-            "bond": ["A411060"],
+            "kr_bond": ["A411060"],
         },
         selection_criteria="Market cap > $500M, high liquidity",
         total_candidates=3,

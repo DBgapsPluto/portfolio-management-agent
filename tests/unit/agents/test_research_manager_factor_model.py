@@ -93,9 +93,9 @@ def test_bucket_target_mandate_safe():
     state = _full_state()
     result = node(state)
     bt = result["bucket_target"]
-    risk = bt.kr_equity + bt.global_equity + bt.fx_commodity
+    risk = bt.risk_asset_weight
     assert risk <= 0.70 + 1e-6
-    assert abs(bt.kr_equity + bt.global_equity + bt.fx_commodity + bt.bond + bt.cash_mmf - 1.0) < 1e-6
+    assert abs(bt.total - 1.0) < 1e-6
 
 
 def test_research_decision_has_safety_diagnostics():
@@ -211,31 +211,37 @@ def test_late_cycle_sub_category_boost_axes():
 
 
 def test_confidence_high_amplifies_risk():
-    """confidence ≥ 0.8 → 위험자산 ×1.05."""
+    """confidence ≥ 0.8 → 위험자산(4 buckets) ×1.05."""
     from tradingagents.agents.managers.research_manager import _apply_confidence_to_bucket
     bucket = {
-        "kr_equity": 0.10, "global_equity": 0.10, "fx_commodity": 0.10,
-        "bond": 0.40, "cash_mmf": 0.30,
+        "kr_equity": 0.10, "global_equity": 0.10,
+        "precious_metals": 0.05, "cyclical_commodity_fx": 0.05,  # risk total 0.30
+        "kr_bond": 0.25, "credit": 0.10, "global_duration": 0.15, "cash_mmf": 0.20,  # safe 0.70
     }
     new_bucket, mult = _apply_confidence_to_bucket(bucket, confidence=0.89)
     assert mult == 1.05
-    new_risk = new_bucket["kr_equity"] + new_bucket["global_equity"] + new_bucket["fx_commodity"]
+    risk_buckets = ("kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx")
+    new_risk = sum(new_bucket[b] for b in risk_buckets)
     # 0.30 × 1.05 = 0.315
     assert new_risk == pytest.approx(0.315, abs=1e-6)
     # Sum 보존 (1.0)
     assert sum(new_bucket.values()) == pytest.approx(1.0, abs=1e-6)
+    # no ghost stale keys
+    assert "fx_commodity" not in new_bucket and "bond" not in new_bucket
 
 
 def test_confidence_low_reduces_risk():
     """confidence < 0.5 → 위험자산 ×0.92."""
     from tradingagents.agents.managers.research_manager import _apply_confidence_to_bucket
     bucket = {
-        "kr_equity": 0.10, "global_equity": 0.10, "fx_commodity": 0.10,
-        "bond": 0.40, "cash_mmf": 0.30,
+        "kr_equity": 0.10, "global_equity": 0.10,
+        "precious_metals": 0.05, "cyclical_commodity_fx": 0.05,  # risk total 0.30
+        "kr_bond": 0.25, "credit": 0.10, "global_duration": 0.15, "cash_mmf": 0.20,
     }
     new_bucket, mult = _apply_confidence_to_bucket(bucket, confidence=0.3)
     assert mult == 0.92
-    new_risk = new_bucket["kr_equity"] + new_bucket["global_equity"] + new_bucket["fx_commodity"]
+    risk_buckets = ("kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx")
+    new_risk = sum(new_bucket[b] for b in risk_buckets)
     assert new_risk == pytest.approx(0.30 * 0.92, abs=1e-6)
     assert sum(new_bucket.values()) == pytest.approx(1.0, abs=1e-6)
 
@@ -244,8 +250,9 @@ def test_confidence_neutral_no_change():
     """0.5 ≤ confidence < 0.8 → multiplier 1.0 (변화 없음)."""
     from tradingagents.agents.managers.research_manager import _apply_confidence_to_bucket
     bucket = {
-        "kr_equity": 0.20, "global_equity": 0.10, "fx_commodity": 0.10,
-        "bond": 0.40, "cash_mmf": 0.20,
+        "kr_equity": 0.15, "global_equity": 0.20,
+        "precious_metals": 0.08, "cyclical_commodity_fx": 0.14,
+        "kr_bond": 0.15, "credit": 0.05, "global_duration": 0.13, "cash_mmf": 0.10,
     }
     new_bucket, mult = _apply_confidence_to_bucket(bucket, confidence=0.65)
     assert mult == 1.0
@@ -256,10 +263,13 @@ def test_confidence_high_respects_mandate_cap():
     """mandate cap 70% 초과는 자동 cap."""
     from tradingagents.agents.managers.research_manager import _apply_confidence_to_bucket
     bucket = {
-        "kr_equity": 0.30, "global_equity": 0.20, "fx_commodity": 0.20,  # risk 0.70
-        "bond": 0.20, "cash_mmf": 0.10,
+        "kr_equity": 0.25, "global_equity": 0.20,
+        "precious_metals": 0.10, "cyclical_commodity_fx": 0.13,  # risk total 0.68
+        "kr_bond": 0.12, "credit": 0.04, "global_duration": 0.04, "cash_mmf": 0.12,  # safe 0.32
     }
     new_bucket, _ = _apply_confidence_to_bucket(bucket, confidence=0.95)
-    new_risk = new_bucket["kr_equity"] + new_bucket["global_equity"] + new_bucket["fx_commodity"]
-    # 0.70 × 1.05 = 0.735 → cap 0.70.
+    risk_buckets = ("kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx")
+    new_risk = sum(new_bucket[b] for b in risk_buckets)
+    # 0.68 × 1.05 = 0.714 → cap 0.70.
     assert new_risk == pytest.approx(0.70, abs=1e-6)
+    assert sum(new_bucket.values()) == pytest.approx(1.0, abs=1e-6)

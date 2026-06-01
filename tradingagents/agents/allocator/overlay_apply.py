@@ -97,36 +97,56 @@ _OUTCOMES = [
 ]
 
 
+_RISK_BUCKETS_OVERLAY: frozenset[str] = frozenset({
+    "kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx",
+})
+_SAFE_BUCKETS_OVERLAY: frozenset[str] = frozenset({
+    "kr_bond", "credit", "global_duration", "cash_mmf",
+})
+
+
 def _shrink_bucket_by_multiplier(
     bucket_target: BucketTarget, multiplier: float,
 ) -> BucketTarget:
-    """위험자산 multiplier 적용 — 줄어든 만큼 bond + mmf 로 재정규화."""
+    """위험자산 multiplier 적용 — 줄어든 만큼 safe buckets 로 재정규화.
+
+    8-bucket schema: risk = {kr_equity, global_equity, precious_metals,
+    cyclical_commodity_fx}; safe = {kr_bond, credit, global_duration, cash_mmf}.
+    Shrinkage 는 safe bucket 의 현재 비중에 비례해서 배분.
+    """
     if multiplier >= 0.999:
         return bucket_target
 
-    risk_orig = (
-        bucket_target.kr_equity + bucket_target.global_equity
-        + bucket_target.fx_commodity
-    )
-    safe_orig = bucket_target.bond + bucket_target.cash_mmf
+    w = dict(bucket_target.weights)
+    risk_orig = sum(w.get(b, 0.0) for b in _RISK_BUCKETS_OVERLAY)
+    safe_orig = sum(w.get(b, 0.0) for b in _SAFE_BUCKETS_OVERLAY)
     new_risk = risk_orig * multiplier
     shrinkage = risk_orig - new_risk
 
-    if safe_orig > 0:
-        bond_share = bucket_target.bond / safe_orig
-        mmf_share = bucket_target.cash_mmf / safe_orig
-        new_bond = bucket_target.bond + shrinkage * bond_share
-        new_mmf = bucket_target.cash_mmf + shrinkage * mmf_share
-    else:
-        new_bond = bucket_target.bond + shrinkage * 0.6
-        new_mmf = bucket_target.cash_mmf + shrinkage * 0.4
-
     risk_factor = new_risk / risk_orig if risk_orig > 0 else 0.0
+    new_w = {}
+    for b in w:
+        if b in _RISK_BUCKETS_OVERLAY:
+            new_w[b] = w[b] * risk_factor
+        else:
+            new_w[b] = w[b]
+
+    # distribute shrinkage among safe buckets proportionally
+    if safe_orig > 0:
+        for b in _SAFE_BUCKETS_OVERLAY:
+            share = w.get(b, 0.0) / safe_orig
+            new_w[b] = new_w.get(b, 0.0) + shrinkage * share
+    else:
+        # fallback: split evenly among safe buckets present
+        safe_present = [b for b in _SAFE_BUCKETS_OVERLAY if b in w]
+        if safe_present:
+            per_bucket = shrinkage / len(safe_present)
+            for b in safe_present:
+                new_w[b] = new_w.get(b, 0.0) + per_bucket
+
     return BucketTarget(
-        kr_equity=bucket_target.kr_equity * risk_factor,
-        global_equity=bucket_target.global_equity * risk_factor,
-        fx_commodity=bucket_target.fx_commodity * risk_factor,
-        bond=new_bond, cash_mmf=new_mmf,
+        weights=new_w,
+        bond_tips_share=bucket_target.bond_tips_share,
         rationale=(
             f"Stage 4 overlay shrink (×{multiplier:.2f}): "
             f"{bucket_target.rationale[:300]}"
@@ -180,13 +200,20 @@ def _solve_with_overlay(
     adjusted_bucket = _shrink_bucket_by_multiplier(
         bucket_target, eff_multiplier,
     )
+    # Build target_map: bucket → target weight.
+    # Only include buckets that (a) are represented in sector_mapper (have tickers)
+    # AND (b) those tickers survived _filter_returns_for_cov.
+    # Buckets with no surviving tickers are excluded; their weights are absorbed
+    # proportionally into the remaining buckets so constraints still sum to 1.0.
+    surviving_buckets = {sector_mapper[t] for t in returns.columns if t in sector_mapper}
     target_map = {
-        "kr_equity":     adjusted_bucket.kr_equity,
-        "global_equity": adjusted_bucket.global_equity,
-        "fx_commodity":  adjusted_bucket.fx_commodity,
-        "bond":          adjusted_bucket.bond,
-        "cash_mmf":      adjusted_bucket.cash_mmf,
+        b: w for b, w in adjusted_bucket.weights.items()
+        if b in surviving_buckets
     }
+    tmap_total = sum(target_map.values())
+    if tmap_total > 0 and abs(tmap_total - 1.0) > 1e-9:
+        # Renormalise so constraints sum to 1.0
+        target_map = {b: w / tmap_total for b, w in target_map.items()}
     # bucket: level<=2 equality, level>=3 ±band
     if drop_level <= 2:
         sector_lower = dict(target_map)

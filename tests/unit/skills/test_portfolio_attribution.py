@@ -132,9 +132,13 @@ def _build_universe_with_subcat() -> Universe:
 
 def test_select_etf_candidates_populates_attribution():
     u = _build_universe_with_subcat()
+    # A3 (gold, FX 및 원자재 sub_category=gold) → precious_metals bucket
     target = BucketTarget(
-        kr_equity=0.5, global_equity=0.0,
-        fx_commodity=0.5, bond=0.0, cash_mmf=0.0,
+        weights={
+            "kr_equity": 0.5, "global_equity": 0.0, "precious_metals": 0.5,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0,
+            "credit": 0.0, "global_duration": 0.0, "cash_mmf": 0.0,
+        },
         rationale="t",
     )
     tickers = ["A1", "A2", "A3"]
@@ -168,15 +172,15 @@ def test_select_etf_candidates_populates_attribution():
     # attribution 구조
     assert attr["config"]["dominant_scenario"] == "stagflation"
     assert attr["config"]["regime_quadrant"] == "recession_inflation"
-    assert set(attr["buckets"]) >= {"kr_equity", "fx_commodity"}
+    assert set(attr["buckets"]) >= {"kr_equity", "precious_metals"}
     kr = attr["buckets"]["kr_equity"]
     assert kr["eligible_count"] == 2
     assert kr["bond_split"] is False
     assert set(kr["per_ticker"]).issubset({"A1", "A2"})
-    # gold ETF에 D 사이클 boost 적용 확인
-    fx = attr["buckets"]["fx_commodity"]
-    assert "A3" in fx["per_ticker"]
-    sb = fx["per_ticker"]["A3"]["scenario_boost"]
+    # gold ETF에 D 사이클 boost 적용 확인 (precious_metals bucket)
+    pm = attr["buckets"]["precious_metals"]
+    assert "A3" in pm["per_ticker"]
+    sb = pm["per_ticker"]["A3"]["scenario_boost"]
     assert sb["scenario"] == "stagflation"
     assert sb["composed_mult"] > 1.0      # gold는 D에서 1.8 boost
     assert sb["log_boost"] > 0
@@ -184,9 +188,13 @@ def test_select_etf_candidates_populates_attribution():
 
 def test_select_etf_candidates_no_scenario_no_boost():
     u = _build_universe_with_subcat()
+    # A3 gold → precious_metals bucket
     target = BucketTarget(
-        kr_equity=0.0, global_equity=0.0,
-        fx_commodity=1.0, bond=0.0, cash_mmf=0.0,
+        weights={
+            "kr_equity": 0.0, "global_equity": 0.0, "precious_metals": 1.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0,
+            "credit": 0.0, "global_duration": 0.0, "cash_mmf": 0.0,
+        },
         rationale="t",
     )
     tickers = [e.ticker for e in u.etfs]
@@ -212,8 +220,8 @@ def test_select_etf_candidates_no_scenario_no_boost():
         attribution=attr,
     )
     # boost 없으면 log_boost=0, composed_mult=1.0
-    fx = attr["buckets"]["fx_commodity"]
-    pt = fx["per_ticker"]["A3"]
+    pm = attr["buckets"]["precious_metals"]
+    pt = pm["per_ticker"]["A3"]
     assert pt["scenario_boost"]["log_boost"] == 0.0
     assert pt["scenario_boost"]["composed_mult"] == 1.0
     assert pt["final_score"] == pytest.approx(pt["base_score"], abs=1e-12)
@@ -306,8 +314,11 @@ def test_attribution_none_behaves_as_no_op():
     """attribution=None이면 기존 동작과 100% 동일 (성능/사이드이펙트 없음)."""
     u = _build_universe_with_subcat()
     target = BucketTarget(
-        kr_equity=1.0, global_equity=0.0,
-        fx_commodity=0.0, bond=0.0, cash_mmf=0.0,
+        weights={
+            "kr_equity": 1.0, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0,
+            "credit": 0.0, "global_duration": 0.0, "cash_mmf": 0.0,
+        },
         rationale="t",
     )
     tickers = ["A1", "A2"]

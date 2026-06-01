@@ -857,7 +857,7 @@ def test_scenario_threshold_no_hysteresis(
             krw_regime=_fs("F6_krw_regime", 0.0),
             equity_vol_regime=_fs("F7_equity_vol_regime", 0.0),
             valuation=_fs("F8_valuation", 0.0),
-            liquidity_regime=_fs("F9_liquidity_regime", 0.0),
+            market_dispersion=_fs("F9_market_dispersion", 0.0),
         )
 
     # threshold = 0.5. f1=0.49 → goldilocks default; f1=0.51 + f2=0.51 → overheating.
@@ -899,7 +899,7 @@ def test_factor_to_bucket_cap_hits_diagnostic() -> None:
         "F1_growth": 5.0, "F2_inflation": 0.0, "F3_real_rate": 0.0,
         "F4_term_premium": 0.0, "F5_credit_cycle": 0.0, "F6_krw_regime": 0.0,
         "F7_equity_vol_regime": 0.0, "F8_valuation": 0.0,
-        "F9_liquidity_regime": 0.0,
+        "F9_market_dispersion": 0.0,
     }
     _bucket, _tips, _contribs, diag = apply_factor_model_with_safety(extreme_z)
     assert "cap_hits" in diag
@@ -943,7 +943,7 @@ def test_scenario_hysteresis_prevents_jump_at_threshold():
             krw_regime=_fs("F6_krw_regime", 0.0),
             equity_vol_regime=_fs("F7_equity_vol_regime", 0.0),
             valuation=_fs("F8_valuation", 0.0),
-            liquidity_regime=_fs("F9_liquidity_regime", 0.0),
+            market_dispersion=_fs("F9_market_dispersion", 0.0),
         )
 
     # threshold = 0.5, band = 0.05. 정상 entry: f1>0.5 AND f2>0.5 → overheating.
@@ -1000,7 +1000,7 @@ def test_scenario_hysteresis_allows_immediate_upgrade_to_urgent():
         krw_regime=_fs("F6_krw_regime", 0.0),
         equity_vol_regime=_fs("F7_equity_vol_regime", 2.0),  # > 1.5
         valuation=_fs("F8_valuation", 0.0),
-        liquidity_regime=_fs("F9_liquidity_regime", 0.0),
+        market_dispersion=_fs("F9_market_dispersion", 0.0),
     )
     out = derive_dominant_scenario(scores, prior_scenario="goldilocks")
     assert out == "global_credit", (

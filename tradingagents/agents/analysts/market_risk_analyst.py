@@ -14,12 +14,14 @@ import pandas as pd
 
 from tradingagents.dataflows.cross_asset_returns import fetch_cross_asset_returns
 from tradingagents.dataflows.equity_indices import fetch_equity_index_close
+from tradingagents.dataflows.fred import fetch_funding_stress_stitched
 from tradingagents.dataflows.pykrx_data import fetch_credit_balance, fetch_market_index
+from tradingagents.dataflows.gz_ebp import fetch_gz_ebp
 from tradingagents.schemas.reports import RiskReport
 from tradingagents.schemas.risk import (
-    CreditQualitySnapshot, EquityBondCorrelationSnapshot, FundingStressSnapshot,
-    KRCorpSpreadSnapshot, KRMarginDebtSnapshot, KRMarketTierSnapshot,
-    KRYieldCurveSnapshot, PCASnapshot, RealYieldsSnapshot,
+    CreditQualitySnapshot, EquityBondCorrelationSnapshot, ExcessBondPremiumSnapshot,
+    FundingStressSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
+    KRMarketTierSnapshot, KRYieldCurveSnapshot, PCASnapshot, RealYieldsSnapshot,
     SentimentSnapshot, SkewSnapshot, VIXTermStructureSnapshot, VxnSnapshot,
 )
 from tradingagents.skills.macro.ecos_fetcher import fetch_ecos_series_skill
@@ -30,7 +32,6 @@ from tradingagents.skills.risk.credit_quality import compute_credit_quality
 from tradingagents.skills.risk.credit_spread import fetch_credit_spread
 from tradingagents.skills.risk.equity_bond_corr import compute_equity_bond_corr
 from tradingagents.skills.risk.fear_greed import fetch_fear_greed_index
-from tradingagents.skills.risk.funding_stress import compute_funding_stress
 from tradingagents.skills.risk.kr_corp_spread import compute_kr_corp_spread
 from tradingagents.skills.risk.kr_margin_debt import compute_kr_margin_debt
 from tradingagents.skills.risk.kr_market_tier import compute_kr_market_tier
@@ -125,6 +126,34 @@ def _sentinel_equity_bond_corr(as_of: date) -> EquityBondCorrelationSnapshot:
         correlation_120d=-0.3, change_3m=0.0, regime="normal_hedge",
         source_date=as_of, staleness_days=99,
     )
+
+
+def _build_excess_bond_premium(as_of: date) -> ExcessBondPremiumSnapshot | None:
+    """Build EBP snapshot from Fed Board GZ EBP CSV.
+
+    Returns None on fetch failure (graceful degradation).
+    """
+    try:
+        ebp_series = fetch_gz_ebp(as_of=as_of)
+        if ebp_series.empty:
+            return None
+        ebp_now = float(ebp_series.iloc[-1])
+        # 5-year rolling z-score
+        cutoff = pd.Timestamp(as_of) - pd.DateOffset(years=5)
+        recent = ebp_series[ebp_series.index >= cutoff]
+        if len(recent) < 12:  # min 1y of monthly data
+            z = 0.0
+        else:
+            mu = float(recent.mean())
+            sd = float(recent.std(ddof=1)) or 1e-9
+            z = (ebp_now - mu) / sd
+        return ExcessBondPremiumSnapshot(
+            as_of=as_of, staleness_days=15,  # monthly publication lag
+            ebp=ebp_now, ebp_zscore_5y=z,
+        )
+    except Exception as e:
+        logger.warning("GZ EBP fetch failed: %s", e)
+        return None
 
 
 def create_market_risk_analyst(quick_llm, deep_llm):
@@ -324,17 +353,33 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             logger.warning("real_yields (TIPS) fetch failed → sentinel: %s", e)
             real_yields = _sentinel_real_yields(as_of)
 
-        # Tier-2: Funding stress (SOFR vs 3m T-bill)
+        # Tier-2: Funding stress — SOFR-TED stitched (Task 5.10 F10).
+        # Pre-2018: TED spread proxy; 2018+: SOFR - 3m T-bill (bps).
+        # SOFR level still fetched separately for FundingStressSnapshot.sofr field.
         try:
-            sofr = fetch_fred_series_skill(
-                "us_sofr", start_5y, as_of, as_of_date=as_of,
+            spread_series = fetch_funding_stress_stitched(
+                start=as_of - timedelta(days=30), end=as_of, as_of_date=as_of,
+            )
+            spread_bps = float(spread_series.iloc[-1]) if not spread_series.empty else 0.0
+            # Fetch SOFR level for schema field (FundingStressSnapshot.sofr requires it).
+            sofr_series = fetch_fred_series_skill(
+                "us_sofr", as_of - timedelta(days=30), as_of, as_of_date=as_of,
             ).dropna()
-            tbill = fetch_fred_series_skill(
-                "us_3m_tbill", start_5y, as_of, as_of_date=as_of,
+            sofr_level = float(sofr_series.iloc[-1]) if not sofr_series.empty else 0.0
+            tbill_series = fetch_fred_series_skill(
+                "us_3m_tbill", as_of - timedelta(days=30), as_of, as_of_date=as_of,
             ).dropna()
-            funding_stress = compute_funding_stress(sofr, tbill, as_of=as_of)
+            tbill_level = float(tbill_series.iloc[-1]) if not tbill_series.empty else 0.0
+            from tradingagents.skills.risk.funding_stress import _classify_regime
+            funding_stress = FundingStressSnapshot(
+                sofr=sofr_level,
+                tbill_3m=tbill_level,
+                spread_bps=spread_bps,
+                regime=_classify_regime(spread_bps),
+                source_date=as_of,
+            )
         except Exception as e:
-            logger.warning("funding_stress (SOFR/T-bill) fetch failed → sentinel: %s", e)
+            logger.warning("funding_stress stitched fetch failed → sentinel: %s", e)
             funding_stress = _sentinel_funding(as_of)
 
         # Tier-2: Credit quality (AAA vs BBB)
@@ -527,6 +572,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             kr_margin_debt=kr_margin, kr_market_tier=kr_market_tier,
             equity_bond_corr=eq_bd_corr,
             real_vol=real_vol,  # ★ NEW C6 (Optional, None on fail)
+            excess_bond_premium=_build_excess_bond_premium(as_of),  # ★ Tier0 Task 4.2
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"risk_report": report, "risk_summary": summary}

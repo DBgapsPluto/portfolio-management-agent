@@ -12,7 +12,8 @@ fetch (Stage 1 backlog Issue #18) 이 완료되면 production calibration 수행
 from __future__ import annotations
 
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Final
 from scipy.optimize import minimize
 
 from tradingagents.skills.research.factor_to_bucket import (
@@ -26,6 +27,59 @@ from tradingagents.skills.research.factor_to_bucket import (
 )
 
 
+# ---------------------------------------------------------------------------
+# Tier 2: Hierarchical calibration support constants
+# ---------------------------------------------------------------------------
+
+# Hard zero cells (theoretical exclusion). 23 entries (5 removed: prior-inconsistent /
+# sign-softened cells — see Tier 2 verification).
+HARD_ZERO_CELLS: Final[frozenset[tuple[str, str]]] = frozenset({
+    ("F1_growth", "precious_metals"),
+    ("F3_real_rate", "kr_equity"),
+    ("F3_real_rate", "cyclical_commodity_fx"),
+    ("F4_term_premium", "precious_metals"),
+    ("F4_term_premium", "cyclical_commodity_fx"),
+    ("F4_term_premium", "credit"),
+    ("F5_credit_cycle", "precious_metals"),
+    ("F5_credit_cycle", "cyclical_commodity_fx"),
+    ("F6_krw_regime", "credit"),
+    ("F6_krw_regime", "global_duration"),
+    ("F7_equity_vol_regime", "precious_metals"),
+    ("F8_valuation", "precious_metals"),
+    ("F8_valuation", "cyclical_commodity_fx"),
+    ("F8_valuation", "kr_bond"),
+    ("F8_valuation", "credit"),
+    ("F8_valuation", "global_duration"),
+    ("F8_valuation", "cash_mmf"),
+    ("F9_market_dispersion", "precious_metals"),
+    ("F9_market_dispersion", "cyclical_commodity_fx"),
+    ("F10_systemic_liquidity", "precious_metals"),
+    ("F11_earnings_revision", "precious_metals"),
+    ("F11_earnings_revision", "cyclical_commodity_fx"),
+    ("F12_china_credit_impulse", "precious_metals"),
+})
+
+# Bucket family groups for hierarchical prior.
+BUCKET_FAMILIES: Final[dict[str, list[str]]] = {
+    "equity":    ["kr_equity", "global_equity"],
+    "commodity": ["precious_metals", "cyclical_commodity_fx"],
+    "duration":  ["kr_bond", "global_duration"],
+    "credit":    ["credit"],
+    "cash":      ["cash_mmf"],
+}
+
+
+def bucket_family(bucket: str) -> str:
+    """Return the family name for the given bucket.
+
+    Raises ValueError for unknown bucket names.
+    """
+    for fam, members in BUCKET_FAMILIES.items():
+        if bucket in members:
+            return fam
+    raise ValueError(f"Unknown bucket {bucket}")
+
+
 def _project_simple(bucket: dict[str, float], risk_cap: float = 0.70) -> dict[str, float]:
     """Fast projection used in calibration loop to avoid nested QP.
 
@@ -33,24 +87,30 @@ def _project_simple(bucket: dict[str, float], risk_cap: float = 0.70) -> dict[st
     Here we use proportional scaling — ~50x faster, slight intent distortion
     acceptable for calibration (β is averaged across folds via median anyway).
     """
+    from tradingagents.skills.research.factor_to_bucket import RISK_BUCKETS as _RISK_BUCKETS
+
     bucket = {b: max(0.0, w) for b, w in bucket.items()}
     total = sum(bucket.values())
     if total <= 0:
         return dict(INITIAL_BASELINE)
     bucket = {b: w / total for b, w in bucket.items()}
-    risk_buckets = ("kr_equity", "global_equity", "fx_commodity")
+    risk_buckets = tuple(b for b in _RISK_BUCKETS if b in bucket)
     risk = sum(bucket[b] for b in risk_buckets)
     if risk > risk_cap:
         scale = risk_cap / risk
         for b in risk_buckets:
             bucket[b] *= scale
         shortfall = 1.0 - sum(bucket.values())
-        safe_total = bucket["bond"] + bucket["cash_mmf"]
+        safe_buckets = {b: w for b, w in bucket.items() if b not in risk_buckets and w > 0}
+        safe_total = sum(safe_buckets.values())
         if safe_total > 0:
-            bucket["bond"] += shortfall * (bucket["bond"] / safe_total)
-            bucket["cash_mmf"] += shortfall * (bucket["cash_mmf"] / safe_total)
-        else:
-            bucket["bond"] += shortfall
+            for b in safe_buckets:
+                bucket[b] += shortfall * (bucket[b] / safe_total)
+        elif bucket:
+            # fallback: distribute to first non-risk bucket
+            non_risk = [b for b in bucket if b not in risk_buckets]
+            if non_risk:
+                bucket[non_risk[0]] += shortfall
     return bucket
 
 
@@ -59,8 +119,9 @@ class HistoricalSample:
     """Single quarter sample."""
 
     date: str  # YYYY-MM-DD (quarter end)
-    factor_z: dict[str, float]  # 9 factor z
+    factor_z: dict[str, float]  # 12 factor z
     bucket_returns_next: dict[str, float]  # next quarter's realized returns per bucket
+    tips_share_realized: float | None = None  # Tier 2: for TIPS scalar regression (Task 11)
 
 
 def simulate_portfolio_returns(
@@ -77,6 +138,79 @@ def simulate_portfolio_returns(
         ret = sum(bucket[b] * s.bucket_returns_next.get(b, 0.0) for b in BUCKETS)
         returns.append(ret)
     return np.array(returns)
+
+
+def simulate_portfolio_returns_per_factor_aware(
+    samples: list[HistoricalSample],
+    beta: dict[tuple[str, str], float],
+    baseline: dict[str, float] | None = None,
+) -> np.ndarray:
+    """Apply factor model per-sample with NaN-skip.
+
+    Each factor's contribution skipped when factor_z is None/NaN.
+    Per-factor window emerges naturally: factor f's β only updates via
+    samples where factor_z[f] is valid.
+    """
+    from tradingagents.skills.research.factor_to_bucket import (
+        PER_FACTOR_BUCKET_CONTRIB_CAP, INITIAL_BASELINE as _INITIAL_BASELINE,
+    )
+    _baseline = baseline if baseline is not None else _INITIAL_BASELINE
+    returns = []
+    for s in samples:
+        bucket = dict(_baseline)
+        for f in FACTORS:
+            z = s.factor_z.get(f)
+            if z is None or (isinstance(z, float) and np.isnan(z)):
+                continue
+            for b in BUCKETS:
+                contrib = beta.get((f, b), 0.0) * z
+                contrib = max(-PER_FACTOR_BUCKET_CONTRIB_CAP,
+                              min(PER_FACTOR_BUCKET_CONTRIB_CAP, contrib))
+                bucket[b] = bucket.get(b, 0.0) + contrib
+        projected = _project_simple(bucket)
+        ret = sum(projected[b] * s.bucket_returns_next.get(b, 0.0) for b in BUCKETS)
+        returns.append(ret)
+    return np.array(returns)
+
+
+def compute_effective_df(design_matrix: np.ndarray, lambda_global: float) -> float:
+    """Effective degrees of freedom for ridge (Hastie-Tibshirani-Friedman ESL §3.4.1).
+
+    df(λ) = Σ d_j² / (d_j² + λ), d_j = singular values of X.
+    """
+    _, sv, _ = np.linalg.svd(design_matrix, full_matrices=False)
+    return float(np.sum(sv**2 / (sv**2 + lambda_global)))
+
+
+def compute_vif_matrix(
+    samples: list[HistoricalSample], factors: list[str]
+) -> "pd.Series":
+    """Per-factor VIF = 1 / (1 - R²_j) where R²_j regresses factor j on the rest.
+
+    Returns pd.Series indexed by factor name. NaN if degenerate.
+    Uses numpy least-squares (no sklearn dependency).
+    """
+    import pandas as pd
+    Z = pd.DataFrame({
+        f: [s.factor_z.get(f, np.nan) for s in samples]
+        for f in factors
+    }).dropna()
+    vif = pd.Series(index=factors, dtype=float)
+    Zv = Z.values
+    for i, f in enumerate(factors):
+        y = Zv[:, i]
+        X = np.delete(Zv, i, axis=1)
+        X1 = np.column_stack([np.ones(len(X)), X])
+        try:
+            coef, *_ = np.linalg.lstsq(X1, y, rcond=None)
+            pred = X1 @ coef
+            ss_res = float(np.sum((y - pred) ** 2))
+            ss_tot = float(np.sum((y - y.mean()) ** 2))
+            r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+            vif[f] = 1.0 / max(1e-9, 1.0 - r2)
+        except Exception:
+            vif[f] = float("nan")
+    return vif
 
 
 def compute_sharpe(returns: np.ndarray, periods_per_year: int = 4) -> float:
@@ -217,13 +351,16 @@ def benchmark_60_40_returns(
     samples: list[HistoricalSample],
     weights: dict[str, float] | None = None,
 ) -> np.ndarray:
-    """Static 60/40 KR-tilted: kr_eq 20% + gl_eq 40% + bond 40%."""
+    """Static 60/40 KR-tilted: kr_eq 20% + gl_eq 40% + global_duration 40%."""
     w = weights or {
-        "kr_equity": 0.20,
-        "global_equity": 0.40,
-        "fx_commodity": 0.0,
-        "bond": 0.40,
-        "cash_mmf": 0.0,
+        "kr_equity":             0.20,
+        "global_equity":         0.40,
+        "precious_metals":       0.00,
+        "cyclical_commodity_fx": 0.00,
+        "kr_bond":               0.00,
+        "credit":                0.00,
+        "global_duration":       0.40,
+        "cash_mmf":              0.00,
     }
     returns = []
     for s in samples:

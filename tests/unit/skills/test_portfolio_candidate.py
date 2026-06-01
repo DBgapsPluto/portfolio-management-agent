@@ -1,4 +1,4 @@
-"""candidate_selector tests — Phase A signature (multi-factor only)."""
+"""candidate_selector tests — 8-bucket schema (Tier 1)."""
 import math
 from datetime import date
 
@@ -12,6 +12,31 @@ from tradingagents.skills.portfolio.candidate_selector import (
     list_eligible_tickers, select_etf_candidates,
 )
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
+
+
+# ---------------------------------------------------------------------------
+# Helper: 8-bucket BucketTarget constructor
+# ---------------------------------------------------------------------------
+
+def _bt(**overrides) -> BucketTarget:
+    """Build a BucketTarget with optional weight overrides.
+
+    Base: all-zero except kr_equity=1.0 (single-bucket mode by default).
+    Pass e.g. kr_equity=0.5, global_duration=0.5 to override.
+    Total must sum to 1.0.
+    """
+    base = {
+        "kr_equity":             0.00,
+        "global_equity":         0.00,
+        "precious_metals":       0.00,
+        "cyclical_commodity_fx": 0.00,
+        "kr_bond":               0.00,
+        "credit":                0.00,
+        "global_duration":       0.00,
+        "cash_mmf":              0.00,
+    }
+    base.update(overrides)
+    return BucketTarget(weights=base, rationale="test")
 
 
 def _build_universe() -> Universe:
@@ -67,10 +92,9 @@ def _trivial_panel(tickers, aum_lookup):
 
 def test_select_candidates_for_target():
     universe = _build_universe()
-    target = BucketTarget(
-        kr_equity=0.15, global_equity=0.30, fx_commodity=0.10,
-        bond=0.35, cash_mmf=0.10,
-        rationale="defensive recession tilt",
+    target = _bt(
+        kr_equity=0.15, global_equity=0.30, precious_metals=0.10,
+        kr_bond=0.35, cash_mmf=0.10,
     )
     all_tickers = [e.ticker for e in universe.etfs]
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
@@ -117,7 +141,8 @@ def test_list_eligible_tickers_filters_by_category():
         ETFEntry(ticker="A222222", name="small kr", aum_krw=3_000_000_000,
                  underlying_index="ui_A222222", bucket="위험", category="국내주식_지수"),
         ETFEntry(ticker="A333333", name="bond", aum_krw=5e12,
-                 underlying_index="ui_A333333", bucket="안전", category="국내채권_종합"),
+                 underlying_index="ui_A333333", bucket="안전", category="국내채권_종합",
+                 sub_category="kr_treasury"),
         ETFEntry(ticker="A444444", name="cash", aum_krw=10e12,
                  underlying_index="ui_A444444", bucket="안전", category="금리연계형/초단기채권"),
     ])
@@ -129,7 +154,7 @@ def test_list_eligible_tickers_filters_by_category():
 
 
 def test_bond_tips_quota_splits_inflation_linked_and_nominal():
-    """bond bucket에 inflation_linked + nominal 풀이 있을 때 tips_share 비율로 quota 분배."""
+    """global_duration bucket에 inflation_linked + nominal 풀이 있을 때 tips_share 비율로 quota 분배."""
     universe = Universe(version="t", etfs=[
         ETFEntry(ticker="A_TIPS1", name="TIPS-1", aum_krw=5e12,
                  underlying_index="ui_A_TIPS1", bucket="안전", category="해외채권_종합",
@@ -140,9 +165,6 @@ def test_bond_tips_quota_splits_inflation_linked_and_nominal():
         ETFEntry(ticker="A_TIPS3", name="TIPS-3", aum_krw=3e12,
                  underlying_index="ui_A_TIPS3", bucket="안전", category="해외채권_종합",
                  sub_category="inflation_linked"),
-        ETFEntry(ticker="A_NOM1", name="KTB", aum_krw=8e12,
-                 underlying_index="ui_A_NOM1", bucket="안전", category="국내채권_종합",
-                 sub_category="kr_treasury"),
         ETFEntry(ticker="A_NOM2", name="UST", aum_krw=7e12,
                  underlying_index="ui_A_NOM2", bucket="안전", category="해외채권_종합",
                  sub_category="us_treasury"),
@@ -151,8 +173,11 @@ def test_bond_tips_quota_splits_inflation_linked_and_nominal():
                  sub_category="us_aggregate"),
     ])
     target = BucketTarget(
-        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
-        bond=1.0, cash_mmf=0.0,
+        weights={
+            "kr_equity": 0.0, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0,
+            "credit": 0.0, "global_duration": 1.0, "cash_mmf": 0.0,
+        },
         rationale="t",
         bond_tips_share=0.6,  # per_bucket_n=5 → tips_quota=3, nominal_quota=2
     )
@@ -181,13 +206,17 @@ def test_bond_tips_quota_zero_falls_back_to_legacy_path():
         ETFEntry(ticker="A_TIPS1", name="TIPS-1", aum_krw=5e12,
                  underlying_index="tips_index", bucket="안전", category="해외채권_종합",
                  sub_category="inflation_linked"),
-        ETFEntry(ticker="A_NOM1", name="KTB", aum_krw=8e12,
-                 underlying_index="ktb_index", bucket="안전", category="국내채권_종합",
-                 sub_category="kr_treasury"),
+        ETFEntry(ticker="A_NOM1", name="UST", aum_krw=8e12,
+                 underlying_index="ktb_index", bucket="안전", category="해외채권_종합",
+                 sub_category="us_treasury"),
     ])
     target = BucketTarget(
-        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
-        bond=1.0, cash_mmf=0.0, rationale="t",
+        weights={
+            "kr_equity": 0.0, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0,
+            "credit": 0.0, "global_duration": 1.0, "cash_mmf": 0.0,
+        },
+        rationale="t",
         # default bond_tips_share=0.0
     )
     all_tickers = [e.ticker for e in universe.etfs]
@@ -210,7 +239,7 @@ def test_all_bonds_eligible_regardless_of_aum():
     universe = Universe(version="t", etfs=[
         # 200억 — AUM 필터 제거 후 통과
         ETFEntry(ticker="A_TIPS_SMALL", name="KR-TIPS small", aum_krw=20_000_000_000,
-                 underlying_index="ui_A_TIPS_SMALL", bucket="안전", category="국내채권_종합",
+                 underlying_index="ui_A_TIPS_SMALL", bucket="안전", category="해외채권_종합",
                  sub_category="inflation_linked"),
         ETFEntry(ticker="A_NOM_BIG", name="KTB big", aum_krw=2_000_000_000_000,
                  underlying_index="ui_A_NOM_BIG", bucket="안전", category="국내채권_종합",
@@ -221,8 +250,12 @@ def test_all_bonds_eligible_regardless_of_aum():
                  sub_category="kr_treasury"),
     ])
     target = BucketTarget(
-        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
-        bond=1.0, cash_mmf=0.0, rationale="t",
+        weights={
+            "kr_equity": 0.0, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0,
+            "credit": 0.0, "global_duration": 1.0, "cash_mmf": 0.0,
+        },
+        rationale="t",
         bond_tips_share=0.5,
     )
     all_tickers = [e.ticker for e in universe.etfs]
@@ -247,16 +280,20 @@ def test_bond_tips_quota_shortfall_falls_back_to_other_pool():
         ETFEntry(ticker="A_TIPS1", name="TIPS-1", aum_krw=5e12,
                  underlying_index="ui_A_TIPS1", bucket="안전", category="해외채권_종합",
                  sub_category="inflation_linked"),
-        ETFEntry(ticker="A_NOM1", name="KTB", aum_krw=8e12,
-                 underlying_index="ui_A_NOM1", bucket="안전", category="국내채권_종합",
-                 sub_category="kr_treasury"),
         ETFEntry(ticker="A_NOM2", name="UST", aum_krw=7e12,
                  underlying_index="ui_A_NOM2", bucket="안전", category="해외채권_종합",
                  sub_category="us_treasury"),
+        ETFEntry(ticker="A_NOM3", name="AGG", aum_krw=6e12,
+                 underlying_index="ui_A_NOM3", bucket="안전", category="해외채권_종합",
+                 sub_category="us_aggregate"),
     ])
     target = BucketTarget(
-        kr_equity=0.0, global_equity=0.0, fx_commodity=0.0,
-        bond=1.0, cash_mmf=0.0, rationale="t",
+        weights={
+            "kr_equity": 0.0, "global_equity": 0.0, "precious_metals": 0.0,
+            "cyclical_commodity_fx": 0.0, "kr_bond": 0.0,
+            "credit": 0.0, "global_duration": 1.0, "cash_mmf": 0.0,
+        },
+        rationale="t",
         bond_tips_share=1.0,  # TIPS만 원하지만 TIPS는 1개뿐
     )
     all_tickers = [e.ticker for e in universe.etfs]
@@ -268,10 +305,10 @@ def test_bond_tips_quota_shortfall_falls_back_to_other_pool():
         returns=returns, factor_panel=panel,
         sigma=returns.cov(), capital_krw=1_000_000_000_000,
     )
-    bond_picks = candidates.bucket_to_tickers["bond"]
+    global_dur_picks = candidates.bucket_to_tickers["global_duration"]
     # TIPS 1개 + 부족분 nominal 2개로 보충
-    assert "A_TIPS1" in bond_picks
-    assert len([t for t in bond_picks if t.startswith("A_NOM")]) >= 1
+    assert "A_TIPS1" in global_dur_picks
+    assert len([t for t in global_dur_picks if t.startswith("A_NOM")]) >= 1
 
 
 def test_select_multi_factor_mode_uses_returns_and_regime():
@@ -285,11 +322,7 @@ def test_select_multi_factor_mode_uses_returns_and_regime():
         ETFEntry(ticker="A444444", name="D", aum_krw=4e12,
                  underlying_index="ui_A444444", bucket="위험", category="국내주식_지수"),
     ])
-    target = BucketTarget(
-        kr_equity=1.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.0,
-        rationale="t",
-    )
+    target = _bt(kr_equity=1.0)
     tickers = ["A111111", "A222222", "A333333", "A444444"]
     returns = _synthetic_returns(tickers)
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
@@ -317,11 +350,7 @@ def test_select_uses_precomputed_factor_panel():
         ETFEntry(ticker="A222222", name="B", aum_krw=8e12,
                  underlying_index="ui_A222222", bucket="위험", category="국내주식_지수"),
     ])
-    target = BucketTarget(
-        kr_equity=1.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.0,
-        rationale="t",
-    )
+    target = _bt(kr_equity=1.0)
     returns = _synthetic_returns(["A111111", "A222222"])
     panel = {
         "A111111": FactorPanel(
@@ -348,11 +377,7 @@ def test_select_requires_returns_and_panel():
         ETFEntry(ticker="A111111", name="A", aum_krw=10e12,
                  underlying_index="ui_A111111", bucket="위험", category="국내주식_지수"),
     ])
-    target = BucketTarget(
-        kr_equity=1.0, global_equity=0.0, fx_commodity=0.0,
-        bond=0.0, cash_mmf=0.0,
-        rationale="t",
-    )
+    target = _bt(kr_equity=1.0)
     with pytest.raises(ValueError, match="returns"):
         select_etf_candidates(
             universe, target, as_of=date(2026, 5, 10),
@@ -414,10 +439,7 @@ def test_select_enb_greedy_picks_positive_alpha_tickers():
         ETFEntry(ticker="A333333", name="B", aum_krw=5e12,
                  underlying_index="ui_A333333", bucket="위험", category="국내주식_지수"),
     ])
-    target = BucketTarget(
-        kr_equity=1.0, global_equity=0, fx_commodity=0, bond=0, cash_mmf=0,
-        rationale="t",
-    )
+    target = _bt(kr_equity=1.0)
     tickers = ["A111111", "A222222", "A333333"]
     returns = _synthetic_returns(tickers)
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
@@ -443,10 +465,7 @@ def test_select_without_clusters_uses_enb_greedy():
         ETFEntry(ticker="A333333", name="C", aum_krw=6e12, underlying_index="u3",
                  bucket="위험", category="국내주식_지수"),
     ])
-    target = BucketTarget(
-        kr_equity=1.0, global_equity=0, fx_commodity=0, bond=0, cash_mmf=0,
-        rationale="t",
-    )
+    target = _bt(kr_equity=1.0)
     tickers = ["A111111", "A222222", "A333333"]
     returns = _synthetic_returns(tickers)
     aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}

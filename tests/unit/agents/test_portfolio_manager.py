@@ -27,8 +27,11 @@ def test_portfolio_manager_writes_3_artifacts(tmp_path):
             expected_volatility=0.12, expected_sharpe=0.85,
         ),
         "bucket_target": BucketTarget(
-            kr_equity=0.20, global_equity=0.20, fx_commodity=0.0,
-            bond=0.30, cash_mmf=0.30,
+            weights={
+                "kr_equity": 0.20, "global_equity": 0.20, "precious_metals": 0.0,
+                "cyclical_commodity_fx": 0.0, "kr_bond": 0.20,
+                "credit": 0.10, "global_duration": 0.0, "cash_mmf": 0.30,
+            },
             rationale="x",
         ),
         "capital_krw": 1_000_000_000,

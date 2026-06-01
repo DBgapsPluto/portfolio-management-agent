@@ -28,6 +28,11 @@ class YieldCurveSnapshot(StalenessAware):
         default=0.0,
         description="30Y - 5Y in basis points. Long-end curve — F4 term_premium component.",
     )
+    # === Tier 0 — F4 reform — ACM term premium (NY Fed) ===
+    acm_term_premium_10y_pct: float | None = Field(
+        default=None,
+        description="NY Fed ACM 10y term premium (THREEFYTP10, %). None=fetch fail.",
+    )
 
 
 class InflationSnapshot(StalenessAware):
@@ -198,6 +203,15 @@ class FXSnapshot(StalenessAware):
     regime: Literal["krw_strong", "krw_weak", "usd_risk_off", "neutral"] = Field(
         description="krw_weak if KRW>+2% in 1m, usd_risk_off if both KRW and DXY rising together"
     )
+    # 2026-05-28 Tier 0 — medium-term KRW trend + BIS REER for F2/F13 factor components.
+    krw_change_6m_pct: float = Field(
+        default=0.0,
+        description="USD/KRW 6-month % change (+ = KRW weakening). Medium-term trend.",
+    )
+    krw_reer: float | None = Field(
+        default=None,
+        description="BIS Real Effective Exchange Rate (1994+, index). None=fetch fail.",
+    )
 
 
 class RiskAppetiteSnapshot(StalenessAware):
@@ -259,6 +273,14 @@ class ForeignFlowSnapshot(StalenessAware):
     signal: Literal["net_buying", "net_selling", "neutral"] = Field(
         description="net_buying if 20d>+1조, net_selling if <-1조"
     )
+    # 2026-05-28 Tier 0 — market-cap normalized flow for F2 component.
+    # Stambaugh 1986 non-stationarity fix: raw KRW flow is non-stationary as
+    # market cap grows; normalizing by KOSPI market cap yields a stationary ratio.
+    net_20d_normalized: float = Field(
+        default=0.0,
+        description="net_20d_krw / KOSPI market_cap (ratio). Period-stationary "
+                    "(Stambaugh 1986 non-stationarity fix).",
+    )
 
 
 class PolicyUncertaintySnapshot(StalenessAware):
@@ -301,3 +323,56 @@ class KRValuationSnapshot(StalenessAware):
     kospi_pbr: float = Field(description="KOSPI 200 PBR")
     kospi_per: float = Field(description="KOSPI 200 forward PER")
     kospi_div_yield: float = Field(description="KOSPI 200 dividend yield %")
+
+
+# ===========================================================================
+# 2026-05-28 Tier 0 — New factor model component snapshots
+# ===========================================================================
+
+class CommodityMomentumSnapshot(StalenessAware):
+    """Commodity price momentum — F2/F12 components, F13 directly.
+    Daily price series (commodities.py) → 3m/6m % change.
+    Reference: Erb-Harvey 2006 FAJ, Asness-Moskowitz-Pedersen 2013 JF.
+    """
+    copper_3m_pct: float = Field(description="Copper (HG=F) 3-month % change")
+    copper_6m_pct: float = Field(description="Copper 6-month % change")
+    gold_3m_pct: float = Field(description="Gold (GC=F) 3-month % change")
+    gold_6m_pct: float = Field(description="Gold 6-month % change")
+    wti_3m_pct: float = Field(description="WTI (CL=F) 3-month % change")
+    wti_6m_pct: float = Field(description="WTI 6-month % change")
+    bcom_3m_pct: float | None = Field(
+        default=None,
+        description="Bloomberg Commodity Index (^BCOM or DJP ETF proxy) 3m %. None=fetch fail.",
+    )
+
+
+class USEquityValuationSnapshot(StalenessAware):
+    """Shiller US CAPE — F8 component (Asness 2003 standard)."""
+    cape: float = Field(description="Shiller CAPE (PE10), monthly")
+    cape_zscore_30y: float = Field(default=0.0, description="30-year z-score of CAPE")
+
+
+class GeopoliticalRiskSnapshot(StalenessAware):
+    """Caldara-Iacoviello GPR Index — F7 component."""
+    gpr_monthly: float = Field(description="GPR Index (monthly, 1900+)")
+    gpr_zscore_60m: float = Field(default=0.0, description="60-month z-score")
+    gpr_daily: float | None = Field(default=None, description="GPR Daily (1985+). None=fetch fail.")
+
+
+class ChinaCreditImpulseSnapshot(StalenessAware):
+    """China Credit Impulse — F12 (Biggs-Mayer-Pick 2010)."""
+    credit_impulse: float = Field(description="Biggs-Mayer-Pick credit impulse (%)")
+    credit_to_gdp_ratio: float = Field(description="Raw credit/GDP ratio (%)")
+    credit_yoy_pct: float = Field(description="Credit-to-GDP YoY % (1st diff)")
+
+
+class EarningsRevisionSnapshot(StalenessAware):
+    """Earnings Revision Net Ratio — F11 (staggered, 2010+)."""
+    sp500_net_revision: float | None = Field(
+        default=None,
+        description="SP500 aggregated net revision ratio (1m). None=fetch fail or pre-2010.",
+    )
+    kospi200_net_revision: float | None = Field(
+        default=None,
+        description="KOSPI200 forward EPS implied 1m. None=fetch fail.",
+    )

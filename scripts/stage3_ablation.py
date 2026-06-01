@@ -94,7 +94,6 @@ def main() -> int:
     # eligible tickers + returns matrix (전체 universe 한 번만 fetch)
     eligible_by_bucket = list_eligible_tickers(
         universe, bucket_target, as_of=as_of,
-        min_aum_krw=1_000_000_000_000,
     )
     eligible = sorted({t for ts in eligible_by_bucket.values() for t in ts})
     if not eligible:
@@ -126,7 +125,6 @@ def main() -> int:
         dominant_scenario=dom_scenario,
         per_bucket_n=per_bucket_n,
         correlation_threshold=0.85,
-        min_aum_krw=1_000_000_000_000,
     )
 
     variants = [v.strip() for v in args.variants.split(",") if v.strip()]

@@ -51,8 +51,16 @@ def _make_inputs(seed=11):
         for t in tickers
     }
     target = BucketTarget(
-        kr_equity=0.4, global_equity=0.0,
-        fx_commodity=0.4, bond=0.0, cash_mmf=0.2,
+        weights={
+            "kr_equity":             0.4,
+            "global_equity":         0.0,
+            "precious_metals":       0.4,
+            "cyclical_commodity_fx": 0.0,
+            "kr_bond":               0.0,
+            "credit":                0.0,
+            "global_duration":       0.0,
+            "cash_mmf":              0.2,
+        },
         rationale="t",
     )
     return u, target, returns, panel
@@ -96,10 +104,10 @@ def test_run_ablation_baseline_vs_no_boost_differs_only_when_scenario_set():
 
     # no_boost 변형은 baseline과 비교됨 (baseline은 결과에 안 들어감)
     assert "no_boost" in report.bucket_comparisons
-    # fx_commodity bucket은 boost 영향 받음 (gold/silver)
-    fx_cmp = report.bucket_comparisons["no_boost"]["fx_commodity"]
+    # precious_metals bucket은 boost 영향 받음 (gold/silver)
+    pm_cmp = report.bucket_comparisons["no_boost"]["precious_metals"]
     # ranking이 달라지거나 동일할 수 있음. 적어도 spearman 계산은 됨.
-    assert fx_cmp.spearman is None or -1.0 <= fx_cmp.spearman <= 1.0
+    assert pm_cmp.spearman is None or -1.0 <= pm_cmp.spearman <= 1.0
     # report 직렬화 가능
     d = report.to_dict()
     assert "summary" in d

@@ -19,8 +19,17 @@ _TICKERS = [f"A{i:03d}" for i in range(1, 11)]
 
 def _bucket():
     return BucketTarget(
-        kr_equity=0.20, global_equity=0.20, fx_commodity=0.20,
-        bond=0.20, cash_mmf=0.20, rationale="test",
+        weights={
+            "kr_equity":             0.20,
+            "global_equity":         0.20,
+            "precious_metals":       0.00,
+            "cyclical_commodity_fx": 0.20,
+            "kr_bond":               0.20,
+            "credit":                0.00,
+            "global_duration":       0.00,
+            "cash_mmf":              0.20,
+        },
+        rationale="test",
     )
 
 
@@ -35,9 +44,11 @@ def _wv():
 def _candidates():
     return CandidateSet(
         bucket_to_tickers={
-            "kr_equity": _TICKERS[0:2], "global_equity": _TICKERS[2:4],
-            "fx_commodity": _TICKERS[4:6], "bond": _TICKERS[6:8],
-            "cash_mmf": _TICKERS[8:10],
+            "kr_equity":             _TICKERS[0:2],
+            "global_equity":         _TICKERS[2:4],
+            "cyclical_commodity_fx": _TICKERS[4:6],
+            "kr_bond":               _TICKERS[6:8],
+            "cash_mmf":              _TICKERS[8:10],
         },
         selection_criteria="t", total_candidates=10,
     )

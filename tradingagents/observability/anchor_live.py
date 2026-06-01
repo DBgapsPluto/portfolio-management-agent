@@ -107,14 +107,11 @@ def _run_live_stage1(
 def _build_stage2_synthetic(anchor: dict, stage1_state: dict) -> dict:
     """anchor JSON의 Stage 2 (research_decision + bucket_target) 를 SimpleNamespace로."""
     from tradingagents.schemas.portfolio import BucketTarget
+    from tradingagents.observability.anchor_evaluator import _extract_bucket_weights
 
     bt_data = anchor["stage2"]["bucket_target"]
     bucket_target = BucketTarget(
-        kr_equity=bt_data["kr_equity"],
-        global_equity=bt_data["global_equity"],
-        fx_commodity=bt_data["fx_commodity"],
-        bond=bt_data["bond"],
-        cash_mmf=bt_data["cash_mmf"],
+        weights=_extract_bucket_weights(bt_data),
         bond_tips_share=bt_data.get("bond_tips_share", 0.0),
         rationale=f"anchor: {anchor['anchor_id']}",
     )
