@@ -7,10 +7,8 @@ import pytest
 
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.skills.portfolio.cash_spillover import (
-    CASH_CAP_FOR_SPILLOVER_TARGET,
     SPILLOVER_THRESHOLD_BY_BUCKET,
     SPILLOVER_THRESHOLD_DEFAULT,
-    ConvictionResult,
     adjust_bucket_targets,
     compute_bucket_conviction,
 )

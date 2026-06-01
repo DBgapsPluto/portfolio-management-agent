@@ -69,11 +69,16 @@ def test_allocator_nco_attribution_records_breakdown(tmp_path, monkeypatch):
     nco = opt_attr["nco_breakdown_per_pool"]
     # 적어도 1 bucket 의 breakdown 있어야
     assert len(nco) > 0
-    # 각 pool 의 breakdown 에 핵심 키 있어야
+    # multi-asset pool 의 breakdown 은 clustering 정보 기록.
+    # single-asset pool(n_assets=1)은 cluster 불가 → 정당하게 skip.
+    multi_asset_checked = 0
     for pool_label, breakdown in nco.items():
-        if "error" in breakdown:
-            continue  # fallback case
+        if "error" in breakdown or breakdown.get("fallback") == "single_asset":
+            continue  # cluster 불가 (표본 부족 또는 단일 자산)
         assert "n_clusters" in breakdown or "silhouette" in breakdown
+        multi_asset_checked += 1
+    # 적어도 하나의 multi-asset pool 이 clustering 을 기록했는지 확인 (의미 보존)
+    assert multi_asset_checked > 0
 
 
 def test_allocator_nco_respects_single_asset_cap(tmp_path, monkeypatch):
