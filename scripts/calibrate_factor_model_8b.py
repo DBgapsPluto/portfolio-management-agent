@@ -100,11 +100,19 @@ def grid_search_shrinkage(samples, prior_beta):
     from tradingagents.skills.research.factor_calibration_hierarchical import walk_forward_hierarchical
     lambda_global_grid = [0.5, 1.0, 2.0, 3.0, 5.0, 10.0]
     lambda_family_grid = [0.1, 0.3, 1.0]
+    # Fold sizes must fit the realized all-8-buckets window (~75q from 2006 ETF
+    # inception). The original train=80/test=8 yields ZERO folds at n=75 — itself
+    # the headline feasibility finding (Issue #18/#31). Scaled to fit the data so
+    # the grid produces folds; OOS is reported with the caveat that train≈48 for
+    # ~73 free β cells is statistically thin (see followup #31 empirical result).
+    n = len(samples)
+    initial_train = min(48, max(8, n - 12))
+    test_window = 4
     results = []
     for lg in lambda_global_grid:
         for lf in lambda_family_grid:
             folds = walk_forward_hierarchical(
-                samples, initial_train_size=80, test_window=8,
+                samples, initial_train_size=initial_train, test_window=test_window,
                 lambda_global=lg, lambda_family=lf, prior_beta=prior_beta,
             )
             median_oos = float(np.median([f.oos_sharpe for f in folds])) if folds else float("nan")
@@ -125,8 +133,12 @@ def main():
     if args.grid:
         grid = grid_search_shrinkage(samples, INITIAL_BETA)
         grid.to_json(out_dir / "shrinkage_grid_summary.json", orient="records", indent=2)
-        best = grid.loc[grid["median_oos_sharpe"].idxmax()]
-        lg, lf = float(best["lambda_global"]), float(best["lambda_family"])
+        if grid["median_oos_sharpe"].notna().any():
+            best = grid.loc[grid["median_oos_sharpe"].idxmax()]
+            lg, lf = float(best["lambda_global"]), float(best["lambda_family"])
+        else:
+            logger.warning("All grid folds NaN (insufficient data); using default λ.")
+            lg, lf = 2.0, 0.5
     else:
         lg, lf = 2.0, 0.5
 

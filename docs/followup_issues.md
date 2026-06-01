@@ -827,6 +827,96 @@ High — production environment verify gate.
 > *operationally* what the design intends. Deferred (not blocking the framework),
 > analogous to the PR2a "infrastructure first, real run later" pattern (Issue #18).
 
+## Priority recalibration (2026-06-01) — supersedes per-issue Priority fields below
+
+> After a "is this fatal / what does the *best* algorithm actually need" re-triage:
+> **None of #24–#32 is fatal — the current system (quant core on hand-coded prior,
+> T3 OFF) is sound and shippable.** Ranked by *actual portfolio-quality leverage*
+> (not design completeness):
+>
+> **The real top gap — under-stated by the issue list:** the 8-bucket × 12-factor
+> β has **never been calibrated**. T1 replaced PR2a's calibrated 5-bucket β with a
+> new hand-coded 96-entry *expert prior* (commit ea5204c). So the redesign currently
+> runs on a *less-validated* β than existed pre-T1. Everything rests on β; validating
+> it (and learning whether the factor model even beats 60/40) is the foundational
+> move. → **#31 is rank 1.** Caveat: PR2b showed the old calibrated β beat 60/40 only
+> *insignificantly* (p=0.717); #31's value is the *validation/gate*, not assumed gain.
+>
+> **The LLM overlay must NOT be rushed.** It cannot be backtested (#27, by design),
+> LLMs over-extrapolate (Man Group), and a noisy hit-rule (#29) would learn market
+> beta not skill. Wiring #24/#26/#30 to "complete" T3 now would put an *unvalidated,
+> possibly-harmful* component on real money. Correct path: observability-first.
+>
+> | Rank | Issue | Action | Why |
+> |---|---|---|---|
+> | 1 | #31 (+#20/#21) | Calibrate 8-bucket β on real data **and test vs 60/40 significance** | Everything rests on β; it's currently an unvalidated guess |
+> | 2 | #25 | Journal in *shadow mode* (T3 OFF, record predictions only) | Only way to learn if the LLM has alpha — *with data*, before risking capital |
+> | 3 | (ops) | Run T3 shadow N months → evaluate hit-rate | Validate before enabling |
+> | 4 | #24 + #29 | Wire learning loop *correctly* (tilt-attributed PnL), after track record | Adaptive layer — but only once #29's signal is sound |
+> | 5 | #30 | Live LLM client adapter — *after* deciding to enable | Gating prerequisite; don't rush |
+> | low | #28, #26, #32 | Config-flag hygiene / 2nd-order auto-tune / projection sanity | Cosmetic or 2nd-order |
+>
+> **Re-grading vs the per-issue fields below:** #24 High→"gated on shadow track record";
+> #26 Medium→Low; #27 High→by-design (backtest=0 is correct) + Medium (live salience quality);
+> #30 High→"gated, not urgent"; #31 High→**Highest (foundational)**; #25 stays High.
+> #28/#32 unchanged (low/medium).
+
+### #31/#18 EMPIRICAL RESULT (2026-06-01) — calibration pursued to conclusion
+
+**Data IS available** (correcting an earlier false blocker): with `.env` loaded,
+FRED + ECOS + yfinance + pykrx (KRX login) all work live. The "#20/#21 data
+blocked" notes were an artifact of subagents not loading `.env`. Real 8-bucket
+return panel (`bucket_returns_8b.parquet`) and `samples_8b.parquet` were generated.
+
+**But the calibration CANNOT be validated as beating 60/40.** Hard numbers
+(`samples_8b`, 2006–2024; see `scripts/generate_samples_8b.py`):
+
+| Finding | Number | Implication |
+|---|---|---|
+| All-8-buckets window | **75 quarters** (2006-Q2..2024-Q4) | bounded by precious_metals/cyclical ETF inception (2006) — not fetch capability |
+| Intended walk-forward `initial_train_size=80` | **0 folds** | the designed validation protocol is *literally infeasible* at n=75 |
+| Informative factors | **9 of 12** | F6 krw_regime (std=0), F11 earnings_revision (all-NaN), F12 china_credit_impulse (std=0) carry **zero** historical info → can only sit at prior |
+| Free β cells vs samples | 73 vs ~74 | ratio ≈ 1.0 ≪ 1.5 acceptance gate |
+| Feasible WF (train≥48,test=4) IS→OOS Sharpe | 1.35 → 0.96 | **gap 0.42 = overfit signature** |
+| OOS holdout (19q) strat vs 60/40 Sharpe | 1.77 vs 0.62 | point estimate favors model… |
+| …paired significance | **p = 0.49** | **NOT significant** — same verdict as PR2b (p=0.717) |
+
+**Verdict:** On available data the 8-bucket × 12-factor β is — and must remain —
+a **prior-dominated** construction. Calibration can *lightly refine* β within the
+shrinkage band, but it **cannot establish** a statistically significant edge over
+60/40. The honest acceptance posture: the model's justification is *economic
+reasoning* (expert prior + sign restrictions + hierarchical shrinkage), NOT an
+empirical OOS edge. This is not a bug to fix — it is a structural limit of 3
+risk-bucket ETFs only existing since 2006. **Two caveats on the z used:** (a) the
+historical Stage 1 panel was only partially re-wired for T0 (has shiller_cape but
+NOT ACM/INDPRO/Real-PCE/GZ-EBP/GPR/BIS), so F1–F10 are *graceful-degradation
+proxy-z*, not the true reformed series; (b) F11/F12 are dead historically. So even
+the 9 "informative" factors are proxy-grade. A fidelity-grade re-run requires
+extending `assemble_quarterly_panel` for the 6 missing series — but **that cannot
+change the n=75 feasibility ceiling.**
+
+**Action implication:** keep #31 rank-1 *as a gate*, not as an assumed gain. Ship
+on the hand-coded prior (sound, mandate-compliant). Do NOT over-tune β to the
+75-quarter sample (overfit). The competition edge must come from elsewhere
+(philosophy score, risk discipline, the LLM overlay *if* shadow-validated), not
+from a statistically-unsupportable factor-timing claim.
+
+**`validate_factor_model_8b.py` gate output (run 2026-06-01, default λ):**
+```
+n_samples=75  n_free_beta_params=73  sample_per_param=1.03  (gate ≥1.5)  -> overfit_pass=FALSE
+vif_max=1.0 (pass)   median_oos_sharpe=NaN (walk-forward train=80 > 75 -> 0 folds)  -> sharpe_pass=FALSE
+overall_pass=FALSE
+```
+And the *calibrated* β (artifacts/2026-06-01/tier2_calibration/calibrated_beta.json)
+barely departs the prior: **mean |β_cal − β_prior| = 0.017**, median 0.010, only
+27/96 cells move >0.02. The shrinkage absorbs the thin sample — i.e. the data
+cannot move β meaningfully off the expert prior. The acceptance gate **correctly
+rejects** the free calibration. Conclusion stands: ship the prior; treat any
+calibrated β as, at most, a lightly-shrunk variant — never as a validated edge.
+(Minor housekeeping follow-up: `validate_factor_model_8b.py` + the script grid
+still hard-code `initial_train_size=80`; scale to the realized window so OOS isn't
+vacuously NaN. Does not change the verdict — `overfit_pass` fails regardless.)
+
 ## Issue #24 — T3 credibility learning loop is DEAD (never wired)
 
 ### Problem

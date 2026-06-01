@@ -97,15 +97,21 @@ def _build_precious_metals_tr(start: date, end: date) -> pd.Series:
 
     pieces = []
     if start < gld_start:
-        # Pre-2004 fallback: FRED gold spot only
-        gold = fred.fetch_fred_series(
-            "GOLDAMGBD228NLBM", start, min(end, gld_start - timedelta(days=1))
-        )
-        if not gold.empty:
-            gold_ret = gold.pct_change()
-            aligned_krw = krw_ret.reindex(gold_ret.index).ffill()
-            pre = ((1 + gold_ret) * (1 + aligned_krw) - 1).dropna()
-            pieces.append(pre)
+        # Pre-2004 fallback: FRED London gold fix. NOTE: GOLDAMGBD228NLBM was
+        # delisted from FRED (2026); no live substitute. Degrade gracefully —
+        # precious_metals simply begins at GLD inception (2004-11). The binding
+        # calibration window starts 2006+ anyway, so pre-2004 gold is moot.
+        try:
+            gold = fred.fetch_fred_series(
+                "GOLDAMGBD228NLBM", start, min(end, gld_start - timedelta(days=1))
+            )
+            if not gold.empty:
+                gold_ret = gold.pct_change()
+                aligned_krw = krw_ret.reindex(gold_ret.index).ffill()
+                pre = ((1 + gold_ret) * (1 + aligned_krw) - 1).dropna()
+                pieces.append(pre)
+        except Exception as e:
+            logger.warning("precious_metals pre-2004 gold fallback unavailable: %s", e)
     if end >= gld_start:
         gld = _yf_ret("GLD", max(start, gld_start), end)
         if end >= slv_start:
@@ -283,20 +289,40 @@ def build_bucket_returns_8b(
         ("global_duration", _build_global_duration_tr),
         ("cash_mmf", _build_cash_mmf_tr),
     ]
-    cols = []
+    populated: dict[str, pd.Series] = {}
+    empty_names: list[str] = []
     for name, fn in builders:
         try:
             s = fn(start, end)
-            cols.append(s.rename(name))
         except Exception as e:
             logger.warning("bucket %s build failed: %s", name, e)
-            cols.append(pd.Series(dtype=float, name=name))
-    df = pd.concat(cols, axis=1)
-    # Guard: if all builders failed, concat produces a RangeIndex DataFrame; return empty.
-    if not isinstance(df.index, pd.DatetimeIndex):
-        empty_idx = pd.DatetimeIndex([], freq="Q")
-        return pd.DataFrame(columns=df.columns, index=empty_idx)
-    return df.resample("Q").apply(lambda x: (1 + x.fillna(0)).prod() - 1)
+            s = pd.Series(dtype=float)
+        # Only keep series with a real DatetimeIndex; an empty/RangeIndex series
+        # must NOT enter the concat or it corrupts the union index to Object dtype
+        # (which would collapse every other bucket). Track it as an all-NaN column.
+        if len(s) and isinstance(s.index, pd.DatetimeIndex):
+            populated[name] = s.rename(name)
+        else:
+            empty_names.append(name)
+            logger.warning("bucket %s produced no data over %s..%s", name, start, end)
+    if not populated:
+        empty_idx = pd.DatetimeIndex([], name="quarter_end")
+        return pd.DataFrame(columns=[n for n, _ in builders], index=empty_idx)
+    df = pd.concat(populated.values(), axis=1)
+    # Re-introduce empty buckets as all-NaN columns on the union index.
+    for name in empty_names:
+        df[name] = np.nan
+    df = df[[n for n, _ in builders]]  # restore canonical column order
+
+    # Compound to quarterly. A quarter with NO daily observations for a bucket
+    # (e.g. precious_metals/cyclical pre-2006 ETF inception) must yield NaN, not
+    # 0.0 — otherwise those fake-zero returns silently enter calibration.
+    def _q_compound(x: pd.Series) -> float:
+        if x.notna().sum() == 0:
+            return np.nan
+        return (1 + x.fillna(0)).prod() - 1
+
+    return df.resample("Q").agg(_q_compound)
 
 
 def save_bucket_returns_8b(
