@@ -468,7 +468,7 @@ def _build_sector_mapper_and_bounds(
     _cash_target = target_map.get("cash_mmf", 0.0)
     _cash_achievable = _n_cash * SINGLE_ASSET_CAP  # max realizable with cap
     if _cash_target > 0 and (_n_cash == 0 or _cash_achievable < _cash_target - 1e-9):
-        bond_key = "bond_nominal" if split_bond else "bond"
+        bond_key = "bond_nominal" if split_bond else "global_duration"
         target_map[bond_key] = target_map.get(bond_key, 0.0) + target_map.pop("cash_mmf")
         logger.warning(
             "cash_mmf infeasibility guard: n_cash=%d, achievable=%.4f < target=%.4f"
