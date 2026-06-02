@@ -88,3 +88,40 @@ def test_trader_drops_unknown_bucket_keys(tmp_path):
     node = create_trader_allocator(step_a_llm=step_a, step_b_llm=step_b)
     out = node(_state(up))
     assert "garbage_key" not in out["bucket_target"].weights
+
+
+def test_trader_clamps_oversized_thin_pool_bucket(tmp_path):
+    import json
+    etfs = [
+        {"ticker": "R1", "name": "리츠1", "aum_krw": 100.0, "underlying_index": "i",
+         "bucket": "위험", "category": "c", "gaps_bucket": "b7_reits"},
+        {"ticker": "R2", "name": "리츠2", "aum_krw": 100.0, "underlying_index": "i",
+         "bucket": "위험", "category": "c", "gaps_bucket": "b7_reits"},
+        {"ticker": "C1", "name": "현금1", "aum_krw": 100.0, "underlying_index": "i",
+         "bucket": "안전", "category": "c", "gaps_bucket": "a1_cash"},
+        {"ticker": "C2", "name": "현금2", "aum_krw": 100.0, "underlying_index": "i",
+         "bucket": "안전", "category": "c", "gaps_bucket": "a1_cash"},
+        {"ticker": "C3", "name": "현금3", "aum_krw": 100.0, "underlying_index": "i",
+         "bucket": "안전", "category": "c", "gaps_bucket": "a1_cash"},
+    ]
+    p = tmp_path / "u.json"
+    p.write_text(json.dumps({"version": "t", "etfs": etfs}, ensure_ascii=False))
+
+    state = {
+        "research_decision": None, "universe_path": str(p),
+        "macro_summary": "m", "risk_summary": "r",
+        "technical_summary": "t", "news_summary": "n",
+        "allocation_feedback": [],
+    }
+    # b7_reits 0.6 > capacity 0.40 → must be clamped, NOT crash
+    step_a = _FakeStep(BucketAllocation(weights={"b7_reits": 0.6, "a1_cash": 0.4}))
+    step_b = _FakeStep(StockSelection(selections={
+        "b7_reits": ["R1", "R2"], "a1_cash": ["C1", "C2", "C3"]}))
+    node = create_trader_allocator(step_a_llm=step_a, step_b_llm=step_b)
+    out = node(state)   # must not raise
+
+    bt = out["bucket_target"]
+    assert bt.weights["b7_reits"] <= 0.40 + 1e-6      # clamped to pool capacity
+    wv = out["weight_vector"]
+    assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
+    assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())

@@ -9,6 +9,7 @@ step B: 비중>0 버킷의 종목 선정 (StockSelection)
 from __future__ import annotations
 import json
 import logging
+import math
 from pathlib import Path
 
 from tradingagents.dataflows.universe import Universe
@@ -81,7 +82,7 @@ def _step_b_prompt(state, bucket_weights, pool) -> list[dict]:
     for k, w in bucket_weights.items():
         if w <= 0:
             continue
-        min_n = max(1, int(-(-w // SINGLE_CAP)))   # ceil(w/cap)
+        min_n = max(1, math.ceil(w / SINGLE_CAP - 1e-9))
         cand = sorted(pool.get(k, []), key=lambda e: -e.aum_krw)
         listing = "\n".join(
             f"    {e.ticker} {e.name} (AUM {e.aum_krw:,.0f}, {e.bucket})"
@@ -108,6 +109,27 @@ def _normalize_bucket_weights(raw: dict[str, float]) -> dict[str, float]:
     return {k: v / total for k, v in clean.items() if v > 0}
 
 
+def _clamp_to_pool_capacity(
+    bucket_weights: dict[str, float], pool: dict[str, list]
+) -> dict[str, float]:
+    """각 버킷을 n_pool * SINGLE_CAP 용량으로 clamp, 초과분은 a1_cash 로 이동 후 재정규화."""
+    clamped: dict[str, float] = {}
+    overflow = 0.0
+    for k, w in bucket_weights.items():
+        cap = len(pool.get(k, [])) * SINGLE_CAP
+        if w > cap:
+            overflow += w - cap
+            clamped[k] = cap
+        else:
+            clamped[k] = w
+    if overflow > 1e-9:
+        clamped["a1_cash"] = clamped.get("a1_cash", 0.0) + overflow
+    total = sum(clamped.values())
+    if total <= 1e-9:
+        return {"a1_cash": 1.0}
+    return {k: v / total for k, v in clamped.items() if v > 1e-9}
+
+
 def create_trader_allocator(step_a_llm, step_b_llm):
     structured_a = bind_structured(step_a_llm, BucketAllocation, "TraderStepA")
     structured_b = bind_structured(step_b_llm, StockSelection, "TraderStepB")
@@ -124,6 +146,7 @@ def create_trader_allocator(step_a_llm, step_b_llm):
             BucketAllocation(weights={"a1_cash": 1.0}), "TraderStepA",
         )
         bucket_weights = _normalize_bucket_weights(ba.weights)
+        bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
 
         ss = invoke_structured_obj(
             structured_b, _step_b_prompt(state, bucket_weights, pool),
@@ -133,11 +156,10 @@ def create_trader_allocator(step_a_llm, step_b_llm):
         for bkey, w in bucket_weights.items():
             if w <= 0:
                 continue
+            bucket_tickers = {e.ticker for e in pool[bkey]}
             picked = [t for t in ss.selections.get(bkey, [])
-                      if t in valid_tickers and getattr(
-                          next((e for e in pool[bkey] if e.ticker == t), None),
-                          "gaps_bucket", None) == bkey]
-            need = max(1, int(-(-w // SINGLE_CAP)))
+                      if t in valid_tickers and t in bucket_tickers]
+            need = max(1, math.ceil(w / SINGLE_CAP - 1e-9))
             if len(picked) < need:
                 extra = [e.ticker for e in sorted(pool[bkey], key=lambda e: -e.aum_krw)
                          if e.ticker not in picked]
@@ -151,7 +173,7 @@ def create_trader_allocator(step_a_llm, step_b_llm):
             for bkey, w in bucket_weights.items():
                 if w <= 0:
                     continue
-                need = max(1, int(-(-w // SINGLE_CAP)))
+                need = max(1, math.ceil(w / SINGLE_CAP - 1e-9))
                 selections[bkey] = [
                     e.ticker for e in sorted(pool[bkey], key=lambda e: -e.aum_krw)
                 ][:max(need, len(selections.get(bkey, [])))]
