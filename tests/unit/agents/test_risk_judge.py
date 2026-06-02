@@ -59,7 +59,11 @@ def _state():
 
 
 def test_risk_judge_records_overlay_outcome_in_overlay_schema():
-    """risk_judge 노드가 apply_risk_overlay 의 outcome 을 RiskOverlay 에 기록."""
+    """risk_judge 노드가 apply_overlay_to_weights 의 outcome 을 RiskOverlay 에 기록.
+
+    apply_overlay_to_weights 를 mock 해서 weight_changed=True 를 반환하게 강제.
+    risk_judge 는 weight_changed=True → outcome="weights_shrunk" 로 파생.
+    """
     state, returns = _state()
     node = create_risk_judge()
 
@@ -67,10 +71,11 @@ def test_risk_judge_records_overlay_outcome_in_overlay_schema():
         "tradingagents.agents.managers.risk_judge.fetch_returns_matrix",
         return_value=returns,
     ):
-        # apply_risk_overlay 를 mock 해서 "relax_band" 반환하게 강제
+        # apply_overlay_to_weights 는 risk_judge 함수 내부에서 lazy import 됨.
+        # 해당 함수의 원본 모듈을 patch. weight_changed=True → outcome="weights_shrunk"
         with patch(
-            "tradingagents.agents.managers.risk_judge.apply_risk_overlay",
-            return_value=(state["weight_vector"], "relax_band"),
+            "tradingagents.agents.allocator.overlay_apply.apply_overlay_to_weights",
+            return_value=(state["weight_vector"], True),
         ), patch(
             # ~/.tradingagents/stats/overlay_outcomes.jsonl 폴루션 차단
             "tradingagents.agents.managers.risk_judge.record_overlay_outcome",
@@ -80,8 +85,8 @@ def test_risk_judge_records_overlay_outcome_in_overlay_schema():
 
     overlay = out["risk_overlay"]
     assert isinstance(overlay, RiskOverlay)
-    assert overlay.overlay_apply_outcome == "relax_band", (
-        f"expected relax_band, got {overlay.overlay_apply_outcome}"
+    assert overlay.overlay_apply_outcome == "weights_shrunk", (
+        f"expected weights_shrunk, got {overlay.overlay_apply_outcome}"
     )
 
 
