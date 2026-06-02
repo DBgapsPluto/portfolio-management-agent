@@ -15,6 +15,39 @@ from tradingagents.skills.research.factor_calibration import (
 from tradingagents.skills.research.factor_to_bucket import FACTORS, INITIAL_BETA
 
 
+def test_historically_unidentifiable_factors_are_f11_f12():
+    """F11 (earnings_revision) and F12 (china_credit_impulse) have NO historical
+    signal in the panel (all-NaN / constant) — they carry zero gradient and stay
+    pinned to prior. The calibration must declare them unidentifiable so the
+    overfitting gate's denominator reflects params the data can actually fit."""
+    from tradingagents.skills.research.factor_calibration import (
+        HISTORICALLY_UNIDENTIFIABLE_FACTORS,
+    )
+    assert HISTORICALLY_UNIDENTIFIABLE_FACTORS == frozenset(
+        {"F11_earnings_revision", "F12_china_credit_impulse"}
+    )
+
+
+def test_count_free_beta_params_excludes_unidentifiable_factors():
+    """Honest free-β count = all (factor,bucket) cells minus hard-zeros minus the
+    cells of historically-unidentifiable factors (NOT gate-gaming: those cells are
+    constants pinned to prior, never fit)."""
+    from tradingagents.skills.research.factor_calibration import (
+        HARD_ZERO_CELLS,
+        HISTORICALLY_UNIDENTIFIABLE_FACTORS,
+        count_free_beta_params,
+    )
+    from tradingagents.skills.research.factor_to_bucket import BUCKETS as _B
+    from tradingagents.skills.research.factor_to_bucket import FACTORS as _F
+    naive = sum(1 for f in _F for b in _B if (f, b) not in HARD_ZERO_CELLS)
+    removed = sum(
+        1 for f in HISTORICALLY_UNIDENTIFIABLE_FACTORS for b in _B
+        if (f, b) not in HARD_ZERO_CELLS
+    )
+    assert count_free_beta_params() == naive - removed
+    assert count_free_beta_params() < naive  # strictly fewer than the naive 73
+
+
 def _synthetic_samples(n: int = 50, seed: int = 42) -> list[HistoricalSample]:
     np.random.seed(seed)
     samples = []

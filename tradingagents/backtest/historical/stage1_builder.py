@@ -304,6 +304,20 @@ def build_historical_stage1(
     technical = _build_baseline_technical_report()
     news = _build_baseline_news_report()
 
+    # ---------- F6 krw_regime Tier-0 inputs (derived from panel history) ----------
+    # Tier 0 repointed F6 to fx.krw_change_6m_pct + foreign_flow.net_20d_normalized,
+    # but this builder previously set only the dead fx.usd_krw / foreign_flow.net_20d_krw
+    # fields — so every field F6 reads sat at its constant baseline (z=0 every quarter,
+    # F6 effectively dead). Derive the live fields from the committed panel.
+    pos = indicators_q.index.get_loc(ts)
+    krw_change_6m_pct: float | None = None
+    if not isinstance(pos, slice) and pos >= 2:
+        usdkrw_now = _g(row, "usdkrw", None)
+        usdkrw_2q = _g(indicators_q.iloc[pos - 2].to_dict(), "usdkrw", None)
+        if usdkrw_now and usdkrw_2q:
+            krw_change_6m_pct = (float(usdkrw_now) / float(usdkrw_2q) - 1.0) * 100.0
+    foreign_flow_norm = _g(row, "foreign_flow_z", None)
+
     # ---------- MacroReport overrides from panel ----------
     macro = macro.model_copy(update={
         "yield_curve": macro.yield_curve.model_copy(update={
@@ -342,9 +356,16 @@ def build_historical_stage1(
         "fx": macro.fx.model_copy(update={
             "usd_krw": float(_g(row, "usdkrw", 1250.0)),
             "dxy": float(_g(row, "dxy_dtwexm", 100.0)),
+            # F6 reads krw_change_6m_pct (Tier 0); leave baseline when no 6m history.
+            **({"krw_change_6m_pct": krw_change_6m_pct}
+               if krw_change_6m_pct is not None else {}),
         }),
         "foreign_flow": macro.foreign_flow.model_copy(update={
             "net_20d_krw": float(_g(row, "foreign_flow_z", 0.0)),
+            # F6 reads net_20d_normalized (Tier 0); panel foreign_flow_z is the
+            # mcap-normalized flow z-score. Leave baseline when absent.
+            **({"net_20d_normalized": float(foreign_flow_norm)}
+               if foreign_flow_norm is not None else {}),
         }),
     })
 

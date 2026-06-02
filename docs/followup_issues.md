@@ -1105,3 +1105,74 @@ final-fit objective to QP (slow, run once).
 
 ### Priority
 Medium.
+
+## Issue #33 — T2 signal-quality fix (F6 revived) + honest free-param count; gate still fails (2026-06-02)
+
+### Context
+Follow-up to #31/#18. Investigated *why* the 8-bucket calibration fails its gate and
+*how* β could actually be calibrated. Verified against `main` (62033d8) with an
+adversarial multi-agent workflow + direct TDD. Headline: the binding problem is NOT
+sample count — it is signal quality (dead factors) plus a possibly-absent edge.
+
+### Findings (verified)
+1. **N=75 is partly self-inflicted, not fundamental.** `bucket_returns_8b.parquet`
+   spans 1991–2024 (136q); 6 of 8 buckets reach 1991–2000. But
+   `generate_samples_8b.py:86` does `dropna(all 8 buckets)`, and precious_metals
+   (2006-06) + cyclical (2006-03) ETF inception — compounded by the delisted pre-2004
+   FRED gold proxy (GOLDAMGBD228NLBM) — cut the all-8 intersection to 75q. Even fixing
+   metals, the next floor is kr_bond (2000) / cash_mmf (1998); reaching 133q needs
+   proxy-stitching ALL late buckets.
+2. **F6_krw_regime was DEAD due to a wiring bug — now FIXED.** Tier 0 repointed F6 to
+   `fx.krw_change_6m_pct` / `foreign_flow.net_20d_normalized`, but
+   `stage1_builder.build_historical_stage1` only populated the pre-Tier-0 fields
+   (`fx.usd_krw`, `foreign_flow.net_20d_krw`). Every field F6 read sat at its constant
+   baseline → F6 z-std = 0.00 over 135q. **Fix** (`stage1_builder.py`): derive
+   `krw_change_6m_pct` from the panel's `usdkrw` 2-quarter change; map `foreign_flow_z`
+   → `net_20d_normalized`. Result: F6 z-std 0.00 → **1.30 (panel) / 1.61 (samples)** —
+   now the strongest live factor alongside F4. (TDD: `test_stage1_builder.py::test_f6_*`.)
+3. **F11/F12 are genuinely unidentifiable** (not a bug): F11 earnings_revision all-NaN,
+   F12 china_credit_impulse constant — no earnings-revision / BIS-China data in the
+   panel. Zero gradient → pinned to prior regardless of λ. Counting them as free β
+   params overstated the fit burden. Added `HISTORICALLY_UNIDENTIFIABLE_FACTORS` +
+   `count_free_beta_params()` (`factor_calibration.py`) → honest denominator 73 → **60**.
+   NOT gate-gaming (they are constants; the gate still fails). Runtime model unchanged.
+4. **Other liveness caveats:** F10_systemic_liquidity dead pre-2011 (nfci/cfnai first
+   2011-06); F5/F9 "thin" (1 moving component each). F1–F10 in the historical build are
+   graceful-degradation proxy-z, not the true reformed series.
+
+### Honest re-calibration result (after F6 fix + F11/F12 exclusion)
+`scripts/validate_factor_model_8b.py` on regenerated samples (10/12 live):
+- n_free_beta = 60 (was 73), n_samples = 75 → **sample_per_param = 1.25 (<1.5) → overfit FAIL**
+- median_oos_sharpe = NaN (walk-forward `initial_train_size=80` > N=75 → 0 folds) → sharpe FAIL
+- VIF max = 1.0 (pass); **overall_pass = FALSE**
+
+→ Fixing signals + honest counting moved 1.03 → 1.25, but the gate **correctly still
+rejects**. Binding constraint is N=75 (2006 inception + all-8 dropna), not param count.
+
+### Strategic conclusion (cold)
+Most "add more samples" levers (monthly resample, ETF panel pooling, low-rank-to-pass)
+are **gate-gaming** — they inflate the sample/param *number* without adding real
+information (verified: factor-z autocorrelation 0.8–0.94 → monthly N is fake;
+same-bucket KR ETFs corr≈1 → panel N is fake; ETF universe starts 2014 → can't extend
+history). With two independent datasets agreeing (PR2b 5-bucket p=0.717, 8-bucket
+p=0.49), the honest stance is: **β stays prior-dominated by design AND empirical
+necessity; pursue edge in philosophy / risk / Tier-3 overlay, not β-tuning.** The
+signal-quality fixes (F6 done; F10 pre-2011, F11/F12 sourcing) are the only non-gaming
+way to improve identification — but they do not manufacture an edge the data shows is small.
+
+### Done this session
+- F6 wiring bug fixed (TDD) — `stage1_builder.py`, `tests/.../test_stage1_builder.py`
+- Honest free-param count — `factor_calibration.py` (`HISTORICALLY_UNIDENTIFIABLE_FACTORS`,
+  `count_free_beta_params`), wired into `validate_factor_model_8b.py`; tests in
+  `test_factor_calibration.py`
+- Re-measured: sample_per_param 1.03 → 1.25 (still FAIL)
+
+### Remaining (optional)
+- `validate_factor_model_8b.py` walk-forward `initial_train_size=80` > N=75 → 0 folds →
+  OOS Sharpe vacuously NaN. Scale to the realized window so sharpe_pass is measurable
+  (does not change the overfit verdict).
+- F10 pre-2011 gap; F11/F12 live data sourcing — only worth it if pursuing β edge.
+
+### Priority
+F6 fix is a real correctness win (ship). Calibration-gate verdict is final:
+prior-dominated is correct.

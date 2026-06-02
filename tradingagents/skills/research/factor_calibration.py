@@ -59,6 +59,37 @@ HARD_ZERO_CELLS: Final[frozenset[tuple[str, str]]] = frozenset({
     ("F12_china_credit_impulse", "precious_metals"),
 })
 
+# Factors with NO identifiable historical signal in the committed panel:
+#   F11 earnings_revision  -> all-NaN (no earnings-revision history in the panel)
+#   F12 china_credit_impulse -> constant (no BIS China credit data in the panel)
+# Both carry zero gradient during historical calibration: they cannot move from the
+# hand-coded prior regardless of λ. Counting them as "free β params" overstates the
+# overfitting burden, so the honest sample/param denominator excludes their cells.
+# NOTE: this is a HISTORICAL-calibration accounting fact only — at runtime these
+# factors may have live data and are NOT removed from the production factor model.
+HISTORICALLY_UNIDENTIFIABLE_FACTORS: Final[frozenset[str]] = frozenset({
+    "F11_earnings_revision",
+    "F12_china_credit_impulse",
+})
+
+
+def count_free_beta_params() -> int:
+    """Number of β cells the historical data can actually identify.
+
+    = all (factor, bucket) cells, minus hard-zero cells, minus the cells of
+    HISTORICALLY_UNIDENTIFIABLE_FACTORS (constant/NaN in the panel → pinned to
+    prior, never fit). This is the honest denominator for the sample/param gate;
+    it is NOT gate-gaming — the excluded cells are not free parameters in any
+    real sense (they have no gradient).
+    """
+    return sum(
+        1
+        for f in FACTORS
+        for b in BUCKETS
+        if (f, b) not in HARD_ZERO_CELLS and f not in HISTORICALLY_UNIDENTIFIABLE_FACTORS
+    )
+
+
 # Bucket family groups for hierarchical prior.
 BUCKET_FAMILIES: Final[dict[str, list[str]]] = {
     "equity":    ["kr_equity", "global_equity"],

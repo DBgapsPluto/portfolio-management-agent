@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from tradingagents.skills.research.factor_calibration import (
-    HARD_ZERO_CELLS, compute_effective_df, compute_vif_matrix,
+    HARD_ZERO_CELLS, compute_effective_df, compute_vif_matrix, count_free_beta_params,
 )
 from tradingagents.skills.research.factor_calibration_hierarchical import (
     walk_forward_hierarchical,
@@ -40,8 +40,11 @@ def validate(samples, lambda_global, out_dir: Path, lambda_family: float = 0.5):
     collinearity_df = compute_effective_df(X, lambda_global)
 
     # HONEST overfitting metric: free β params vs effective sample size.
-    # 96 cells - 23 hard-zero cells = 73 free β params.
-    n_free_beta = len(FACTORS) * len(BUCKETS) - len(HARD_ZERO_CELLS)  # 96 - 23 = 73
+    # = 96 cells - 23 hard-zero - 13 historically-unidentifiable free cells (F11/F12,
+    # constant/NaN in the panel -> pinned to prior, never fit) = 60. Counting F11/F12
+    # as free params would overstate the fit burden (they carry no gradient); this is
+    # the honest denominator, NOT gate-gaming (the gate still fails at 60, see report).
+    n_free_beta = count_free_beta_params()
     n = len(samples)
     sample_per_param = n / n_free_beta if n_free_beta else float("inf")
     # Gate: with hierarchical shrinkage we accept sample/param >= 1.5
