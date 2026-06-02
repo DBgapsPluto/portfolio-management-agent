@@ -41,8 +41,8 @@ def create_research_cluster(bull_llm, bear_llm, manager_llm):
     structured_mgr = bind_structured(manager_llm, InvestmentThesis, "ResearchManager")
 
     def node(state):
-        bull_view = bull_node(state)["bull_view"]
-        bear_view = bear_node(state)["bear_view"]
+        bull_view = bull_node(state).get("bull_view", "(없음)")
+        bear_view = bear_node(state).get("bear_view", "(없음)")
 
         fallback = InvestmentThesis(
             thesis_md="(manager 종합 실패 — 중립 유지)", conviction="medium",
