@@ -860,9 +860,11 @@ def test_scenario_threshold_no_hysteresis(
             market_dispersion=_fs("F9_market_dispersion", 0.0),
         )
 
-    # threshold = 0.5. f1=0.49 → goldilocks default; f1=0.51 + f2=0.51 → overheating.
+    # threshold = 0.5. 둘 다 0.49 → both-neutral goldilocks default;
+    # 둘 다 0.51 → overheating. (단일 factor 만 decisive 하면 더 이상 goldilocks
+    # 가 아니므로 — single-decisive 버그 fix — 양쪽 factor 를 함께 넘긴다.)
     just_below = _make_scores(f1=SCENARIO_CYCLE_THRESHOLD - 0.01,
-                              f2=SCENARIO_CYCLE_THRESHOLD + 0.01)
+                              f2=SCENARIO_CYCLE_THRESHOLD - 0.01)
     just_above = _make_scores(f1=SCENARIO_CYCLE_THRESHOLD + 0.01,
                               f2=SCENARIO_CYCLE_THRESHOLD + 0.01)
     s_below = derive_dominant_scenario(just_below)
@@ -947,12 +949,14 @@ def test_scenario_hysteresis_prevents_jump_at_threshold():
         )
 
     # threshold = 0.5, band = 0.05. 정상 entry: f1>0.5 AND f2>0.5 → overheating.
+    # (f1, f2 를 lockstep 으로 움직여 — single-decisive fix 이후 한 factor 만
+    # neutral 이면 더 이상 goldilocks default 가 아니므로.)
     just_below_entry = _make_scores(
         f1=SCENARIO_CYCLE_THRESHOLD - 0.04,   # 0.46 (band 안)
-        f2=SCENARIO_CYCLE_THRESHOLD + 0.01,
+        f2=SCENARIO_CYCLE_THRESHOLD - 0.04,
     )
 
-    # prior 없으면: 0.46 < 0.5 → goldilocks (default)
+    # prior 없으면: 0.46 < 0.5 → goldilocks (both-neutral default)
     no_prior = derive_dominant_scenario(just_below_entry, prior_scenario=None)
     assert no_prior == "goldilocks"
 
@@ -969,7 +973,7 @@ def test_scenario_hysteresis_prevents_jump_at_threshold():
     # band 밖 (0.40) — hysteresis 도 잡지 못함 → overheating 탈출.
     way_below = _make_scores(
         f1=SCENARIO_CYCLE_THRESHOLD - 0.10,
-        f2=SCENARIO_CYCLE_THRESHOLD + 0.01,
+        f2=SCENARIO_CYCLE_THRESHOLD - 0.10,
     )
     exited = derive_dominant_scenario(way_below, prior_scenario="overheating")
     assert exited == "goldilocks"

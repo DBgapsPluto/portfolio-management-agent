@@ -207,6 +207,73 @@ def test_late_cycle_sub_category_boost_axes():
     assert axes == ("B", "N", "F")
 
 
+# ---- 2026-06-01 fix: single-decisive-factor (인플레 강할 때 goldilocks default 버그) ----
+
+
+def test_single_decisive_inflation_high_growth_neutral_negative():
+    """2022-12 프로파일: 인플레 강함 (f2=1.0), 성장 중립이지만 음수 (f1=-0.25)
+    → stagflation. (이전엔 quadrant 미발동 → goldilocks 로 오분류.)"""
+    from tradingagents.agents.managers.research_manager import _strict_classify_scenario
+    scenario = _strict_classify_scenario(
+        f1=-0.25, f2=1.0, f5=-0.42, f6=0.43, f7=0.39,
+    )
+    assert scenario == "stagflation"
+
+
+def test_single_decisive_inflation_high_growth_neutral_positive():
+    """인플레 강함 + 성장 중립이지만 양수 → overheating."""
+    from tradingagents.agents.managers.research_manager import _strict_classify_scenario
+    scenario = _strict_classify_scenario(
+        f1=0.2, f2=1.0, f5=0.0, f6=0.0, f7=0.0,
+    )
+    assert scenario == "overheating"
+
+
+def test_single_decisive_disinflation_growth_neutral_negative():
+    """디스인플레 강함 (f2=-1.0) + 성장 중립 음수 (f1=-0.2) → broad_recession."""
+    from tradingagents.agents.managers.research_manager import _strict_classify_scenario
+    scenario = _strict_classify_scenario(
+        f1=-0.2, f2=-1.0, f5=0.0, f6=0.0, f7=0.0,
+    )
+    assert scenario == "broad_recession"
+
+
+def test_single_decisive_disinflation_growth_neutral_positive():
+    """디스인플레 강함 + 성장 중립 양수 → goldilocks (성장+디스인플레)."""
+    from tradingagents.agents.managers.research_manager import _strict_classify_scenario
+    scenario = _strict_classify_scenario(
+        f1=0.2, f2=-1.0, f5=0.0, f6=0.0, f7=0.0,
+    )
+    assert scenario == "goldilocks"
+
+
+def test_single_decisive_growth_high_inflation_neutral():
+    """성장 강함 (f1=1.0) + 인플레 중립 (f2=0.1) → goldilocks."""
+    from tradingagents.agents.managers.research_manager import _strict_classify_scenario
+    scenario = _strict_classify_scenario(
+        f1=1.0, f2=0.1, f5=0.0, f6=0.0, f7=0.0,
+    )
+    assert scenario == "goldilocks"
+
+
+def test_single_decisive_growth_low_inflation_neutral():
+    """성장 약함 (f1=-1.0) + 인플레 중립 (f2=0.1) → broad_recession."""
+    from tradingagents.agents.managers.research_manager import _strict_classify_scenario
+    scenario = _strict_classify_scenario(
+        f1=-1.0, f2=0.1, f5=0.0, f6=0.0, f7=0.0,
+    )
+    assert scenario == "broad_recession"
+
+
+def test_both_factors_neutral_defaults_goldilocks():
+    """둘 다 중립 (|f1|,|f2| ≤ 0.5) → benign goldilocks baseline 유지."""
+    from tradingagents.agents.managers.research_manager import _strict_classify_scenario
+    scenario = _strict_classify_scenario(
+        f1=0.1, f2=0.1, f5=0.0, f6=0.0, f7=0.0,
+    )
+    assert scenario == "goldilocks"
+
+
 # ---- 2026-05-26 #8 fix: regime confidence → bucket sizing mapping ----
 
 
