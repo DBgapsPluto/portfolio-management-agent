@@ -2,8 +2,7 @@
 
 Stage 6 정리:
   ① portfolio.json full trace — Stage 1-5 산출물 통합 (research_decision,
-    method_choice, risk_overlay, portfolio_numerics, validation_report,
-    rebalance_mode)
+    method_choice, validation_report, rebalance_mode)
   ② philosophy.md prompt 섹션별 명시 매핑 (reports/philosophy.py)
   ③ trade_plan qty=0 명시 경고 (reports/trade_plan.py + state warnings)
 
@@ -83,21 +82,14 @@ def _build_full_trace_portfolio(state: dict) -> dict:
         "research_decision": _serialize_for_json(state.get("research_decision")),
         # Stage 3 — Method choice (어느 optimizer가 선택됐는지)
         "method_choice": _serialize_for_json(state.get("method_choice")),
-        # Stage 4 — Risk Overlay (lens_concerns + strength + ceilings/floors)
-        "risk_overlay": _serialize_for_json(state.get("risk_overlay")),
-        # Stage 4 — Portfolio Numerics (HHI/CVaR/cluster_exposure)
-        "portfolio_numerics": _serialize_for_json(state.get("portfolio_numerics")),
         # Stage 5 — Validation (어떤 룰 통과/위반 + rebalance_mode)
         "validation_report": _serialize_for_json(state.get("validation_report")),
         "rebalance_mode": state.get("rebalance_mode"),
         # Stage 5+6 audit (Task 2): per-stage attribution thread.
-        # Stage 3 audit 의 allocation_attribution, Stage 4 audit 의
-        # risk_judge_attribution, Stage 5 audit 의 mandate_validator_attribution.
+        # Stage 3 audit 의 allocation_attribution, Stage 5 audit 의
+        # mandate_validator_attribution.
         "allocation_attribution": _serialize_for_json(
             state.get("allocation_attribution"),
-        ),
-        "risk_judge_attribution": _serialize_for_json(
-            state.get("risk_judge_attribution"),
         ),
         "mandate_validator_attribution": _serialize_for_json(
             state.get("mandate_validator_attribution"),
@@ -139,8 +131,7 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
             portfolio_path, len(weights.weights),
             [
                 k for k in (
-                    "allocation_attribution", "risk_judge_attribution",
-                    "mandate_validator_attribution",
+                    "allocation_attribution", "mandate_validator_attribution",
                 ) if portfolio.get(k) is not None
             ],
         )

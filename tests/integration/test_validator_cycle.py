@@ -76,8 +76,6 @@ def test_full_cycle_with_mocks(tmp_path):
                     "weight_vector": bad_weights,
                     "allocation_attempts": state.get("allocation_attempts", 0) + 1,
                 }
-            if agent_id == "risk_debate":
-                return {"risk_debate_summary": "stub"}
             if agent_id == "validator":
                 # Always fail
                 return {

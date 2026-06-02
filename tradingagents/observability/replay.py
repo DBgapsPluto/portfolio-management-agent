@@ -29,9 +29,6 @@ from tradingagents.schemas.reports import (
     MacroReport, NewsReport, RiskReport, TechnicalReport,
 )
 from tradingagents.schemas.research import ResearchDecision
-from tradingagents.schemas.risk_overlay import RiskOverlay
-from tradingagents.skills.risk.portfolio_metrics import PortfolioNumerics
-
 logger = logging.getLogger(__name__)
 
 
@@ -61,18 +58,9 @@ STAGE_PREREQUISITES: dict[str, list[str]] = {
         "macro_report", "risk_report", "technical_report",
         "research_debate_summary", "research_decision", "bucket_target",
     ],
-    # Stage 4 risk_judge
-    "risk_debate": [
-        "macro_summary", "risk_summary",
-        "technical_summary", "news_summary",
-        "macro_report", "risk_report", "technical_report",
-        "research_debate_summary", "research_decision", "bucket_target",
-        "candidate_set", "weight_vector", "method_choice",
-    ],
     # Stage 5 validator
     "validator": [
-        "weight_vector", "candidate_set",
-        "risk_overlay", "portfolio_numerics", "bucket_target",
+        "weight_vector", "candidate_set", "bucket_target",
     ],
     # Stage 6 portfolio_manager (전체 trace 필요)
     "portfolio_manager": [
@@ -81,7 +69,6 @@ STAGE_PREREQUISITES: dict[str, list[str]] = {
         "macro_report", "risk_report", "technical_report",
         "research_debate_summary", "research_decision", "bucket_target",
         "candidate_set", "weight_vector", "method_choice",
-        "risk_overlay", "portfolio_numerics",
         "validation_report", "rebalance_mode",
     ],
 }
@@ -93,8 +80,6 @@ SCHEMA_MAP: dict[str, type[BaseModel]] = {
     "research_decision": ResearchDecision,
     "candidate_set": CandidateSet,
     "weight_vector": WeightVector,
-    "risk_overlay": RiskOverlay,
-    "portfolio_numerics": PortfolioNumerics,
     "validation_report": ValidationReport,
     "macro_report": MacroReport,
     "risk_report": RiskReport,

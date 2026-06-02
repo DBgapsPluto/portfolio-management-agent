@@ -14,9 +14,6 @@ from tradingagents.dataflows.universe import sync_from_xlsx
 from tradingagents.schemas.portfolio import (
     BucketTarget, OptimizationMethod, WeightVector,
 )
-from tradingagents.schemas.risk_overlay import (
-    LensConcern, RiskOverlay, RiskOverlayDelta,
-)
 
 
 def _build_state(universe_path):
@@ -54,39 +51,6 @@ def _build_state(universe_path):
             },
         ),
         "method_choice": {"method": "hrp", "reasoning": "recession defensive"},
-        # Real RiskOverlay (philosophy._format_overlay가 is_empty() 호출)
-        "risk_overlay": RiskOverlay(
-            risk_asset_multiplier=0.85,
-            severity_decision="high consensus",
-            strength_applied=0.5,
-            lens_concerns=[
-                LensConcern(
-                    lens="tail_risk", level="high",
-                    proposed_overlay=RiskOverlayDelta(risk_asset_multiplier=0.75),
-                    evidence="CVaR_95=3.2%, systemic=7.5",
-                ),
-                LensConcern(
-                    lens="concentration", level="medium",
-                    proposed_overlay=RiskOverlayDelta(),
-                    evidence="HHI=0.14",
-                ),
-                LensConcern(
-                    lens="macro_conditional", level="medium",
-                    proposed_overlay=RiskOverlayDelta(risk_asset_multiplier=0.92),
-                    evidence="risk_weight=55%, scenario=broad_recession",
-                ),
-            ],
-        ),
-        "portfolio_numerics": SimpleNamespace(
-            hhi=0.14, top1_weight=0.30, top3_weight_sum=0.80,
-            max_cluster_exposure=0.40,
-            cvar_95_1d=0.025, var_95_1d=0.020, realized_vol_60d=0.012,
-            cluster_exposure={"c1": 0.40},
-            n_assets=4, source_date=None, staleness_days=0,
-            model_dump=lambda **kw: {
-                "hhi": 0.14, "top1_weight": 0.30, "cvar_95_1d": 0.025,
-            },
-        ),
         "validation_report": SimpleNamespace(
             passed=True, violations=[],
             model_dump=lambda **kw: {"passed": True, "violations": []},
@@ -116,11 +80,9 @@ def test_build_full_trace_portfolio_has_all_keys(tmp_path):
 
     portfolio = _build_full_trace_portfolio(state)
 
-    # Stage 6 정리 ① — 5개 신규 trace 필드
+    # Stage 6 정리 ① — trace 필드
     assert "research_decision" in portfolio
     assert "method_choice" in portfolio
-    assert "risk_overlay" in portfolio
-    assert "portfolio_numerics" in portfolio
     assert "validation_report" in portfolio
     assert "rebalance_mode" in portfolio
     assert portfolio["rebalance_mode"] == "initial"
@@ -131,13 +93,12 @@ def test_build_full_trace_handles_missing_optional_fields(tmp_path):
     sync_from_xlsx(Path("tests/fixtures/universe_test.xlsx"), universe_json)
     state = _build_state(universe_json)
     # Stage 1-5 정보 모두 제거 (legacy state)
-    for k in ["research_decision", "method_choice", "risk_overlay",
-              "portfolio_numerics", "validation_report"]:
+    for k in ["research_decision", "method_choice", "validation_report"]:
         state[k] = None
 
     portfolio = _build_full_trace_portfolio(state)
     assert portfolio["research_decision"] is None
-    assert portfolio["risk_overlay"] is None
+    assert portfolio["validation_report"] is None
     # 기존 필드는 정상
     assert portfolio["method"] == "hrp"
     assert "weights" in portfolio
@@ -166,8 +127,6 @@ def test_portfolio_manager_writes_full_trace_and_warnings(tmp_path):
         Path(result["final_portfolio_path"]).read_text(encoding="utf-8"),
     )
     assert portfolio["research_decision"]["dominant_scenario"] == "broad_recession"
-    assert portfolio["risk_overlay"]["strength_applied"] == 0.5
-    assert portfolio["portfolio_numerics"]["hhi"] == 0.14
     assert portfolio["validation_report"]["passed"] is True
     assert portfolio["rebalance_mode"] == "initial"
 
@@ -212,8 +171,8 @@ def test_portfolio_manager_no_warnings_when_prices_available(tmp_path):
 # ---------- Stage 6 audit (2026-05-26) tests ----------
 
 
-def test_portfolio_json_includes_stage345_attribution(tmp_path, monkeypatch):
-    """Stage 6 audit Task 2: portfolio.json full_trace 에 Stage 3/4/5 의 attribution
+def test_portfolio_json_includes_stage35_attribution(tmp_path, monkeypatch):
+    """Stage 6 audit Task 2: portfolio.json full_trace 에 Stage 3/5 의 attribution
     이 모두 포함된다.
     """
     from datetime import date as _date
@@ -240,12 +199,8 @@ def test_portfolio_json_includes_stage345_attribution(tmp_path, monkeypatch):
         "capital_krw": 10_000_000_000,
         "as_of_date": "2026-05-15",
         "universe_path": str(universe_path),
-        # Stage 3/4/5 attribution 마킹
+        # Stage 3/5 attribution 마킹
         "allocation_attribution": {"config": {"method": "min_variance"}},
-        "risk_judge_attribution": {
-            "strength_applied": 0.3,
-            "lens_concerns": [{"lens": "tail_risk", "level": "high"}],
-        },
         "mandate_validator_attribution": {
             "validation_passed": True,
             "check_counts": {"concentration": {"hard": 0, "soft": 0}},
@@ -264,13 +219,11 @@ def test_portfolio_json_includes_stage345_attribution(tmp_path, monkeypatch):
     portfolio_json = json.loads(
         Path(out["final_portfolio_path"]).read_text(encoding="utf-8"),
     )
-    # 3 attribution 모두 포함 검증
+    # Stage 3/5 attribution 모두 포함 검증
     assert "allocation_attribution" in portfolio_json
-    assert "risk_judge_attribution" in portfolio_json
     assert "mandate_validator_attribution" in portfolio_json
     # 값 정합성
     assert portfolio_json["allocation_attribution"]["config"]["method"] == "min_variance"
-    assert portfolio_json["risk_judge_attribution"]["strength_applied"] == 0.3
     assert portfolio_json["mandate_validator_attribution"]["validation_passed"] is True
 
 

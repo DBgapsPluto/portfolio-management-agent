@@ -21,7 +21,6 @@ def test_state_has_summary_handoff_fields():
     )
     assert "macro_summary" in s
     assert "research_debate_summary" in s
-    assert "risk_debate_summary" in s
 
 
 def test_d4_cycle_fields():

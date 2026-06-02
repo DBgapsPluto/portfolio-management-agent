@@ -1,7 +1,7 @@
 """Investment philosophy document generator (대회 §4.1: ≥4 워드 페이지).
 
-Stage 6 정리: prompt에 Stage 2 시나리오 + Stage 4 lens / numerics + Stage 5
-mandate 정보를 섹션별 명시 매핑으로 주입. LLM 호출 수는 유지 (1-2회).
+Stage 6 정리: prompt에 Stage 2 시나리오 + Stage 5 mandate 정보를 섹션별
+명시 매핑으로 주입. LLM 호출 수는 유지 (1-2회).
 출력 형식: 국내 WM '이달의 투자가이드' 스타일, asterisk 마크다운 금지.
 """
 import logging
@@ -45,16 +45,16 @@ Use this document structure (fill every section; Korean only):
 (≥600 chars — Stage 1 macro_quant: regime, yield curve, inflation, employment)
 
 ## 2. 시장 리스크 평가
-(≥600 chars — Stage 1 market_risk + Stage 4 portfolio_numerics: VIX, credit spread, CVaR, HHI)
+(≥600 chars — Stage 1 market_risk: VIX, credit spread, systemic risk)
 
 ## 3. 자산군 비중 결정 논리
 (≥600 chars — Stage 2 scenario/factor view + 5-bucket target rationale)
 
 ## 4. 단일 리스크 통제 전략
-(≥600 chars — Stage 4 concentration lens + Stage 5 cluster cap 0.25)
+(≥600 chars — Stage 5 concentration check + cluster cap 0.25)
 
 ## 5. 시장 충격 시나리오
-(≥600 chars — conservative scenarios + Stage 4 tail_risk lens)
+(≥600 chars — conservative scenarios + Stage 1 conditional stress signals)
 
 ## 6. 매매 원칙
 (≥600 chars — Stage 5 rebalance_mode + turnover floor)
@@ -115,34 +115,6 @@ def _format_scenario_probs(rd) -> str:
     sorted_z = sorted(factor_scores.items(), key=lambda kv: -abs(kv[1]))[:5]
     z_str = ", ".join(f"{name} {z:+.2f}" for name, z in sorted_z)
     return f"dominant={dominant}; top factors: {z_str}"
-
-
-def _format_overlay(overlay) -> str:
-    """RiskOverlay → 짧은 요약."""
-    if overlay is None:
-        return "(none — Stage 4 not run or empty)"
-    if overlay.is_empty():
-        return f"(empty — {overlay.severity_decision})"
-    lens_summary = "; ".join(
-        f"{lc.lens}={lc.level}" for lc in overlay.lens_concerns
-    ) if overlay.lens_concerns else "(no lens concerns)"
-    return (
-        f"strength={overlay.strength_applied:.2f}, "
-        f"multiplier={overlay.risk_asset_multiplier:.2f}, "
-        f"ceilings={len(overlay.weight_ceilings)}, "
-        f"floors={len(overlay.tail_hedge_floor)} | {lens_summary}"
-    )
-
-
-def _format_numerics(n) -> str:
-    if n is None:
-        return "(not computed)"
-    return (
-        f"HHI={n.hhi:.3f}, top1={n.top1_weight*100:.1f}%, "
-        f"top3_sum={n.top3_weight_sum*100:.1f}%, "
-        f"max_cluster={n.max_cluster_exposure*100:.1f}%, "
-        f"CVaR_95={n.cvar_95_1d*100:.2f}%, vol_60d={n.realized_vol_60d*100:.2f}%"
-    )
 
 
 def _format_validation(report) -> str:
@@ -217,8 +189,6 @@ def _build_state_summary(state: dict) -> str:
     """philosophy prompt에 들어가는 풍부한 state 요약."""
     wv = state.get("weight_vector")
     rd = state.get("research_decision")
-    overlay = state.get("risk_overlay")
-    numerics = state.get("portfolio_numerics")
     validation = state.get("validation_report")
     rebalance_mode = state.get("rebalance_mode", "unknown")
     method_choice = state.get("method_choice")
@@ -252,9 +222,6 @@ def _build_state_summary(state: dict) -> str:
         "### Stage 3 — Method choice\n"
         f"Selected: {_resolve_method(state)}\n"
         f"Reasoning: {method_reasoning}\n\n"
-        "### Stage 4 — Risk Overlay\n"
-        f"Overlay: {_format_overlay(overlay)}\n"
-        f"Portfolio numerics: {_format_numerics(numerics)}\n\n"
         "### Stage 5 — Mandate Validation\n"
         f"{_format_validation(validation)}\n"
         f"Rebalance mode: {rebalance_mode}\n\n"

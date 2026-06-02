@@ -7,7 +7,6 @@ from .analysts.news_analyst import create_news_analyst
 from .analysts.social_media_analyst import create_social_media_analyst
 
 from .managers.portfolio_manager import create_portfolio_manager
-from .managers.risk_judge import create_risk_judge
 
 from .trader.trader import create_trader
 
@@ -20,7 +19,6 @@ __all__ = [
     "create_market_analyst",
     "create_news_analyst",
     "create_portfolio_manager",
-    "create_risk_judge",
     "create_social_media_analyst",
     "create_trader",
 ]

@@ -9,11 +9,7 @@ from tradingagents.schemas.reports import (
     MacroReport, RiskReport, TechnicalReport, NewsReport,
 )
 from tradingagents.schemas.research import ResearchDecision
-from tradingagents.schemas.risk_overlay import RiskOverlay
 from tradingagents.schemas.technical import Cluster
-
-# Stage 4 PortfolioNumerics는 skills/risk/portfolio_metrics에 있어 별도 import
-from tradingagents.skills.risk.portfolio_metrics import PortfolioNumerics
 
 
 class AgentState(MessagesState):
@@ -64,17 +60,6 @@ class AgentState(MessagesState):
         "Per-ticker factor/boost decomposition + method picker trace (debugging)",
     ]
     correlation_clusters: Annotated[list[Cluster], "From technical analyst, used for validation"]
-
-    # === Stage 4: Risk Judge (RiskOverlay + PortfolioNumerics) ===
-    risk_debate_summary: Annotated[str, "Risk Overlay summary"]
-    risk_overlay: Annotated[
-        Optional[RiskOverlay],
-        "Stage 4 출력 — LLM은 제약만 만들고 Stage 3 2차에서 optimizer가 풀이",
-    ]
-    portfolio_numerics: Annotated[
-        Optional[PortfolioNumerics],
-        "Stage 3.5 numerics (HHI/CVaR/cluster_exposure) — risk_judge가 산출",
-    ]
 
     # === Stage 5: Validation ===
     validation_report: Annotated[Optional[ValidationReport], "Mandate validator output"]
@@ -132,9 +117,6 @@ def _create_empty_state(
         candidate_set=None, weight_vector=None, method_choice=None,
         allocation_attribution=None,
         correlation_clusters=[],
-        risk_debate_summary="",
-        risk_overlay=None,
-        portfolio_numerics=None,
         rebalance_mode=None,
         validation_report=None, validation_passed=None,
         allocation_attempts=0, allocation_feedback=[],
