@@ -185,6 +185,20 @@ def _format_bucket_target(bucket) -> str:
     )
 
 
+def format_bucket_target_14(bucket_target) -> str:
+    """14-bucket 비중을 한글명과 함께 markdown 으로 (0 비중 생략)."""
+    from tradingagents.skills.portfolio.gaps_buckets import (
+        GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
+    )
+    weights = getattr(bucket_target, "weights", {}) or {}
+    lines = []
+    for k in GAPS_BUCKET_KEYS:
+        w = weights.get(k, 0.0)
+        if w > 1e-6:
+            lines.append(f"- {BUCKET_KR_NAME[k]}: {w*100:.1f}%")
+    return "\n".join(lines) or "(빈 배분)"
+
+
 def _resolve_weights(state: dict) -> dict[str, float]:
     wv = state.get("weight_vector")
     if wv is not None:
@@ -234,7 +248,7 @@ def _build_state_summary(state: dict) -> str:
         "### Stage 2 — Research Decision\n"
         f"{state.get('research_debate_summary', '')}\n"
         f"Scenario / factors: {_format_scenario_probs(rd)}\n"
-        f"5-bucket target: {_format_bucket_target(bucket)}\n\n"
+        f"버킷 배분(14): {format_bucket_target_14(bucket)}\n\n"
         "### Stage 3 — Method choice\n"
         f"Selected: {_resolve_method(state)}\n"
         f"Reasoning: {method_reasoning}\n\n"
