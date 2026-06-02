@@ -65,15 +65,7 @@ stages:
 
   - id: allocation
     agents:
-      - id: portfolio_allocator
-        skills:
-          - select_etf_candidates
-          - fetch_returns_matrix
-          - optimize_hrp
-          - optimize_risk_parity
-          - optimize_min_variance
-          - optimize_black_litterman
-          - pick_optimization_method
+      - id: trader_allocator
         input_from:
           bucket_target: research_manager
           regime: macro_quant

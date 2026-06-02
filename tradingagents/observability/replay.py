@@ -30,7 +30,6 @@ from tradingagents.schemas.reports import (
 )
 from tradingagents.schemas.research import ResearchDecision
 from tradingagents.schemas.risk_overlay import RiskOverlay
-from tradingagents.skills.portfolio.method_picker import MethodChoice
 from tradingagents.skills.risk.portfolio_metrics import PortfolioNumerics
 
 logger = logging.getLogger(__name__)
@@ -94,7 +93,6 @@ SCHEMA_MAP: dict[str, type[BaseModel]] = {
     "research_decision": ResearchDecision,
     "candidate_set": CandidateSet,
     "weight_vector": WeightVector,
-    "method_choice": MethodChoice,
     "risk_overlay": RiskOverlay,
     "portfolio_numerics": PortfolioNumerics,
     "validation_report": ValidationReport,

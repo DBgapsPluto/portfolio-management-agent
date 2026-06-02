@@ -13,8 +13,8 @@ DEFAULT_CONFIG = {
     "memory_log_max_entries": None,
     # LLM settings
     "llm_provider": "openai",
-    "deep_think_llm": "gpt-5.4",
-    "quick_think_llm": "gpt-5.4-mini",
+    "deep_think_llm": "gpt-5.5",
+    "quick_think_llm": "gpt-5.5",
     # When None, each provider's client falls back to its own default endpoint
     # (api.openai.com for OpenAI, generativelanguage.googleapis.com for Gemini, ...).
     # The CLI overrides this per provider when the user picks one. Keeping a
@@ -148,10 +148,4 @@ DEFAULT_CONFIG.update({
     # Tier 0: expanding-window z-baseline (Pesaran-Timmermann 1995). Default off
     # for backward compat — opt-in per run or backtest sweep.
     "use_dynamic_baseline": False,
-    # Tier 3 LLM overlay (default OFF — opt-in; forward-tuning required)
-    "tier3_llm_overlay_enabled": False,
-    "tier3_llm_k_samples": 5,
-    "tier3_band": 0.05,
-    "tier3_ewma_alpha": 0.10,
-    "tier3_cred_cold_start": 0.30,
 })

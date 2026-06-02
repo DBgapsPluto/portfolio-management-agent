@@ -1,7 +1,7 @@
-"""Smoke tests for `gaps plan/rebalance/optimize` commands."""
+"""Smoke tests for `gaps plan/rebalance` commands."""
 from click.testing import CliRunner
 
-from cli.commands.portfolio import plan, rebalance, optimize
+from cli.commands.portfolio import plan, rebalance
 
 
 def test_plan_help():
@@ -34,11 +34,3 @@ def test_rebalance_monthly_requires_month():
     result = runner.invoke(rebalance, ["monthly"])
     # Expect non-zero exit — either UsageError (ours) or ImportError before that
     assert result.exit_code != 0
-
-
-def test_optimize_help():
-    runner = CliRunner()
-    result = runner.invoke(optimize, ["--help"])
-    assert result.exit_code == 0
-    assert "--method" in result.output
-    assert "--candidates" in result.output

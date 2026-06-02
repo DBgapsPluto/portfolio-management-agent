@@ -31,7 +31,6 @@ from tradingagents.schemas.risk import (
     SystemicRiskScore, VolatilitySnapshot,
 )
 from tradingagents.schemas.technical import IndicatorPanel
-from tradingagents.skills.portfolio.method_picker import MethodChoice
 
 
 @pytest.fixture
@@ -95,18 +94,9 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
         asset_classes_affected=["us_bond"], direction="up",
         severity=4, reasoning="rate cut",
     )
-    method_out = MethodChoice(
-        method=OptimizationMethod.HRP, params={},
-        reasoning="recession + risk_off → defensive HRP.",
-    )
-    # C5 (2026-05-23): Stage 2 가 factor model 로 전환되어 ScenarioProbabilities
-    # LLM 호출 자체가 없음. deep_llm mock 에 RegimeClassification / SystemicRiskScore /
-    # MethodChoice 만 등록.
-
     deep_llm = _mock_llm_factory({
         "RegimeClassification": regime_out,
         "SystemicRiskScore": systemic_out,
-        "MethodChoice": method_out,
     })
     quick_llm = _mock_llm_factory({
         "ImpactAssessment": impact_out,
