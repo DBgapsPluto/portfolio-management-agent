@@ -37,6 +37,7 @@ from tradingagents.schemas.macro import (
     RegimeClassification,
     RiskAppetiteSnapshot,
     TailRiskSnapshot,
+    USEquityValuationSnapshot,
     USLeadingIndexSnapshot,
     YieldCurveSnapshot,
 )
@@ -50,6 +51,7 @@ from tradingagents.schemas.risk import (
     BreadthSnapshot,
     CreditQualitySnapshot,
     EquityBondCorrelationSnapshot,
+    ExcessBondPremiumSnapshot,
     FundingStressSnapshot,
     KRCorpSpreadSnapshot,
     KRMarginDebtSnapshot,
@@ -86,6 +88,7 @@ def _build_baseline_macro_report() -> MacroReport:
             inverted_days_count=0,
             percentile_5y=0.5,
             spread_30y_5y_bps=80.0,     # ★ NEW (C4) — F4.slope_5_30y baseline mean = 80.0
+            acm_term_premium_10y_pct=0.5,  # ★ NEW (C8) — F4.acm_term_premium_10y baseline mean = 0.5
         ),
         inflation=InflationSnapshot(
             cpi_yoy=2.5,                # F2.cpi_yoy mean = 2.5
@@ -144,6 +147,11 @@ def _build_baseline_macro_report() -> MacroReport:
         gdp_nowcast=GDPNowSnapshot(
             nowcast_pct=2.0,            # F1.gdpnow mean = 2.0
             change_from_prior=0.0,
+        ),
+        us_indpro_yoy_pct=2.0,         # ★ NEW (C8) — F1.indpro_yoy baseline mean = 2.0
+        us_real_pce_yoy_pct=2.5,       # ★ NEW (C8) — F1.real_pce_yoy baseline mean = 2.5
+        us_equity_valuation=USEquityValuationSnapshot(
+            cape=20.0,                 # ★ NEW (C8) — F8.us_cape baseline mean = 20.0
         ),
         financial_conditions=FinancialConditionsSnapshot(
             nfci=0.0,                   # F1.nfci → -nfci = 0.0 (mean 0)
@@ -236,6 +244,9 @@ def _build_baseline_risk_report() -> RiskReport:
             percentile_5y=0.5,
             widening=False,
             momentum_zscore=0.0,
+        ),
+        excess_bond_premium=ExcessBondPremiumSnapshot(
+            ebp=0.0,                    # ★ NEW (C8) — F5.gz_ebp baseline mean = 0.0
         ),
         credit_spread_us_hy=SpreadSnapshot(
             region="US_HY",

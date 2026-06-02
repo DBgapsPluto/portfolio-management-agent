@@ -48,6 +48,23 @@ def _dummy_api_keys(monkeypatch):
         monkeypatch.setenv(env_var, os.environ.get(env_var, "placeholder"))
 
 
+@pytest.fixture(autouse=True)
+def _stable_pandas_copy_on_write():
+    """Pin pandas Copy-on-Write to the project baseline (pandas 2.x default: off).
+
+    `pandas_ta` (classic) enables CoW globally as an import side effect. Once any
+    test importing it is collected, CoW stays on for the rest of the process,
+    making `DataFrame.values` read-only and breaking `np.fill_diagonal(df.values)`
+    in unrelated tests — purely as a function of collection order. Resetting before
+    each test removes that ordering dependency. Production code is CoW-safe either
+    way (it builds writable arrays via to_numpy(copy=True)/np.full/arithmetic).
+    """
+    import pandas as pd
+
+    pd.set_option("mode.copy_on_write", False)
+    yield
+
+
 @pytest.fixture()
 def mock_llm_client():
     client = MagicMock()

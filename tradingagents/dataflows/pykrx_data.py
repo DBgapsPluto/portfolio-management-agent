@@ -54,9 +54,16 @@ class ParquetCache:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def read(self) -> pd.DataFrame:
+        empty = pd.DataFrame(columns=["ticker", "date", "open", "high", "low", "close", "volume"])
         if not self.path.exists():
-            return pd.DataFrame(columns=["ticker", "date", "open", "high", "low", "close", "volume"])
-        return pd.read_parquet(self.path)
+            return empty
+        try:
+            return pd.read_parquet(self.path)
+        except (OSError, ValueError):
+            # Corrupt/truncated cache (e.g. an interrupted write leaving a
+            # <8-byte file → pyarrow ArrowInvalid, a ValueError subclass).
+            # Degrade to a cache miss so callers re-fetch instead of crashing.
+            return empty
 
     def has(self, ticker: str, start: date, end: date) -> bool:
         df = self.read()

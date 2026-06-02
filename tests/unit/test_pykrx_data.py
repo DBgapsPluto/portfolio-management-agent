@@ -68,3 +68,17 @@ def test_batch_fetch_uses_cache(tmp_path, fake_pykrx_response):
     assert mock_call.call_count == 2
     assert len(df1) == 6
     assert df1.equals(df2)
+
+
+def test_corrupt_parquet_cache_degrades_to_miss(tmp_path):
+    """A truncated/corrupt cache file (e.g. an interrupted write leaving a
+    <8-byte file) must read as a cache miss, not crash the run with ArrowInvalid."""
+    path = tmp_path / "etf.parquet"
+    path.write_bytes(b"PAR1")  # 4 bytes — smaller than the 8-byte parquet footer
+    cache = ParquetCache(path)
+
+    df = cache.read()
+    assert df.empty
+    assert list(df.columns) == ["ticker", "date", "open", "high", "low", "close", "volume"]
+
+    assert cache.has("A069500", date(2026, 5, 8), date(2026, 5, 10)) is False

@@ -2,6 +2,12 @@ from collections.abc import Callable
 from typing import Any
 
 _REGISTRY: dict[str, dict[str, Any]] = {}
+# Permanent record of every skill registered this process. Survives
+# clear_registry() so _reregister_all_skills() can restore the original
+# function objects WITHOUT importlib.reload — reloading a skill module would
+# replace the classes it defines (e.g. method_picker.MethodChoice), breaking
+# isinstance() in any test that imported those classes at collection time.
+_REGISTRY_BACKUP: dict[str, dict[str, Any]] = {}
 _SKILL_MODULES: list[str] = [
     "tradingagents.skills.macro.yield_curve",
     "tradingagents.skills.macro.inflation",
@@ -52,7 +58,9 @@ def register_skill(name: str, category: str) -> Callable:
     def decorator(fn: Callable) -> Callable:
         if name in _REGISTRY:
             raise ValueError(f"Skill '{name}' already registered")
-        _REGISTRY[name] = {"fn": fn, "category": category, "kind": "deterministic"}
+        entry = {"fn": fn, "category": category, "kind": "deterministic"}
+        _REGISTRY[name] = entry
+        _REGISTRY_BACKUP[name] = entry
         return fn
     return decorator
 
@@ -62,7 +70,9 @@ def register_subagent(name: str, category: str) -> Callable:
     def decorator(fn: Callable) -> Callable:
         if name in _REGISTRY:
             raise ValueError(f"Skill '{name}' already registered")
-        _REGISTRY[name] = {"fn": fn, "category": category, "kind": "subagent"}
+        entry = {"fn": fn, "category": category, "kind": "subagent"}
+        _REGISTRY[name] = entry
+        _REGISTRY_BACKUP[name] = entry
         return fn
     return decorator
 
@@ -97,18 +107,19 @@ def _reregister_all_skills() -> None:
     install the full lockfile import everything fine so this silent skip never
     affects them. Test-only function — no behavioral impact on production code.
     """
-    import sys
     import importlib
 
-    # Clear before reloading so that reload can re-register without conflicts
     _REGISTRY.clear()
 
+    # Import (never reload) every skill module so first-time imports run their
+    # @register_skill decorators into the backup. import_module is a no-op for
+    # already-cached modules — their entries are restored from the backup below.
+    # Avoiding reload keeps class identities stable (no broken isinstance()).
     for module_name in _SKILL_MODULES:
         try:
-            if module_name in sys.modules:
-                importlib.reload(sys.modules[module_name])
-            else:
-                importlib.import_module(module_name)
+            importlib.import_module(module_name)
         except Exception:
             # Per-module isolation: degraded test envs may not have heavy deps.
             continue
+
+    _REGISTRY.update(_REGISTRY_BACKUP)
