@@ -53,6 +53,31 @@ def test_zero_weight_bucket_skipped():
     assert out["E1"] == pytest.approx(0.20)
 
 
+def test_multi_round_water_filling():
+    # weight 0.70 over 4 stocks; AUM skewed so capping happens over 2 rounds:
+    # round1 caps A1, round2 caps A2, residual splits equally to A3/A4.
+    out = aum_weighted_allocation(
+        {"b1_kr_equity": 0.70},
+        {"b1_kr_equity": ["A1", "A2", "A3", "A4"]},
+        {"A1": 10000.0, "A2": 1000.0, "A3": 50.0, "A4": 50.0},
+    )
+    assert out["A1"] == pytest.approx(SINGLE_CAP)
+    assert out["A2"] == pytest.approx(SINGLE_CAP)
+    assert all(w <= SINGLE_CAP + 1e-9 for w in out.values())
+    assert out["A3"] == pytest.approx(out["A4"])          # equal AUM → equal residual
+    assert sum(out.values()) == pytest.approx(0.70)
+
+
+def test_zero_aum_falls_back_to_equal_split():
+    out = aum_weighted_allocation(
+        {"b1_kr_equity": 0.30},
+        {"b1_kr_equity": ["A1", "A2"]},
+        {},   # no AUM info → equal split
+    )
+    assert out["A1"] == pytest.approx(0.15)
+    assert out["A2"] == pytest.approx(0.15)
+
+
 def test_infeasible_when_too_few_stocks_for_weight():
     with pytest.raises(InfeasibleBucket):
         aum_weighted_allocation(

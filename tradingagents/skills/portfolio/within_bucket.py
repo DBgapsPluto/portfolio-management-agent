@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import math
+
 SINGLE_CAP: float = 0.20
 _EPS: float = 1e-9
 
@@ -19,7 +21,6 @@ def _allocate_one_bucket(weight: float, tickers: list[str],
         return {}
     if not tickers:
         raise InfeasibleBucket(f"bucket weight {weight} 인데 종목 0개")
-    import math
     need = math.ceil(weight / SINGLE_CAP - _EPS)
     if len(tickers) < need:
         raise InfeasibleBucket(
