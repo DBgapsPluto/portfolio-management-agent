@@ -5,14 +5,14 @@ import logging
 from pathlib import Path
 from typing import Any, Optional
 
-from tradingagents.agents.allocator.portfolio_allocator import create_portfolio_allocator
 from tradingagents.agents.analysts.macro_news_analyst import create_macro_news_analyst
 from tradingagents.agents.analysts.macro_quant_analyst import create_macro_quant_analyst
 from tradingagents.agents.analysts.market_risk_analyst import create_market_risk_analyst
 from tradingagents.agents.analysts.technical_analyst import create_technical_analyst
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
-from tradingagents.agents.managers.research_manager import create_research_manager
 from tradingagents.agents.managers.risk_judge import create_risk_judge
+from tradingagents.agents.researchers.research_cluster import create_research_cluster
+from tradingagents.agents.trader.trader_allocator import create_trader_allocator
 from tradingagents.agents.utils.agent_states import _create_empty_state
 from tradingagents.agents.validator.mandate_validator import create_mandate_validator
 from tradingagents.default_config import DEFAULT_CONFIG
@@ -76,15 +76,15 @@ class TradingAgentsGraph:
             ),
         }
 
-        research_estimator = create_research_manager(deep)
-        # Stage 2 research_manager — single-node (sub-graph wrapper 제거, Issue A fix).
-        # AgentState 직접 접근 → macro_report / risk_report / news_report / prior_research_decision 모두 가용.
-        research_debate_node = research_estimator  # plain node
+        # Stage 2: bull/bear/manager 클러스터 (단일 패스). 모델은 전부 deep(gpt-5.5).
+        research_debate_node = create_research_cluster(
+            bull_llm=deep, bear_llm=deep, manager_llm=deep,
+        )
 
         allocator = archive_wrap_node(
-            create_portfolio_allocator(quick, deep, cache_path=cache_path),
+            create_trader_allocator(step_a_llm=deep, step_b_llm=deep),
             ["candidate_set", "weight_vector", "method_choice",
-             "allocation_attribution"],
+             "allocation_attribution", "bucket_target"],
         )
         validator = create_mandate_validator()
         fallback = create_fallback_normalizer(cache_path=cache_path)
@@ -101,7 +101,7 @@ class TradingAgentsGraph:
         # Stage 2 research_decision도 archive (Stage 2 Phase 1 산출물).
         research_debate_node = archive_wrap_node(
             research_debate_node,
-            ["research_decision", "research_debate_summary", "bucket_target"],
+            ["research_decision", "research_debate_summary"],
         )
 
         validator = archive_wrap_node(
