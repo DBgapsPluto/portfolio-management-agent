@@ -62,3 +62,11 @@ def aum_weighted_allocation(
         for t, wt in part.items():
             final[t] = final.get(t, 0.0) + wt
     return final
+
+
+def realized_risk_weight(
+    weights: dict[str, float],
+    risk_flag: dict[str, str],
+) -> float:
+    """최종 weight 중 universe.json bucket=='위험' 인 종목 비중 합 (mandate ≤0.70)."""
+    return sum(w for t, w in weights.items() if risk_flag.get(t) == "위험")
