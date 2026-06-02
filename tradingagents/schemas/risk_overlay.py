@@ -18,7 +18,7 @@ LensName = Literal["tail_risk", "concentration", "macro_conditional"]
 ConcernLevel = Literal["none", "low", "medium", "high", "critical"]
 OverlayOutcome = Literal[
     "primary_success", "relax_cluster", "relax_ceiling",
-    "relax_band", "fallback_to_1st",
+    "relax_band", "fallback_to_1st", "weights_shrunk",
 ]
 
 

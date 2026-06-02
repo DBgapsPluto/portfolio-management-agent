@@ -22,7 +22,6 @@ LLM 호출 0회 (Stage 1·2·3 정신 일관). WeightAdjustment.delta는 영구 
 import logging
 from datetime import date, timedelta
 
-from tradingagents.agents.allocator.overlay_apply import apply_risk_overlay
 from tradingagents.agents.risk_lens.concentration_lens import (
     run_concentration_lens,
 )
@@ -287,14 +286,22 @@ def create_risk_judge(
         rj_attribution["severity_decision"] = overlay.severity_decision
         rj_attribution["multiplier"] = overlay.risk_asset_multiplier
 
-        # 6. overlay 적용 (empty면 1차 그대로) + outcome 기록 (Stage 3 Task 4 의
-        # overlay attribution 도 함께 채워짐).
-        rj_attribution["overlay"] = {}
-        weight_vector_2, outcome = apply_risk_overlay(
-            weight_vector_1, overlay, candidate_set, returns, bucket_target,
-            method=weight_vector_1.method, clusters=clusters,
-            attribution=rj_attribution,
+        # 6. overlay 적용 (empty면 1차 그대로)
+        # risk_flags: per-ETF 위험/안전 (universe.json bucket) — mandate 정의 그대로.
+        from tradingagents.dataflows.universe import Universe
+        import json as _json
+        from pathlib import Path as _Path
+        try:
+            _uni = Universe(**_json.loads(_Path(state["universe_path"]).read_text()))
+            risk_flags = {e.ticker: e.bucket for e in _uni.etfs}
+        except Exception:
+            risk_flags = {}
+
+        from tradingagents.agents.allocator.overlay_apply import apply_overlay_to_weights
+        weight_vector_2, weight_changed = apply_overlay_to_weights(
+            weight_vector_1, overlay, risk_flags,
         )
+        outcome = "weights_shrunk" if weight_changed else "primary_success"
         overlay = overlay.model_copy(update={"overlay_apply_outcome": outcome})
         logger.info(
             "risk_judge complete: outcome=%s, weight_changed=%s",
