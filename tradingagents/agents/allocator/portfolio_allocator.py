@@ -12,6 +12,7 @@ Phase A 변경 (이번 commit):
 import logging
 from datetime import date, timedelta
 
+import numpy as np
 import pandas as pd
 from pypfopt import EfficientFrontier, HRPOpt, risk_models, expected_returns
 
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 # Stage 3 audit (2026-05-26, Task 1/3): named constants.
 SINGLE_ASSET_CAP: float = 0.20         # 단일 ETF 최대 weight (mandate)
 MIN_COV_OBS: int = 60                  # covariance 계산 최소 표본 (NaN-free row)
+MIN_COV_OBS_CANDIDATE: int = 30        # pairwise min overlap for candidate-selection cov
 RETRY_BAND_WIDTH: float = 0.05         # attempts>0 시 bucket equality → ±5%p band
 HRP_WATER_FILL_MAX_ITERS: int = 20     # HRP per-bucket cap 보정 max 반복
 PRICE_LOOKBACK_DAYS_ALLOC: int = 365 * 3   # returns matrix fetch 윈도우
@@ -128,7 +130,22 @@ def create_portfolio_allocator(
             raise RuntimeError("returns matrix empty — Stage 3 cannot proceed")
 
         # Phase 2b — sigma 사전 계산 (candidate_selector + optimize 모두 사용)
-        sigma = returns.dropna(axis=0, how="any").cov()
+        # Pairwise-complete covariance: each pair estimated on its overlapping window,
+        # so a recently-listed ETF (NaN before listing) doesn't collapse the common-data
+        # window (the old `dropna(how="any").cov()` did, producing a degenerate/NaN cov
+        # that starved candidate selection — see backtest 2023-04/2024-08 "Too few
+        # candidates"). Off-diagonal pairs with < MIN_COV_OBS_CANDIDATE overlap → 0
+        # (treat as uncorrelated); diagonal = per-ticker variance (always estimable),
+        # floored positive for minimum_torsion.
+        sigma = returns.cov(min_periods=MIN_COV_OBS_CANDIDATE)
+        _var = returns.var()  # per-ticker variance on each ticker's own obs
+        _diag = _var.reindex(sigma.index).to_numpy()
+        _diag = np.where(np.isfinite(_diag) & (_diag > 0), _diag, 1e-8)
+        # writable copy — DataFrame.values can be read-only (np.fill_diagonal then raises)
+        _sigma_arr = sigma.to_numpy(dtype=float, copy=True)
+        np.fill_diagonal(_sigma_arr, _diag)                   # positive diagonal
+        _sigma_arr = np.nan_to_num(_sigma_arr, nan=0.0)       # off-diagonal NaN → 0
+        sigma = pd.DataFrame(_sigma_arr, index=sigma.index, columns=sigma.columns)
         capital_krw = float(state.get("capital_krw") or state.get("capital") or 1_000_000_000)
 
         # 2. Multi-factor + corr de-dup + (Phase C) scenario sub_category boost.
