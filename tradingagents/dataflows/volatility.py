@@ -20,11 +20,19 @@ def _raw_pykrx_index_call(code: str, start: date, end: date) -> pd.DataFrame:
 
 
 def _live_vkospi(start: date, end: date) -> pd.Series:
+    """VKOSPI 종가 시계열 — KRX 공식 OpenAPI (idx/drvprod_dd_trd).
+
+    pykrx get_index_ohlcv(1037)이 KRX schema 변경(영문 컬럼)으로 깨져 공식 API
+    로 이전 (2026-06-03). 공식 API는 단일일자라 날짜별 루프 (series_cache 가
+    as_of 별 1회만 수행).
+    """
     try:
-        df = _raw_pykrx_index_call(VKOSPI_INDEX_CODE, start, end)
-        if df is None or df.empty or "종가" not in df.columns:
+        from tradingagents.dataflows.krx_openapi import fetch_index_series
+        data = fetch_index_series(start, end, "코스피 200 변동성지수", "drvprod")
+        if not data:
             return pd.Series(dtype=float, name="VKOSPI")
-        return df["종가"].rename("VKOSPI")
+        idx = pd.to_datetime(list(data.keys()), format="%Y%m%d")
+        return pd.Series(list(data.values()), index=idx, name="VKOSPI").sort_index()
     except Exception:
         return pd.Series(dtype=float, name="VKOSPI")
 

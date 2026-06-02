@@ -149,7 +149,7 @@ def fetch_etf_close_map(basDd: date) -> dict[str, float]:
 def fetch_index_close(
     basDd: date, idx_name: str, series: str = "kospi",
 ) -> float | None:
-    """지수 종가 (IDX_NM 정확 일치). series: 'kospi' | 'drvprod' 등.
+    """지수 종가 (IDX_NM 정확 일치). series: 'kospi' | 'kosdaq' | 'drvprod' 등.
 
     예: fetch_index_close(d, "코스피 200")          → KOSPI200 종가
         fetch_index_close(d, "코스피 200 변동성지수", "drvprod") → VKOSPI
@@ -159,3 +159,28 @@ def fetch_index_close(
         if str(r.get("IDX_NM", "")).strip() == idx_name:
             return _to_float(r.get("CLSPRC_IDX"))
     return None
+
+
+def fetch_index_series(
+    start: date, end: date, idx_name: str, series: str = "kospi",
+) -> dict[str, float]:
+    """[start, end] 영업일(월~금) 루프로 지수 종가 시계열 {YYYYMMDD: close}.
+
+    공식 OpenAPI는 단일일자(basDd)만 지원 → 날짜당 1콜. 긴 window는 호출이
+    많으므로 caller 가 series_cache 로 감싸 as_of 별 1회만 수행하게 한다.
+    휴장일(빈 응답)·없는 날은 skip.
+    """
+    from datetime import timedelta
+
+    out: dict[str, float] = {}
+    d = start
+    while d <= end:
+        if d.weekday() < 5:  # 월~금만 (주말 skip — 어차피 빈 응답)
+            try:
+                v = fetch_index_close(d, idx_name, series)
+            except KRXOpenAPIError:
+                v = None
+            if v is not None:
+                out[d.strftime("%Y%m%d")] = v
+        d += timedelta(days=1)
+    return out
