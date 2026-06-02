@@ -70,3 +70,27 @@ class ResearchDecision(BaseModel):
         # 있음. extra="ignore" 로 deserialize 시 무시 — 호환성 유지 (C7 에서 재생성 예정).
         "extra": "ignore",
     }
+
+
+class InvestmentThesis(BaseModel):
+    """Research Manager(Stage 2) 출력 — bull/bear 종합. structured LLM 타깃."""
+    thesis_md: str = Field(max_length=4000)
+    conviction: ConvictionLevel = "medium"
+    dominant_scenario: str = Field(default="neutral", max_length=40)
+    key_risks: list[str] = Field(default_factory=list)
+
+
+class ResearchThesis(BaseModel):
+    """Stage 2 종합 state 객체 (state['research_decision']).
+
+    factor model 제거 후 ResearchDecision 을 대체. Stage 4 macro_conditional 이
+    getattr(rd, 'dominant_scenario'|'conviction') 로 읽으므로 동일 필드명 유지.
+    factor_scores 는 없음 → macro_conditional 의 valuation trigger graceful 비활성.
+    """
+    conviction: ConvictionLevel = "medium"
+    dominant_scenario: str = Field(default="neutral", max_length=40)
+    thesis_md: str = Field(default="", max_length=4000)
+    bull_view: str = Field(default="", max_length=4000)
+    bear_view: str = Field(default="", max_length=4000)
+    key_risks: list[str] = Field(default_factory=list)
+    model_config = {"extra": "ignore"}

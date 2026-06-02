@@ -9,6 +9,7 @@ class OptimizationMethod(str, Enum):
     MIN_VARIANCE = "min_variance"
     BLACK_LITTERMAN = "black_litterman"
     NCO = "nco"   # Phase 3a (2026-05-30)
+    AUM_WEIGHTED = "aum_weighted"   # Stage 2/3 merge (2026-06-02): trader bucket + AUM within-bucket
 
 
 class BucketTarget(BaseModel):
@@ -94,3 +95,15 @@ class WeightVector(BaseModel):
         if any(w < 0 for w in self.weights.values()):
             raise ValueError("Negative weights not allowed")
         return self
+
+
+class BucketAllocation(BaseModel):
+    """Trader step A 출력 — 14-bucket 비중 (정규화 전 raw 허용)."""
+    weights: dict[str, float] = Field(description="14-bucket key → weight")
+    rationale: str = Field(default="", max_length=500)
+
+
+class StockSelection(BaseModel):
+    """Trader step B 출력 — bucket key → 선정 ticker 리스트."""
+    selections: dict[str, list[str]] = Field(description="bucket key → [ticker]")
+    rationale: str = Field(default="", max_length=500)
