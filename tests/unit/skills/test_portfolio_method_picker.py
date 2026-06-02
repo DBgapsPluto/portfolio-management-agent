@@ -265,6 +265,62 @@ def test_picker_bl_trigger_precedes_scenario_mapping():
     assert choice.method == OptimizationMethod.BLACK_LITTERMAN
 
 
+# === Anchor tuning: BL trigger gated to growth/risk-on scenarios ===
+
+
+def test_bl_triggers_for_growth_scenario_high_conf():
+    """Growth scenario at high confidence still triggers BL (leaning into view)."""
+    for scenario in ("goldilocks", "overheating", "kr_boom"):
+        choice = pick_optimization_method(
+            regime_quadrant="growth_inflation",
+            regime_confidence=0.8,
+            systemic_score=5.0,
+            systemic_regime="neutral",
+            dominant_scenario=scenario,
+            conviction="high",
+        )
+        assert choice.method == OptimizationMethod.BLACK_LITTERMAN, scenario
+        assert choice.params.get("_bl_trigger") is True, scenario
+
+
+def test_bl_does_not_trigger_for_defensive_scenario():
+    """Anchor eval: defensive scenarios at high confidence must NOT trigger BL.
+
+    BL+max_sharpe leans into directional views, inappropriate for capital-
+    preservation regimes. Defensive scenarios fall through the gated BL rule (2)
+    to scenario_mapping (rule 3), which yields their designated min_variance/
+    risk_parity method:
+      stagflation                                  → RISK_PARITY
+      broad_recession / kr_stress / global_credit  → MIN_VARIANCE
+    """
+    # stagflation → RISK_PARITY (not BL)
+    out = pick_optimization_method(
+        regime_quadrant="growth_inflation",
+        regime_confidence=0.9,
+        systemic_score=5.0,
+        systemic_regime="neutral",
+        dominant_scenario="stagflation",
+        conviction="high",
+    )
+    assert out.method == OptimizationMethod.RISK_PARITY
+    assert out.method != OptimizationMethod.BLACK_LITTERMAN
+    assert out.rule_fired == "scenario_mapping"
+
+    # broad_recession / kr_stress / global_credit → MIN_VARIANCE (not BL)
+    for scenario in ("broad_recession", "kr_stress", "global_credit"):
+        out = pick_optimization_method(
+            regime_quadrant="growth_disinflation",
+            regime_confidence=0.9,
+            systemic_score=5.0,
+            systemic_regime="neutral",
+            dominant_scenario=scenario,
+            conviction="high",
+        )
+        assert out.method == OptimizationMethod.MIN_VARIANCE, scenario
+        assert out.method != OptimizationMethod.BLACK_LITTERMAN, scenario
+        assert out.rule_fired == "scenario_mapping", scenario
+
+
 # === Phase 3c: NCO backbone cutover tests ===
 
 

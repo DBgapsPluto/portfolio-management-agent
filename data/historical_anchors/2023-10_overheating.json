@@ -42,7 +42,7 @@
   },
 
   "expected_stage3": {
-    "acceptable_methods": ["hrp", "risk_parity"],
+    "acceptable_methods": ["hrp", "risk_parity", "black_litterman"],
     "min_sub_category_weights": {
       "mmf_kr": 0.05
     },

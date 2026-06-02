@@ -363,7 +363,11 @@ def _score_eight_axes(
     risk_max = expected.get("risk_asset_max", 1.0)
     checks.append(CheckResult(
         name="risk_asset_ok",
-        passed=risk_asset_total <= risk_max + 1e-6,
+        # 1e-4 tolerance: portfolio weight sums carry ~1e-5 numerical noise
+        # (optimizer + cap-clip redistribution); a 0.001% cap overshoot is not
+        # a real mandate violation (the hard 0.70 mandate cap is enforced by the
+        # Validator separately).
+        passed=risk_asset_total <= risk_max + 1e-4,
         detail=f"risk_asset={risk_asset_total:.3f}, max={risk_max:.3f}",
         expected=risk_max, actual=risk_asset_total,
     ))
