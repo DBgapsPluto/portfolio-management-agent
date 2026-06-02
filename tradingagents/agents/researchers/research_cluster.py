@@ -41,8 +41,11 @@ def create_research_cluster(bull_llm, bear_llm, manager_llm):
     structured_mgr = bind_structured(manager_llm, InvestmentThesis, "ResearchManager")
 
     def node(state):
-        bull_view = bull_node(state).get("bull_view", "(없음)")
-        bear_view = bear_node(state).get("bear_view", "(없음)")
+        # 방어적 절단 — LLM markdown thesis가 ResearchThesis 필드 한도(20000)를
+        # 넘어 검증 크래시 나는 것을 방지 (실 E2E 발견).
+        _MAX = 20000
+        bull_view = bull_node(state).get("bull_view", "(없음)")[:_MAX]
+        bear_view = bear_node(state).get("bear_view", "(없음)")[:_MAX]
 
         fallback = InvestmentThesis(
             thesis_md="(manager 종합 실패 — 중립 유지)", conviction="medium",

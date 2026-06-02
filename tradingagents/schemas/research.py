@@ -74,7 +74,7 @@ class ResearchDecision(BaseModel):
 
 class InvestmentThesis(BaseModel):
     """Research Manager(Stage 2) 출력 — bull/bear 종합. structured LLM 타깃."""
-    thesis_md: str = Field(max_length=4000)
+    thesis_md: str = Field(max_length=20000)
     conviction: ConvictionLevel = "medium"
     dominant_scenario: str = Field(default="neutral", max_length=40)
     key_risks: list[str] = Field(default_factory=list)
@@ -89,8 +89,8 @@ class ResearchThesis(BaseModel):
     """
     conviction: ConvictionLevel = "medium"
     dominant_scenario: str = Field(default="neutral", max_length=40)
-    thesis_md: str = Field(default="", max_length=4000)
-    bull_view: str = Field(default="", max_length=4000)
-    bear_view: str = Field(default="", max_length=4000)
+    thesis_md: str = Field(default="", max_length=20000)
+    bull_view: str = Field(default="", max_length=20000)
+    bear_view: str = Field(default="", max_length=20000)
     key_risks: list[str] = Field(default_factory=list)
     model_config = {"extra": "ignore"}
