@@ -33,13 +33,14 @@ WARN_REASON_PRICE_ZERO: str = "PRICE_ZERO"
 
 
 def _fetch_current_prices(as_of: date) -> dict[str, float]:
-    """Best-effort: pykrx snapshot → {ticker_with_A_prefix: close}. Empty on failure."""
+    """KRX 공식 OpenAPI ETF 종가 → {ticker_with_A_prefix: close}.
+
+    빈 dict 반환 = 휴장일이거나 fetch 실패 (qty=0 으로 graceful). pykrx ETF
+    스냅샷이 KRX schema 변경(영문 컬럼)으로 깨져 공식 API 로 이전 (2026-06-03).
+    """
     try:
-        from tradingagents.dataflows.pykrx_data import fetch_etf_snapshot_by_date
-        snap = fetch_etf_snapshot_by_date(as_of)
-        if snap.empty or "ticker" not in snap.columns or "close" not in snap.columns:
-            return {}
-        return {f"A{row['ticker']}": float(row["close"]) for _, row in snap.iterrows()}
+        from tradingagents.dataflows.krx_openapi import fetch_etf_close_map
+        return fetch_etf_close_map(as_of)
     except Exception as e:
         logger.warning("current_prices fetch failed: %s — qty column will be 0", e)
         return {}
