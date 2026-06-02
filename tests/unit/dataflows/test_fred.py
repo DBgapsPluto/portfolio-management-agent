@@ -4,7 +4,13 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
-from tradingagents.dataflows.fred import FRED_SERIES, fetch_funding_stress_stitched
+import tradingagents.dataflows.fred as fred_mod
+from tradingagents.dataflows.fred import (
+    FRED_SERIES,
+    _fred_rate_limit_gate,
+    _raw_fred_call,
+    fetch_funding_stress_stitched,
+)
 
 NEW_TIER0_SERIES = {
     "us_indpro": "INDPRO",
@@ -74,3 +80,50 @@ def test_stitch_overlap_period_excludes_ted_after_2018_04_03():
     assert pd.Timestamp("2018-03-01") in s.index
     # 2018-04-15 should be SOFR-Tbill = (2.0-1.9)*100 = 10.0 bps
     assert abs(s.loc[pd.Timestamp("2018-04-15")] - 10.0) < 0.01
+
+
+# === Rate-limit throttle + 429 retry backstop (2026-06-02) ===
+
+def test_raw_fred_call_retries_on_rate_limit(monkeypatch):
+    """FRED 429 (ValueError 'Too Many Requests') must be retried, not raised."""
+    fred_mod._FRED_CALL_TIMES.clear()
+    # Keep test fast: no real backoff/window sleeps.
+    monkeypatch.setattr(fred_mod._time, "sleep", lambda *_a, **_k: None)
+
+    expected = pd.Series([1.0], index=pd.to_datetime(["2020-01-01"]))
+    calls = {"n": 0}
+
+    def fake_get_series(*_a, **_k):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("Too Many Requests.  Exceeded Rate Limit")
+        return expected
+
+    class FakeFred:
+        def __init__(self, *_a, **_k):
+            pass
+        get_series = staticmethod(fake_get_series)
+
+    # _raw_fred_call does `from fredapi import Fred` internally.
+    monkeypatch.setattr("fredapi.Fred", FakeFred)
+
+    result = _raw_fred_call("DGS10", date(2020, 1, 1), date(2020, 1, 2), "k")
+    assert calls["n"] == 2  # first 429 retried, second succeeded
+    pd.testing.assert_series_equal(result, expected)
+
+
+def test_fred_rate_limit_gate_paces_calls(monkeypatch):
+    """Once the sliding window fills, the gate must sleep before issuing more."""
+    fred_mod._FRED_CALL_TIMES.clear()
+    monkeypatch.setattr(fred_mod, "_FRED_MAX_PER_MIN", 3)
+
+    sleeps: list[float] = []
+    monkeypatch.setattr(fred_mod._time, "sleep", lambda s: sleeps.append(s))
+
+    # 3 rapid calls fill the window (no sleep), the 4th must sleep.
+    for _ in range(5):
+        _fred_rate_limit_gate()
+
+    assert len(sleeps) >= 1, "gate did not throttle once window was full"
+    assert all(s > 0 for s in sleeps)
+    fred_mod._FRED_CALL_TIMES.clear()
