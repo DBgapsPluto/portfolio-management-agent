@@ -198,14 +198,21 @@ def _strict_classify_scenario(
     if f6 < -kr:
         return "kr_boom"
 
-    if f1 > cycle and f2 > cycle:
+    growth_high = f1 > cycle
+    growth_low = f1 < -cycle
+    infl_high = f2 > cycle
+    infl_low = f2 < -cycle
+
+    # full 2D quadrant — both dimensions decisive
+    if growth_high and infl_high:
         return "overheating"
-    if f1 > cycle and f2 < -cycle:
+    if growth_high and infl_low:
         return "goldilocks"
-    if f1 < -cycle and f2 > cycle:
+    if growth_low and infl_high:
         return "stagflation"
-    if f1 < -cycle and f2 < -cycle:
+    if growth_low and infl_low:
         return "broad_recession"
+
     # 2026-05-26 #5 fix — late_cycle + sticky inflation.
     # overheating 진입 못 했지만 (F1 ≤ cycle) 인플레+신용 약세 결합 신호.
     # F1 양수 (성장 무너지지 않음) + F2 ≥ 0.4 (인플레 잔존, cycle 보다 약간 낮은
@@ -214,6 +221,20 @@ def _strict_classify_scenario(
     late_credit = -0.2 - offset
     if f1 > 0 and f2 > late_inflation and f5 < late_credit:
         return "late_cycle"
+
+    # single decisive factor (the other in the neutral band). Do NOT fall back to
+    # goldilocks when inflation is clearly elevated/depressed — goldilocks ==
+    # growth + DISINFLATION specifically.
+    if infl_high:   # inflation-driven, growth neutral
+        return "overheating" if f1 >= 0 else "stagflation"
+    if infl_low:    # disinflation-driven, growth neutral
+        return "goldilocks" if f1 >= 0 else "broad_recession"
+    if growth_high:  # growth-driven, inflation neutral
+        return "goldilocks"
+    if growth_low:   # contraction-driven, inflation neutral
+        return "broad_recession"
+
+    # both factors neutral → benign baseline
     return "goldilocks"
 
 

@@ -1,15 +1,48 @@
 import logging
 import os
+import threading
+import time as _time
+from collections import deque
 from datetime import date, timedelta
 
 import pandas as pd
 from tenacity import (
-    retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
+    retry, stop_after_attempt, wait_exponential, retry_if_exception,
 )
 
 from tradingagents.default_config import DEFAULT_CONFIG
 
 logger = logging.getLogger(__name__)
+
+
+# FRED enforces 120 req/min per API key (HTTP 429). Stay safely under with margin.
+_FRED_MAX_PER_MIN: int = 110
+_FRED_WINDOW_SEC: float = 60.0
+_FRED_RL_LOCK = threading.Lock()
+_FRED_CALL_TIMES: deque[float] = deque()
+
+
+def _fred_rate_limit_gate() -> None:
+    """Block (thread-safe) until issuing a call keeps us under 110 req / 60s."""
+    with _FRED_RL_LOCK:
+        now = _time.monotonic()
+        while _FRED_CALL_TIMES and now - _FRED_CALL_TIMES[0] >= _FRED_WINDOW_SEC:
+            _FRED_CALL_TIMES.popleft()
+        if len(_FRED_CALL_TIMES) >= _FRED_MAX_PER_MIN:
+            sleep_for = _FRED_WINDOW_SEC - (now - _FRED_CALL_TIMES[0]) + 0.05
+            if sleep_for > 0:
+                _time.sleep(sleep_for)
+            now = _time.monotonic()
+            while _FRED_CALL_TIMES and now - _FRED_CALL_TIMES[0] >= _FRED_WINDOW_SEC:
+                _FRED_CALL_TIMES.popleft()
+        _FRED_CALL_TIMES.append(_time.monotonic())
+
+
+def _is_retryable_fred(exc: BaseException) -> bool:
+    if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
+        return True
+    # FRED 429 rate limit — transient, surfaced by fredapi as ValueError
+    return isinstance(exc, ValueError) and "Too Many Requests" in str(exc)
 
 
 FRED_SERIES = {
@@ -97,12 +130,17 @@ FRED_FALLBACK_CHAIN: dict[str, str] = {
 
 @retry(
     reraise=True,
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=8),
-    retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
+    stop=stop_after_attempt(6),
+    wait=wait_exponential(multiplier=2, min=2, max=64),
+    retry=retry_if_exception(_is_retryable_fred),
 )
 def _raw_fred_call(series_id: str, start: date, end: date, api_key: str) -> pd.Series:
-    """Wrapped for mocking + transient retry."""
+    """Wrapped for mocking + transient retry.
+
+    Proactive rate-limit gate keeps the burst under 110 req/60s (FRED caps at
+    120/min per key, HTTP 429); the retry predicate is a 429 backstop.
+    """
+    _fred_rate_limit_gate()
     from fredapi import Fred
     fred = Fred(api_key=api_key)
     return fred.get_series(series_id, observation_start=start, observation_end=end)
