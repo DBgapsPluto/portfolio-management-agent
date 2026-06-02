@@ -10,7 +10,6 @@ from tradingagents.agents.analysts.macro_quant_analyst import create_macro_quant
 from tradingagents.agents.analysts.market_risk_analyst import create_market_risk_analyst
 from tradingagents.agents.analysts.technical_analyst import create_technical_analyst
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
-from tradingagents.agents.managers.risk_judge import create_risk_judge
 from tradingagents.agents.researchers.research_cluster import create_research_cluster
 from tradingagents.agents.trader.trader_allocator import create_trader_allocator
 from tradingagents.agents.utils.agent_states import _create_empty_state
@@ -90,13 +89,7 @@ class TradingAgentsGraph:
         fallback = create_fallback_normalizer(cache_path=cache_path)
         pm = create_portfolio_manager(deep, artifacts_dir=artifacts_dir)
 
-        # Stage 4 Risk Judge (Phase 1 — no-op placeholder, Phase 2 lenses 채울 예정).
-        # LLM이 weight 직접 산출 X. RiskOverlay constraint만 생성, Stage 3 2차 호출.
-        risk_judge = archive_wrap_node(
-            create_risk_judge(quick, deep),
-            ["risk_overlay", "weight_vector", "risk_debate_summary",
-             "portfolio_numerics"],
-        )
+        # Stage 4 (risk overlay) 제거 — allocator → validator 직결.
 
         # Stage 2 research_decision도 archive (Stage 2 Phase 1 산출물).
         research_debate_node = archive_wrap_node(
@@ -113,7 +106,6 @@ class TradingAgentsGraph:
             **analysts,
             "research_debate": research_debate_node,
             "allocator": allocator,
-            "risk_debate": risk_judge,
             "validator": validator,
             "fallback": fallback,
             "portfolio_manager": pm,
