@@ -16,7 +16,7 @@ def _minimal_research_decision(**override):
                 "cyclical_commodity_fx": 0.10, "kr_bond": 0.20,
                 "credit": 0.05, "global_duration": 0.20, "cash_mmf": 0.10,
             },
-            rationale="t", bond_tips_share=0.5,
+            rationale="t",
         ),
         conviction="high",
         dominant_scenario="goldilocks",

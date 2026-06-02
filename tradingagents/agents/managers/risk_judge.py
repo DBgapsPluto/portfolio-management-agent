@@ -15,7 +15,7 @@
                               ↓
                   overlay.is_empty()?
                        ├─ Yes → Stage 3 weight 그대로
-                       └─ No  → apply_risk_overlay (Stage 3 2차 호출)
+                       └─ No  → apply_overlay_to_weights (shrink/clip, 재최적화 없음)
 
 LLM 호출 0회 (Stage 1·2·3 정신 일관). WeightAdjustment.delta는 영구 폐기.
 """

@@ -1,7 +1,7 @@
 """Stage 4 Phase 2 — risk_judge 통합 검증.
 
 3 lens (tail/concentration/macro_conditional) 모두 deterministic.
-인프라 wiring + lens 합의 + apply_risk_overlay 흐름 검증.
+인프라 wiring + lens 합의 + apply_overlay_to_weights 흐름 검증.
 """
 from types import SimpleNamespace
 

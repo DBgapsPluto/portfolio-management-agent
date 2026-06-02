@@ -1,4 +1,4 @@
-"""risk_judge 가 apply_risk_overlay outcome 을 RiskOverlay 에 기록."""
+"""risk_judge 가 apply_overlay_to_weights outcome 을 RiskOverlay 에 기록."""
 from unittest.mock import patch
 
 import numpy as np

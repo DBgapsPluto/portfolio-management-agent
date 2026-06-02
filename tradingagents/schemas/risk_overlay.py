@@ -74,8 +74,7 @@ class LensConcern(BaseModel):
 class RiskOverlay(StalenessAware):
     """Judge가 severity-gated 합의 후 산출하는 최종 overlay.
 
-    Stage 3 2차 호출 시 weight_bounds/sector_constraints/bucket scaling으로
-    변환되어 optimizer에 주입.
+    apply_overlay_to_weights 에서 비중 shrink/clip 방식으로 직접 적용(재최적화 없음).
     """
     weight_ceilings: dict[str, float] = Field(default_factory=dict)
     cluster_caps: dict[str, float] = Field(default_factory=dict)
@@ -97,8 +96,8 @@ class RiskOverlay(StalenessAware):
     )
     overlay_apply_outcome: OverlayOutcome = Field(
         default="primary_success",
-        description="apply_risk_overlay 가 어느 drop_level 에서 풀이를 성공했는지. "
-                    "telemetry/감사용. is_empty() 인 경우도 'primary_success'.",
+        description="apply_overlay_to_weights 결과 — 비중 변경 여부(weights_shrunk) "
+                    "또는 변경 없음(primary_success). telemetry/감사용.",
     )
 
     def is_empty(self) -> bool:
