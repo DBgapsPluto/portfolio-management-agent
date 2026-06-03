@@ -190,7 +190,7 @@ def select_representative_candidates(
 - **adaptive-N (보류)**: 자본 크기에 따라 버킷당 대표 broad ETF 수를 늘리는 정책(`compute_adaptive_n_max`). v1은 최소-N 채택 — 같은 버킷 broad ETF가 고상관(KOSPI200≈KRX300 ~95%)이라 분산효과가 미미하고 holdings·턴오버만 늘기 때문. 저상관 운반체가 있는 버킷에 한해 backtest로 이득 입증 시 재도입.
 - **턴오버 hysteresis (적대 리뷰 #3)**: AUM 2·3위가 근소차(예: ≤5%)면 날마다 픽이 엎치락뒤치락 → 불필요한 교체매매. 향후 `previous_portfolio`(rebalance state) 연동해 **기보유 ETF가 AUM 근소차면 유지**(hysteresis threshold)로 턴오버 억제. v1은 순수 `(-aum,t)` 결정론(턴오버 미고려).
 - **underlying_index 전처리 정규화 (적대 리뷰 #4)**: dedup이 `_normalize_index`로 TR/비-TR 1차 방어하나, 데이터 공급자 표기 변동(언어·약어·신규 TR 변종)에 의존. universe sync 파이프라인에서 `underlying_index` 표준화(또는 정규화 토큰 목록 갱신) 보장 권장.
-- **위험 정의 불일치 (followup)**: validator(`concentration_check`)는 8-bucket `bucket_for_etf ∈ RISK_BUCKET_NAMES`로, trader `realized_risk_weight`는 per-ETF `bucket=="위험"`으로 위험자산을 계산. 현 universe에선 **정확히 일치**(둘 다 0.7821 측정)하나 정의가 분리돼 향후 divergence 가능 → 하나(per-ETF 캐논)로 통일 권장.
+- **위험 정의 통일 (resolved)**: 대회 §2.2 **공식** 위험자산 = `RISK_BUCKET_NAMES{kr_equity, global_equity, precious_metals, cyclical_commodity_fx}`(=`bucket_for_etf` 기준)의 합 ≤70%. universe per-ETF `bucket=="위험"/"안전"` 플래그는 *종목 분류 보조용*(14-bucket re-division)이며 **70% mandate 와 별개**. trader 의 risk_pct 리포팅·`repair_risk_cap` 모두 **공식 RISK_BUCKET_NAMES** 로 통일(`realized_risk_weight` per-ETF 사용 제거) → validator 와 정의 일치.
 
 ---
 
