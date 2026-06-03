@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Literal
 
 from tradingagents.schemas.research import ConvictionLevel
-from tradingagents.skills.portfolio.gaps_buckets import GAPS_BUCKET_KEYS, GROWTH_KEYS
+from tradingagents.skills.portfolio.gaps_buckets import GROWTH_KEYS
 
 RegimeQuadrant = Literal[
     "growth_inflation", "growth_disinflation",
