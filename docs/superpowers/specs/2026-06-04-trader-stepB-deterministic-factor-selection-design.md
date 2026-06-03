@@ -75,6 +75,8 @@ CORE_SUBCATEGORIES: dict[str, set[str]] = {
 }
 ```
 
+**유지보수 불변식 (적대 리뷰 #2 — silent failure 방지):** universe에 등장하는 모든 `(bucket, sub_category)` 가 *의도적으로 분류*됐는지 검증하는 테스트를 둔다 — `CORE_SUBCATEGORIES[bucket]` 또는 명시적 `KNOWN_THEMATIC[bucket]` 중 하나에 반드시 속해야 하며, **둘 다에 없는 신규 sub_category가 나타나면 테스트 실패**(새 broad ETF가 thematic으로 조용히 강등되는 것 차단). universe sync 시 사람이 분류를 갱신하도록 강제. (CI 게이트, §5 L0.)
+
 **선정 함수** (순수 함수, 결정론):
 ```python
 def select_representative_candidates(
@@ -94,13 +96,15 @@ def select_representative_candidates(
     """
 ```
 
+**`_normalize_index(s)` — dedup 키 정규화 (적대 리뷰 #4):** *수익률 계산 변종 접미사만* 제거해 동일 노출을 합친다 — `"코스피 200 TR지수"→"코스피 200"`, `"S&P 500 Total Return Index"→"S&P 500"`, `"NASDAQ-100 Total Return Index"→"NASDAQ-100"`. 제거 토큰: `TR지수/TR/Total Return/Net Total Return/NTR/(TR)/ER/Excess Return` + 공백·대소문자 정규화. **sub-index 명(`"코스피 200 정보기술"`)은 보존** — 다른 노출이라 합치면 안 됨. (실데이터에 `"코스피 200"` vs `"코스피 200 TR지수"`가 분리 존재해 미정규화 시 동일 노출 중복 선정됨.)
+
 **알고리즘:**
 1. **tiering**: `core = [t for t in eligible if sub_category[t] in CORE_SUBCATEGORIES[bucket_key]]`. core 비어있으면 `core = eligible`(fallback).
 2. **rank**: `core` 를 `(-aum[t], t)` 로 정렬 (AUM 내림차순, 동률은 ticker 오름차순 — 결정성).
-3. **dedup**: 위 순서로 walk, 각 `underlying_index` **첫 등장만** 채택 → `deduped_core`.
-4. **N**: `N_floor = ceil(bucket_weight / SINGLE_CAP)`; `N_cap = compute_adaptive_n_max(n_positive_alpha=len(deduped_core_or_pool), bucket_weight=bucket_weight, capital_krw=capital_krw)`; `N = clamp(max(N_floor, N_cap), lo=N_floor, hi=len(eligible_deduped))`.
+3. **dedup**: 위 순서로 walk, `_normalize_index(underlying_index[t])` **첫 등장만** 채택 → `deduped_core`.
+4. **N (적대 리뷰 #1 — 선택적 다양화는 core 안에서만)**: `N_floor = ceil(bucket_weight / SINGLE_CAP)`(단일-20% feasibility); `N_div = compute_adaptive_n_max(n_positive_alpha=len(deduped_core), bucket_weight=bucket_weight, capital_krw=capital_krw)`(자본 기반 다양화 상한); **`N = max(N_floor, min(N_div, len(deduped_core)))`**. → 자본 기반 다양화는 **core(broad) 안에서만** 확장, thematic 확장은 feasibility(N_floor)가 강제할 때만.
 5. **select**: `deduped_core[:N]`.
-6. **보충**: `len(selected) < N` 이면 thematic(= `eligible` 중 core 아닌 것)을 `(-aum, t)` 순 + underlying_index dedup 으로 채워 N 도달(단일-20% feasibility 보장).
+6. **forced fill — feasibility 한정 (적대 리뷰 #1 "테마 역류" 차단)**: `len(selected) < N_floor` (core distinct 인덱스가 단일-20% 충족에 부족 — 현 universe엔 없으나 방어) 일 때만 thematic 보충. 이때 단순 AUM 순이 아니라 **sub_category 다양성 강제** — thematic을 sub_category별로 묶어 AUM순 round-robin(한 테마 몰림 방지) + `_normalize_index` dedup 유지. (선택적 다양화로는 thematic 진입 불가 — §4에서 N이 core로 상한됨.)
 7. `trace` 제공 시 core/thematic·dedup·N 근거 기록.
 
 > AUM = 대표성+유동성 대리(거래량/괴리율은 §6 향후). 모멘텀/퀄리티/regime 가중 **없음**.
@@ -167,8 +171,11 @@ def select_representative_candidates(
 |---|---|---|
 | **L0 결정성** | `select_representative_candidates` | 동일 입력 → 동일 출력; AUM 동률 ticker 사전순 tie-break |
 | **L0 대표성** | core 우선·hijack 차단 | 거대 thematic ETF(높은 AUM)가 있어도 core(broad)가 N 안에서 우선 선정; core가 N 채우면 thematic 미선정 |
-| **L0 dedup/N** | 중복·개수 | 같은 underlying_index 1개만; N≥ceil(w/0.20) 이고 ≤풀(dedup후) 크기 |
-| **fallback** | core 부재/풀 부족 | core 매칭 0 → eligible 전체; N 미달 → thematic 보충, 굶지 않음 |
+| **L0 dedup (#4)** | TR/비-TR 정규화 | `_normalize_index`로 `"코스피 200"`/`"코스피 200 TR지수"`(및 S&P500/NASDAQ TR쌍)가 1개로 dedup; **`"코스피 200 정보기술"`은 별도 유지**(sub-index 보존) |
+| **L0 N-cap (#1)** | 다양화는 core 안에서만 | 선택적(자본기반) N이 `len(deduped_core)` 초과 안 함; thematic은 `N_floor>core` 강제 시에만 진입 |
+| **L0 forced-fill 다양성 (#1)** | 테마 역류 차단 | core<N_floor 강제보충 시 thematic이 한 sub_category에 몰리지 않고 round-robin |
+| **L0 coverage 불변식 (#2)** | silent failure 방지 | universe의 모든 (bucket, sub_category)가 CORE∪KNOWN_THEMATIC에 분류됨; 미분류 신규 sub_category → 테스트 실패 |
+| **fallback** | core 부재/풀 부족 | core 매칭 0 → eligible 전체; N_floor 미달 → thematic 보충, 굶지 않음 |
 | **node 통합** | 결정론 종목 | LLM 없이 14버킷 selection; weight_vector sum=1·단일≤20%; bucket당 ≥ceil(w/0.20)종목 |
 | **thesis 불변** | 입력 민감도 | `measure_stepA_input_sensitivity.py` — thesis 4변형에서 **선정 종목 100% 동일**(Step B가 thesis 무관) |
 | **E2E spot-check** | 실데이터 | E2E 정상·validation pass; 선정이 대표 운반체(broad·대형)인지 육안 확인 |
@@ -179,4 +186,6 @@ def select_representative_candidates(
 - **regime-alpha 틸트 (보류)**: momentum/lowvol/quality 를 다시 넣으려면 **반드시** `run_backtest.py` A/B(factor-composite vs 대표성-only)로 Sharpe/변동성/MDD 우월성을 입증한 뒤에만 — 미검증 default 출시 금지(적대 리뷰 결론). 또는 sized·risk-budget 형태로 **Step A** sub-theme 틸트에 편입.
 - **유동성 가드 / impl 강화**: `etf_metrics` fetch(거래량/AUM, |괴리율|, 추적오차)로 대표성 점수 보강 — 특히 stale 저거래 ETF 차단. 현재 AUM 단독.
 - **`CORE_SUBCATEGORIES` 튜닝**: v1 시드 → 운영 데이터로 broad/thematic 경계 보정.
-- **다양화**: N>1 시 sub_category 다양화(중복 테마 회피) — 현재 index-dedup만.
+- **다양화**: N>1 시 core 내 sub_category 다양화(중복 테마 회피) — 현재 index-dedup만(forced-fill만 다양성 강제).
+- **턴오버 hysteresis (적대 리뷰 #3)**: AUM 2·3위가 근소차(예: ≤5%)면 날마다 픽이 엎치락뒤치락 → 불필요한 교체매매. 향후 `previous_portfolio`(rebalance state) 연동해 **기보유 ETF가 AUM 근소차면 유지**(hysteresis threshold)로 턴오버 억제. v1은 순수 `(-aum,t)` 결정론(턴오버 미고려).
+- **underlying_index 전처리 정규화 (적대 리뷰 #4)**: dedup이 `_normalize_index`로 TR/비-TR 1차 방어하나, 데이터 공급자 표기 변동(언어·약어·신규 TR 변종)에 의존. universe sync 파이프라인에서 `underlying_index` 표준화(또는 정규화 토큰 목록 갱신) 보장 권장.
