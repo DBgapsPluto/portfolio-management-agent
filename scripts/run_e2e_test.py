@@ -115,7 +115,7 @@ def main() -> int:
         # C5 (2026-05-23): 24-cell field 제거됨. factor model 의 scenario / conviction
         # + top factor z-scores 만 로그.
         top_factors = sorted(
-            (rd.factor_scores or {}).items(),
+            (getattr(rd, "factor_scores", None) or {}).items(),
             key=lambda kv: -abs(kv[1] or 0),
         )[:3]
         top_str = ", ".join(f"{f}={z:+.2f}" for f, z in top_factors)
