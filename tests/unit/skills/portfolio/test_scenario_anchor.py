@@ -66,9 +66,18 @@ def test_l1_broad_recession_has_max_duration():
 
 
 def test_effective_band_brackets_baseline():
-    # baseline 0.10, hard [0.04, 0.20]
-    lo, hi = effective_band(0.10, 0.04, 0.20, confidence=0.8, conviction="high")
-    assert 0.04 <= lo <= 0.10 <= hi <= 0.20
+    # confidence=0.5, conviction="medium" → half=0.7 (<1) → 밴드가 hard band 내부로 좁혀짐
+    lo, hi = effective_band(0.10, 0.04, 0.20, confidence=0.5, conviction="medium")
+    assert 0.04 < lo < 0.10 < hi < 0.20          # 엄격히 내부
+    assert lo == pytest.approx(0.10 - (0.10 - 0.04) * 0.7)
+    assert hi == pytest.approx(0.10 + (0.20 - 0.10) * 0.7)
+
+
+def test_effective_band_confidence_floor():
+    # confidence=0.0, conviction="low" → half=0.4*0.6=0.24 (가장 좁음)
+    lo, hi = effective_band(0.10, 0.04, 0.20, confidence=0.0, conviction="low")
+    assert lo == pytest.approx(0.10 - (0.10 - 0.04) * 0.24)
+    assert hi == pytest.approx(0.10 + (0.20 - 0.10) * 0.24)
 
 
 def test_low_confidence_low_conviction_narrows_toward_baseline():
