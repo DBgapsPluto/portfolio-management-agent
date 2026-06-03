@@ -6,6 +6,9 @@ from tradingagents.schemas.portfolio import (
     WeightVector, OptimizationMethod,
 )
 from tradingagents.agents.trader.trader_allocator import create_trader_allocator
+from tradingagents.agents.trader.trader_allocator import (
+    _resolve_quadrant, _resolve_confidence,
+)
 
 
 class _FakeStep:
@@ -125,3 +128,30 @@ def test_trader_clamps_oversized_thin_pool_bucket(tmp_path):
     wv = out["weight_vector"]
     assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
     assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())
+
+
+class _FakeRegime:
+    def __init__(self, quadrant, confidence):
+        self.quadrant = quadrant
+        self.confidence = confidence
+
+
+class _FakeMacro:
+    def __init__(self, regime):
+        self.regime = regime
+
+
+def test_resolve_quadrant_reads_macro_report():
+    state = {"macro_report": _FakeMacro(_FakeRegime("recession_inflation", 0.7))}
+    assert _resolve_quadrant(state) == "recession_inflation"
+    assert _resolve_confidence(state) == pytest.approx(0.7)
+
+
+def test_resolve_quadrant_falls_back_when_missing():
+    assert _resolve_quadrant({}) == "growth_disinflation"
+    assert _resolve_confidence({}) == pytest.approx(0.1)
+
+
+def test_resolve_quadrant_rejects_unknown_label():
+    state = {"macro_report": _FakeMacro(_FakeRegime("nonsense", 0.5))}
+    assert _resolve_quadrant(state) == "growth_disinflation"

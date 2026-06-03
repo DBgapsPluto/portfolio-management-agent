@@ -24,6 +24,7 @@ from tradingagents.skills.portfolio.gaps_buckets import (
 from tradingagents.skills.portfolio.within_bucket import (
     aum_weighted_allocation, realized_risk_weight, InfeasibleBucket, SINGLE_CAP,
 )
+from tradingagents.skills.portfolio.scenario_anchor import QUADRANT_BASELINE
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,23 @@ def _pool_by_bucket(uni: Universe) -> dict[str, list]:
         if e.gaps_bucket in pool:
             pool[e.gaps_bucket].append(e)
     return pool
+
+
+_VALID_QUADRANTS = set(QUADRANT_BASELINE)
+_DEFAULT_QUADRANT = "growth_disinflation"   # macro degraded default 와 일치
+_DEGRADED_CONFIDENCE = 0.1
+
+
+def _resolve_quadrant(state) -> str:
+    mr = state.get("macro_report")
+    q = getattr(getattr(mr, "regime", None), "quadrant", None)
+    return q if q in _VALID_QUADRANTS else _DEFAULT_QUADRANT
+
+
+def _resolve_confidence(state) -> float:
+    mr = state.get("macro_report")
+    c = getattr(getattr(mr, "regime", None), "confidence", None)
+    return float(c) if isinstance(c, (int, float)) else _DEGRADED_CONFIDENCE
 
 
 _STEP_A_SYSTEM = (
