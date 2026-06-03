@@ -190,3 +190,31 @@ def select_representative_candidates(
 - **adaptive-N (보류)**: 자본 크기에 따라 버킷당 대표 broad ETF 수를 늘리는 정책(`compute_adaptive_n_max`). v1은 최소-N 채택 — 같은 버킷 broad ETF가 고상관(KOSPI200≈KRX300 ~95%)이라 분산효과가 미미하고 holdings·턴오버만 늘기 때문. 저상관 운반체가 있는 버킷에 한해 backtest로 이득 입증 시 재도입.
 - **턴오버 hysteresis (적대 리뷰 #3)**: AUM 2·3위가 근소차(예: ≤5%)면 날마다 픽이 엎치락뒤치락 → 불필요한 교체매매. 향후 `previous_portfolio`(rebalance state) 연동해 **기보유 ETF가 AUM 근소차면 유지**(hysteresis threshold)로 턴오버 억제. v1은 순수 `(-aum,t)` 결정론(턴오버 미고려).
 - **underlying_index 전처리 정규화 (적대 리뷰 #4)**: dedup이 `_normalize_index`로 TR/비-TR 1차 방어하나, 데이터 공급자 표기 변동(언어·약어·신규 TR 변종)에 의존. universe sync 파이프라인에서 `underlying_index` 표준화(또는 정규화 토큰 목록 갱신) 보장 권장.
+- **위험 정의 불일치 (followup)**: validator(`concentration_check`)는 8-bucket `bucket_for_etf ∈ RISK_BUCKET_NAMES`로, trader `realized_risk_weight`는 per-ETF `bucket=="위험"`으로 위험자산을 계산. 현 universe에선 **정확히 일치**(둘 다 0.7821 측정)하나 정의가 분리돼 향후 divergence 가능 → 하나(per-ETF 캐논)로 통일 권장.
+
+---
+
+## 7. 위험자산 cap deterministic repair (E2E 발견 — 본 spec 범위에 포함)
+
+**문제(E2E 2026-05-29):** 결정론 Step B가 각 버킷의 대표 ETF를 뽑은 결과 realized 위험자산 = **78.2% > 70% hard cap**(a4_safe_fx→USD선물·a5_gold→금이 per-ETF·8-bucket 모두 위험). validator 실패 → 결정론 allocator 재시도해도 동일 결과 → **무한 재시도 → GraphRecursionError 크래시**. 근본: 옛 Stage 4 risk-overlay 삭제 후 realized 위험을 결정론적으로 ≤70% 강제하는 장치 부재(LLM 변동성·retry에 의존했는데 결정론화로 사라짐).
+
+**해결:** trader 노드 출력 직전(ETF weight 확정 후)에 결정론 repair 1단계 추가.
+
+`tradingagents/skills/mandate/risk_repair.py` 신규:
+```python
+def repair_risk_cap(weights: dict[str, float], universe, cap: float = HARD_RISK_ASSET_CAP) -> dict[str, float]:
+    """위험자산 합 > cap 이면 위험 포지션 비례 축소 + freed 를 안전 포지션에 water-fill(단일 20% 유지).
+
+    위험 분류는 validator 와 동일(bucket_for_etf ∈ RISK_BUCKET_NAMES) → validator 통과 보장.
+    cap 이하면 무변경. 결정론·순수.
+    """
+```
+알고리즘:
+1. `risk_sum = Σ w[t] for t where bucket_for_etf(t) ∈ RISK_BUCKET_NAMES`. `≤ cap+tol` 이면 그대로 반환.
+2. 위험 포지션 전부 `× (cap / risk_sum)` (위험 합 → cap). freed = risk_sum − cap.
+3. freed 를 안전 포지션에 **water-fill**(각 `SINGLE_CAP` 한도, 비례 분배, overflow 재분배). 안전 버킷 ≥3개(a1~a3)라 freed(~0.08) 항상 흡수 가능.
+4. 정규화(float 정리). → 위험=cap, 단일≤20%, 합=1 보장.
+
+**node 배선**(`trader_allocator.py`): `weights` 정규화 직후 `weights = repair_risk_cap(weights, uni)` 추가 → `realized_risk_weight`·outputs 는 repair 후 weight 기준. (validator 재시도 불필요 → 크래시 해소.)
+
+**검증:** 단위(risk>cap→축소·water-fill·단일20%·합1·결정론; risk≤cap→무변경); E2E 2026-05-29 재실행 → validation **pass**, 크래시 없음, 위험 ≤70%.
