@@ -28,7 +28,7 @@ from tradingagents.schemas.portfolio import BucketTarget, CandidateSet, WeightVe
 from tradingagents.schemas.reports import (
     MacroReport, NewsReport, RiskReport, TechnicalReport,
 )
-from tradingagents.schemas.research import ResearchDecision
+from tradingagents.schemas.research import ResearchThesis
 logger = logging.getLogger(__name__)
 
 
@@ -77,7 +77,7 @@ STAGE_PREREQUISITES: dict[str, list[str]] = {
 # 노드를 위해 다시 model_validate로 hydrate.
 SCHEMA_MAP: dict[str, type[BaseModel]] = {
     "bucket_target": BucketTarget,
-    "research_decision": ResearchDecision,
+    "research_decision": ResearchThesis,
     "candidate_set": CandidateSet,
     "weight_vector": WeightVector,
     "validation_report": ValidationReport,
