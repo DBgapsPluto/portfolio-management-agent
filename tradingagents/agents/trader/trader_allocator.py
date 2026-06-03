@@ -1,4 +1,4 @@
-"""Stage 3 trader/allocator — LLM 2-step 배분 + 결정적 AUM 종목내 배분.
+"""Stage 3 trader/allocator — LLM step A(버킷 비중) + 결정론 step B(종목 선정) + AUM 종목내 배분.
 
 step A: quadrant 앵커 baseline 대비 버킷별 tilt 결정 (BucketTilt) → 밴드 투영
 step B: 비중>0 버킷의 종목 선정 (결정론 — select_representative_candidates)
