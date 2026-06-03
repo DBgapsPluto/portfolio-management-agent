@@ -81,7 +81,7 @@ class TradingAgentsGraph:
         )
 
         allocator = archive_wrap_node(
-            create_trader_allocator(step_a_llm=deep, step_b_llm=deep),
+            create_trader_allocator(step_a_llm=deep),
             ["candidate_set", "weight_vector", "method_choice",
              "allocation_attribution", "bucket_target"],
         )

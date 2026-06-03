@@ -1,7 +1,7 @@
 """Stage 3 trader/allocator — LLM 2-step 배분 + 결정적 AUM 종목내 배분.
 
 step A: quadrant 앵커 baseline 대비 버킷별 tilt 결정 (BucketTilt) → 밴드 투영
-step B: 비중>0 버킷의 종목 선정 (StockSelection)
+step B: 비중>0 버킷의 종목 선정 (결정론 — select_representative_candidates)
 종목내 비중: AUM 가중 + 단일 20% cap (within_bucket.aum_weighted_allocation)
 
 위험자산(≤70%)은 최종 weight 에 per-ETF 위험/안전 적용해 검사 — Stage 5 가 하드 검증.
@@ -15,9 +15,10 @@ from pathlib import Path
 from tradingagents.dataflows.universe import Universe
 from tradingagents.agents.utils.structured import bind_structured, invoke_structured_obj
 from tradingagents.schemas.portfolio import (
-    StockSelection, BucketTarget, CandidateSet,
+    BucketTarget, CandidateSet,
     WeightVector, OptimizationMethod, BucketTilt,
 )
+from tradingagents.skills.portfolio.candidate_selector import select_representative_candidates
 from tradingagents.skills.portfolio.gaps_buckets import (
     GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
 )
@@ -70,12 +71,6 @@ _STEP_A_SYSTEM = (
     "④ 자가검증: tilt 는 허용밴드 내, 오버웨이트는 언더웨이트로 펀딩(net≈0).\n"
     "벗어나지 않을 버킷은 tilt 를 생략(=0)하라."
 )
-_STEP_B_SYSTEM = (
-    "당신은 트레이더다. 정해진 버킷 비중에 맞춰, 각 버킷에서 실제 매수할 ETF를 "
-    "고른다. AUM·유동성이 충분하고 버킷 성격에 맞는 대표 종목을 고르되, 한 버킷의 "
-    "비중이 클수록 단일 종목 20% 상한 때문에 더 많은 종목이 필요하다(최소 "
-    "ceil(버킷비중/0.20)개)."
-)
 
 
 def _step_a_prompt(state, quadrant, scenario, confidence, conviction, anchor, eff) -> list[dict]:
@@ -110,29 +105,6 @@ def _step_a_prompt(state, quadrant, scenario, confidence, conviction, anchor, ef
     ]
 
 
-def _step_b_prompt(state, bucket_weights, pool) -> list[dict]:
-    lines = []
-    for k, w in bucket_weights.items():
-        if w <= 0:
-            continue
-        min_n = max(1, math.ceil(w / SINGLE_CAP - 1e-9))
-        cand = sorted(pool.get(k, []), key=lambda e: -e.aum_krw)
-        listing = "\n".join(
-            f"    {e.ticker} {e.name} (AUM {e.aum_krw:,.0f}, {e.bucket})"
-            for e in cand
-        )
-        lines.append(
-            f"### {k} ({BUCKET_KR_NAME[k]}) 비중 {w*100:.1f}% — 최소 {min_n}종목\n{listing}"
-        )
-    return [
-        {"role": "system", "content": _STEP_B_SYSTEM},
-        {"role": "user", "content": (
-            "## 버킷별 종목 풀 (비중>0 버킷만)\n" + "\n\n".join(lines) +
-            "\n\n각 버킷 key 에 선정 ticker 리스트를 배정하라."
-        )},
-    ]
-
-
 def _clamp_to_pool_capacity(
     bucket_weights: dict[str, float], pool: dict[str, list]
 ) -> dict[str, float]:
@@ -160,16 +132,17 @@ def _clamp_to_pool_capacity(
     return {k: v for k, v in clamped.items() if v > 1e-9}
 
 
-def create_trader_allocator(step_a_llm, step_b_llm):
+def create_trader_allocator(step_a_llm):
     structured_a = bind_structured(step_a_llm, BucketTilt, "TraderStepA")
-    structured_b = bind_structured(step_b_llm, StockSelection, "TraderStepB")
 
     def node(state):
         uni = _load_universe(state["universe_path"])
         pool = _pool_by_bucket(uni)
         aum = {e.ticker: e.aum_krw for e in uni.etfs}
         risk_flag = {e.ticker: e.bucket for e in uni.etfs}
-        valid_tickers = set(aum)
+        sub_cat = {e.ticker: e.sub_category for e in uni.etfs}
+        idx_of = {e.ticker: e.underlying_index for e in uni.etfs}
+        capital = float(state.get("capital_krw") or 0.0)
 
         # --- Step A: quadrant 앵커 + scenario modifier + LLM tilt + 투영 ---
         quadrant = _resolve_quadrant(state)
@@ -196,23 +169,16 @@ def create_trader_allocator(step_a_llm, step_b_llm):
         bucket_weights = project_to_band(anchor, tilt.tilts, eff_lo, eff_hi)
         bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
 
-        ss = invoke_structured_obj(
-            structured_b, _step_b_prompt(state, bucket_weights, pool),
-            StockSelection(selections={}), "TraderStepB",
-        )
         selections: dict[str, list[str]] = {}
         for bkey, w in bucket_weights.items():
             if w <= 0:
                 continue
-            bucket_tickers = {e.ticker for e in pool[bkey]}
-            picked = [t for t in ss.selections.get(bkey, [])
-                      if t in valid_tickers and t in bucket_tickers]
-            need = max(1, math.ceil(w / SINGLE_CAP - 1e-9))
-            if len(picked) < need:
-                extra = [e.ticker for e in sorted(pool[bkey], key=lambda e: -e.aum_krw)
-                         if e.ticker not in picked]
-                picked = (picked + extra)[:max(need, len(picked))]
-            selections[bkey] = picked
+            eligible = [e.ticker for e in pool[bkey]]
+            selections[bkey] = select_representative_candidates(
+                bucket_key=bkey, eligible=eligible, aum=aum,
+                sub_category=sub_cat, underlying_index=idx_of,
+                bucket_weight=w, capital_krw=capital,
+            )
 
         try:
             weights = aum_weighted_allocation(bucket_weights, selections, aum)
@@ -239,7 +205,7 @@ def create_trader_allocator(step_a_llm, step_b_llm):
         )
         candidate_set = CandidateSet(
             bucket_to_tickers={k: v for k, v in selections.items() if v},
-            selection_criteria="LLM trader step B + AUM top-N 보충",
+            selection_criteria="deterministic carrier: core sub_category + AUM + index-dedup",
             total_candidates=sum(len(v) for v in selections.values()) or 1,
         )
         weight_vector = WeightVector(

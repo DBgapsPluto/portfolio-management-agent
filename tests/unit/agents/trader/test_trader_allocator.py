@@ -2,7 +2,7 @@ import json
 import pytest
 from tradingagents.schemas.research import ResearchThesis
 from tradingagents.schemas.portfolio import (
-    StockSelection, BucketTarget, CandidateSet,
+    BucketTarget, CandidateSet,
     WeightVector, OptimizationMethod, BucketTilt,
 )
 from tradingagents.agents.trader.trader_allocator import create_trader_allocator
@@ -77,8 +77,7 @@ def test_step_a_prompt_includes_quadrant_anchor_and_signals():
 def test_zero_tilt_bucket_target_equals_baseline(tmp_path):
     up = _universe_14(tmp_path)
     step_a = _FakeStep(BucketTilt())
-    step_b = _FakeStep(StockSelection(selections={}))
-    node = create_trader_allocator(step_a_llm=step_a, step_b_llm=step_b)
+    node = create_trader_allocator(step_a_llm=step_a)
     out = node(_state_14(up))  # macro_report=None → _resolve_quadrant 가 growth_disinflation 로 fallback
     base = QUADRANT_BASELINE["growth_disinflation"]  # 따라서 이것이 기대 앵커
     for b, w in base.items():
@@ -87,10 +86,9 @@ def test_zero_tilt_bucket_target_equals_baseline(tmp_path):
 
 def test_positive_tilt_increases_bucket_weight(tmp_path):
     up = _universe_14(tmp_path)
-    step_b = _FakeStep(StockSelection(selections={}))
-    base_node = create_trader_allocator(_FakeStep(BucketTilt()), step_b)
+    base_node = create_trader_allocator(_FakeStep(BucketTilt()))
     tilt_node = create_trader_allocator(
-        _FakeStep(BucketTilt(tilts={"b3_global_tech": 0.06, "b2_dm_core": -0.06})), step_b)
+        _FakeStep(BucketTilt(tilts={"b3_global_tech": 0.06, "b2_dm_core": -0.06})))
     w0 = base_node(_state_14(up))["bucket_target"].weights["b3_global_tech"]
     w1 = tilt_node(_state_14(up))["bucket_target"].weights["b3_global_tech"]
     assert w1 > w0
@@ -98,7 +96,7 @@ def test_positive_tilt_increases_bucket_weight(tmp_path):
 
 def test_node_outputs_valid_weight_vector(tmp_path):
     up = _universe_14(tmp_path)
-    node = create_trader_allocator(_FakeStep(BucketTilt()), _FakeStep(StockSelection(selections={})))
+    node = create_trader_allocator(_FakeStep(BucketTilt()))
     out = node(_state_14(up))
     wv = out["weight_vector"]
     assert wv.method == OptimizationMethod.AUM_WEIGHTED
@@ -122,7 +120,7 @@ def test_node_smoke_thin_pool_does_not_crash(tmp_path):
     ]
     p = tmp_path / "u.json"
     p.write_text(json.dumps({"version": "t", "etfs": etfs}, ensure_ascii=False))
-    node = create_trader_allocator(_FakeStep(BucketTilt()), _FakeStep(StockSelection(selections={})))
+    node = create_trader_allocator(_FakeStep(BucketTilt()))
     out = node(_state_14(str(p)))
     wv = out["weight_vector"]
     assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
@@ -164,8 +162,19 @@ def test_kr_stress_modifier_shifts_kr_equity_down(tmp_path):
         st = _state_14(up, macro)
         st["research_decision"] = ResearchThesis(
             conviction="medium", dominant_scenario=scenario, thesis_md="t")
-        node = create_trader_allocator(_FakeStep(BucketTilt()),
-                                       _FakeStep(StockSelection(selections={})))
+        node = create_trader_allocator(_FakeStep(BucketTilt()))
         return node(st)["bucket_target"].weights["b1_kr_equity"]
 
     assert run("kr_stress") < run("neutral")   # kr_stress 가 한국주식을 낮춤
+
+
+def test_node_deterministic_selection_no_llm(tmp_path):
+    up = _universe_14(tmp_path)
+    node = create_trader_allocator(_FakeStep(BucketTilt()))
+    out1 = node(_state_14(up))
+    out2 = node(_state_14(up))
+    assert out1["candidate_set"].bucket_to_tickers == out2["candidate_set"].bucket_to_tickers
+    wv = out1["weight_vector"]
+    assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
+    assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())
+    assert out1["candidate_set"].selection_criteria.startswith("deterministic carrier")
