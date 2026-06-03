@@ -45,9 +45,9 @@ universe.json (188 ETF) 측정 — 큰 버킷일수록 broad + thematic 혼합:
 
 → 버킷 내 "가장 오른 ETF"를 고르면 **방산 테마가 광범위 KOSPI 운반체를 hijack**하는 식의 *숨은 sub-theme 베팅*이 됨. 그래서 **대표성(broad 우선)** 이 평가의 1차 기준이어야 한다.
 
-### 1.3. 재활용 자산
-- `factor_scorer.compute_adaptive_n_max(n_positive_alpha, bucket_weight, capital_krw)` — N 산정(자본·포지션·ABS_MAX=8 cap). **재활용.**
-- `factor_scorer.score_candidates` / `compute_impl_score` / `REGIME_FACTOR_WEIGHTS` — **미사용**(alpha 연기). 고아 유지.
+### 1.3. factor_scorer 자산 — 전부 미사용
+- `score_candidates` / `compute_impl_score` / `REGIME_FACTOR_WEIGHTS` — alpha 연기로 미사용. 고아 유지.
+- `compute_adaptive_n_max` — **미사용**(최소-N 채택, §2.1). 같은 버킷 broad ETF는 고상관이라 자본 기반 다양화 이득이 미미 → adaptive-N은 §6로 연기. candidate_selector 는 factor_scorer 에 의존하지 않음.
 
 ---
 
@@ -102,7 +102,7 @@ def select_representative_candidates(
 1. **tiering**: `core = [t for t in eligible if sub_category[t] in CORE_SUBCATEGORIES[bucket_key]]`. core 비어있으면 `core = eligible`(fallback).
 2. **rank**: `core` 를 `(-aum[t], t)` 로 정렬 (AUM 내림차순, 동률은 ticker 오름차순 — 결정성).
 3. **dedup**: 위 순서로 walk, `_normalize_index(underlying_index[t])` **첫 등장만** 채택 → `deduped_core`.
-4. **N (적대 리뷰 #1 — 선택적 다양화는 core 안에서만)**: `N_floor = ceil(bucket_weight / SINGLE_CAP)`(단일-20% feasibility); `N_div = compute_adaptive_n_max(n_positive_alpha=len(deduped_core), bucket_weight=bucket_weight, capital_krw=capital_krw)`(자본 기반 다양화 상한); **`N = max(N_floor, min(N_div, len(deduped_core)))`**. → 자본 기반 다양화는 **core(broad) 안에서만** 확장, thematic 확장은 feasibility(N_floor)가 강제할 때만.
+4. **N (최소-N)**: `N_floor = ceil(bucket_weight / SINGLE_CAP)`(단일-20% feasibility); **`N = min(N_floor, len(deduped_core))`**. 즉 버킷당 **대표 최소 개수**(보통 1, 비중>20%면 2~3)만 선택 — 자본 기반 적응형 다양화는 안 함(같은 버킷 broad ETF 고상관 → 분산효과 미미, §6 연기). thematic 확장은 아래 forced-fill(feasibility)뿐. `capital_krw` 인자는 §6(hysteresis/adaptive-N) 예약, v1 미사용.
 5. **select**: `deduped_core[:N]`.
 6. **forced fill — feasibility 한정 (적대 리뷰 #1 "테마 역류" 차단)**: `len(selected) < N_floor` (core distinct 인덱스가 단일-20% 충족에 부족 — 현 universe엔 없으나 방어) 일 때만 thematic 보충. 이때 단순 AUM 순이 아니라 **sub_category 다양성 강제** — thematic을 sub_category별로 묶어 AUM순 round-robin(한 테마 몰림 방지) + `_normalize_index` dedup 유지. (선택적 다양화로는 thematic 진입 불가 — §4에서 N이 core로 상한됨.)
 7. `trace` 제공 시 core/thematic·dedup·N 근거 기록.
@@ -157,7 +157,7 @@ def select_representative_candidates(
 
 | 파일 | 변경 |
 |---|---|
-| `tradingagents/skills/portfolio/candidate_selector.py` | **신규** — `CORE_SUBCATEGORIES` + `select_representative_candidates` (compute_adaptive_n_max 재활용) |
+| `tradingagents/skills/portfolio/candidate_selector.py` | **신규** — `CORE_SUBCATEGORIES`/`KNOWN_THEMATIC` + `_normalize_index` + `select_representative_candidates` (factor_scorer 의존 없음) |
 | `tradingagents/agents/trader/trader_allocator.py` | LLM Step B → 결정론 선정 루프; `structured_b`/`_step_b_prompt`/`StockSelection` 제거; `step_b_llm` 파라미터 제거; criteria 문자열 갱신 |
 | `tradingagents/graph/trading_graph.py` | `create_trader_allocator` 호출에서 `step_b_llm` 인자 제거 |
 | `tests/unit/skills/portfolio/test_candidate_selector.py` | **신규** — 선정 단위 테스트 |
@@ -187,5 +187,6 @@ def select_representative_candidates(
 - **유동성 가드 / impl 강화**: `etf_metrics` fetch(거래량/AUM, |괴리율|, 추적오차)로 대표성 점수 보강 — 특히 stale 저거래 ETF 차단. 현재 AUM 단독.
 - **`CORE_SUBCATEGORIES` 튜닝**: v1 시드 → 운영 데이터로 broad/thematic 경계 보정.
 - **다양화**: N>1 시 core 내 sub_category 다양화(중복 테마 회피) — 현재 index-dedup만(forced-fill만 다양성 강제).
+- **adaptive-N (보류)**: 자본 크기에 따라 버킷당 대표 broad ETF 수를 늘리는 정책(`compute_adaptive_n_max`). v1은 최소-N 채택 — 같은 버킷 broad ETF가 고상관(KOSPI200≈KRX300 ~95%)이라 분산효과가 미미하고 holdings·턴오버만 늘기 때문. 저상관 운반체가 있는 버킷에 한해 backtest로 이득 입증 시 재도입.
 - **턴오버 hysteresis (적대 리뷰 #3)**: AUM 2·3위가 근소차(예: ≤5%)면 날마다 픽이 엎치락뒤치락 → 불필요한 교체매매. 향후 `previous_portfolio`(rebalance state) 연동해 **기보유 ETF가 AUM 근소차면 유지**(hysteresis threshold)로 턴오버 억제. v1은 순수 `(-aum,t)` 결정론(턴오버 미고려).
 - **underlying_index 전처리 정규화 (적대 리뷰 #4)**: dedup이 `_normalize_index`로 TR/비-TR 1차 방어하나, 데이터 공급자 표기 변동(언어·약어·신규 TR 변종)에 의존. universe sync 파이프라인에서 `underlying_index` 표준화(또는 정규화 토큰 목록 갱신) 보장 권장.
