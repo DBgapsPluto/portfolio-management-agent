@@ -2,12 +2,16 @@ import json
 import pytest
 from tradingagents.schemas.research import ResearchThesis
 from tradingagents.schemas.portfolio import (
-    BucketAllocation, StockSelection, BucketTarget, CandidateSet,
-    WeightVector, OptimizationMethod,
+    StockSelection, BucketTarget, CandidateSet,
+    WeightVector, OptimizationMethod, BucketTilt,
 )
 from tradingagents.agents.trader.trader_allocator import create_trader_allocator
 from tradingagents.agents.trader.trader_allocator import (
-    _resolve_quadrant, _resolve_confidence,
+    _resolve_quadrant, _resolve_confidence, _step_a_prompt,
+)
+from tradingagents.skills.portfolio.gaps_buckets import GAPS_BUCKET_KEYS
+from tradingagents.skills.portfolio.scenario_anchor import (
+    QUADRANT_BASELINE, hard_band, effective_band,
 )
 
 
@@ -21,110 +25,104 @@ class _FakeStep:
         return self._o
 
 
-def _universe(tmp_path):
-    etfs = [
-        {"ticker": "C1", "name": "현금1", "aum_krw": 100.0, "underlying_index": "i",
-         "bucket": "안전", "category": "c", "gaps_bucket": "a1_cash"},
-        {"ticker": "C2", "name": "현금2", "aum_krw": 100.0, "underlying_index": "i",
-         "bucket": "안전", "category": "c", "gaps_bucket": "a1_cash"},
-        {"ticker": "E1", "name": "코스피1", "aum_krw": 300.0, "underlying_index": "i",
-         "bucket": "위험", "category": "c", "gaps_bucket": "b1_kr_equity"},
-        {"ticker": "E2", "name": "코스피2", "aum_krw": 100.0, "underlying_index": "i",
-         "bucket": "위험", "category": "c", "gaps_bucket": "b1_kr_equity"},
-        {"ticker": "E3", "name": "코스피3", "aum_krw": 100.0, "underlying_index": "i",
-         "bucket": "위험", "category": "c", "gaps_bucket": "b1_kr_equity"},
-    ]
-    p = tmp_path / "u.json"
+def _universe_14(tmp_path):
+    """14버킷 각 2 ETF (anchor 비중이 풀 부족으로 cash 로 쏠리지 않게)."""
+    etfs = []
+    for k in GAPS_BUCKET_KEYS:
+        risk = "안전" if k[0] == "a" else "위험"
+        for i in (1, 2):
+            etfs.append({
+                "ticker": f"T_{k}_{i}", "name": f"{k}{i}", "aum_krw": 100.0 * i,
+                "underlying_index": f"idx_{k}_{i}", "bucket": risk,
+                "category": "c", "gaps_bucket": k,
+            })
+    p = tmp_path / "u14.json"
     p.write_text(json.dumps({"version": "t", "etfs": etfs}, ensure_ascii=False))
     return str(p)
 
 
-def _state(universe_path):
+def _state_14(universe_path, macro=None):
     return {
         "research_decision": ResearchThesis(conviction="medium",
                                             dominant_scenario="neutral", thesis_md="t"),
-        "universe_path": universe_path,
+        "universe_path": universe_path, "macro_report": macro,
         "macro_summary": "m", "risk_summary": "r",
         "technical_summary": "t", "news_summary": "n",
         "allocation_feedback": [],
     }
 
 
-def test_trader_produces_weight_vector_and_bucket_target(tmp_path):
-    up = _universe(tmp_path)
-    step_a = _FakeStep(BucketAllocation(weights={"a1_cash": 0.4, "b1_kr_equity": 0.6}))
-    step_b = _FakeStep(StockSelection(selections={
-        "a1_cash": ["C1", "C2"], "b1_kr_equity": ["E1", "E2", "E3"]}))
-    node = create_trader_allocator(step_a_llm=step_a, step_b_llm=step_b)
-    out = node(_state(up))
+def test_step_a_prompt_includes_quadrant_anchor_and_signals():
+    q = "growth_disinflation"
+    anchor = QUADRANT_BASELINE[q]
+    eff = {b: effective_band(anchor[b], *hard_band(q, b, anchor[b]), 0.7, "high") for b in anchor}
+    state = {
+        "research_decision": ResearchThesis(
+            conviction="high", dominant_scenario="x", thesis_md="강세 논거",
+            key_risks=["중국 둔화"]),
+        "macro_summary": "MACRO_X", "risk_summary": "r",
+        "technical_summary": "t", "news_summary": "n",
+        "allocation_feedback": [],
+    }
+    msgs = _step_a_prompt(state, q, 0.7, "high", anchor, eff)
+    text = msgs[0]["content"] + msgs[1]["content"]
+    assert q in text
+    assert "b3_global_tech" in text
+    assert "중국 둔화" in text
+    assert "MACRO_X" in text
+    assert "tilt" in text.lower()
 
-    bt = out["bucket_target"]
-    assert isinstance(bt, BucketTarget)
-    assert bt.weights["b1_kr_equity"] == pytest.approx(0.6)
-    assert isinstance(out["candidate_set"], CandidateSet)
+
+def test_zero_tilt_bucket_target_equals_baseline(tmp_path):
+    up = _universe_14(tmp_path)
+    step_a = _FakeStep(BucketTilt())
+    step_b = _FakeStep(StockSelection(selections={}))
+    node = create_trader_allocator(step_a_llm=step_a, step_b_llm=step_b)
+    out = node(_state_14(up))
+    base = QUADRANT_BASELINE["growth_disinflation"]
+    for b, w in base.items():
+        assert out["bucket_target"].weights.get(b, 0.0) == pytest.approx(w, abs=1e-6)
+
+
+def test_positive_tilt_increases_bucket_weight(tmp_path):
+    up = _universe_14(tmp_path)
+    step_b = _FakeStep(StockSelection(selections={}))
+    base_node = create_trader_allocator(_FakeStep(BucketTilt()), step_b)
+    tilt_node = create_trader_allocator(
+        _FakeStep(BucketTilt(tilts={"b3_global_tech": 0.06, "b2_dm_core": -0.06})), step_b)
+    w0 = base_node(_state_14(up))["bucket_target"].weights["b3_global_tech"]
+    w1 = tilt_node(_state_14(up))["bucket_target"].weights["b3_global_tech"]
+    assert w1 > w0
+
+
+def test_node_outputs_valid_weight_vector(tmp_path):
+    up = _universe_14(tmp_path)
+    node = create_trader_allocator(_FakeStep(BucketTilt()), _FakeStep(StockSelection(selections={})))
+    out = node(_state_14(up))
     wv = out["weight_vector"]
-    assert isinstance(wv, WeightVector)
     assert wv.method == OptimizationMethod.AUM_WEIGHTED
     assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
-    assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())   # 단일 ETF ≤20%
-    assert out["allocation_attribution"]["realized_risk_pct"] == pytest.approx(0.60, abs=1e-3)
-    assert "C1" in wv.weights
+    assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())
+    assert sum(out["bucket_target"].weights.values()) == pytest.approx(1.0, abs=1e-6)
 
 
-def test_trader_normalizes_offsum_bucket_weights(tmp_path):
-    up = _universe(tmp_path)
-    step_a = _FakeStep(BucketAllocation(weights={"a1_cash": 0.8, "b1_kr_equity": 1.2}))
-    step_b = _FakeStep(StockSelection(selections={
-        "a1_cash": ["C1", "C2"], "b1_kr_equity": ["E1", "E2", "E3"]}))
-    node = create_trader_allocator(step_a_llm=step_a, step_b_llm=step_b)
-    out = node(_state(up))
-    assert sum(out["bucket_target"].weights.values()) == pytest.approx(1.0)
-    assert out["bucket_target"].weights["b1_kr_equity"] == pytest.approx(0.6)
-
-
-def test_trader_drops_unknown_bucket_keys(tmp_path):
-    up = _universe(tmp_path)
-    step_a = _FakeStep(BucketAllocation(weights={
-        "a1_cash": 0.4, "b1_kr_equity": 0.6, "garbage_key": 0.5}))
-    step_b = _FakeStep(StockSelection(selections={
-        "a1_cash": ["C1", "C2"], "b1_kr_equity": ["E1", "E2", "E3"]}))
-    node = create_trader_allocator(step_a_llm=step_a, step_b_llm=step_b)
-    out = node(_state(up))
-    assert "garbage_key" not in out["bucket_target"].weights
-
-
-def test_trader_clamps_oversized_thin_pool_bucket(tmp_path):
-    import json
+def test_node_smoke_thin_pool_does_not_crash(tmp_path):
     etfs = [
-        {"ticker": "R1", "name": "리츠1", "aum_krw": 100.0, "underlying_index": "i",
+        {"ticker": "R1", "name": "리츠1", "aum_krw": 100.0, "underlying_index": "i1",
          "bucket": "위험", "category": "c", "gaps_bucket": "b7_reits"},
-        {"ticker": "R2", "name": "리츠2", "aum_krw": 100.0, "underlying_index": "i",
+        {"ticker": "R2", "name": "리츠2", "aum_krw": 100.0, "underlying_index": "i2",
          "bucket": "위험", "category": "c", "gaps_bucket": "b7_reits"},
-        {"ticker": "C1", "name": "현금1", "aum_krw": 100.0, "underlying_index": "i",
+        {"ticker": "C1", "name": "현금1", "aum_krw": 100.0, "underlying_index": "i3",
          "bucket": "안전", "category": "c", "gaps_bucket": "a1_cash"},
-        {"ticker": "C2", "name": "현금2", "aum_krw": 100.0, "underlying_index": "i",
+        {"ticker": "C2", "name": "현금2", "aum_krw": 100.0, "underlying_index": "i4",
          "bucket": "안전", "category": "c", "gaps_bucket": "a1_cash"},
-        {"ticker": "C3", "name": "현금3", "aum_krw": 100.0, "underlying_index": "i",
+        {"ticker": "C3", "name": "현금3", "aum_krw": 100.0, "underlying_index": "i5",
          "bucket": "안전", "category": "c", "gaps_bucket": "a1_cash"},
     ]
     p = tmp_path / "u.json"
     p.write_text(json.dumps({"version": "t", "etfs": etfs}, ensure_ascii=False))
-
-    state = {
-        "research_decision": None, "universe_path": str(p),
-        "macro_summary": "m", "risk_summary": "r",
-        "technical_summary": "t", "news_summary": "n",
-        "allocation_feedback": [],
-    }
-    # b7_reits 0.6 > capacity 0.40 → must be clamped, NOT crash
-    step_a = _FakeStep(BucketAllocation(weights={"b7_reits": 0.6, "a1_cash": 0.4}))
-    step_b = _FakeStep(StockSelection(selections={
-        "b7_reits": ["R1", "R2"], "a1_cash": ["C1", "C2", "C3"]}))
-    node = create_trader_allocator(step_a_llm=step_a, step_b_llm=step_b)
-    out = node(state)   # must not raise
-
-    bt = out["bucket_target"]
-    assert bt.weights["b7_reits"] <= 0.40 + 1e-6      # clamped to pool capacity
+    node = create_trader_allocator(_FakeStep(BucketTilt()), _FakeStep(StockSelection(selections={})))
+    out = node(_state_14(str(p)))
     wv = out["weight_vector"]
     assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
     assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())

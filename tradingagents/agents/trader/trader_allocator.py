@@ -1,6 +1,6 @@
 """Stage 3 trader/allocator — LLM 2-step 배분 + 결정적 AUM 종목내 배분.
 
-step A: 14-bucket 비중 결정 (BucketAllocation)
+step A: quadrant 앵커 baseline 대비 버킷별 tilt 결정 (BucketTilt) → 밴드 투영
 step B: 비중>0 버킷의 종목 선정 (StockSelection)
 종목내 비중: AUM 가중 + 단일 20% cap (within_bucket.aum_weighted_allocation)
 
@@ -15,16 +15,18 @@ from pathlib import Path
 from tradingagents.dataflows.universe import Universe
 from tradingagents.agents.utils.structured import bind_structured, invoke_structured_obj
 from tradingagents.schemas.portfolio import (
-    BucketAllocation, StockSelection, BucketTarget, CandidateSet,
-    WeightVector, OptimizationMethod,
+    StockSelection, BucketTarget, CandidateSet,
+    WeightVector, OptimizationMethod, BucketTilt,
 )
 from tradingagents.skills.portfolio.gaps_buckets import (
-    GAPS_BUCKET_KEYS, BUCKET_KR_NAME, BUCKET_CAMP,
+    GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
 )
 from tradingagents.skills.portfolio.within_bucket import (
     aum_weighted_allocation, realized_risk_weight, InfeasibleBucket, SINGLE_CAP,
 )
-from tradingagents.skills.portfolio.scenario_anchor import QUADRANT_BASELINE
+from tradingagents.skills.portfolio.scenario_anchor import (
+    QUADRANT_BASELINE, hard_band, effective_band, project_to_band,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +61,13 @@ def _resolve_confidence(state) -> float:
 
 
 _STEP_A_SYSTEM = (
-    "당신은 자산배분 트레이더다. 리서치 매니저의 종합 판단을 받아 14개 버킷에 "
-    "비중(합=1.0)을 배정한다. 위험자산(주식·원자재·금 등 성장+일부 방어)은 합쳐 "
-    "70%를 넘기지 말 것(대회 룰). 방어 버킷(A1~A5)과 성장 버킷(B1~B9)의 균형을 "
-    "매니저 conviction 에 맞춰라."
+    "당신은 자산배분 트레이더다. 주어진 'regime 앵커(baseline)'에서 출발해, "
+    "리서치 판단으로 버킷별 tilt(앵커 대비 가감)만 결정한다. 다음 순서로 사고하라:\n"
+    "① 리스크 예산: conviction·regime 으로 위험자산 총량 방향(앵커가 이미 ≤70% 지향).\n"
+    "② 방어(A1~A5): regime 따라 cash/듀레이션/금·인플레 가감.\n"
+    "③ 성장(B1~B9): thesis·key_risks 로 버킷 tilt.\n"
+    "④ 자가검증: tilt 는 허용밴드 내, 오버웨이트는 언더웨이트로 펀딩(net≈0).\n"
+    "벗어나지 않을 버킷은 tilt 를 생략(=0)하라."
 )
 _STEP_B_SYSTEM = (
     "당신은 트레이더다. 정해진 버킷 비중에 맞춰, 각 버킷에서 실제 매수할 ETF를 "
@@ -72,26 +77,34 @@ _STEP_B_SYSTEM = (
 )
 
 
-def _bucket_menu() -> str:
-    return "\n".join(
-        f"  {k} ({BUCKET_KR_NAME[k]}, {BUCKET_CAMP[k]})" for k in GAPS_BUCKET_KEYS
-    )
-
-
-def _step_a_prompt(state) -> list[dict]:
+def _step_a_prompt(state, quadrant, confidence, conviction, anchor, eff) -> list[dict]:
     rd = state.get("research_decision")
     thesis = getattr(rd, "thesis_md", "") if rd else ""
-    conviction = getattr(rd, "conviction", "medium") if rd else "medium"
+    key_risks = getattr(rd, "key_risks", []) if rd else []
     fb = state.get("allocation_feedback") or []
     fb_txt = "\n".join(f"  - {getattr(v, 'message', str(v))}" for v in fb)
+
+    anchor_lines = "\n".join(
+        f"  {b} ({BUCKET_KR_NAME[b]}): base {anchor[b]:.2f} "
+        f"허용[{eff[b][0]:.2f}, {eff[b][1]:.2f}]"
+        for b in GAPS_BUCKET_KEYS
+    )
+    body = (
+        f"## Regime: {quadrant} (confidence {confidence:.2f}), conviction {conviction}\n\n"
+        f"## 앵커 baseline + 허용밴드 (이 안에서만 tilt)\n{anchor_lines}\n\n"
+        f"## 리서치 종합\n{thesis}\n\n"
+        f"## 핵심 리스크\n" + ("\n".join(f"  - {r}" for r in key_risks) or "  (없음)") + "\n\n"
+        f"## Stage1 요약\n"
+        f"매크로: {state.get('macro_summary','(없음)')}\n"
+        f"리스크: {state.get('risk_summary','(없음)')}\n"
+        f"기술적: {state.get('technical_summary','(없음)')}\n"
+        f"뉴스: {state.get('news_summary','(없음)')}\n\n"
+        + (f"## 직전 위반 피드백 (반영 필수)\n{fb_txt}\n\n" if fb_txt else "")
+        + "각 버킷의 tilt(앵커 대비 가감)를 출력하라. 0 인 버킷은 생략."
+    )
     return [
         {"role": "system", "content": _STEP_A_SYSTEM},
-        {"role": "user", "content": (
-            f"## 리서치 종합 (conviction={conviction})\n{thesis}\n\n"
-            f"## 14 버킷\n{_bucket_menu()}\n\n"
-            + (f"## 직전 시도 위반 피드백 (반영 필수)\n{fb_txt}\n\n" if fb_txt else "")
-            + "각 버킷 key 에 0~1 비중을 배정(합 1.0). 위험자산 ≤70% 준수."
-        )},
+        {"role": "user", "content": body},
     ]
 
 
@@ -118,38 +131,34 @@ def _step_b_prompt(state, bucket_weights, pool) -> list[dict]:
     ]
 
 
-def _normalize_bucket_weights(raw: dict[str, float]) -> dict[str, float]:
-    clean = {k: max(0.0, float(v)) for k, v in raw.items()
-             if k in GAPS_BUCKET_KEYS}
-    total = sum(clean.values())
-    if total <= 1e-9:
-        return {"a1_cash": 1.0}
-    return {k: v / total for k, v in clean.items() if v > 0}
-
-
 def _clamp_to_pool_capacity(
     bucket_weights: dict[str, float], pool: dict[str, list]
 ) -> dict[str, float]:
-    """각 버킷을 n_pool * SINGLE_CAP 용량으로 clamp, 초과분은 a1_cash 로 이동 후 재정규화."""
-    clamped: dict[str, float] = {}
-    overflow = 0.0
-    for k, w in bucket_weights.items():
-        cap = len(pool.get(k, [])) * SINGLE_CAP
-        if w > cap:
-            overflow += w - cap
-            clamped[k] = cap
-        else:
-            clamped[k] = w
-    if overflow > 1e-9:
-        clamped["a1_cash"] = clamped.get("a1_cash", 0.0) + overflow
+    """각 버킷을 n_pool * SINGLE_CAP 용량으로 clamp, 초과분은 여유 버킷에 water-fill 재배분.
+
+    어느 버킷도 자기 풀 용량을 넘지 않게 한다(전체 용량<1 이면 합<1 가능, 미배분 잔여).
+    """
+    cap = {k: len(pool.get(k, [])) * SINGLE_CAP for k in bucket_weights}
+    clamped = {k: min(w, cap[k]) for k, w in bucket_weights.items()}
+    overflow = sum(bucket_weights.values()) - sum(clamped.values())
+    while overflow > 1e-9:
+        head = {k: cap[k] - clamped[k] for k in clamped}
+        room = sum(v for v in head.values() if v > 0)
+        if room <= 1e-9:
+            break
+        moved = min(overflow, room)
+        for k in clamped:
+            if head[k] > 0:
+                clamped[k] += moved * head[k] / room
+        overflow = sum(bucket_weights.values()) - sum(clamped.values())
     total = sum(clamped.values())
     if total <= 1e-9:
         return {"a1_cash": 1.0}
-    return {k: v / total for k, v in clamped.items() if v > 1e-9}
+    return {k: v for k, v in clamped.items() if v > 1e-9}
 
 
 def create_trader_allocator(step_a_llm, step_b_llm):
-    structured_a = bind_structured(step_a_llm, BucketAllocation, "TraderStepA")
+    structured_a = bind_structured(step_a_llm, BucketTilt, "TraderStepA")
     structured_b = bind_structured(step_b_llm, StockSelection, "TraderStepB")
 
     def node(state):
@@ -159,11 +168,23 @@ def create_trader_allocator(step_a_llm, step_b_llm):
         risk_flag = {e.ticker: e.bucket for e in uni.etfs}
         valid_tickers = set(aum)
 
-        ba = invoke_structured_obj(
-            structured_a, _step_a_prompt(state),
-            BucketAllocation(weights={"a1_cash": 1.0}), "TraderStepA",
+        # --- Step A: quadrant 앵커 + LLM tilt + 투영 ---
+        quadrant = _resolve_quadrant(state)
+        confidence = _resolve_confidence(state)
+        rd = state.get("research_decision")
+        conviction = (getattr(rd, "conviction", "medium") if rd else "medium") or "medium"
+        anchor = QUADRANT_BASELINE[quadrant]
+        bands = {b: hard_band(quadrant, b, anchor[b]) for b in anchor}
+        eff = {b: effective_band(anchor[b], bands[b][0], bands[b][1], confidence, conviction)
+               for b in anchor}
+        tilt = invoke_structured_obj(
+            structured_a, _step_a_prompt(state, quadrant, confidence, conviction, anchor, eff),
+            BucketTilt(), "TraderStepA",
         )
-        bucket_weights = _normalize_bucket_weights(ba.weights)
+        bucket_weights = project_to_band(
+            anchor, tilt.tilts,
+            {b: eff[b][0] for b in eff}, {b: eff[b][1] for b in eff},
+        )
         bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
 
         ss = invoke_structured_obj(
