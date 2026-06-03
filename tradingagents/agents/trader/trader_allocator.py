@@ -29,6 +29,9 @@ from tradingagents.skills.portfolio.scenario_anchor import (
     QUADRANT_BASELINE, hard_band, effective_band, project_to_band,
     SCENARIO_MODIFIER, apply_scenario_modifier,
 )
+from tradingagents.skills.mandate.risk_repair import repair_risk_cap
+from tradingagents.skills.mandate.concentration_check import RISK_BUCKET_NAMES
+from tradingagents.skills.portfolio.sub_category import bucket_for_etf
 
 logger = logging.getLogger(__name__)
 
@@ -193,6 +196,17 @@ def create_trader_allocator(step_a_llm):
                 ][:max(need, len(selections.get(bkey, [])))]
             weights = aum_weighted_allocation(bucket_weights, selections, aum)
 
+        s = sum(weights.values())
+        if s > 0:
+            weights = {t: w / s for t, w in weights.items()}
+
+        # 위험자산 70% cap deterministic repair (spec §7) — validator 정의(bucket_for_etf)로 측정해
+        # realized 위험 ≤70% 보장 → 결정론 retry 무한루프/크래시 방지.
+        _meta = {e.ticker: e for e in uni.etfs}
+        def _is_risk(t):
+            e = _meta.get(t)
+            return bool(e) and bucket_for_etf(e) in RISK_BUCKET_NAMES
+        weights = repair_risk_cap(weights, _is_risk)
         s = sum(weights.values())
         if s > 0:
             weights = {t: w / s for t, w in weights.items()}
