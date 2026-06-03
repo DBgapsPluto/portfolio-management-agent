@@ -182,7 +182,8 @@ def create_trader_allocator(step_a_llm, step_b_llm):
         hard_bands = {b: hard_band(quadrant, b, q_baseline[b]) for b in q_baseline}
         hmin = {b: hard_bands[b][0] for b in hard_bands}
         hmax = {b: hard_bands[b][1] for b in hard_bands}
-        anchor = apply_scenario_modifier(q_baseline, scenario, hmin, hmax)   # Phase 2 center 이동
+        # anchor: scenario modifier 로 옮겨진 center (eff_band·LLM tilt 의 기준점)
+        anchor = apply_scenario_modifier(q_baseline, scenario, hmin, hmax)
         eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence, conviction)
                for b in anchor}
         tilt = invoke_structured_obj(
@@ -190,7 +191,7 @@ def create_trader_allocator(step_a_llm, step_b_llm):
             _step_a_prompt(state, quadrant, scenario, confidence, conviction, anchor, eff),
             BucketTilt(), "TraderStepA",
         )
-        eff_lo = {b: eff[b][0] for b in eff}
+        eff_lo = {b: eff[b][0] for b in eff}   # eff[b] = (eff_min, eff_max)
         eff_hi = {b: eff[b][1] for b in eff}
         bucket_weights = project_to_band(anchor, tilt.tilts, eff_lo, eff_hi)
         bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
