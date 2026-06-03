@@ -4,9 +4,11 @@ C5 (2026-05-23) 에서 24-cell Cartesian product framework 완전 제거.
 - 제거: ScenarioProbabilities24, CellCoord, ALL_CELLS, TRANSIENT_CELLS,
   cell_key, parse_cell_key, CycleQuadrant, TailState, KRDirection,
   ScenarioProbabilities alias, cycle/tail/kr 관련 marginals.
-- 유지: ConvictionLevel, ResearchDecision (factor model 만), dominant_scenario
-  *string field* (downstream method_picker / candidate_selector 의 log_boost 가
-  legacy scenario name 으로 호출 — *24-cell schema 와 별개* 의 Stage 3 dep).
+- 유지: ConvictionLevel, ResearchDecision (factor model 만).
+- Phase 2 (2026-06-03): InvestmentThesis·ResearchThesis 의 dominant_scenario 를
+  ScenarioLabel Literal(직교 4 시나리오 + neutral)로 제약 + enum 밖 값은 neutral coerce
+  (구 archive/free-text replay 호환). ResearchDecision(factor model)의 dominant_scenario
+  는 별도 free str 로 유지 — agent_states/philosophy 가 legacy name 으로 참조.
 """
 from typing import Annotated, Literal, get_args
 
