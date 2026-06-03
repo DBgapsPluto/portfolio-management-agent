@@ -8,12 +8,26 @@ C5 (2026-05-23) 에서 24-cell Cartesian product framework 완전 제거.
   *string field* (downstream method_picker / candidate_selector 의 log_boost 가
   legacy scenario name 으로 호출 — *24-cell schema 와 별개* 의 Stage 3 dep).
 """
-from typing import Literal
+from typing import Annotated, Literal, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 
 ConvictionLevel = Literal["high", "medium", "low"]
+
+ScenarioLabel = Literal[
+    "kr_boom", "kr_stress", "global_credit", "ai_concentration", "neutral",
+]
+_VALID_SCENARIOS = frozenset(get_args(ScenarioLabel))
+
+
+def _coerce_scenario(v: object) -> object:
+    """enum 밖 값(구 라벨/free text) → neutral. replay·구 archive 호환."""
+    return v if v in _VALID_SCENARIOS else "neutral"
+
+
+# 두 모델 공용 — Annotated + BeforeValidator 로 coercion 을 타입에 부착(DRY).
+ScenarioField = Annotated[ScenarioLabel, BeforeValidator(_coerce_scenario)]
 
 
 # Forward import to avoid circular reference
@@ -76,7 +90,7 @@ class InvestmentThesis(BaseModel):
     """Research Manager(Stage 2) 출력 — bull/bear 종합. structured LLM 타깃."""
     thesis_md: str = Field(max_length=20000)
     conviction: ConvictionLevel = "medium"
-    dominant_scenario: str = Field(default="neutral", max_length=40)
+    dominant_scenario: ScenarioField = "neutral"
     key_risks: list[str] = Field(default_factory=list)
 
 
@@ -88,7 +102,7 @@ class ResearchThesis(BaseModel):
     factor_scores 는 없음 → macro_conditional 의 valuation trigger graceful 비활성.
     """
     conviction: ConvictionLevel = "medium"
-    dominant_scenario: str = Field(default="neutral", max_length=40)
+    dominant_scenario: ScenarioField = "neutral"
     thesis_md: str = Field(default="", max_length=20000)
     bull_view: str = Field(default="", max_length=20000)
     bear_view: str = Field(default="", max_length=20000)

@@ -121,7 +121,7 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
     # 를 반환하는 fixture node. bucket_target 은 Stage 3 allocator 가 담당.
     _fixture_thesis = ResearchThesis(
         conviction="high",
-        dominant_scenario="goldilocks",
+        dominant_scenario="neutral",
         thesis_md="fixture thesis",
         bull_view="bull",
         bear_view="bear",

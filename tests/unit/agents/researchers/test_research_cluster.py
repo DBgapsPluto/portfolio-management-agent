@@ -27,7 +27,7 @@ def _state():
 
 def test_cluster_synthesizes_research_thesis():
     thesis = InvestmentThesis(thesis_md="종합", conviction="high",
-                              dominant_scenario="goldilocks",
+                              dominant_scenario="kr_stress",
                               key_risks=["인플레 재점화"])
     node = create_research_cluster(
         bull_llm=_FakeBullBear("강세"),
@@ -38,7 +38,7 @@ def test_cluster_synthesizes_research_thesis():
     rd = out["research_decision"]
     assert isinstance(rd, ResearchThesis)
     assert rd.conviction == "high"
-    assert rd.dominant_scenario == "goldilocks"
+    assert rd.dominant_scenario == "kr_stress"
     assert rd.bull_view == "강세"
     assert rd.bear_view == "약세"
     assert "research_debate_summary" in out
