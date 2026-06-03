@@ -63,3 +63,23 @@ def hard_band(quadrant: RegimeQuadrant, bucket: str, baseline: float) -> tuple[f
     hmin = round(max(0.0, baseline - _BAND_DOWN), 4)
     hmax = round(baseline + up, 4)
     return hmin, hmax
+
+
+CONV_FACTOR: dict[str, float] = {"high": 1.4, "medium": 1.0, "low": 0.6}
+LAT_BASE: float = 1.0
+
+
+def effective_band(
+    baseline: float, hard_min: float, hard_max: float,
+    confidence: float, conviction: str,
+) -> tuple[float, float]:
+    """동적 latitude — confidence·conviction 낮으면 baseline 에 수렴.
+
+    half ∈ [~0.24, 1.4]. half≥1 이면 hard band 전체 사용.
+    baseline ∈ [eff_min, eff_max] ⊆ [hard_min, hard_max] 항상 성립.
+    """
+    half = LAT_BASE * (0.4 + 0.6 * max(0.0, min(1.0, confidence))) \
+        * CONV_FACTOR.get(conviction, 1.0)
+    eff_min = max(hard_min, baseline - (baseline - hard_min) * half)
+    eff_max = min(hard_max, baseline + (hard_max - baseline) * half)
+    return eff_min, eff_max
