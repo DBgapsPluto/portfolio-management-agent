@@ -6,6 +6,7 @@ from tradingagents.skills.portfolio.scenario_anchor import (
     QUADRANT_BASELINE, hard_band,
 )
 from tradingagents.skills.portfolio.scenario_anchor import effective_band
+from tradingagents.skills.portfolio.scenario_anchor import project_to_band
 
 QUADRANTS = ("growth_inflation", "growth_disinflation",
              "recession_inflation", "recession_disinflation")
@@ -93,3 +94,39 @@ def test_high_confidence_high_conviction_reaches_hard_band():
     lo, hi = effective_band(0.10, 0.04, 0.20, confidence=1.0, conviction="high")
     assert lo == pytest.approx(0.04)
     assert hi == pytest.approx(0.20)
+
+
+_B = {"x": 0.30, "y": 0.30, "z": 0.40}            # baseline (합 1.0)
+_LO = {"x": 0.10, "y": 0.10, "z": 0.20}
+_HI = {"x": 0.50, "y": 0.50, "z": 0.60}
+
+
+def test_zero_tilt_returns_baseline():
+    out = project_to_band(_B, {}, _LO, _HI)
+    assert out == pytest.approx(_B)
+
+
+def test_result_always_sums_to_one():
+    out = project_to_band(_B, {"x": 0.15, "y": -0.05, "z": -0.05}, _LO, _HI)
+    assert sum(out.values()) == pytest.approx(1.0, abs=1e-9)
+    assert all(_LO[k] - 1e-9 <= out[k] <= _HI[k] + 1e-9 for k in _B)
+
+
+def test_out_of_band_tilt_is_clamped():
+    # x 를 밴드(0.50) 초과로 밀어도 ≤ hard_max, 잔차는 재분배
+    out = project_to_band(_B, {"x": 0.40}, _LO, _HI)
+    assert out["x"] <= 0.50 + 1e-9
+    assert sum(out.values()) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_net_positive_tilt_redistributed_down():
+    # 모든 tilt 가 +라 합>1 → 여유 있는 버킷에서 끌어내려 sum=1 유지
+    out = project_to_band(_B, {"x": 0.10, "y": 0.10, "z": 0.10}, _LO, _HI)
+    assert sum(out.values()) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_infeasible_numeric_falls_back_to_baseline():
+    # eff_min 합이 1 초과(모순) → baseline 반환
+    bad_lo = {"x": 0.40, "y": 0.40, "z": 0.40}
+    out = project_to_band(_B, {"x": 0.05}, bad_lo, _HI)
+    assert out == pytest.approx(_B)

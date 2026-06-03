@@ -87,3 +87,37 @@ def effective_band(
     eff_min = max(hard_min, baseline - (baseline - hard_min) * half)
     eff_max = min(hard_max, baseline + (hard_max - baseline) * half)
     return eff_min, eff_max
+
+
+_EPS: float = 1e-9
+_MAX_ITERS: int = 50
+
+
+def project_to_band(
+    baseline: dict[str, float],
+    tilts: dict[str, float],
+    eff_min: dict[str, float],
+    eff_max: dict[str, float],
+) -> dict[str, float]:
+    """baseline + tilt 를 {sum=1, eff_min≤w≤eff_max} 로 투영. 불가 시 baseline."""
+    keys = list(baseline)
+    w = {b: min(max(baseline[b] + tilts.get(b, 0.0), eff_min[b]), eff_max[b])
+         for b in keys}
+    for _ in range(_MAX_ITERS):
+        residual = 1.0 - sum(w.values())
+        if abs(residual) < _EPS:
+            break
+        if residual > 0:
+            head = {b: eff_max[b] - w[b] for b in keys}
+        else:
+            head = {b: w[b] - eff_min[b] for b in keys}
+        cap = sum(v for v in head.values() if v > 0)
+        if cap < _EPS:
+            break
+        for b in keys:
+            if head[b] > 0:
+                nw = w[b] + residual * head[b] / cap
+                w[b] = min(max(nw, eff_min[b]), eff_max[b])
+    if abs(1.0 - sum(w.values())) > 1e-6:
+        return dict(baseline)
+    return w
