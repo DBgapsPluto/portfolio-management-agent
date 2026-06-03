@@ -78,8 +78,8 @@ def test_zero_tilt_bucket_target_equals_baseline(tmp_path):
     step_a = _FakeStep(BucketTilt())
     step_b = _FakeStep(StockSelection(selections={}))
     node = create_trader_allocator(step_a_llm=step_a, step_b_llm=step_b)
-    out = node(_state_14(up))
-    base = QUADRANT_BASELINE["growth_disinflation"]
+    out = node(_state_14(up))  # macro_report=None → _resolve_quadrant 가 growth_disinflation 로 fallback
+    base = QUADRANT_BASELINE["growth_disinflation"]  # 따라서 이것이 기대 앵커
     for b, w in base.items():
         assert out["bucket_target"].weights.get(b, 0.0) == pytest.approx(w, abs=1e-6)
 

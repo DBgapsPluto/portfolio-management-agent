@@ -141,6 +141,7 @@ def _clamp_to_pool_capacity(
     cap = {k: len(pool.get(k, [])) * SINGLE_CAP for k in bucket_weights}
     clamped = {k: min(w, cap[k]) for k, w in bucket_weights.items()}
     overflow = sum(bucket_weights.values()) - sum(clamped.values())
+    # 최대 ~2회: 1회 fill 후 overflow≤ε 또는 room=0 으로 수렴
     while overflow > 1e-9:
         head = {k: cap[k] - clamped[k] for k in clamped}
         room = sum(v for v in head.values() if v > 0)
@@ -174,17 +175,16 @@ def create_trader_allocator(step_a_llm, step_b_llm):
         rd = state.get("research_decision")
         conviction = (getattr(rd, "conviction", "medium") if rd else "medium") or "medium"
         anchor = QUADRANT_BASELINE[quadrant]
-        bands = {b: hard_band(quadrant, b, anchor[b]) for b in anchor}
-        eff = {b: effective_band(anchor[b], bands[b][0], bands[b][1], confidence, conviction)
+        hard_bands = {b: hard_band(quadrant, b, anchor[b]) for b in anchor}
+        eff = {b: effective_band(anchor[b], hard_bands[b][0], hard_bands[b][1], confidence, conviction)
                for b in anchor}
         tilt = invoke_structured_obj(
             structured_a, _step_a_prompt(state, quadrant, confidence, conviction, anchor, eff),
             BucketTilt(), "TraderStepA",
         )
-        bucket_weights = project_to_band(
-            anchor, tilt.tilts,
-            {b: eff[b][0] for b in eff}, {b: eff[b][1] for b in eff},
-        )
+        eff_lo = {b: eff[b][0] for b in eff}   # eff[b] = (eff_min, eff_max)
+        eff_hi = {b: eff[b][1] for b in eff}
+        bucket_weights = project_to_band(anchor, tilt.tilts, eff_lo, eff_hi)
         bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
 
         ss = invoke_structured_obj(
@@ -236,7 +236,7 @@ def create_trader_allocator(step_a_llm, step_b_llm):
         weight_vector = WeightVector(
             method=OptimizationMethod.AUM_WEIGHTED,
             weights={t: round(w, 6) for t, w in weights.items() if w > 1e-6},
-            rationale=f"14-bucket trader + AUM within-bucket. risk={risk_pct*100:.1f}%",
+            rationale=f"quadrant-anchor tilt + AUM within-bucket. risk={risk_pct*100:.1f}%",
         )
         attribution = {
             "bucket_weights": bucket_weights,
