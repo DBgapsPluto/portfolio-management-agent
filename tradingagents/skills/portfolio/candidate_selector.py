@@ -6,7 +6,11 @@ regime-alpha/모멘텀/펀더멘털 미사용(적대 리뷰: 미검증 sub-theme
 """
 from __future__ import annotations
 
+import math
 import re
+
+from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
+from tradingagents.skills.portfolio.within_bucket import SINGLE_CAP
 
 # 각 버킷의 '대표(broad) 노출' sub_category (v1 시드, 튜닝 대상).
 CORE_SUBCATEGORIES: dict[str, set[str]] = {
@@ -61,3 +65,82 @@ def _normalize_index(s: str | None) -> str:
         return ""
     tokens = [t for t in _SEP.split(s.lower()) if t]
     return "".join(t for t in tokens if t not in _INDEX_DROP_TOKENS)
+
+
+def select_representative_candidates(
+    *,
+    bucket_key: str,
+    eligible: list[str],
+    aum: dict[str, float],
+    sub_category: dict[str, str | None],
+    underlying_index: dict[str, str],
+    bucket_weight: float,
+    capital_krw: float,
+    trace: dict | None = None,
+) -> list[str]:
+    """버킷 내 대표 운반체 선정 (결정론). core 우선 → AUM → index dedup → adaptive N.
+
+    선택적 다양화는 core(broad) 안에서만(thematic hijack 차단). thematic 은 단일-20%
+    feasibility(N_floor)가 core distinct 인덱스로 부족할 때만 sub_category 다양성으로 보충.
+    """
+    if not eligible:
+        return []
+
+    def _rank(ts: list[str]) -> list[str]:
+        return sorted(ts, key=lambda t: (-aum.get(t, 0.0), t))
+
+    def _dedup(ts: list[str], seen_keys: set[str]) -> list[str]:
+        out: list[str] = []
+        for t in ts:
+            key = _normalize_index(underlying_index.get(t)) or t
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            out.append(t)
+        return out
+
+    core_set = CORE_SUBCATEGORIES.get(bucket_key, set())
+    core = [t for t in eligible if sub_category.get(t) in core_set]
+    if not core:
+        core = list(eligible)
+
+    seen: set[str] = set()
+    deduped_core = _dedup(_rank(core), seen)
+
+    n_floor = max(1, math.ceil(bucket_weight / SINGLE_CAP - 1e-9))
+    n_div = compute_adaptive_n_max(
+        n_positive_alpha=len(deduped_core),
+        bucket_weight=bucket_weight, capital_krw=capital_krw,
+    )
+    n = min(n_floor, len(deduped_core))
+    selected = deduped_core[:n]
+
+    # forced fill — feasibility 한정. thematic 을 sub_category 별 round-robin(AUM 순).
+    if len(selected) < n_floor:
+        core_members = set(core)
+        thematic = _rank([t for t in eligible if t not in core_members])
+        groups: dict[str | None, list[str]] = {}
+        for t in thematic:
+            groups.setdefault(sub_category.get(t), []).append(t)
+        order = list(groups)
+        while len(selected) < n_floor:
+            advanced = False
+            for sc in order:
+                if len(selected) >= n_floor:
+                    break
+                q = groups[sc]
+                while q:
+                    t = q.pop(0)
+                    key = _normalize_index(underlying_index.get(t)) or t
+                    if key not in seen:
+                        seen.add(key)
+                        selected.append(t)
+                        advanced = True
+                        break
+            if not advanced:
+                break
+
+    if trace is not None:
+        trace.update({"bucket": bucket_key, "core_n": len(deduped_core),
+                      "n_floor": n_floor, "n_div": n_div, "selected": list(selected)})
+    return selected
