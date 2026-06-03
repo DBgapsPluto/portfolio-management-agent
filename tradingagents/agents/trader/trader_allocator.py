@@ -26,6 +26,7 @@ from tradingagents.skills.portfolio.within_bucket import (
 )
 from tradingagents.skills.portfolio.scenario_anchor import (
     QUADRANT_BASELINE, hard_band, effective_band, project_to_band,
+    SCENARIO_MODIFIER, apply_scenario_modifier,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ _STEP_B_SYSTEM = (
 )
 
 
-def _step_a_prompt(state, quadrant, confidence, conviction, anchor, eff) -> list[dict]:
+def _step_a_prompt(state, quadrant, scenario, confidence, conviction, anchor, eff) -> list[dict]:
     rd = state.get("research_decision")
     thesis = getattr(rd, "thesis_md", "") if rd else ""
     key_risks = getattr(rd, "key_risks", []) if rd else []
@@ -90,7 +91,8 @@ def _step_a_prompt(state, quadrant, confidence, conviction, anchor, eff) -> list
         for b in GAPS_BUCKET_KEYS
     )
     body = (
-        f"## Regime: {quadrant} (confidence {confidence:.2f}), conviction {conviction}\n\n"
+        f"## Regime: {quadrant} / Scenario: {scenario} "
+        f"(confidence {confidence:.2f}), conviction {conviction}\n\n"
         f"## 앵커 baseline + 허용밴드 (이 안에서만 tilt)\n{anchor_lines}\n\n"
         f"## 리서치 종합\n{thesis}\n\n"
         f"## 핵심 리스크\n" + ("\n".join(f"  - {r}" for r in key_risks) or "  (없음)") + "\n\n"
@@ -169,20 +171,26 @@ def create_trader_allocator(step_a_llm, step_b_llm):
         risk_flag = {e.ticker: e.bucket for e in uni.etfs}
         valid_tickers = set(aum)
 
-        # --- Step A: quadrant 앵커 + LLM tilt + 투영 ---
+        # --- Step A: quadrant 앵커 + scenario modifier + LLM tilt + 투영 ---
         quadrant = _resolve_quadrant(state)
         confidence = _resolve_confidence(state)
         rd = state.get("research_decision")
         conviction = (getattr(rd, "conviction", "medium") if rd else "medium") or "medium"
-        anchor = QUADRANT_BASELINE[quadrant]
-        hard_bands = {b: hard_band(quadrant, b, anchor[b]) for b in anchor}
-        eff = {b: effective_band(anchor[b], hard_bands[b][0], hard_bands[b][1], confidence, conviction)
+        scenario = (getattr(rd, "dominant_scenario", "neutral") if rd else "neutral") or "neutral"
+
+        q_baseline = QUADRANT_BASELINE[quadrant]
+        hard_bands = {b: hard_band(quadrant, b, q_baseline[b]) for b in q_baseline}
+        hmin = {b: hard_bands[b][0] for b in hard_bands}
+        hmax = {b: hard_bands[b][1] for b in hard_bands}
+        anchor = apply_scenario_modifier(q_baseline, scenario, hmin, hmax)   # Phase 2 center 이동
+        eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence, conviction)
                for b in anchor}
         tilt = invoke_structured_obj(
-            structured_a, _step_a_prompt(state, quadrant, confidence, conviction, anchor, eff),
+            structured_a,
+            _step_a_prompt(state, quadrant, scenario, confidence, conviction, anchor, eff),
             BucketTilt(), "TraderStepA",
         )
-        eff_lo = {b: eff[b][0] for b in eff}   # eff[b] = (eff_min, eff_max)
+        eff_lo = {b: eff[b][0] for b in eff}
         eff_hi = {b: eff[b][1] for b in eff}
         bucket_weights = project_to_band(anchor, tilt.tilts, eff_lo, eff_hi)
         bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)

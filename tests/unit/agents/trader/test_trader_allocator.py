@@ -64,9 +64,10 @@ def test_step_a_prompt_includes_quadrant_anchor_and_signals():
         "technical_summary": "t", "news_summary": "n",
         "allocation_feedback": [],
     }
-    msgs = _step_a_prompt(state, q, 0.7, "high", anchor, eff)
+    msgs = _step_a_prompt(state, q, "kr_stress", 0.7, "high", anchor, eff)
     text = msgs[0]["content"] + msgs[1]["content"]
     assert q in text
+    assert "kr_stress" in text
     assert "b3_global_tech" in text
     assert "중국 둔화" in text
     assert "MACRO_X" in text
@@ -153,3 +154,18 @@ def test_resolve_quadrant_falls_back_when_missing():
 def test_resolve_quadrant_rejects_unknown_label():
     state = {"macro_report": _FakeMacro(_FakeRegime("nonsense", 0.5))}
     assert _resolve_quadrant(state) == "growth_disinflation"
+
+
+def test_kr_stress_modifier_shifts_kr_equity_down(tmp_path):
+    up = _universe_14(tmp_path)
+    macro = _FakeMacro(_FakeRegime("growth_disinflation", 0.5))
+
+    def run(scenario):
+        st = _state_14(up, macro)
+        st["research_decision"] = ResearchThesis(
+            conviction="medium", dominant_scenario=scenario, thesis_md="t")
+        node = create_trader_allocator(_FakeStep(BucketTilt()),
+                                       _FakeStep(StockSelection(selections={})))
+        return node(st)["bucket_target"].weights["b1_kr_equity"]
+
+    assert run("kr_stress") < run("neutral")   # kr_stress 가 한국주식을 낮춤
