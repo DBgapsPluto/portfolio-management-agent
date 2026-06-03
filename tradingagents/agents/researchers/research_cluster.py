@@ -14,8 +14,14 @@ _MANAGER_SYSTEM = (
     "주장, 그리고 Stage 1 매크로/리스크/기술적/뉴스 분석을 모두 검토해 균형 잡힌 "
     "투자 판단을 종합한다. 한쪽으로 치우치지 말고 양측 논거의 강도를 평가해 결론을 "
     "내려라. 결과는 thesis_md(한국어 종합 판단), conviction(high/medium/low), "
-    "dominant_scenario(예: goldilocks/stagflation/recession/neutral 등 정성 라벨 1개), "
-    "key_risks(주요 리스크 리스트)로 구조화하라."
+    "key_risks(주요 리스크 리스트), 그리고 dominant_scenario 로 구조화하라.\n"
+    "dominant_scenario: 아래 직교 시나리오 중 현재 명백히 해당하는 것 하나, 없으면 neutral.\n"
+    "  - kr_boom: 한국만 두드러진 강세\n"
+    "  - kr_stress: 한국만 두드러진 약세(글로벌은 상대적 양호)\n"
+    "  - global_credit: 신용(회사채) 스프레드 급확대·경색\n"
+    "  - ai_concentration: AI·반도체·테크로의 쏠림\n"
+    "  - neutral: 위에 해당 없음 (대부분의 경우)\n"
+    "  ※ 성장/침체·인플레 국면 자체는 별도 macro regime 이 담당하므로 여기에 넣지 말 것."
 )
 
 

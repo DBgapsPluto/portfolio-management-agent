@@ -1,6 +1,6 @@
 from langchain_core.messages import AIMessage
 from tradingagents.schemas.research import InvestmentThesis, ResearchThesis
-from tradingagents.agents.researchers.research_cluster import create_research_cluster
+from tradingagents.agents.researchers.research_cluster import create_research_cluster, _MANAGER_SYSTEM
 
 
 class _FakeBullBear:
@@ -23,6 +23,13 @@ class _FakeManager:
 def _state():
     return {"macro_summary": "m", "risk_summary": "r",
             "technical_summary": "t", "news_summary": "n"}
+
+
+def test_manager_prompt_lists_orthogonal_scenarios():
+    for label in ("kr_boom", "kr_stress", "global_credit", "ai_concentration", "neutral"):
+        assert label in _MANAGER_SYSTEM
+    # quadrant 개념(성장/인플레)은 macro regime 담당 — 시나리오로 넣지 말라는 지시 포함
+    assert "macro regime" in _MANAGER_SYSTEM
 
 
 def test_cluster_synthesizes_research_thesis():
