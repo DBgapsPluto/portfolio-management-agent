@@ -22,7 +22,13 @@ def repair_risk_cap(
     is_risk: Callable[[str], bool],
     cap: float = HARD_RISK_ASSET_CAP,
 ) -> dict[str, float]:
-    """위험자산 합 ≤ cap 보장. cap 이하면 무변경."""
+    """위험자산 합 ≤ cap 보장. cap 이하면 무변경.
+
+    전제: 안전 포지션의 총 headroom(Σ SINGLE_CAP−w) ≥ freed(risk_sum−cap). 실 universe 는
+    안전 버킷 ≥3개(a1~a3)가 각각 SINGLE_CAP 미만이라 항상 성립. 만약 모든 안전이 SINGLE_CAP
+    포화면(도달 불가 degenerate) 마지막 renormalize 가 risk 를 cap 위로 되밀 수 있음 — 이 경우
+    포트폴리오 자체가 {risk≤cap, 단일≤cap, 합=1} 동시 충족 불가(infeasible).
+    """
     if not weights:
         return {}
     risk_sum = sum(w for t, w in weights.items() if is_risk(t))
