@@ -134,7 +134,7 @@ def select_representative_candidates(
                         seen.add(key)
                         selected.append(t)
                         advanced = True
-                        break
+                        break  # sub_category 당 한 번만 — pass 마다 round-robin(다양성)
             if not advanced:
                 break
 

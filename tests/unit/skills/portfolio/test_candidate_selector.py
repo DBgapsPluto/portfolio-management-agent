@@ -4,6 +4,7 @@ from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.skills.portfolio.gaps_buckets import GAPS_BUCKET_KEYS
 from tradingagents.skills.portfolio.candidate_selector import (
     _normalize_index, CORE_SUBCATEGORIES, KNOWN_THEMATIC,
+    select_representative_candidates,
 )
 
 
@@ -41,9 +42,6 @@ def test_coverage_every_universe_subcategory_classified():
         if missing:
             unmapped[bkey] = missing
     assert not unmapped, f"미분류 sub_category(분류 갱신 필요): {unmapped}"
-
-
-from tradingagents.skills.portfolio.candidate_selector import select_representative_candidates
 
 
 def _meta(rows):
@@ -114,7 +112,7 @@ def test_forced_fill_uses_thematic_diversity_when_core_short():
         ("AT_DEF2", 390.0, "industrial_defense", "d2"),
         ("AT_FIN1", 300.0, "finance", "f1"),
     ]
-    out = _call(rows, "b1_kr_equity", w=0.30)
+    out = _call(rows, "b1_kr_equity", w=0.30)  # w=0.30 → n_floor=ceil(0.30/0.20)=2
     assert "ABROAD" in out and len(out) == 2
     assert "AT_DEF1" in out
 
@@ -128,3 +126,15 @@ def test_empty_eligible_returns_empty():
 def test_core_empty_falls_back_to_eligible():
     rows = [("AT1", 200.0, "thematic_other", "i1"), ("AT2", 100.0, "thematic_other", "i2")]
     assert _call(rows, "b1_kr_equity", w=0.10) == ["AT1"]
+
+
+def test_forced_fill_skips_thematic_duping_core_index():
+    # core 가 1개(IDX_A), n_floor=2 강제보충 시 같은 index 의 thematic(AT_DUP)은 dedup 으로 skip,
+    # 다른 index 의 thematic(AT_OTHER)이 선택됨.
+    rows = [
+        ("ABROAD", 500.0, "index_broad", "IDX_A"),
+        ("AT_DUP", 400.0, "industrial_defense", "IDX_A"),
+        ("AT_OTHER", 300.0, "finance", "IDX_B"),
+    ]
+    out = _call(rows, "b1_kr_equity", w=0.30)   # n_floor=2
+    assert "ABROAD" in out and "AT_OTHER" in out and "AT_DUP" not in out
