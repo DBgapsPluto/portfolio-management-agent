@@ -90,7 +90,8 @@ def effective_band(
 
 
 _EPS: float = 1e-9
-_MAX_ITERS: int = 50
+_FEASIBILITY_TOL: float = 1e-6  # _EPS 보다 의도적으로 느슨 — float 누적 오차를 허용.
+_MAX_ITERS: int = 50   # 넉넉한 안전망. feasible 밴드는 ~1-2 iter 수렴; 미수렴은 아래 guard가 baseline fallback.
 
 
 def project_to_band(
@@ -118,6 +119,6 @@ def project_to_band(
             if head[b] > 0:
                 nw = w[b] + residual * head[b] / cap
                 w[b] = min(max(nw, eff_min[b]), eff_max[b])
-    if abs(1.0 - sum(w.values())) > 1e-6:
+    if abs(1.0 - sum(w.values())) > _FEASIBILITY_TOL:  # 수렴 실패 → baseline fallback
         return dict(baseline)
     return w

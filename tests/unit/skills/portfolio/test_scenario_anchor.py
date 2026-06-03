@@ -130,3 +130,12 @@ def test_infeasible_numeric_falls_back_to_baseline():
     bad_lo = {"x": 0.40, "y": 0.40, "z": 0.40}
     out = project_to_band(_B, {"x": 0.05}, bad_lo, _HI)
     assert out == pytest.approx(_B)
+
+
+def test_redistribution_is_proportional_to_headroom():
+    # x 를 +0.40 밀면 초과분이 y,z 로 재분배. y,z 는 동일 headroom 이므로 동일하게 줄어듦.
+    # _B: y=0.30, z=0.40 / _LO: y=0.10, z=0.20 → headroom-down y:0.20, z:0.20 (동일)
+    # 동일 headroom → 절대 감소량 동일 (최종값은 다름: y≠z)
+    out = project_to_band(_B, {"x": 0.40}, _LO, _HI)
+    assert (_B["y"] - out["y"]) == pytest.approx(_B["z"] - out["z"])  # 동일 headroom → 동일 절대 감소
+    assert sum(out.values()) == pytest.approx(1.0, abs=1e-9)
