@@ -7,6 +7,7 @@ from tradingagents.skills.portfolio.scenario_anchor import (
 )
 from tradingagents.skills.portfolio.scenario_anchor import effective_band
 from tradingagents.skills.portfolio.scenario_anchor import project_to_band
+from tradingagents.schemas.portfolio import BucketTilt
 
 QUADRANTS = ("growth_inflation", "growth_disinflation",
              "recession_inflation", "recession_disinflation")
@@ -139,3 +140,14 @@ def test_redistribution_is_proportional_to_headroom():
     out = project_to_band(_B, {"x": 0.40}, _LO, _HI)
     assert (_B["y"] - out["y"]) == pytest.approx(_B["z"] - out["z"])  # 동일 headroom → 동일 절대 감소
     assert sum(out.values()) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_bucket_tilt_defaults_empty():
+    bt = BucketTilt()
+    assert bt.tilts == {}
+    assert bt.rationale == ""
+
+
+def test_bucket_tilt_accepts_sparse_deltas():
+    bt = BucketTilt(tilts={"b3_global_tech": 0.04, "b5_other_intl": -0.04})
+    assert bt.tilts["b3_global_tech"] == pytest.approx(0.04)

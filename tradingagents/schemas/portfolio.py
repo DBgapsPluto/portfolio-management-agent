@@ -90,3 +90,12 @@ class StockSelection(BaseModel):
     """Trader step B 출력 — bucket key → 선정 ticker 리스트."""
     selections: dict[str, list[str]] = Field(description="bucket key → [ticker]")
     rationale: str = Field(default="", max_length=500)
+
+
+class BucketTilt(BaseModel):
+    """Trader step A 출력 — quadrant 앵커 대비 버킷별 tilt (sparse, 미지정=0)."""
+    tilts: dict[str, float] = Field(
+        default_factory=dict,
+        description="bucket key → 앵커 대비 가감(+/-). 오버웨이트는 언더웨이트로 펀딩(net≈0).",
+    )
+    rationale: str = Field(default="", max_length=500)
