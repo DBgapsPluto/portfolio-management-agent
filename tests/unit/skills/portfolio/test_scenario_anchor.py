@@ -8,6 +8,7 @@ from tradingagents.skills.portfolio.scenario_anchor import (
 
 QUADRANTS = ("growth_inflation", "growth_disinflation",
              "recession_inflation", "recession_disinflation")
+# a5_gold_infl은 camp상 방어지만 금 ETF는 per-ETF 위험 플래그라 risk proxy에 포함.
 RISK_PROXY = ("a5_gold_infl",) + GROWTH_KEYS   # a5 + 모든 성장버킷
 
 

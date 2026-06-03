@@ -18,7 +18,7 @@ RegimeQuadrant = Literal[
 ]
 
 # quadrant → {bucket_key: baseline}. 각 quadrant 합 == 1.0 (단위테스트 강제).
-QUADRANT_BASELINE: dict[str, dict[str, float]] = {
+QUADRANT_BASELINE: dict[RegimeQuadrant, dict[str, float]] = {
     "growth_disinflation": {
         "a1_cash": 0.08, "a2_kr_rates": 0.08, "a3_us_rates": 0.12,
         "a4_safe_fx": 0.04, "a5_gold_infl": 0.05,
@@ -55,7 +55,7 @@ _BAND_UP: float = 0.10
 _BAND_UP_RECESSION_GROWTH: float = 0.05
 
 
-def hard_band(quadrant: str, bucket: str, baseline: float) -> tuple[float, float]:
+def hard_band(quadrant: RegimeQuadrant, bucket: str, baseline: float) -> tuple[float, float]:
     """버킷의 절대 외곽 한계 [hard_min, hard_max]. hard_min ≤ baseline ≤ hard_max."""
     up = _BAND_UP
     if quadrant.startswith("recession") and bucket in GROWTH_KEYS:
