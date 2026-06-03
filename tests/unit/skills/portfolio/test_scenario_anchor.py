@@ -8,6 +8,10 @@ from tradingagents.skills.portfolio.scenario_anchor import (
 from tradingagents.skills.portfolio.scenario_anchor import effective_band
 from tradingagents.skills.portfolio.scenario_anchor import project_to_band
 from tradingagents.schemas.portfolio import BucketTilt
+from tradingagents.skills.portfolio.scenario_anchor import (
+    SCENARIO_MODIFIER, apply_scenario_modifier,
+)
+from tradingagents.schemas.research import _VALID_SCENARIOS
 
 QUADRANTS = ("growth_inflation", "growth_disinflation",
              "recession_inflation", "recession_disinflation")
@@ -151,3 +155,40 @@ def test_bucket_tilt_defaults_empty():
 def test_bucket_tilt_accepts_sparse_deltas():
     bt = BucketTilt(tilts={"b3_global_tech": 0.04, "b5_other_intl": -0.04})
     assert bt.tilts["b3_global_tech"] == pytest.approx(0.04)
+
+
+def test_modifier_keys_are_valid_orthogonal_scenarios():
+    assert "neutral" not in SCENARIO_MODIFIER
+    assert set(SCENARIO_MODIFIER) <= (_VALID_SCENARIOS - {"neutral"})
+    for deltas in SCENARIO_MODIFIER.values():
+        assert all(b in GAPS_BUCKET_KEYS for b in deltas)
+        assert all(abs(d) <= 0.05 + 1e-9 for d in deltas.values())
+
+
+def test_neutral_scenario_is_noop():
+    base = dict(QUADRANT_BASELINE["growth_disinflation"])
+    hmin = {b: hard_band("growth_disinflation", b, base[b])[0] for b in base}
+    hmax = {b: hard_band("growth_disinflation", b, base[b])[1] for b in base}
+    assert apply_scenario_modifier(base, "neutral", hmin, hmax) == pytest.approx(base)
+    assert apply_scenario_modifier(base, "definitely_unknown", hmin, hmax) == pytest.approx(base)
+
+
+def test_kr_stress_shifts_kr_down_global_up_within_band_sum1():
+    q = "growth_disinflation"
+    base = dict(QUADRANT_BASELINE[q])
+    hmin = {b: hard_band(q, b, base[b])[0] for b in base}
+    hmax = {b: hard_band(q, b, base[b])[1] for b in base}
+    out = apply_scenario_modifier(base, "kr_stress", hmin, hmax)
+    assert out["b1_kr_equity"] < base["b1_kr_equity"]
+    assert out["b2_dm_core"] > base["b2_dm_core"]
+    assert sum(out.values()) == pytest.approx(1.0, abs=1e-9)
+    assert all(hmin[b] - 1e-9 <= out[b] <= hmax[b] + 1e-9 for b in out)
+
+
+def test_modifier_clamped_by_quadrant_hard_band():
+    q = "recession_disinflation"
+    base = dict(QUADRANT_BASELINE[q])
+    hmin = {b: hard_band(q, b, base[b])[0] for b in base}
+    hmax = {b: hard_band(q, b, base[b])[1] for b in base}
+    out = apply_scenario_modifier(base, "ai_concentration", hmin, hmax)
+    assert out["b3_global_tech"] <= hmax["b3_global_tech"] + 1e-9
