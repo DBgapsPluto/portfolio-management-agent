@@ -166,7 +166,7 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
         rationale="fixture: 5-ETF equal weight 0.20",
     )
 
-    def _fixture_trader_allocator(step_a_llm, step_b_llm):
+    def _fixture_trader_allocator(step_a_llm):
         def node(_state):
             attempts = _state.get("allocation_attempts", 0)
             return {
