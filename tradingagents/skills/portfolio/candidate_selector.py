@@ -1,7 +1,7 @@
 """Stage 3 trader Step B — 결정론적 대표 운반체(carrier) 선정.
 
 버킷 비중(Step A)은 이미 결정됨. 여기서는 그 노출을 실현할 ETF 를 고른다:
-core(broad) sub_category 우선 → AUM → underlying_index dedup → adaptive N.
+core(broad) sub_category 우선 → AUM → underlying_index dedup → N = min(n_floor, core distinct).
 regime-alpha/모멘텀/펀더멘털 미사용(적대 리뷰: 미검증 sub-theme 베팅 배제).
 """
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import math
 import re
 
-from tradingagents.skills.portfolio.factor_scorer import compute_adaptive_n_max
 from tradingagents.skills.portfolio.within_bucket import SINGLE_CAP
 
 # 각 버킷의 '대표(broad) 노출' sub_category (v1 시드, 튜닝 대상).
@@ -78,10 +77,13 @@ def select_representative_candidates(
     capital_krw: float,
     trace: dict | None = None,
 ) -> list[str]:
-    """버킷 내 대표 운반체 선정 (결정론). core 우선 → AUM → index dedup → adaptive N.
+    """버킷 내 대표 운반체 선정 (결정론).
 
-    선택적 다양화는 core(broad) 안에서만(thematic hijack 차단). thematic 은 단일-20%
-    feasibility(N_floor)가 core distinct 인덱스로 부족할 때만 sub_category 다양성으로 보충.
+    core 우선 → AUM → index dedup → **N = min(n_floor, core distinct)**(버킷당 대표 최소;
+    단일-20% 강제 시 thematic 보충). 같은-버킷 broad ETF 는 상관성이 높아 adaptive
+    다양화는 이득이 작으므로 minimal-N 을 의도적 설계로 채택.
+
+    capital_krw 는 §6(hysteresis/adaptive-N) 예약 — v1 미사용.
     """
     if not eligible:
         return []
@@ -108,10 +110,6 @@ def select_representative_candidates(
     deduped_core = _dedup(_rank(core), seen)
 
     n_floor = max(1, math.ceil(bucket_weight / SINGLE_CAP - 1e-9))
-    n_div = compute_adaptive_n_max(
-        n_positive_alpha=len(deduped_core),
-        bucket_weight=bucket_weight, capital_krw=capital_krw,
-    )
     n = min(n_floor, len(deduped_core))
     selected = deduped_core[:n]
 
@@ -142,5 +140,5 @@ def select_representative_candidates(
 
     if trace is not None:
         trace.update({"bucket": bucket_key, "core_n": len(deduped_core),
-                      "n_floor": n_floor, "n_div": n_div, "selected": list(selected)})
+                      "n_floor": n_floor, "selected": list(selected)})
     return selected
