@@ -48,7 +48,7 @@ Use this document structure (fill every section; Korean only):
 (≥600 chars — Stage 1 market_risk: VIX, credit spread, systemic risk)
 
 ## 3. 자산군 비중 결정 논리
-(≥600 chars — Stage 2 scenario/factor view + 5-bucket target rationale)
+(≥600 chars — Stage 2 scenario/factor view + 5-bucket target rationale + FX(환) 노출 포지션과 그 의도(원화 약세 수혜 / 위기 시 달러 강세 방어) 설명)
 
 ## 4. 단일 리스크 통제 전략
 (≥600 chars — Stage 5 concentration check + cluster cap 0.25)
@@ -208,6 +208,13 @@ def _build_state_summary(state: dict) -> str:
     else:
         rationale = state.get("rationale", "")
 
+    fx = state.get("fx_exposure") or {}
+    fx_str = (
+        ", ".join(f"{c} {v*100:.1f}%"
+                  for c, v in sorted(fx.items(), key=lambda kv: -kv[1]))
+        if fx else "(미산출)"
+    )
+
     return (
         f"as_of_date: {state.get('as_of_date', 'unknown')}\n\n"
         "### Stage 1 — Analyst Summaries\n"
@@ -229,7 +236,9 @@ def _build_state_summary(state: dict) -> str:
         f"Method: {_resolve_method(state)}\n"
         f"Top 5 weights: "
         f"{sorted(weights.items(), key=lambda x: -x[1])[:5]}\n"
-        f"Rationale: {rationale}\n"
+        f"Rationale: {rationale}\n\n"
+        "### FX(환) 노출 (통화별)\n"
+        f"{fx_str}\n"
     )
 
 
