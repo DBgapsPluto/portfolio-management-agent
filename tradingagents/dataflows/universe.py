@@ -23,6 +23,11 @@ class ETFEntry(BaseModel):
                     "LLM 분류 (1회 enrichment, scripts/enrich_universe_subcategory.py). "
                     "None이면 시나리오 필터링 skip.",
     )
+    gaps_bucket: Optional[str] = Field(
+        default=None,
+        description="14-bucket key (a1_cash..b9_risk_credit). "
+                    "scripts/enrich_universe_gaps_bucket.py 가 xlsx에서 1회 병합.",
+    )
     listed_since: Optional[date] = Field(
         default=None,
         description="Listing date — used to filter for backtests with as_of < listed_since",

@@ -31,28 +31,12 @@ def test_bucket_rejects_non_unit_sum():
         BucketTarget(weights=bad, rationale="bad")
 
 
-def test_bucket_target_risk_asset_weight():
-    bt = BucketTarget(weights=_8_BUCKET_WEIGHTS, rationale="test")
-    expected_risk = 0.15 + 0.20 + 0.08 + 0.14  # = 0.57
-    assert abs(bt.risk_asset_weight - expected_risk) < 1e-6
-
-
 def test_bucket_target_dict_access():
     bt = BucketTarget(weights=_8_BUCKET_WEIGHTS, rationale="test")
     assert bt["kr_equity"] == pytest.approx(0.15)
     assert bt.get("cash_mmf") == pytest.approx(0.10)
     assert set(bt.keys()) == set(_8_BUCKET_WEIGHTS.keys())
     assert sum(bt.values()) == pytest.approx(1.0)
-
-
-def test_bucket_target_bond_tips_share_default():
-    bt = BucketTarget(weights=_8_BUCKET_WEIGHTS, rationale="test")
-    assert bt.bond_tips_share == 0.0
-
-
-def test_bucket_target_bond_tips_share_custom():
-    bt = BucketTarget(weights=_8_BUCKET_WEIGHTS, rationale="test", bond_tips_share=0.30)
-    assert bt.bond_tips_share == pytest.approx(0.30)
 
 
 def test_candidate_set_valid():

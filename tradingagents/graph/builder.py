@@ -15,7 +15,6 @@ def build_main_graph(preset, node_factory):
       - macro_quant, market_risk, technical, macro_news (analyst stage, parallel)
       - research_debate (wraps invest sub-graph)
       - allocator
-      - risk_debate (wraps risk sub-graph; can be pass-through stub)
       - validator
       - fallback
       - portfolio_manager
@@ -37,13 +36,9 @@ def build_main_graph(preset, node_factory):
     sg.add_node("allocator", node_factory("allocator"))
     sg.add_edge("research_debate", "allocator")
 
-    # Stage 4: risk debate (sub-graph wrapped)
-    sg.add_node("risk_debate", node_factory("risk_debate"))
-    sg.add_edge("allocator", "risk_debate")
-
-    # Stage 5: validator
+    # Stage 5: validator (Stage 4 risk overlay 제거 — allocator 직결)
     sg.add_node("validator", node_factory("validator"))
-    sg.add_edge("risk_debate", "validator")
+    sg.add_edge("allocator", "validator")
 
     # Stage 6: D4 cycle conditional
     sg.add_node("fallback", node_factory("fallback"))

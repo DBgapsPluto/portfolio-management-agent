@@ -4,6 +4,7 @@ from time import mktime
 
 import feedparser
 
+from tradingagents.dataflows.pit_guard import is_pit_stale
 from tradingagents.schemas.news import CalendarEvent, NewsItem
 
 logger = logging.getLogger(__name__)
@@ -43,13 +44,16 @@ def _extract_rss_description(entry) -> str | None:
     return cleaned[:2000]
 
 
-def fetch_macro_news(rss_urls: list[str], window_days: int = 7) -> list[NewsItem]:
+def fetch_macro_news(rss_urls: list[str], window_days: int = 7,
+                     as_of: date | None = None) -> list[NewsItem]:
     """Pull headlines from RSS sources.
 
     2026-05-28: Tier 1 — RSS description/summary 도 추출 (NewsItem.description).
     추가 HTTP 호출 없이 headline 보다 풍부한 context 제공. Tier 2 (body fetch)
     는 별도 module (news_body_fetcher.py) 에서.
     """
+    if as_of is not None and is_pit_stale(as_of):
+        return []
     cutoff = datetime.utcnow() - timedelta(days=window_days)
     items: list[NewsItem] = []
     for url in rss_urls:

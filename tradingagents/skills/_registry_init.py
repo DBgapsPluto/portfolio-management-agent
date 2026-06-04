@@ -33,13 +33,8 @@ from tradingagents.skills.news import news_fetcher  # noqa: F401
 from tradingagents.skills.news import impact_classifier  # noqa: F401
 from tradingagents.skills.news import ranker  # noqa: F401
 
-# Research (Stage 2 — factor model; 24-cell scenario_mapper 제거됨, C5)
-
 # Portfolio
-from tradingagents.skills.portfolio import candidate_selector  # noqa: F401
 from tradingagents.skills.portfolio import returns_matrix  # noqa: F401
-from tradingagents.skills.portfolio import optimizers  # noqa: F401
-from tradingagents.skills.portfolio import method_picker  # noqa: F401
 
 # Mandate
 from tradingagents.skills.mandate import universe_check  # noqa: F401

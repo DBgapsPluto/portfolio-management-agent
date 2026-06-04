@@ -2,8 +2,7 @@
 
 Stage 6 정리:
   ① portfolio.json full trace — Stage 1-5 산출물 통합 (research_decision,
-    method_choice, risk_overlay, portfolio_numerics, validation_report,
-    rebalance_mode)
+    method_choice, validation_report, rebalance_mode)
   ② philosophy.md prompt 섹션별 명시 매핑 (reports/philosophy.py)
   ③ trade_plan qty=0 명시 경고 (reports/trade_plan.py + state warnings)
 
@@ -20,6 +19,7 @@ from typing import Any
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.reports.philosophy import write_philosophy
 from tradingagents.reports.trade_plan import write_trade_plan
+from tradingagents.skills.mandate.fx_exposure import compute_fx_exposure
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +34,14 @@ WARN_REASON_PRICE_ZERO: str = "PRICE_ZERO"
 
 
 def _fetch_current_prices(as_of: date) -> dict[str, float]:
-    """Best-effort: pykrx snapshot → {ticker_with_A_prefix: close}. Empty on failure."""
+    """KRX 공식 OpenAPI ETF 종가 → {ticker_with_A_prefix: close}.
+
+    빈 dict 반환 = 휴장일이거나 fetch 실패 (qty=0 으로 graceful). pykrx ETF
+    스냅샷이 KRX schema 변경(영문 컬럼)으로 깨져 공식 API 로 이전 (2026-06-03).
+    """
     try:
-        from tradingagents.dataflows.pykrx_data import fetch_etf_snapshot_by_date
-        snap = fetch_etf_snapshot_by_date(as_of)
-        if snap.empty or "ticker" not in snap.columns or "close" not in snap.columns:
-            return {}
-        return {f"A{row['ticker']}": float(row["close"]) for _, row in snap.iterrows()}
+        from tradingagents.dataflows.krx_openapi import fetch_etf_close_map
+        return fetch_etf_close_map(as_of)
     except Exception as e:
         logger.warning("current_prices fetch failed: %s — qty column will be 0", e)
         return {}
@@ -83,21 +84,14 @@ def _build_full_trace_portfolio(state: dict) -> dict:
         "research_decision": _serialize_for_json(state.get("research_decision")),
         # Stage 3 — Method choice (어느 optimizer가 선택됐는지)
         "method_choice": _serialize_for_json(state.get("method_choice")),
-        # Stage 4 — Risk Overlay (lens_concerns + strength + ceilings/floors)
-        "risk_overlay": _serialize_for_json(state.get("risk_overlay")),
-        # Stage 4 — Portfolio Numerics (HHI/CVaR/cluster_exposure)
-        "portfolio_numerics": _serialize_for_json(state.get("portfolio_numerics")),
         # Stage 5 — Validation (어떤 룰 통과/위반 + rebalance_mode)
         "validation_report": _serialize_for_json(state.get("validation_report")),
         "rebalance_mode": state.get("rebalance_mode"),
         # Stage 5+6 audit (Task 2): per-stage attribution thread.
-        # Stage 3 audit 의 allocation_attribution, Stage 4 audit 의
-        # risk_judge_attribution, Stage 5 audit 의 mandate_validator_attribution.
+        # Stage 3 audit 의 allocation_attribution, Stage 5 audit 의
+        # mandate_validator_attribution.
         "allocation_attribution": _serialize_for_json(
             state.get("allocation_attribution"),
-        ),
-        "risk_judge_attribution": _serialize_for_json(
-            state.get("risk_judge_attribution"),
         ),
         "mandate_validator_attribution": _serialize_for_json(
             state.get("mandate_validator_attribution"),
@@ -120,6 +114,7 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
         out_dir.mkdir(parents=True, exist_ok=True)
 
         universe = load_universe(state["universe_path"])
+        fx_exposure = compute_fx_exposure(weights.weights, universe)
         universe_lookup = {
             e.ticker: {"name": e.name, "category": e.category}
             for e in universe.etfs
@@ -129,6 +124,7 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
 
         # 1. portfolio.json (full trace, no LLM)
         portfolio = _build_full_trace_portfolio(state)
+        portfolio["fx_exposure"] = fx_exposure
         portfolio_path = out_dir / "portfolio.json"
         portfolio_path.write_text(
             json.dumps(portfolio, indent=2, ensure_ascii=False, default=str),
@@ -139,8 +135,7 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
             portfolio_path, len(weights.weights),
             [
                 k for k in (
-                    "allocation_attribution", "risk_judge_attribution",
-                    "mandate_validator_attribution",
+                    "allocation_attribution", "mandate_validator_attribution",
                 ) if portfolio.get(k) is not None
             ],
         )
@@ -175,6 +170,7 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
 
         # 3. philosophy.md (LLM-driven, 6 sections, Stage 1-5 명시 매핑)
         philosophy_path = out_dir / "philosophy.md"
+        state["fx_exposure"] = fx_exposure
         write_philosophy(state, deep_llm, philosophy_path)
         # philosophy.md 의 길이 / retry 발동은 write_philosophy 내부에서 처리.
         philosophy_chars = (

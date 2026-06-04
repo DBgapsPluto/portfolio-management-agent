@@ -247,15 +247,32 @@ def _raw_index_ohlcv_call(code: str, start: date, end: date) -> pd.DataFrame:
     )
 
 
+# KRX index code → (공식 OpenAPI IDX_NM, series). pykrx get_index_ohlcv 가
+# KRX schema 변경(영문 컬럼)으로 깨져 공식 API(idx/{series}_dd_trd)로 이전.
+_INDEX_CODE_MAP: dict[str, tuple[str, str]] = {
+    "1001": ("코스피", "kospi"),
+    "1028": ("코스피 200", "kospi"),
+    "2001": ("코스닥", "kosdaq"),
+}
+
+
 def _live_market_index(code: str, start: date, end: date) -> pd.Series:
+    """KRX 지수 종가 시계열 — 공식 OpenAPI (날짜별 루프, series_cache 가 캐시)."""
+    name = f"idx_{code}"
+    idx_name, series = _INDEX_CODE_MAP.get(code, (None, None))
+    if idx_name is None:
+        logger.warning("Market index %s: unknown code (no official mapping)", code)
+        return pd.Series(dtype=float, name=name)
     try:
-        raw = _raw_index_ohlcv_call(code, start, end)
-        if raw is None or raw.empty or "종가" not in raw.columns:
-            return pd.Series(dtype=float, name=f"idx_{code}")
-        return raw["종가"].rename(f"idx_{code}")
+        from tradingagents.dataflows.krx_openapi import fetch_index_series
+        data = fetch_index_series(start, end, idx_name, series)
+        if not data:
+            return pd.Series(dtype=float, name=name)
+        idx = pd.to_datetime(list(data.keys()), format="%Y%m%d")
+        return pd.Series(list(data.values()), index=idx, name=name).sort_index()
     except Exception as e:
         logger.warning("Market index %s fetch failed: %s", code, e)
-        return pd.Series(dtype=float, name=f"idx_{code}")
+        return pd.Series(dtype=float, name=name)
 
 
 def fetch_market_index(

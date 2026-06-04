@@ -59,30 +59,45 @@ def compute_sp500_net_revision(
     return (total_up - total_down) / total if total > 0 else 0.0
 
 
+def _kospi_fundamental_at(pkstock, target: date, max_back: int = 7):
+    """target 이하 가장 가까운 거래일의 KOSPI fundamental df. 없으면 None.
+
+    휴장일(주말/공휴일)은 pykrx 가 행은 주지만 PER 전부 0 으로 반환 → PER>0 이
+    하나도 없으면 무효로 보고 하루씩 뒤로 물러난다 (최대 max_back 일).
+    """
+    d = target
+    for _ in range(max_back + 1):
+        try:
+            df = pkstock.get_market_fundamental(d.strftime("%Y%m%d"), market="KOSPI")
+        except Exception:
+            df = None
+        if df is not None and not df.empty and (df["PER"] > 0).any():
+            return df
+        d -= timedelta(days=1)
+    return None
+
+
 def compute_kospi200_net_revision(as_of: date) -> float | None:
-    """KOSPI200 forward EPS implied 1m change via pykrx fundamentals."""
+    """KOSPI forward EPS implied 1m revision breadth via pykrx fundamentals.
+
+    get_market_fundamental_by_date(market=) 는 설치된 pykrx 가 market= 미지원이라
+    깨짐. KOSPI200 구성종목(get_index_portfolio_deposit_file)도 KRX schema 변경으로
+    빈 응답 → 둘 다 의존 제거하고, 작동하는 get_market_fundamental 로 전체 KOSPI
+    종목 PER 교집합에서 revision breadth 를 계산 (KOSPI200 proxy).
+    """
     try:
         from pykrx import stock as pkstock
     except ImportError:
         logger.warning("pykrx not available — KOSPI net_revision returns None")
         return None
     month_ago = as_of - timedelta(days=30)
-    try:
-        today_fund = pkstock.get_market_fundamental_by_date(
-            as_of.strftime("%Y%m%d"), as_of.strftime("%Y%m%d"), market="KOSPI"
-        )
-        prior_fund = pkstock.get_market_fundamental_by_date(
-            month_ago.strftime("%Y%m%d"), month_ago.strftime("%Y%m%d"), market="KOSPI"
-        )
-        kospi200 = pkstock.get_index_portfolio_deposit_file("1028")
-    except Exception as e:
-        logger.warning("pykrx fetch failed: %s", e)
+    today_fund = _kospi_fundamental_at(pkstock, as_of)
+    prior_fund = _kospi_fundamental_at(pkstock, month_ago)
+    if today_fund is None or prior_fund is None:
         return None
 
     n_up, n_down, n_valid = 0, 0, 0
-    for ticker in kospi200:
-        if ticker not in today_fund.index or ticker not in prior_fund.index:
-            continue
+    for ticker in today_fund.index.intersection(prior_fund.index):
         t_per = today_fund.loc[ticker, "PER"]
         p_per = prior_fund.loc[ticker, "PER"]
         if not (t_per > 0 and p_per > 0):

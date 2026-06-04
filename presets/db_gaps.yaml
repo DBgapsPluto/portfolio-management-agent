@@ -65,30 +65,12 @@ stages:
 
   - id: allocation
     agents:
-      - id: portfolio_allocator
-        skills:
-          - select_etf_candidates
-          - fetch_returns_matrix
-          - optimize_hrp
-          - optimize_risk_parity
-          - optimize_min_variance
-          - optimize_black_litterman
-          - pick_optimization_method
+      - id: trader_allocator
         input_from:
           bucket_target: research_manager
           regime: macro_quant
           risk_score: market_risk
           clusters: technical
-
-  - id: risk_debate
-    cluster_mode: shared_state
-    rounds: 1
-    agents:
-      - id: aggressive_debator
-      - id: conservative_debator
-      - id: neutral_debator
-    judge:
-      id: risk_judge
 
   - id: validation
     agents:

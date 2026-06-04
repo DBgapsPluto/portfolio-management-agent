@@ -92,27 +92,95 @@ def fetch_krx_openapi(endpoint_path: str, basDd: str | date) -> list[dict]:
     return records
 
 
-# Phase 2a (2026-05-29). KRX 공식 카탈로그에서 endpoint 확정 — Task 1 Step 1 discovery 참고.
-# 발견된 endpoint 가 'etf/etf_bydd_trd' 가 아니면 implementation 시점에 수정.
-KRX_ETF_DAILY_ENDPOINT: str = "etf/etf_bydd_trd"
+# KRX 공식 OpenAPI 카탈로그에서 live 검증된 endpoint (2026-06-03).
+# ETF 는 'etp' (증권상품) 카테고리 — 'etf/etf_bydd_trd' 는 404 (존재 안 함).
+KRX_ETF_DAILY_ENDPOINT: str = "etp/etf_bydd_trd"
+# 지수 일별: idx/{series}_dd_trd. series=kospi 응답에 KOSPI200,
+# series=drvprod 응답에 '코스피 200 변동성지수'(VKOSPI) 포함.
+KRX_INDEX_KOSPI_ENDPOINT: str = "idx/kospi_dd_trd"
+KRX_INDEX_DRVPROD_ENDPOINT: str = "idx/drvprod_dd_trd"
 
 
 def fetch_etf_daily_detail(
     basDd: date,
     ticker: str | None = None,
 ) -> list[dict]:
-    """ETF 일별 상세 (NAV, 종가, 거래량, AUM, 추종률).
+    """ETF 일별 상세 (종가/OHLCV, NAV, 거래량, AUM).
 
     Args:
         basDd: 기준일자 (영업일).
-        ticker: 단축코드 (예: "069500"). None 시 전 ETF 응답.
+        ticker: 단축코드 6자리 (예: "069500"). None 시 전 ETF 응답.
 
     Returns:
-        list of records (dict). 빈 응답 시 빈 list.
-        주요 필드: ISU_SRT_CD, BAS_DD, NAV, TDD_CLSPRC,
-                  ACC_TRDVOL, ACC_TRDVAL, MKTCAP, TRC_RT.
+        list of records (dict). 빈 응답(휴장일 등) 시 빈 list.
+        주요 필드: ISU_CD, ISU_NM, BAS_DD, TDD_CLSPRC(종가),
+                  TDD_OPNPRC/HGPRC/LWPRC, NAV, ACC_TRDVOL, ACC_TRDVAL, MKTCAP.
     """
     records = fetch_krx_openapi(KRX_ETF_DAILY_ENDPOINT, basDd)
     if ticker is None:
         return records
-    return [r for r in records if r.get("ISU_SRT_CD") == ticker]
+    return [r for r in records if r.get("ISU_CD") == ticker]
+
+
+def _to_float(v) -> float | None:
+    """KRX 응답 문자열("141395", "1,399.91") → float. 실패 시 None."""
+    if v is None:
+        return None
+    try:
+        return float(str(v).replace(",", ""))
+    except (ValueError, TypeError):
+        return None
+
+
+def fetch_etf_close_map(basDd: date) -> dict[str, float]:
+    """전 ETF 종가 맵 {f"A{단축코드}": 종가}. 휴장일/실패 시 빈 dict.
+
+    universe.json / weight_vector 의 ticker 가 'A' prefix 형식이므로 맞춰 반환.
+    """
+    out: dict[str, float] = {}
+    for r in fetch_etf_daily_detail(basDd):
+        code = r.get("ISU_CD")
+        close = _to_float(r.get("TDD_CLSPRC"))
+        if code and close is not None and close > 0:
+            out[f"A{code}"] = close
+    return out
+
+
+def fetch_index_close(
+    basDd: date, idx_name: str, series: str = "kospi",
+) -> float | None:
+    """지수 종가 (IDX_NM 정확 일치). series: 'kospi' | 'kosdaq' | 'drvprod' 등.
+
+    예: fetch_index_close(d, "코스피 200")          → KOSPI200 종가
+        fetch_index_close(d, "코스피 200 변동성지수", "drvprod") → VKOSPI
+    """
+    endpoint = f"idx/{series}_dd_trd"
+    for r in fetch_krx_openapi(endpoint, basDd):
+        if str(r.get("IDX_NM", "")).strip() == idx_name:
+            return _to_float(r.get("CLSPRC_IDX"))
+    return None
+
+
+def fetch_index_series(
+    start: date, end: date, idx_name: str, series: str = "kospi",
+) -> dict[str, float]:
+    """[start, end] 영업일(월~금) 루프로 지수 종가 시계열 {YYYYMMDD: close}.
+
+    공식 OpenAPI는 단일일자(basDd)만 지원 → 날짜당 1콜. 긴 window는 호출이
+    많으므로 caller 가 series_cache 로 감싸 as_of 별 1회만 수행하게 한다.
+    휴장일(빈 응답)·없는 날은 skip.
+    """
+    from datetime import timedelta
+
+    out: dict[str, float] = {}
+    d = start
+    while d <= end:
+        if d.weekday() < 5:  # 월~금만 (주말 skip — 어차피 빈 응답)
+            try:
+                v = fetch_index_close(d, idx_name, series)
+            except KRXOpenAPIError:
+                v = None
+            if v is not None:
+                out[d.strftime("%Y%m%d")] = v
+        d += timedelta(days=1)
+    return out

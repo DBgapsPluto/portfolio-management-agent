@@ -71,3 +71,26 @@ def invoke_structured_or_freetext(
 
     response = plain_llm.invoke(prompt)
     return response.content
+
+
+def invoke_structured_obj(
+    structured_llm: Optional[Any],
+    prompt: Any,
+    fallback: T,
+    agent_name: str,
+) -> T:
+    """structured 호출로 typed 객체를 받되, 실패/미지원 시 fallback 반환.
+
+    markdown 이 아니라 Pydantic 객체 자체가 필요한 에이전트(manager/trader)용.
+    파이프라인이 절대 막히지 않도록 모든 예외를 삼키고 fallback 으로 진행.
+    """
+    if structured_llm is None:
+        return fallback
+    try:
+        return structured_llm.invoke(prompt)
+    except Exception as exc:
+        logger.warning(
+            "%s: structured-object invocation failed (%s); using fallback",
+            agent_name, exc,
+        )
+        return fallback

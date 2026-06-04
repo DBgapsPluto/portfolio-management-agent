@@ -9,26 +9,20 @@ class OptimizationMethod(str, Enum):
     MIN_VARIANCE = "min_variance"
     BLACK_LITTERMAN = "black_litterman"
     NCO = "nco"   # Phase 3a (2026-05-30)
+    AUM_WEIGHTED = "aum_weighted"   # Stage 2/3 merge (2026-06-02): trader bucket + AUM within-bucket
 
 
 class BucketTarget(BaseModel):
-    """Asset class weight target from Research Manager — 8-bucket schema (Tier 1).
+    """Asset class weight target from Research Manager — 14-bucket scheme.
 
-    Buckets (8): kr_equity, global_equity, precious_metals,
-                 cyclical_commodity_fx, kr_bond, credit, global_duration, cash_mmf.
-
-    Legacy 5-bucket names (fx_commodity, bond) are no longer valid fields; all
-    callers must pass the 8-bucket dict.
-
-    bond_tips_share: fraction of bond-equivalent buckets (kr_bond + credit +
-        global_duration) allocated to inflation-linked candidates. Stored separately
-        from weights so the candidate selector can split the pool.
+    Each ETF is assigned to exactly one of the 14 buckets defined in the universe.
+    Risk is computed per-ETF from the universe bucket label, not from a bucket-level
+    property. Pass weights as a dict of bucket_name → weight summing to 1.0.
     """
     weights: dict[str, float] = Field(
-        description="Bucket name → weight. 8-bucket schema (Tier 1)."
+        description="Bucket name → weight. 14-bucket scheme."
     )
     rationale: str = Field(max_length=500)
-    bond_tips_share: float = Field(default=0.0, ge=0, le=1)
 
     # --- dict-like accessors so callers can use bucket_target["kr_equity"] etc. ---
     def __getitem__(self, key: str) -> float:
@@ -60,16 +54,6 @@ class BucketTarget(BaseModel):
     def total(self) -> float:
         return sum(self.weights.values())
 
-    @property
-    def risk_asset_weight(self) -> float:
-        """위험자산 합계 (대회 §2.2 룰: ≤70%).
-
-        Risk buckets: kr_equity, global_equity, precious_metals,
-                      cyclical_commodity_fx.
-        """
-        _RISK = ("kr_equity", "global_equity", "precious_metals", "cyclical_commodity_fx")
-        return sum(self.weights.get(b, 0.0) for b in _RISK)
-
 
 class CandidateSet(BaseModel):
     """Allocator의 후보 ETF 풀."""
@@ -94,3 +78,24 @@ class WeightVector(BaseModel):
         if any(w < 0 for w in self.weights.values()):
             raise ValueError("Negative weights not allowed")
         return self
+
+
+class BucketAllocation(BaseModel):
+    """Trader step A 출력 — 14-bucket 비중 (정규화 전 raw 허용)."""
+    weights: dict[str, float] = Field(description="14-bucket key → weight")
+    rationale: str = Field(default="", max_length=500)
+
+
+class StockSelection(BaseModel):
+    """Trader step B 출력 — bucket key → 선정 ticker 리스트."""
+    selections: dict[str, list[str]] = Field(description="bucket key → [ticker]")
+    rationale: str = Field(default="", max_length=500)
+
+
+class BucketTilt(BaseModel):
+    """Trader step A 출력 — quadrant 앵커 대비 버킷별 tilt (sparse, 미지정=0)."""
+    tilts: dict[str, float] = Field(
+        default_factory=dict,
+        description="bucket key → 앵커 대비 가감(+/-). 오버웨이트는 언더웨이트로 펀딩(net≈0).",
+    )
+    rationale: str = Field(default="", max_length=500)

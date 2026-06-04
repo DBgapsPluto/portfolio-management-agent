@@ -9,12 +9,12 @@ def test_db_gaps_preset_loads():
     preset = PresetLoader.from_yaml(Path("presets/db_gaps.yaml"))
     assert preset.name == "db_gaps"
     assert preset.capital_krw == 1_000_000_000
-    # 6 stages: analysts, research_debate, allocation, risk_debate, validation, finalize
-    assert len(preset.stages) == 6
+    # 5 stages (Stage 4 risk_debate 제거): analysts, research_debate, allocation, validation, finalize
+    assert len(preset.stages) == 5
     stage_ids = [s.id for s in preset.stages]
     assert stage_ids == [
         "analysts", "research_debate", "allocation",
-        "risk_debate", "validation", "finalize",
+        "validation", "finalize",
     ]
 
 

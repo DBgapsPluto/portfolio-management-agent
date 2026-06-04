@@ -22,15 +22,15 @@ from tradingagents.schemas.macro import (
     RegimeClassification, YieldCurveSnapshot,
 )
 from tradingagents.schemas.news import ImpactAssessment
-from tradingagents.schemas.portfolio import BucketTarget
-from tradingagents.schemas.research import ResearchDecision
+from tradingagents.schemas.portfolio import (
+    BucketTarget, CandidateSet, WeightVector, OptimizationMethod,
+)
+from tradingagents.schemas.research import ResearchThesis
 from tradingagents.schemas.risk import (
     BreadthSnapshot, PCASnapshot, SentimentSnapshot, SpreadSnapshot,
     SystemicRiskScore, VolatilitySnapshot,
 )
 from tradingagents.schemas.technical import IndicatorPanel
-from tradingagents.skills.portfolio.method_picker import MethodChoice
-from tradingagents.schemas.portfolio import OptimizationMethod
 
 
 @pytest.fixture
@@ -94,18 +94,9 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
         asset_classes_affected=["us_bond"], direction="up",
         severity=4, reasoning="rate cut",
     )
-    method_out = MethodChoice(
-        method=OptimizationMethod.HRP, params={},
-        reasoning="recession + risk_off → defensive HRP.",
-    )
-    # C5 (2026-05-23): Stage 2 가 factor model 로 전환되어 ScenarioProbabilities
-    # LLM 호출 자체가 없음. deep_llm mock 에 RegimeClassification / SystemicRiskScore /
-    # MethodChoice 만 등록.
-
     deep_llm = _mock_llm_factory({
         "RegimeClassification": regime_out,
         "SystemicRiskScore": systemic_out,
-        "MethodChoice": method_out,
     })
     quick_llm = _mock_llm_factory({
         "ImpactAssessment": impact_out,
@@ -125,35 +116,72 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
         fake_create_llm_client,
     )
 
-    # Stage 2: research_manager 자체를 mock으로 우회.
-    # 5 ETF fixture (1 per bucket) 가정 + allocator의 단일 자산 cap 20% 호환을
-    # 위해 균등 0.20씩 강제. factor model 결과 대신 균등 BucketTarget을 직접 반환.
-    _fixture_bucket = BucketTarget(
-        weights={
-            "kr_equity": 0.20, "global_equity": 0.20, "precious_metals": 0.00,
-            "cyclical_commodity_fx": 0.20, "kr_bond": 0.20,
-            "credit": 0.00, "global_duration": 0.00, "cash_mmf": 0.20,
-        },
-        rationale="equal bucket split — fixture feasibility",
-    )
-    _fixture_decision = ResearchDecision(
-        bucket_target=_fixture_bucket,
+    # Stage 2: research_cluster 를 mock 으로 우회.
+    # ResearchThesis(conviction, dominant_scenario, thesis_md, bull_view, bear_view)
+    # 를 반환하는 fixture node. bucket_target 은 Stage 3 allocator 가 담당.
+    _fixture_thesis = ResearchThesis(
         conviction="high",
-        dominant_scenario="goldilocks",
+        dominant_scenario="neutral",
+        thesis_md="fixture thesis",
+        bull_view="bull",
+        bear_view="bear",
     )
 
-    def _fixture_research_manager(_deep_llm):
+    def _fixture_research_cluster(bull_llm, bear_llm, manager_llm):
         def node(_state):
             return {
-                "bucket_target": _fixture_bucket,
-                "research_decision": _fixture_decision,
-                "research_debate_summary": "fixture: equal 0.20 per bucket",
+                "research_decision": _fixture_thesis,
+                "research_debate_summary": "fixture: goldilocks high conviction",
             }
         return node
 
     monkeypatch.setattr(
-        "tradingagents.graph.trading_graph.create_research_manager",
-        _fixture_research_manager,
+        "tradingagents.graph.trading_graph.create_research_cluster",
+        _fixture_research_cluster,
+    )
+
+    # Stage 3: trader_allocator 를 mock 으로 우회.
+    # 5 fixture ETF (A069500, A360750, A411060, A114260, A459580) 에 균등 0.20
+    # 배분 → single-cap 20% + risk≤70% 모두 충족.
+    _fixture_tickers = ["A069500", "A360750", "A411060", "A114260", "A459580"]
+    _fixture_weights = {t: 0.20 for t in _fixture_tickers}
+    _fixture_bucket_target = BucketTarget(
+        weights={"a1_cash": 0.40, "b1_kr_equity": 0.60},
+        rationale="fixture allocator — 5-ETF equal weight",
+    )
+    _fixture_candidate_set = CandidateSet(
+        bucket_to_tickers={
+            "b1_kr_equity":   ["A069500"],
+            "b2_dm_core":     ["A360750"],
+            "a5_gold_infl":   ["A411060"],
+            "a2_kr_rates":    ["A114260"],
+            "a1_cash":        ["A459580"],
+        },
+        selection_criteria="fixture-controlled",
+        total_candidates=5,
+    )
+    _fixture_weight_vector = WeightVector(
+        method=OptimizationMethod.AUM_WEIGHTED,
+        weights=_fixture_weights,
+        rationale="fixture: 5-ETF equal weight 0.20",
+    )
+
+    def _fixture_trader_allocator(step_a_llm):
+        def node(_state):
+            attempts = _state.get("allocation_attempts", 0)
+            return {
+                "bucket_target":        _fixture_bucket_target,
+                "candidate_set":        _fixture_candidate_set,
+                "weight_vector":        _fixture_weight_vector,
+                "method_choice":        {"method": "aum_weighted"},
+                "allocation_attribution": {"bucket_weights": {}, "realized_risk_pct": 0.40},
+                "allocation_attempts":  attempts + 1,
+            }
+        return node
+
+    monkeypatch.setattr(
+        "tradingagents.graph.trading_graph.create_trader_allocator",
+        _fixture_trader_allocator,
     )
 
     # Patch external data sources — use the module name where each function
@@ -256,51 +284,13 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
         lambda **kw: [],
     )
 
-    # Allocator — patch fetch_returns_matrix
+    # Also patch the conditional_logic fallback's fetch_returns_matrix
+    # (used by fallback_normalizer on re-optimization after mandate failure).
     pivot = fake_returns_df.pivot(index="date", columns="ticker", values="close")
     fake_returns_matrix = pivot.pct_change().dropna(how="all")
     monkeypatch.setattr(
-        "tradingagents.agents.allocator.portfolio_allocator.fetch_returns_matrix",
-        lambda *a, **kw: fake_returns_matrix,
-    )
-    # Also patch the conditional_logic fallback's fetch_returns_matrix
-    monkeypatch.setattr(
         "tradingagents.graph.conditional_logic.fetch_returns_matrix",
         lambda *a, **kw: fake_returns_matrix,
-    )
-
-    # Patch select_etf_candidates to bypass AUM filter — the fixture universe has
-    # A114260 (bond) at ~535B KRW, below the hardcoded 1T threshold.  By injecting
-    # a controlled CandidateSet we ensure all 5 ETFs (1 per bucket) are selected
-    # so HRP can produce weights that sum to 1.0.
-    from tradingagents.schemas.portfolio import CandidateSet
-    controlled_candidates = CandidateSet(
-        bucket_to_tickers={
-            "kr_equity":             ["A069500"],
-            "global_equity":         ["A360750"],
-            "cyclical_commodity_fx": ["A411060"],
-            "kr_bond":               ["A114260"],
-            "cash_mmf":              ["A459580"],
-        },
-        selection_criteria="fixture-controlled (AUM filter bypassed for test)",
-        total_candidates=5,
-    )
-    monkeypatch.setattr(
-        "tradingagents.agents.allocator.portfolio_allocator.select_etf_candidates",
-        lambda *a, **kw: controlled_candidates,
-    )
-
-    # Phase 1 cash_spillover: 이 mock 은 attribution["buckets"] 를 채우지 않아 spillover
-    # 가 모든 bucket 을 0 conviction 으로 보고 cash 로 전부 흘리려 함. mock 테스트는
-    # 와이어 검증 용도이므로 spillover 는 no-op (bucket_target 그대로) 로 패치.
-    from tradingagents.skills.portfolio.cash_spillover import SpilloverResult as _SR
-    monkeypatch.setattr(
-        "tradingagents.agents.allocator.portfolio_allocator.adjust_bucket_targets",
-        lambda bucket_target, **kw: _SR(
-            adjusted_bucket_target=bucket_target,
-            convictions={}, cash_overflow_to_buckets={},
-            total_spillover_to_cash=0.0, cash_cap_triggered=False, thresholds={},
-        ),
     )
 
     # Patch DEFAULT_CONFIG to use tmp paths
@@ -335,3 +325,8 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
     # All weights ≤ 0.20 (mandate cap from D12 fix)
     assert all(w <= 0.20 + 1e-6 for w in portfolio["weights"].values()), \
         f"Single ETF cap violated: {portfolio['weights']}"
+
+    # FX 노출 리포팅 (통화별 분해)
+    assert "fx_exposure" in portfolio, "portfolio.json missing fx_exposure"
+    assert isinstance(portfolio["fx_exposure"], dict)
+    assert sum(portfolio["fx_exposure"].values()) <= 1.0 + 1e-6

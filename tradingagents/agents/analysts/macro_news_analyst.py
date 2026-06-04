@@ -132,7 +132,7 @@ def create_macro_news_analyst(quick_llm, deep_llm):
         logger.info("macro_news start: as_of=%s", as_of)
 
         events = fetch_event_calendar_skill(as_of, days=EVENT_CALENDAR_LOOKAHEAD_DAYS)
-        items = fetch_macro_news_skill(window_days=NEWS_WINDOW_DAYS)
+        items = fetch_macro_news_skill(window_days=NEWS_WINDOW_DAYS, as_of=as_of)
         logger.info(
             "macro_news: %d events + %d news items fetched", len(events), len(items),
         )

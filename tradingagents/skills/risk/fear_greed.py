@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 
 from tradingagents.dataflows.cache import TieredCache
+from tradingagents.dataflows.pit_guard import is_pit_stale
 from tradingagents.dataflows.series_cache import resolve_cache_dir
 from tradingagents.schemas.risk import SentimentSnapshot
 from tradingagents.skills.registry import register_skill
@@ -71,6 +72,8 @@ def fetch_fear_greed_index(
     max_staleness=3 (sentiment 데이터는 빠르게 stale).
     Returns None if both live and cache miss.
     """
+    if is_pit_stale(as_of):
+        return None
     if not use_cache:
         return _classify(_scrape_cnn_fg(), as_of)
 

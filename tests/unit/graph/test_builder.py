@@ -38,8 +38,6 @@ def test_build_main_graph_compiles():
                 return {"research_debate_summary": "60/40", "bucket_target": None}
             if agent_id == "allocator":
                 return {"weight_vector": None, "allocation_attempts": 1}
-            if agent_id == "risk_debate":
-                return {"risk_debate_summary": "ok"}
             if agent_id == "validator":
                 # Force pass for this smoke test
                 return {"validation_passed": True, "validation_report": None,
@@ -87,8 +85,6 @@ def test_build_main_graph_routes_to_fallback_on_max_attempts():
                 # Bump attempts to MAX so validator fail routes to fallback
                 attempts = state.get("allocation_attempts", 0) + 1
                 return {"weight_vector": None, "allocation_attempts": attempts}
-            if agent_id == "risk_debate":
-                return {"risk_debate_summary": "x"}
             if agent_id == "validator":
                 return {"validation_passed": False, "validation_report": None,
                         "allocation_feedback": []}

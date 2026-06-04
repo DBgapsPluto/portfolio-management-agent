@@ -10,7 +10,8 @@
       "category": "FX 및 원자재",
       "sub_category": "gold",
       "listed_since": "2021-12-15",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a5_gold_infl"
     },
     {
       "ticker": "A144600",
@@ -21,7 +22,8 @@
       "category": "FX 및 원자재",
       "sub_category": "silver_precious",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a5_gold_infl"
     },
     {
       "ticker": "A132030",
@@ -32,7 +34,8 @@
       "category": "FX 및 원자재",
       "sub_category": "gold",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a5_gold_infl"
     },
     {
       "ticker": "A261220",
@@ -43,7 +46,8 @@
       "category": "FX 및 원자재",
       "sub_category": "oil_energy",
       "listed_since": "2016-12-27",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b8_cyclical_commodity"
     },
     {
       "ticker": "A261240",
@@ -54,7 +58,8 @@
       "category": "FX 및 원자재",
       "sub_category": "usd_fx",
       "listed_since": "2016-12-27",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a4_safe_fx"
     },
     {
       "ticker": "A292560",
@@ -65,7 +70,8 @@
       "category": "FX 및 원자재",
       "sub_category": "jpy_fx",
       "listed_since": "2018-04-17",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a4_safe_fx"
     },
     {
       "ticker": "A271060",
@@ -76,7 +82,8 @@
       "category": "FX 및 원자재",
       "sub_category": "agricultural",
       "listed_since": "2017-06-13",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b8_cyclical_commodity"
     },
     {
       "ticker": "A360750",
@@ -87,7 +94,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2020-08-07",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A379800",
@@ -98,7 +106,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2021-04-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A133690",
@@ -109,7 +118,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A379810",
@@ -120,7 +130,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2021-04-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A381180",
@@ -131,7 +142,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2021-04-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A360200",
@@ -142,7 +154,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2020-08-07",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A367380",
@@ -153,7 +166,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2020-10-29",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A379780",
@@ -164,7 +178,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2021-04-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A371160",
@@ -175,7 +190,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2020-12-16",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A449180",
@@ -186,7 +202,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2022-12-02",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A251350",
@@ -197,7 +214,8 @@
       "category": "해외주식_지수",
       "sub_category": "thematic_other",
       "listed_since": "2016-08-17",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A448290",
@@ -208,7 +226,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2022-11-25",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A241180",
@@ -219,7 +238,8 @@
       "category": "해외주식_지수",
       "sub_category": "japan",
       "listed_since": "2016-03-31",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A453810",
@@ -230,7 +250,8 @@
       "category": "해외주식_지수",
       "sub_category": "india",
       "listed_since": "2023-04-21",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A453870",
@@ -241,7 +262,8 @@
       "category": "해외주식_지수",
       "sub_category": "india",
       "listed_since": "2023-04-14",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A245710",
@@ -252,7 +274,8 @@
       "category": "해외주식_지수",
       "sub_category": "emerging_other",
       "listed_since": "2016-07-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A448300",
@@ -263,7 +286,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2022-11-25",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A283580",
@@ -274,7 +298,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2017-12-13",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A200250",
@@ -285,7 +310,8 @@
       "category": "해외주식_지수",
       "sub_category": "india",
       "listed_since": "2014-06-26",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A414780",
@@ -296,7 +322,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2022-01-13",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A372330",
@@ -307,7 +334,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2020-12-16",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A192090",
@@ -318,7 +346,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A219480",
@@ -329,7 +358,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_sector",
       "listed_since": "2015-05-29",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A245340",
@@ -340,7 +370,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2016-07-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A168580",
@@ -351,7 +382,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A488500",
@@ -362,7 +394,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2024-07-23",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A304940",
@@ -373,7 +406,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2018-08-30",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A143850",
@@ -384,7 +418,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A195980",
@@ -395,7 +430,8 @@
       "category": "해외주식_지수",
       "sub_category": "emerging_other",
       "listed_since": "2014-05-13",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A101280",
@@ -406,7 +442,8 @@
       "category": "해외주식_지수",
       "sub_category": "japan",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A099140",
@@ -417,7 +454,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A245360",
@@ -428,7 +466,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2016-06-16",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A238720",
@@ -439,7 +478,8 @@
       "category": "해외주식_지수",
       "sub_category": "japan",
       "listed_since": "2016-03-03",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A195930",
@@ -450,7 +490,8 @@
       "category": "해외주식_지수",
       "sub_category": "europe",
       "listed_since": "2014-04-30",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A256440",
@@ -461,7 +502,8 @@
       "category": "해외주식_지수",
       "sub_category": "india",
       "listed_since": "2016-11-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A280930",
@@ -472,7 +514,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2017-11-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A195970",
@@ -483,7 +526,8 @@
       "category": "해외주식_지수",
       "sub_category": "thematic_other",
       "listed_since": "2014-05-13",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A250730",
@@ -494,7 +538,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2016-08-10",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A291130",
@@ -505,7 +550,8 @@
       "category": "해외주식_지수",
       "sub_category": "thematic_other",
       "listed_since": "2018-03-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A195920",
@@ -516,7 +562,8 @@
       "category": "해외주식_지수",
       "sub_category": "japan",
       "listed_since": "2014-04-30",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A310080",
@@ -527,7 +574,8 @@
       "category": "해외주식_지수",
       "sub_category": "china",
       "listed_since": "2018-11-28",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b4_china"
     },
     {
       "ticker": "A105010",
@@ -538,7 +586,8 @@
       "category": "해외주식_지수",
       "sub_category": "thematic_other",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A379790",
@@ -549,7 +598,8 @@
       "category": "해외주식_지수",
       "sub_category": "europe",
       "listed_since": "2021-04-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A411860",
@@ -560,7 +610,8 @@
       "category": "해외주식_지수",
       "sub_category": "thematic_other",
       "listed_since": "2021-12-22",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A499150",
@@ -571,7 +622,8 @@
       "category": "해외주식_지수",
       "sub_category": "us_broad",
       "listed_since": "2024-12-03",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A189400",
@@ -582,7 +634,8 @@
       "category": "해외주식_지수",
       "sub_category": "thematic_other",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A261920",
@@ -593,7 +646,8 @@
       "category": "해외주식_지수",
       "sub_category": "thematic_other",
       "listed_since": "2016-12-28",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A381170",
@@ -604,7 +658,8 @@
       "category": "해외주식_섹터",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2021-04-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A458730",
@@ -615,7 +670,8 @@
       "category": "해외주식_섹터",
       "sub_category": "us_sector",
       "listed_since": "2023-06-20",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A487230",
@@ -626,7 +682,8 @@
       "category": "해외주식_섹터",
       "sub_category": "ai_theme_global",
       "listed_since": "2024-07-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A371460",
@@ -637,7 +694,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2020-12-08",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A457480",
@@ -648,7 +706,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2023-05-16",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A456600",
@@ -659,7 +718,8 @@
       "category": "해외주식_섹터",
       "sub_category": "ai_theme_global",
       "listed_since": "2023-05-16",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A465580",
@@ -670,7 +730,8 @@
       "category": "해외주식_섹터",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2023-09-12",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A446770",
@@ -681,7 +742,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2022-11-15",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A446720",
@@ -692,7 +754,8 @@
       "category": "해외주식_섹터",
       "sub_category": "us_sector",
       "listed_since": "2022-11-15",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A497570",
@@ -703,7 +766,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2024-11-26",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A402970",
@@ -714,7 +778,8 @@
       "category": "해외주식_섹터",
       "sub_category": "us_sector",
       "listed_since": "2021-10-21",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A390390",
@@ -725,7 +790,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2021-06-30",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A452360",
@@ -736,7 +802,8 @@
       "category": "해외주식_섹터",
       "sub_category": "us_sector",
       "listed_since": "2023-03-21",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A182480",
@@ -747,7 +814,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b7_reits"
     },
     {
       "ticker": "A429000",
@@ -758,7 +826,8 @@
       "category": "해외주식_섹터",
       "sub_category": "us_sector",
       "listed_since": "2022-05-17",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A463680",
@@ -769,7 +838,8 @@
       "category": "해외주식_섹터",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2023-08-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A453640",
@@ -780,7 +850,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2023-03-21",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A200030",
@@ -791,7 +862,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2014-06-12",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A453650",
@@ -802,7 +874,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2023-03-21",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A218420",
@@ -813,7 +886,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2015-04-28",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b8_cyclical_commodity"
     },
     {
       "ticker": "A352560",
@@ -824,7 +898,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2020-05-13",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b7_reits"
     },
     {
       "ticker": "A493420",
@@ -835,7 +910,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2024-10-08",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A287180",
@@ -846,7 +922,8 @@
       "category": "해외주식_섹터",
       "sub_category": "us_tech_nasdaq",
       "listed_since": "2017-12-13",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A245350",
@@ -857,7 +934,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2016-07-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A494410",
@@ -868,7 +946,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2024-10-22",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A460660",
@@ -879,7 +958,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2023-06-27",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A185680",
@@ -890,7 +970,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A453630",
@@ -901,7 +982,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2023-03-21",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A463640",
@@ -912,7 +994,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2023-08-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A453660",
@@ -923,7 +1006,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2023-03-21",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A463690",
@@ -934,7 +1018,8 @@
       "category": "해외주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2023-08-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b2_dm_core"
     },
     {
       "ticker": "A069500",
@@ -945,7 +1030,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A229200",
@@ -956,7 +1042,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2015-10-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A102110",
@@ -967,7 +1054,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A278530",
@@ -978,7 +1066,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2017-11-21",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A310970",
@@ -989,7 +1078,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2018-11-20",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A148020",
@@ -1000,7 +1090,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A232080",
@@ -1011,7 +1102,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2015-11-12",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A278540",
@@ -1022,7 +1114,8 @@
       "category": "국내주식_지수",
       "sub_category": "thematic_other",
       "listed_since": "2017-11-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A294400",
@@ -1033,7 +1126,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2018-04-23",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A152100",
@@ -1044,7 +1138,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A226490",
@@ -1055,7 +1150,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2015-08-24",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A361580",
@@ -1066,7 +1162,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2020-08-21",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A277630",
@@ -1077,7 +1174,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2017-08-31",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A295040",
@@ -1088,7 +1186,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2018-04-23",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A302450",
@@ -1099,7 +1198,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2018-07-24",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A328370",
@@ -1110,7 +1210,8 @@
       "category": "국내주식_지수",
       "sub_category": "index_broad",
       "listed_since": "2019-06-25",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A156080",
@@ -1121,7 +1222,8 @@
       "category": "국내주식_지수",
       "sub_category": "thematic_other",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A091160",
@@ -1132,7 +1234,8 @@
       "category": "국내주식_섹터",
       "sub_category": "semiconductor",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A161510",
@@ -1143,7 +1246,8 @@
       "category": "국내주식_섹터",
       "sub_category": "factor_value_dividend",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A102780",
@@ -1154,7 +1258,8 @@
       "category": "국내주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A395160",
@@ -1165,7 +1270,8 @@
       "category": "국내주식_섹터",
       "sub_category": "ai_robotics",
       "listed_since": "2021-07-30",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A466920",
@@ -1176,7 +1282,8 @@
       "category": "국내주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2023-10-05",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A305720",
@@ -1187,7 +1294,8 @@
       "category": "국내주식_섹터",
       "sub_category": "battery_ev",
       "listed_since": "2018-09-12",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A449450",
@@ -1198,7 +1306,8 @@
       "category": "국내주식_섹터",
       "sub_category": "industrial_defense",
       "listed_since": "2023-01-05",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A487240",
@@ -1209,7 +1318,8 @@
       "category": "국내주식_섹터",
       "sub_category": "ai_robotics",
       "listed_since": "2024-07-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A395270",
@@ -1220,7 +1330,8 @@
       "category": "국내주식_섹터",
       "sub_category": "semiconductor",
       "listed_since": "2021-07-30",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A315930",
@@ -1231,7 +1342,8 @@
       "category": "국내주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2019-01-22",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A305540",
@@ -1242,7 +1354,8 @@
       "category": "국내주식_섹터",
       "sub_category": "battery_ev",
       "listed_since": "2018-09-12",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A494670",
@@ -1253,7 +1366,8 @@
       "category": "국내주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2024-10-22",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A445290",
@@ -1264,7 +1378,8 @@
       "category": "국내주식_섹터",
       "sub_category": "ai_robotics",
       "listed_since": "2022-11-15",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A455850",
@@ -1275,7 +1390,8 @@
       "category": "국내주식_섹터",
       "sub_category": "ai_robotics",
       "listed_since": "2023-04-25",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A466940",
@@ -1286,7 +1402,8 @@
       "category": "국내주식_섹터",
       "sub_category": "factor_value_dividend",
       "listed_since": "2023-10-17",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A463250",
@@ -1297,7 +1414,8 @@
       "category": "국내주식_섹터",
       "sub_category": "industrial_defense",
       "listed_since": "2023-07-25",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A139260",
@@ -1308,7 +1426,8 @@
       "category": "국내주식_섹터",
       "sub_category": "it_software",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A462010",
@@ -1319,7 +1438,8 @@
       "category": "국내주식_섹터",
       "sub_category": "materials_energy",
       "listed_since": "2023-07-13",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A434730",
@@ -1330,7 +1450,8 @@
       "category": "국내주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2022-06-28",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A091180",
@@ -1341,7 +1462,8 @@
       "category": "국내주식_섹터",
       "sub_category": "consumer",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A091170",
@@ -1352,7 +1474,8 @@
       "category": "국내주식_섹터",
       "sub_category": "finance",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A139230",
@@ -1363,7 +1486,8 @@
       "category": "국내주식_섹터",
       "sub_category": "industrial_defense",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A325010",
@@ -1374,7 +1498,8 @@
       "category": "국내주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2019-05-31",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A363580",
@@ -1385,7 +1510,8 @@
       "category": "국내주식_섹터",
       "sub_category": "it_software",
       "listed_since": "2020-09-25",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b3_global_tech"
     },
     {
       "ticker": "A139220",
@@ -1396,7 +1522,8 @@
       "category": "국내주식_섹터",
       "sub_category": "industrial_defense",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A139270",
@@ -1407,7 +1534,8 @@
       "category": "국내주식_섹터",
       "sub_category": "finance",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A227540",
@@ -1418,7 +1546,8 @@
       "category": "국내주식_섹터",
       "sub_category": "biotech_pharma",
       "listed_since": "2015-09-23",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A147970",
@@ -1429,7 +1558,8 @@
       "category": "국내주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A139250",
@@ -1440,7 +1570,8 @@
       "category": "국내주식_섹터",
       "sub_category": "materials_energy",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b8_cyclical_commodity"
     },
     {
       "ticker": "A174350",
@@ -1451,7 +1582,8 @@
       "category": "국내주식_섹터",
       "sub_category": "factor_value_dividend",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A227550",
@@ -1462,7 +1594,8 @@
       "category": "국내주식_섹터",
       "sub_category": "industrial_defense",
       "listed_since": "2015-09-23",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A227570",
@@ -1473,7 +1606,8 @@
       "category": "국내주식_섹터",
       "sub_category": "factor_value_dividend",
       "listed_since": "2015-09-23",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A139290",
@@ -1484,7 +1618,8 @@
       "category": "국내주식_섹터",
       "sub_category": "consumer",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A139240",
@@ -1495,7 +1630,8 @@
       "category": "국내주식_섹터",
       "sub_category": "materials_energy",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b1_kr_equity"
     },
     {
       "ticker": "A315270",
@@ -1506,7 +1642,8 @@
       "category": "국내주식_섹터",
       "sub_category": "thematic_other",
       "listed_since": "2019-01-15",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b5_other_intl"
     },
     {
       "ticker": "A227560",
@@ -1517,7 +1654,8 @@
       "category": "국내주식_섹터",
       "sub_category": "consumer",
       "listed_since": "2015-09-23",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b6_defensive_equity"
     },
     {
       "ticker": "A459580",
@@ -1528,7 +1666,8 @@
       "category": "금리연계형/초단기채권",
       "sub_category": "mmf_kr",
       "listed_since": "2023-06-08",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A488770",
@@ -1539,7 +1678,8 @@
       "category": "금리연계형/초단기채권",
       "sub_category": "mmf_kr",
       "listed_since": "2024-08-06",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A423160",
@@ -1550,7 +1690,8 @@
       "category": "금리연계형/초단기채권",
       "sub_category": "mmf_kr",
       "listed_since": "2022-04-26",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A455890",
@@ -1561,7 +1702,8 @@
       "category": "금리연계형/초단기채권",
       "sub_category": "mmf_kr",
       "listed_since": "2023-05-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A469830",
@@ -1572,7 +1714,8 @@
       "category": "금리연계형/초단기채권",
       "sub_category": "mmf_kr",
       "listed_since": "2023-11-07",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A153130",
@@ -1583,7 +1726,8 @@
       "category": "금리연계형/초단기채권",
       "sub_category": "mmf_kr",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A456610",
@@ -1594,7 +1738,8 @@
       "category": "금리연계형/초단기채권",
       "sub_category": "mmf_kr",
       "listed_since": "2023-05-09",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A196230",
@@ -1605,7 +1750,8 @@
       "category": "금리연계형/초단기채권",
       "sub_category": "mmf_kr",
       "listed_since": "2014-05-19",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A455960",
@@ -1616,7 +1762,8 @@
       "category": "금리연계형/초단기채권",
       "sub_category": "mmf_kr",
       "listed_since": "2023-05-16",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A468370",
@@ -1627,7 +1774,8 @@
       "category": "해외채권_종합",
       "sub_category": "inflation_linked",
       "listed_since": "2023-10-19",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a5_gold_infl"
     },
     {
       "ticker": "A430500",
@@ -1638,7 +1786,8 @@
       "category": "국내채권_종합",
       "sub_category": "inflation_linked",
       "listed_since": "2022-05-31",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a5_gold_infl"
     },
     {
       "ticker": "A458260",
@@ -1649,7 +1798,8 @@
       "category": "해외채권_회사채",
       "sub_category": "us_high_yield",
       "listed_since": "2023-05-31",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A468380",
@@ -1660,7 +1810,8 @@
       "category": "해외채권_회사채",
       "sub_category": "us_high_yield",
       "listed_since": "2023-10-19",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b9_risk_credit"
     },
     {
       "ticker": "A455660",
@@ -1671,7 +1822,8 @@
       "category": "해외채권_회사채",
       "sub_category": "us_high_yield",
       "listed_since": "2023-04-18",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b9_risk_credit"
     },
     {
       "ticker": "A468630",
@@ -1682,7 +1834,8 @@
       "category": "해외채권_회사채",
       "sub_category": "kr_treasury",
       "listed_since": "2023-10-19",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A332620",
@@ -1693,7 +1846,8 @@
       "category": "해외채권_회사채",
       "sub_category": "us_treasury",
       "listed_since": "2019-08-20",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A332610",
@@ -1704,7 +1858,8 @@
       "category": "해외채권_회사채",
       "sub_category": "kr_treasury",
       "listed_since": "2019-08-20",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A182490",
@@ -1715,7 +1870,8 @@
       "category": "해외채권_회사채",
       "sub_category": "us_high_yield",
       "listed_since": "2014-03-24",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "b9_risk_credit"
     },
     {
       "ticker": "A453850",
@@ -1726,7 +1882,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2023-03-14",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A458250",
@@ -1737,7 +1894,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2023-05-31",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A484790",
@@ -1748,7 +1906,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2024-06-18",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A329750",
@@ -1759,7 +1918,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2019-07-24",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A472870",
@@ -1770,7 +1930,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2023-12-27",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A476760",
@@ -1781,7 +1942,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2024-03-12",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A305080",
@@ -1792,7 +1954,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2018-08-30",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A308620",
@@ -1803,7 +1966,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2018-10-19",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A476750",
@@ -1814,7 +1978,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2024-03-12",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A489000",
@@ -1825,7 +1990,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2024-08-13",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a4_safe_fx"
     },
     {
       "ticker": "A267440",
@@ -1836,7 +2002,8 @@
       "category": "해외채권_종합",
       "sub_category": "us_treasury",
       "listed_since": "2017-04-20",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a3_us_rates"
     },
     {
       "ticker": "A273130",
@@ -1847,7 +2014,8 @@
       "category": "국내채권_회사채",
       "sub_category": "kr_corporate",
       "listed_since": "2017-06-29",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A385540",
@@ -1858,7 +2026,8 @@
       "category": "국내채권_회사채",
       "sub_category": "kr_corporate",
       "listed_since": "2021-05-26",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A0061Z0",
@@ -1869,7 +2038,8 @@
       "category": "국내채권_회사채",
       "sub_category": "kr_corporate",
       "listed_since": "2025-06-24",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A451540",
@@ -1880,7 +2050,8 @@
       "category": "국내채권_회사채",
       "sub_category": "kr_treasury",
       "listed_since": "2023-02-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A438330",
@@ -1891,7 +2062,8 @@
       "category": "국내채권_회사채",
       "sub_category": "kr_corporate",
       "listed_since": "2022-08-23",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A0016X0",
@@ -1902,7 +2074,8 @@
       "category": "국내채권_회사채",
       "sub_category": "kr_corporate",
       "listed_since": "2025-02-18",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A363570",
@@ -1913,7 +2086,8 @@
       "category": "국내채권_회사채",
       "sub_category": "kr_treasury",
       "listed_since": "2020-09-25",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A278620",
@@ -1924,7 +2098,8 @@
       "category": "국내채권_회사채",
       "sub_category": "kr_corporate",
       "listed_since": "2017-09-26",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A336160",
@@ -1935,7 +2110,8 @@
       "category": "국내채권_회사채",
       "sub_category": "kr_corporate",
       "listed_since": "2019-10-29",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A157450",
@@ -1946,7 +2122,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A114260",
@@ -1957,7 +2134,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A148070",
@@ -1968,7 +2146,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A439870",
@@ -1979,7 +2158,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2022-08-23",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A302190",
@@ -1990,7 +2170,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2018-07-20",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A272560",
@@ -2001,7 +2182,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2017-06-29",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a1_cash"
     },
     {
       "ticker": "A114100",
@@ -2012,7 +2194,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A451530",
@@ -2023,7 +2206,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2023-02-01",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A298340",
@@ -2034,7 +2218,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2018-06-08",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A426150",
@@ -2045,7 +2230,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2022-05-11",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A152380",
@@ -2056,7 +2242,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2014-03-04",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     },
     {
       "ticker": "A397420",
@@ -2067,7 +2254,8 @@
       "category": "국내채권_종합",
       "sub_category": "kr_treasury",
       "listed_since": "2021-08-31",
-      "delisted_at": null
+      "delisted_at": null,
+      "gaps_bucket": "a2_kr_rates"
     }
   ]
 }

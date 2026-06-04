@@ -33,7 +33,6 @@ def _register_commands():
     cli.add_command(macro.group, name="macro")
     cli.add_command(portfolio.plan)
     cli.add_command(portfolio.rebalance)
-    cli.add_command(portfolio.optimize)
     cli.add_command(analysis.correlate)
     cli.add_command(analysis.validate)
     cli.add_command(analysis.simulate)

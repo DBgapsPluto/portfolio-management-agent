@@ -60,39 +60,3 @@ def rebalance(tier, as_of, week, month, previous_path):
         result = monthly_full.run(month=month, as_of=target,
                                   previous_path=previous_path)
         click.echo(result.summary)
-
-
-@click.command("optimize")
-@click.option("--method", type=click.Choice(["hrp", "rp", "minvar", "bl"]),
-              default="hrp")
-@click.option("--candidates", required=True, help="Comma-separated tickers")
-@click.option("--date", "as_of", default=None)
-def optimize(method, candidates, as_of):
-    """Run a single optimizer on a manual candidate set (debug tool)."""
-    from datetime import timedelta
-    from tradingagents.skills.portfolio.optimizers import (
-        optimize_hrp, optimize_risk_parity,
-        optimize_min_variance, optimize_black_litterman,
-    )
-    from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
-
-    tickers = [t.strip() for t in candidates.split(",")]
-    end = date.fromisoformat(as_of) if as_of else date.today()
-    start = end - timedelta(days=365 * 3)
-    returns = fetch_returns_matrix(
-        tickers, start, end, cache_path=DEFAULT_CONFIG["etf_price_cache_path"]
-    )
-
-    fn_map = {
-        "hrp": optimize_hrp, "rp": optimize_risk_parity,
-        "minvar": optimize_min_variance, "bl": optimize_black_litterman,
-    }
-    fn = fn_map[method]
-    if method == "bl":
-        click.secho("BL requires --views; use HRP/RP/MinVar for quick optimize",
-                    fg="yellow")
-        return
-    wv = fn(returns)
-    click.echo(f"Method: {wv.method.value}")
-    for t, w in sorted(wv.weights.items(), key=lambda x: -x[1]):
-        click.echo(f"  {t}: {w:.4f}")

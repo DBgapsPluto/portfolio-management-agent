@@ -1,7 +1,7 @@
 """Investment philosophy document generator (대회 §4.1: ≥4 워드 페이지).
 
-Stage 6 정리: prompt에 Stage 2 시나리오 + Stage 4 lens / numerics + Stage 5
-mandate 정보를 섹션별 명시 매핑으로 주입. LLM 호출 수는 유지 (1-2회).
+Stage 6 정리: prompt에 Stage 2 시나리오 + Stage 5 mandate 정보를 섹션별
+명시 매핑으로 주입. LLM 호출 수는 유지 (1-2회).
 출력 형식: 국내 WM '이달의 투자가이드' 스타일, asterisk 마크다운 금지.
 """
 import logging
@@ -45,16 +45,16 @@ Use this document structure (fill every section; Korean only):
 (≥600 chars — Stage 1 macro_quant: regime, yield curve, inflation, employment)
 
 ## 2. 시장 리스크 평가
-(≥600 chars — Stage 1 market_risk + Stage 4 portfolio_numerics: VIX, credit spread, CVaR, HHI)
+(≥600 chars — Stage 1 market_risk: VIX, credit spread, systemic risk)
 
 ## 3. 자산군 비중 결정 논리
-(≥600 chars — Stage 2 scenario/factor view + 5-bucket target rationale)
+(≥600 chars — Stage 2 scenario/factor view + 5-bucket target rationale + FX(환) 노출 포지션과 그 의도(원화 약세 수혜 / 위기 시 달러 강세 방어) 설명)
 
 ## 4. 단일 리스크 통제 전략
-(≥600 chars — Stage 4 concentration lens + Stage 5 cluster cap 0.25)
+(≥600 chars — Stage 5 concentration check + cluster cap 0.25)
 
 ## 5. 시장 충격 시나리오
-(≥600 chars — conservative scenarios + Stage 4 tail_risk lens)
+(≥600 chars — conservative scenarios + Stage 1 conditional stress signals)
 
 ## 6. 매매 원칙
 (≥600 chars — Stage 5 rebalance_mode + turnover floor)
@@ -117,34 +117,6 @@ def _format_scenario_probs(rd) -> str:
     return f"dominant={dominant}; top factors: {z_str}"
 
 
-def _format_overlay(overlay) -> str:
-    """RiskOverlay → 짧은 요약."""
-    if overlay is None:
-        return "(none — Stage 4 not run or empty)"
-    if overlay.is_empty():
-        return f"(empty — {overlay.severity_decision})"
-    lens_summary = "; ".join(
-        f"{lc.lens}={lc.level}" for lc in overlay.lens_concerns
-    ) if overlay.lens_concerns else "(no lens concerns)"
-    return (
-        f"strength={overlay.strength_applied:.2f}, "
-        f"multiplier={overlay.risk_asset_multiplier:.2f}, "
-        f"ceilings={len(overlay.weight_ceilings)}, "
-        f"floors={len(overlay.tail_hedge_floor)} | {lens_summary}"
-    )
-
-
-def _format_numerics(n) -> str:
-    if n is None:
-        return "(not computed)"
-    return (
-        f"HHI={n.hhi:.3f}, top1={n.top1_weight*100:.1f}%, "
-        f"top3_sum={n.top3_weight_sum*100:.1f}%, "
-        f"max_cluster={n.max_cluster_exposure*100:.1f}%, "
-        f"CVaR_95={n.cvar_95_1d*100:.2f}%, vol_60d={n.realized_vol_60d*100:.2f}%"
-    )
-
-
 def _format_validation(report) -> str:
     if report is None:
         return "(not validated)"
@@ -185,6 +157,52 @@ def _format_bucket_target(bucket) -> str:
     )
 
 
+def format_bucket_target_14(bucket_target) -> str:
+    """14-bucket 비중을 한글명과 함께 markdown 으로 (0 비중 생략)."""
+    from tradingagents.skills.portfolio.gaps_buckets import (
+        GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
+    )
+    weights = getattr(bucket_target, "weights", {}) or {}
+    lines = []
+    for k in GAPS_BUCKET_KEYS:
+        w = weights.get(k, 0.0)
+        if w > 1e-6:
+            lines.append(f"- {BUCKET_KR_NAME[k]}: {w*100:.1f}%")
+    return "\n".join(lines) or "(빈 배분)"
+
+
+def format_step_a_decomposition(attribution) -> str:
+    """Step A 버킷 비중 분해(앵커→시나리오→판단→최종)를 markdown 표로.
+
+    attribution = state['allocation_attribution']; step_a 가 없으면 '(미산출)'.
+    """
+    from tradingagents.skills.portfolio.gaps_buckets import (
+        GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
+    )
+    sa = attribution.get("step_a") if isinstance(attribution, dict) else None
+    buckets = (sa or {}).get("buckets") or {}
+    if not buckets:
+        return "(미산출)"
+    lines = [
+        f"Regime {sa.get('quadrant', '?')} / Scenario {sa.get('scenario', '?')} "
+        f"(conf {float(sa.get('confidence', 0)) * 100:.0f}%, "
+        f"conviction {sa.get('conviction', '?')})",
+        "| 버킷 | 앵커 | 시나리오 | 판단(tilt) | 최종 |",
+        "|------|------|----------|-----------|------|",
+    ]
+    for k in GAPS_BUCKET_KEYS:
+        d = buckets.get(k)
+        if not d:
+            continue
+        lines.append(
+            f"| {BUCKET_KR_NAME[k]} | {d['baseline'] * 100:.1f}% "
+            f"| {d['scenario_delta'] * 100:+.1f}% | {d['tilt_applied'] * 100:+.1f}% "
+            f"| {d['final'] * 100:.1f}% |"
+        )
+    lines.append(f"판단 근거: {sa.get('tilt_rationale') or '(없음)'}")
+    return "\n".join(lines)
+
+
 def _resolve_weights(state: dict) -> dict[str, float]:
     wv = state.get("weight_vector")
     if wv is not None:
@@ -203,8 +221,6 @@ def _build_state_summary(state: dict) -> str:
     """philosophy prompt에 들어가는 풍부한 state 요약."""
     wv = state.get("weight_vector")
     rd = state.get("research_decision")
-    overlay = state.get("risk_overlay")
-    numerics = state.get("portfolio_numerics")
     validation = state.get("validation_report")
     rebalance_mode = state.get("rebalance_mode", "unknown")
     method_choice = state.get("method_choice")
@@ -224,6 +240,13 @@ def _build_state_summary(state: dict) -> str:
     else:
         rationale = state.get("rationale", "")
 
+    fx = state.get("fx_exposure") or {}
+    fx_str = (
+        ", ".join(f"{c} {v*100:.1f}%"
+                  for c, v in sorted(fx.items(), key=lambda kv: -kv[1]))
+        if fx else "(미산출)"
+    )
+
     return (
         f"as_of_date: {state.get('as_of_date', 'unknown')}\n\n"
         "### Stage 1 — Analyst Summaries\n"
@@ -234,13 +257,12 @@ def _build_state_summary(state: dict) -> str:
         "### Stage 2 — Research Decision\n"
         f"{state.get('research_debate_summary', '')}\n"
         f"Scenario / factors: {_format_scenario_probs(rd)}\n"
-        f"5-bucket target: {_format_bucket_target(bucket)}\n\n"
+        f"버킷 배분(14): {format_bucket_target_14(bucket)}\n\n"
         "### Stage 3 — Method choice\n"
         f"Selected: {_resolve_method(state)}\n"
-        f"Reasoning: {method_reasoning}\n\n"
-        "### Stage 4 — Risk Overlay\n"
-        f"Overlay: {_format_overlay(overlay)}\n"
-        f"Portfolio numerics: {_format_numerics(numerics)}\n\n"
+        f"Reasoning: {method_reasoning}\n"
+        "버킷 tilt 분해(Step A — 앵커→시나리오→판단→최종):\n"
+        f"{format_step_a_decomposition(state.get('allocation_attribution'))}\n\n"
         "### Stage 5 — Mandate Validation\n"
         f"{_format_validation(validation)}\n"
         f"Rebalance mode: {rebalance_mode}\n\n"
@@ -248,7 +270,9 @@ def _build_state_summary(state: dict) -> str:
         f"Method: {_resolve_method(state)}\n"
         f"Top 5 weights: "
         f"{sorted(weights.items(), key=lambda x: -x[1])[:5]}\n"
-        f"Rationale: {rationale}\n"
+        f"Rationale: {rationale}\n\n"
+        "### FX(환) 노출 (통화별)\n"
+        f"{fx_str}\n"
     )
 
 

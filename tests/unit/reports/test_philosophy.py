@@ -1,7 +1,11 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from tradingagents.reports.philosophy import generate_philosophy, write_philosophy
+from tradingagents.reports.philosophy import (
+    generate_philosophy,
+    write_philosophy,
+    _build_state_summary,
+)
 
 
 def _make_state():
@@ -45,3 +49,17 @@ def test_write_philosophy_creates_file(tmp_path: Path):
     assert result == out
     assert out.read_text(encoding="utf-8").startswith("z")
     assert len(out.read_text(encoding="utf-8")) >= 4000
+
+
+def test_build_state_summary_includes_fx_block():
+    state = dict(_make_state())
+    state["fx_exposure"] = {"USD": 0.55, "KRW": 0.35, "CNY": 0.10}
+    summary = _build_state_summary(state)
+    assert "FX(환) 노출" in summary
+    assert "USD 55.0%" in summary
+
+
+def test_build_state_summary_fx_absent_graceful():
+    summary = _build_state_summary(_make_state())   # fx_exposure 없음
+    assert "FX(환) 노출" in summary
+    assert "(미산출)" in summary
