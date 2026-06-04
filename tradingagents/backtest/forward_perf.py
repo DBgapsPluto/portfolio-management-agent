@@ -18,21 +18,31 @@ _MIN_OBS: int = 40   # forward 데이터 부족 임계
 
 def score_forward_performance(
     weights: dict[str, float], as_of: date, horizon_trading_days: int = 63,
+    returns_matrix: "pd.DataFrame | None" = None,
 ) -> dict:
-    """[as_of, as_of+H거래일] realized 포트 성과. n_obs<40 이면 insufficient_data."""
+    """[as_of, as_of+H거래일] realized 포트 성과. n_obs<40 이면 insufficient_data.
+
+    returns_matrix 주어지면 그것을 사용(날짜당 1회 fetch 공유 — pykrx stall/중복 회피).
+    None 이면 weights 종목으로 직접 fetch. 둘 다 일별 수익 행렬(date×ticker).
+    """
     tickers = [t for t, w in weights.items() if w > 0]
     if not tickers:
         return {"status": "insufficient_data", "n_obs": 0}
 
-    end = as_of + timedelta(days=math.ceil(horizon_trading_days * 1.6))  # 거래일→캘린더 버퍼
-    rm = fetch_returns_matrix(tickers, as_of, end)
+    rm = returns_matrix
+    if rm is None:
+        end = as_of + timedelta(days=math.ceil(horizon_trading_days * 1.6))  # 거래일→캘린더 버퍼
+        rm = fetch_returns_matrix(tickers, as_of, end)
     if rm is None or rm.empty:
         return {"status": "insufficient_data", "n_obs": 0}
 
     rm = rm.iloc[:horizon_trading_days]            # 앞 H 거래일만
-    cols = [t for t in rm.columns if t in weights]
+    cols = [t for t in rm.columns if t in weights and weights[t] > 0]
+    if not cols:
+        return {"status": "insufficient_data", "n_obs": 0}
+    sub = rm[cols].dropna()                        # 선택 종목 모두 유효한 거래일만 (공유 행렬 NaN 방어)
     w = pd.Series({t: weights[t] for t in cols})
-    port = (rm[cols] * w).sum(axis=1)              # 일별 포트 수익
+    port = (sub * w).sum(axis=1)                   # 일별 포트 수익
 
     n = int(port.shape[0])
     if n < _MIN_OBS:

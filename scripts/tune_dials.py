@@ -10,8 +10,9 @@ import argparse
 import itertools
 import json
 import logging
+import math
 import statistics
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 # .env auto-load (FRED/ECOS/OPENAI/KRX 키). run_backtest.py 와 동일 패턴.
@@ -26,6 +27,7 @@ from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.observability.replay import restore_state, run_stage
 from tradingagents.schemas.portfolio import BucketTilt
 from tradingagents.backtest.forward_perf import score_forward_performance
+from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("tune_dials")
@@ -49,13 +51,13 @@ def _capture_tilt(graph, d: str) -> BucketTilt:
     return BucketTilt(tilts=tilt_dict)
 
 
-def _score_combo(graph, d: str, tilt: BucketTilt, floor: float, margin: float) -> dict:
+def _combo_weights(graph, d: str, tilt: BucketTilt, floor: float, margin: float) -> dict:
+    """결정론(네트워크 X): cached_tilt + dial override 로 allocator 재실행 → 최종 weights."""
     state, _ = restore_state(d, STAGE, UNIVERSE_PATH, CAPITAL_KRW)
     state["cached_tilt"] = tilt
     state["portfolio_dials"] = {"vol_haircut_floor": floor, "vol_haircut_margin": margin}
     out = run_stage(graph, STAGE, state)
-    weights = out["weight_vector"].weights
-    return score_forward_performance(weights, date.fromisoformat(d), HORIZON)
+    return out["weight_vector"].weights
 
 
 def main() -> None:
@@ -75,20 +77,36 @@ def main() -> None:
         except Exception as e:  # noqa: BLE001
             logger.warning("skip %s (restore/tilt 실패): %s", d, e)
 
-    rows = []
-    for floor, margin in itertools.product(args.floors, args.margins):
-        per_date: dict[str, float] = {}
-        for d in tilts:
-            logger.info("scoring %s floor=%.1f margin=%.1f ...", d, floor, margin)
+    grid = list(itertools.product(args.floors, args.margins))
+    score: dict[tuple, dict[str, float]] = {g: {} for g in grid}
+
+    # 날짜-외부 루프: 조합 weights 결정론 계산(네트워크 X) → 합집합 1회 forward fetch → 메모리 채점.
+    # (조합마다 재fetch 하면 pykrx/KRX stall 노출이 36회 → 4회로 축소.)
+    for d in tilts:
+        d_date = date.fromisoformat(d)
+        combo_w: dict[tuple, dict] = {}
+        for floor, margin in grid:
             try:
-                perf = _score_combo(graph, d, tilts[d], floor, margin)
-                if perf.get("status") == "ok":
-                    per_date[d] = round(perf["sharpe"], 3)
-                else:
-                    logger.warning("%s f=%s m=%s → %s (n=%s)",
-                                   d, floor, margin, perf.get("status"), perf.get("n_obs"))
+                combo_w[(floor, margin)] = _combo_weights(graph, d, tilts[d], floor, margin)
             except Exception as e:  # noqa: BLE001
-                logger.warning("score 실패 %s f=%s m=%s: %s", d, floor, margin, e)
+                logger.warning("weights 실패 %s f=%s m=%s: %s", d, floor, margin, e)
+        union = sorted({t for w in combo_w.values() for t, x in w.items() if x > 0})
+        end = d_date + timedelta(days=math.ceil(HORIZON * 1.6))
+        logger.info("date %s: %d combos, fetching %d tickers forward (1 fetch)...",
+                    d, len(combo_w), len(union))
+        rm = fetch_returns_matrix(union, d_date, end)
+        logger.info("date %s: forward matrix %s", d, None if rm is None else rm.shape)
+        for (floor, margin), w in combo_w.items():
+            perf = score_forward_performance(w, d_date, HORIZON, returns_matrix=rm)
+            if perf.get("status") == "ok":
+                score[(floor, margin)][d] = round(perf["sharpe"], 3)
+            else:
+                logger.warning("%s f=%s m=%s → %s (n=%s)",
+                               d, floor, margin, perf.get("status"), perf.get("n_obs"))
+
+    rows = []
+    for floor, margin in grid:
+        per_date = score[(floor, margin)]
         sh = list(per_date.values())
         rows.append({
             "floor": floor, "margin": margin, "per_date": per_date,
