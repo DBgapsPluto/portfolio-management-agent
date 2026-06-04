@@ -325,3 +325,8 @@ def test_plan_pipeline_produces_artifacts(tmp_path, universe_path, fake_returns_
     # All weights ≤ 0.20 (mandate cap from D12 fix)
     assert all(w <= 0.20 + 1e-6 for w in portfolio["weights"].values()), \
         f"Single ETF cap violated: {portfolio['weights']}"
+
+    # FX 노출 리포팅 (통화별 분해)
+    assert "fx_exposure" in portfolio, "portfolio.json missing fx_exposure"
+    assert isinstance(portfolio["fx_exposure"], dict)
+    assert sum(portfolio["fx_exposure"].values()) <= 1.0 + 1e-6

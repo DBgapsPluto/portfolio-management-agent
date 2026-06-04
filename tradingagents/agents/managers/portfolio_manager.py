@@ -19,6 +19,7 @@ from typing import Any
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.reports.philosophy import write_philosophy
 from tradingagents.reports.trade_plan import write_trade_plan
+from tradingagents.skills.mandate.fx_exposure import compute_fx_exposure
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +114,7 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
         out_dir.mkdir(parents=True, exist_ok=True)
 
         universe = load_universe(state["universe_path"])
+        fx_exposure = compute_fx_exposure(weights.weights, universe)
         universe_lookup = {
             e.ticker: {"name": e.name, "category": e.category}
             for e in universe.etfs
@@ -122,6 +124,7 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
 
         # 1. portfolio.json (full trace, no LLM)
         portfolio = _build_full_trace_portfolio(state)
+        portfolio["fx_exposure"] = fx_exposure
         portfolio_path = out_dir / "portfolio.json"
         portfolio_path.write_text(
             json.dumps(portfolio, indent=2, ensure_ascii=False, default=str),
@@ -167,6 +170,7 @@ def create_portfolio_manager(deep_llm, artifacts_dir: str = "./artifacts"):
 
         # 3. philosophy.md (LLM-driven, 6 sections, Stage 1-5 명시 매핑)
         philosophy_path = out_dir / "philosophy.md"
+        state["fx_exposure"] = fx_exposure
         write_philosophy(state, deep_llm, philosophy_path)
         # philosophy.md 의 길이 / retry 발동은 write_philosophy 내부에서 처리.
         philosophy_chars = (
