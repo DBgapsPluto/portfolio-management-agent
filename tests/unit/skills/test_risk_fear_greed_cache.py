@@ -4,7 +4,7 @@ from datetime import date
 from tradingagents.skills.risk.fear_greed import fetch_fear_greed_index
 
 
-_RECENT = date(2026, 6, 3)  # within PIT_STALENESS_DAYS of today
+_RECENT = date.today()  # within PIT_STALENESS_DAYS — guard must not fire (relative, won't rot)
 
 
 def _patch_cache_dir(monkeypatch, tmp_path):
