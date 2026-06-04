@@ -24,7 +24,9 @@ EQUITY_INDEX_TICKERS = {
     "vvix": "^VVIX",        # CBOE VIX-of-VIX
     "move": "^MOVE",        # ICE BofA MOVE Index (Treasury vol)
     # China real-time proxies (2026-05 추가 — OECD CLI는 2-3개월 lag이라 보강 필요)
-    "usdcnh": "CNH=X",      # USD/CNH offshore 위안화 — China 정책/경제 우려 신호
+    "usdcnh": "CNY=X",      # USD/CNY 위안화 — China 정책/경제 우려 신호
+                            # (offshore CNH=X/USDCNH=X 둘 다 2026 delisted → onshore
+                            #  CNY=X proxy. 스케일·임계값(7.20/7.30) 동일.)
     "iron_ore": "TIO=F",    # SGX TSI Iron Ore Futures — China 건설 수요 proxy
     # Tier-2 dual_momentum 벤치마크
     "kospi200": "069500.KS",  # KODEX 200 ETF (KOSPI200 prox; ^KS200 도 가능)
