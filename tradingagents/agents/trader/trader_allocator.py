@@ -146,6 +146,7 @@ def create_trader_allocator(step_a_llm):
         aum = {e.ticker: e.aum_krw for e in uni.etfs}
         sub_cat = {e.ticker: e.sub_category for e in uni.etfs}
         idx_of = {e.ticker: e.underlying_index for e in uni.etfs}
+        name_of = {e.ticker: e.name for e in uni.etfs}
         capital = float(state.get("capital_krw") or 0.0)
 
         # --- Step A: quadrant 앵커 + scenario modifier + LLM tilt + 투영 ---
@@ -181,6 +182,7 @@ def create_trader_allocator(step_a_llm):
             selections[bkey] = select_representative_candidates(
                 bucket_key=bkey, eligible=eligible, aum=aum,
                 sub_category=sub_cat, underlying_index=idx_of,
+                name=name_of, quadrant=quadrant, dominant_scenario=scenario,
                 bucket_weight=w, capital_krw=capital,
             )
 

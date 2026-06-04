@@ -178,3 +178,32 @@ def test_node_deterministic_selection_no_llm(tmp_path):
     assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
     assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())
     assert out1["candidate_set"].selection_criteria.startswith("deterministic carrier")
+
+
+def test_node_a3_inflation_selects_short_unhedged(tmp_path):
+    """노드가 quadrant·ETF명을 selector로 전달 → a3에서 10년(UH) 선택."""
+    etfs = []
+    for k in GAPS_BUCKET_KEYS:
+        if k == "a3_us_rates":
+            continue
+        risk = "안전" if k[0] == "a" else "위험"
+        for i in (1, 2):
+            etfs.append({
+                "ticker": f"T_{k}_{i}", "name": f"{k}{i}", "aum_krw": 100.0 * i,
+                "underlying_index": f"idx_{k}_{i}", "bucket": risk,
+                "category": "c", "gaps_bucket": k,
+            })
+    etfs += [
+        {"ticker": "A453850", "name": "ACE 미국30년국채액티브(H)", "aum_krw": 1.82e12,
+         "underlying_index": "미국30년국채", "bucket": "안전", "category": "c",
+         "gaps_bucket": "a3_us_rates", "sub_category": "us_treasury"},
+        {"ticker": "A305080", "name": "TIGER 미국채10년선물", "aum_krw": 2.446e11,
+         "underlying_index": "미국채10년", "bucket": "안전", "category": "c",
+         "gaps_bucket": "a3_us_rates", "sub_category": "us_treasury"},
+    ]
+    p = tmp_path / "u.json"
+    p.write_text(json.dumps({"version": "t", "etfs": etfs}, ensure_ascii=False))
+    macro = _FakeMacro(_FakeRegime("growth_inflation", 0.7))
+    node = create_trader_allocator(_FakeStep(BucketTilt()))
+    out = node(_state_14(str(p), macro))
+    assert out["candidate_set"].bucket_to_tickers.get("a3_us_rates") == ["A305080"]
