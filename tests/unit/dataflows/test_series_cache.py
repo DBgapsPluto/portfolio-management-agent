@@ -165,6 +165,32 @@ def test_fetch_frame_with_cache(tmp_path):
     assert (f1 == f2).all().all()
 
 
+def test_empty_frame_cache_does_not_block_live_refetch(tmp_path):
+    """frame 버전도 빈 결과를 캐시 히트로 취급하지 않고 live 재시도 (series 와 동일)."""
+    from tradingagents.dataflows.series_cache import fetch_frame_with_cache
+
+    call_count = {"n": 0}
+
+    def fetcher() -> pd.DataFrame:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return pd.DataFrame()  # 1차: 빈 (일시 실패)
+        return pd.DataFrame({"X": [1.0]}, index=pd.to_datetime(["2026-05-16"]))
+
+    f1 = fetch_frame_with_cache(
+        fetcher, namespace="frame_test", cache_key="empty",
+        as_of=date(2026, 5, 16), cache_dir=tmp_path,
+    )
+    assert f1.empty
+
+    f2 = fetch_frame_with_cache(
+        fetcher, namespace="frame_test", cache_key="empty",
+        as_of=date(2026, 5, 16), cache_dir=tmp_path,
+    )
+    assert call_count["n"] == 2  # 빈 캐시 무시 → live 재호출
+    assert not f2.empty
+
+
 def test_cache_directory_layout(tmp_path):
     def fetcher() -> pd.Series:
         return pd.Series(

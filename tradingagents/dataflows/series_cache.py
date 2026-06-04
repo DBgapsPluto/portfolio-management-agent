@@ -120,7 +120,7 @@ def fetch_frame_with_cache(
     cache = TieredCache(base / namespace, name=cache_key)
 
     cached = cache.read(as_of)
-    if cached is not None:
+    if cached:  # 빈 dict({})는 캐시 miss 로 취급 (series 버전과 동일 — 일시 실패 영구화 방지)
         return dict_to_frame(cached)
 
     def _live_to_dict() -> dict[str, dict[str, float]]:
