@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 from langgraph.graph import MessagesState
 
 from tradingagents.schemas.mandate import ValidationReport, Violation
-from tradingagents.schemas.portfolio import BucketTarget, CandidateSet, WeightVector
+from tradingagents.schemas.portfolio import BucketTarget, BucketTilt, CandidateSet, WeightVector
 from tradingagents.schemas.reports import (
     MacroReport, RiskReport, TechnicalReport, NewsReport,
 )
@@ -90,6 +90,16 @@ class AgentState(MessagesState):
     force_method: Annotated[
         Optional[str],
         "Force optimizer method (Phase 3a A/B testing). None = auto-select via method_picker.",
+    ]
+
+    # === Tuning harness ===
+    cached_tilt: Annotated[
+        Optional[BucketTilt],
+        "Pre-captured Step A tilt (tuning harness). Set → trader skips the LLM call.",
+    ]
+    portfolio_dials: Annotated[
+        Optional[dict],
+        "Deterministic dial overrides (tuning), e.g. {vol_haircut_floor, vol_haircut_margin}.",
     ]
 
 

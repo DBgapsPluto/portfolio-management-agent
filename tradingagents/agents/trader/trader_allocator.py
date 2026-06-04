@@ -167,7 +167,7 @@ def create_trader_allocator(step_a_llm):
         anchor = apply_scenario_modifier(q_baseline, scenario, hmin, hmax)
         eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence, conviction)
                for b in anchor}
-        tilt = invoke_structured_obj(
+        tilt = state.get("cached_tilt") or invoke_structured_obj(
             structured_a,
             _step_a_prompt(state, quadrant, scenario, confidence, conviction, anchor, eff),
             BucketTilt(), "TraderStepA",
@@ -181,7 +181,13 @@ def create_trader_allocator(step_a_llm):
         vol_of = {t: getattr(fp.get(t), "realized_vol_60d", None) for t in aum}
         pool_tickers = {b: [e.ticker for e in pool.get(b, [])] for b in bucket_weights}
         bucket_vol = bucket_volatility(pool_tickers, vol_of, aum)
-        bucket_weights = apply_vol_haircut(bucket_weights, bucket_vol)
+        _dials = state.get("portfolio_dials") or {}
+        _hc = {}
+        if "vol_haircut_floor" in _dials:
+            _hc["floor"] = _dials["vol_haircut_floor"]
+        if "vol_haircut_margin" in _dials:
+            _hc["margin"] = _dials["vol_haircut_margin"]
+        bucket_weights = apply_vol_haircut(bucket_weights, bucket_vol, **_hc)
         bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
 
         selections: dict[str, list[str]] = {}
@@ -268,6 +274,7 @@ def create_trader_allocator(step_a_llm):
                 "confidence": confidence,
                 "conviction": conviction,
                 "tilt_rationale": tilt.rationale,
+                "tilt": dict(tilt.tilts),
                 "buckets": step_a_buckets,
             },
         }

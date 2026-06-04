@@ -264,3 +264,41 @@ def test_node_vol_haircut_noop_without_technical_report(tmp_path):
     out1 = create_trader_allocator(_FakeStep(BucketTilt()))(_state_14(up))
     out2 = create_trader_allocator(_FakeStep(BucketTilt()))(_state_14(up))
     assert out1["bucket_target"].weights == out2["bucket_target"].weights
+
+
+class _RaisingStep:
+    """cached_tilt 있으면 LLM은 호출되면 안 됨 — 호출 시 실패."""
+    def with_structured_output(self, schema):
+        return self
+    def invoke(self, prompt):
+        raise AssertionError("cached_tilt 있는데 LLM이 호출됨")
+
+
+def test_node_uses_cached_tilt_skips_llm(tmp_path):
+    up = _universe_14(tmp_path)
+    node = create_trader_allocator(_RaisingStep())
+    st = _state_14(up)
+    st["cached_tilt"] = BucketTilt(tilts={"b3_global_tech": 0.05})
+    out = node(st)   # LLM 미호출이라 raise 안 함
+    assert out["weight_vector"] is not None
+    assert out["allocation_attribution"]["step_a"]["tilt"] == {"b3_global_tech": 0.05}
+
+
+def test_node_portfolio_dials_override_haircut(tmp_path):
+    up = _universe_14(tmp_path)
+    panel = {}
+    for k in GAPS_BUCKET_KEYS:
+        for i in (1, 2):
+            v = 0.45 if k == "b8_cyclical_commodity" else 0.12
+            panel[f"T_{k}_{i}"] = SimpleNamespace(realized_vol_60d=v)
+    tr = SimpleNamespace(factor_panel=panel)
+
+    def run(floor):
+        st = _state_14(up)
+        st["technical_report"] = tr
+        st["portfolio_dials"] = {"vol_haircut_floor": floor, "vol_haircut_margin": 0.2}
+        out = create_trader_allocator(_FakeStep(BucketTilt()))(st)
+        return out["bucket_target"].weights.get("b8_cyclical_commodity", 0.0)
+
+    # floor 낮을수록 haircut 더 큼 → b8 더 작아짐
+    assert run(0.5) < run(0.9)
