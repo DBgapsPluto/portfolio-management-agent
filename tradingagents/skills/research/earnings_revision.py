@@ -25,7 +25,9 @@ def load_sp500_constituents() -> list[str]:
         logger.warning("SP500 constituents file missing: %s", SP500_CONSTITUENTS_PATH)
         return []
     with open(SP500_CONSTITUENTS_PATH) as f:
-        return json.load(f)
+        raw = json.load(f)
+    # yfinance 는 클래스주(BRK.B, BF.B)를 하이픈 표기(BRK-B)로 쓴다 — 점 표기는 404.
+    return [t.replace(".", "-") for t in raw]
 
 
 def compute_sp500_net_revision(

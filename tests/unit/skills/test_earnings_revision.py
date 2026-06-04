@@ -4,11 +4,23 @@ yfinance upgrades_downgrades 의 'Action' 컬럼이 'up'/'down'/'main'/'reit'/'i
 으로 바뀌었는데 코드가 옛 'upgrade'/'downgrade' 리터럴만 매칭 → 항상 0 → None
 (F11 US earnings revision silent dead). 신규 코드 매핑.
 """
+import json
 from datetime import date
 
 import pandas as pd
 
 from tradingagents.skills.research import earnings_revision as er
+
+
+def test_load_sp500_normalizes_dot_tickers_to_hyphen(tmp_path, monkeypatch):
+    """클래스주(BRK.B)를 yfinance 표기(BRK-B)로 정규화 — 점 표기는 404."""
+    p = tmp_path / "sp500.json"
+    p.write_text(json.dumps(["AAPL", "BRK.B", "BF.B"]))
+    monkeypatch.setattr(er, "SP500_CONSTITUENTS_PATH", p)
+
+    cons = er.load_sp500_constituents()
+
+    assert cons == ["AAPL", "BRK-B", "BF-B"]
 
 
 def test_sp500_net_revision_maps_up_down_action_codes(monkeypatch):
