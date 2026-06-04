@@ -79,6 +79,7 @@ def main() -> None:
     for floor, margin in itertools.product(args.floors, args.margins):
         per_date: dict[str, float] = {}
         for d in tilts:
+            logger.info("scoring %s floor=%.1f margin=%.1f ...", d, floor, margin)
             try:
                 perf = _score_combo(graph, d, tilts[d], floor, margin)
                 if perf.get("status") == "ok":
