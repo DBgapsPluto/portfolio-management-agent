@@ -85,6 +85,7 @@ def compute_china_leading(
     iron_now = float(iron_ore_series.iloc[-1]) if iron_ore_series is not None and len(iron_ore_series) > 0 else 0.0
     iron_chg = _pct_change_3m(iron_ore_series) if iron_ore_series is not None else 0.0
 
+    last_cli = pd.Timestamp(cli_series.index[-1]).date()
     return ChinaLeadingSnapshot(
         cli_value=current,
         change_3mo=change_3mo,
@@ -95,4 +96,5 @@ def compute_china_leading(
         iron_ore_change_3m_pct=iron_chg,
         realtime_signal=_realtime_signal(usdcnh_now, usdcnh_chg, iron_chg),
         source_date=as_of,
+        staleness_days=max((as_of - last_cli).days, 0),
     )

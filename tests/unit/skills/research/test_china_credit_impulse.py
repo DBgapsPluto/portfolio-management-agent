@@ -62,5 +62,7 @@ def test_result_contains_expected_keys():
                return_value=series):
         result = compute_china_credit_impulse(date(2026, 12, 31))
     assert result is not None
-    assert set(result.keys()) == {"impulse", "ratio", "yoy"}
+    # last_date: staleness stamp 용 실제 분기 말일 (2026-06-04 추가)
+    assert set(result.keys()) == {"impulse", "ratio", "yoy", "last_date"}
     assert result["ratio"] == 230.0
+    assert pd.Timestamp(result["last_date"]) == pd.Timestamp("2026-12-31")

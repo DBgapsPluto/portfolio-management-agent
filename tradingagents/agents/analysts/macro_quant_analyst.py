@@ -80,8 +80,10 @@ def _build_us_equity_valuation(as_of: date) -> USEquityValuationSnapshot | None:
         else:
             mu, sd = float(recent.mean()), float(recent.std(ddof=1)) or 1e-9
             z = (cape - mu) / sd
+        last_cape = pd.Timestamp(cape_series.index[-1]).date()
         return USEquityValuationSnapshot(
-            source_date=as_of, staleness_days=1,
+            source_date=as_of,
+            staleness_days=max((as_of - last_cape).days, 0),
             cape=cape, cape_zscore_30y=z,
         )
     except Exception as e:
@@ -125,8 +127,10 @@ def _build_china_credit_impulse_snapshot(as_of: date) -> ChinaCreditImpulseSnaps
         ci_data = compute_china_credit_impulse(as_of)
         if ci_data is None:
             return None
+        last_bis = pd.Timestamp(ci_data["last_date"]).date()
         return ChinaCreditImpulseSnapshot(
-            source_date=as_of, staleness_days=60,
+            source_date=as_of,
+            staleness_days=max((as_of - last_bis).days, 0),
             credit_impulse=ci_data["impulse"],
             credit_to_gdp_ratio=ci_data["ratio"],
             credit_yoy_pct=ci_data["yoy"],
