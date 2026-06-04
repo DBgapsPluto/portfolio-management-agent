@@ -11,12 +11,10 @@ import itertools
 import json
 import logging
 import math
-import socket
+import signal
 import statistics
 from datetime import date, timedelta
 from pathlib import Path
-
-socket.setdefaulttimeout(30)   # pykrx/KRX 가 timeout 없이 무한 hang 하는 것 방지(전역)
 
 # .env auto-load (FRED/ECOS/OPENAI/KRX 키). run_backtest.py 와 동일 패턴.
 _ROOT = Path(__file__).resolve().parent.parent
@@ -54,18 +52,33 @@ def _capture_tilt(graph, d: str) -> BucketTilt:
     return BucketTilt(tilts=tilt_dict)
 
 
-def _fetch_forward(union, d_date, end, attempts: int = 3):
-    """날짜당 forward 수익 행렬 1회 fetch + 재시도(pykrx/KRX transient stall 방어).
+class _FetchTimeout(BaseException):
+    """SIGALRM 하드 타임아웃 — BaseException 상속(pykrx 내부 except Exception 이 못 삼키게)."""
 
-    socket 전역 timeout 으로 stall 은 30s 후 예외 → 재시도. 모두 실패면 None(그 날짜 제외)."""
+
+def _fetch_forward(union, d_date, end, attempts: int = 3, timeout: int = 40):
+    """날짜당 forward 수익 행렬 1회 fetch + SIGALRM 하드 타임아웃 + 재시도.
+
+    pykrx/KRX 가 timeout 없이 무한 hang → SIGALRM 으로 blocking syscall 강제 중단
+    (메인 스레드 전용, Unix). 모두 실패면 None(그 날짜 제외)."""
+    def _handler(signum, frame):
+        raise _FetchTimeout()
+
     for i in range(attempts):
+        old = signal.signal(signal.SIGALRM, _handler)
+        signal.alarm(timeout)
         try:
             rm = fetch_returns_matrix(union, d_date, end)
             if rm is not None and not rm.empty:
                 return rm
             logger.warning("forward fetch 빈 결과 (try %d/%d)", i + 1, attempts)
+        except _FetchTimeout:
+            logger.warning("forward fetch TIMEOUT %ds (try %d/%d)", timeout, i + 1, attempts)
         except Exception as e:  # noqa: BLE001
             logger.warning("forward fetch 실패 (try %d/%d): %s", i + 1, attempts, e)
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old)
     return None
 
 
