@@ -31,6 +31,9 @@ from tradingagents.skills.portfolio.scenario_anchor import (
     QUADRANT_BASELINE, hard_band, effective_band, project_to_band,
     SCENARIO_MODIFIER, apply_scenario_modifier,
 )
+from tradingagents.skills.portfolio.vol_haircut import (
+    bucket_volatility, apply_vol_haircut,
+)
 from tradingagents.skills.mandate.risk_repair import repair_risk_cap
 from tradingagents.skills.mandate.concentration_check import RISK_BUCKET_NAMES
 from tradingagents.skills.portfolio.sub_category import bucket_for_etf
@@ -172,6 +175,13 @@ def create_trader_allocator(step_a_llm):
         eff_lo = {b: eff[b][0] for b in eff}   # eff[b] = (eff_min, eff_max)
         eff_hi = {b: eff[b][1] for b in eff}
         bucket_weights = project_to_band(anchor, tilt.tilts, eff_lo, eff_hi)
+        # 변동성 haircut: 고변동 버킷 축소 → 저변동 재배분 (technical_report 없으면 no-op)
+        tr = state.get("technical_report")
+        fp = getattr(tr, "factor_panel", None) or {}
+        vol_of = {t: getattr(fp.get(t), "realized_vol_60d", None) for t in aum}
+        pool_tickers = {b: [e.ticker for e in pool.get(b, [])] for b in bucket_weights}
+        bucket_vol = bucket_volatility(pool_tickers, vol_of, aum)
+        bucket_weights = apply_vol_haircut(bucket_weights, bucket_vol)
         bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
 
         selections: dict[str, list[str]] = {}
@@ -251,6 +261,7 @@ def create_trader_allocator(step_a_llm):
             "bucket_weights": bucket_weights,
             "realized_risk_pct": risk_pct,
             "n_holdings": len(weight_vector.weights),
+            "vol_haircut": {"bucket_vol": bucket_vol},
             "step_a": {
                 "quadrant": quadrant,
                 "scenario": scenario,

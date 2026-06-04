@@ -1,5 +1,6 @@
 import json
 import pytest
+from types import SimpleNamespace
 from tradingagents.schemas.research import ResearchThesis
 from tradingagents.schemas.portfolio import (
     BucketTarget, CandidateSet,
@@ -235,3 +236,31 @@ def test_attribution_records_step_a_decomposition(tmp_path):
     for d in sa["buckets"].values():
         assert abs(d["baseline"] + d["scenario_delta"]
                    + d["tilt_applied"] - d["final"]) < 1e-6
+
+
+def test_node_vol_haircut_reduces_high_vol_bucket(tmp_path):
+    """technical_report에 b8 고vol 주입 → b8 비중이 haircut 없을 때보다 감소."""
+    up = _universe_14(tmp_path)
+    panel = {}
+    for k in GAPS_BUCKET_KEYS:
+        for i in (1, 2):
+            v = 0.45 if k == "b8_cyclical_commodity" else 0.12
+            panel[f"T_{k}_{i}"] = SimpleNamespace(realized_vol_60d=v)
+    tr = SimpleNamespace(factor_panel=panel)
+
+    base = create_trader_allocator(_FakeStep(BucketTilt()))(_state_14(up))
+    st = _state_14(up)
+    st["technical_report"] = tr
+    hc = create_trader_allocator(_FakeStep(BucketTilt()))(st)
+
+    b8_base = base["bucket_target"].weights.get("b8_cyclical_commodity", 0.0)
+    b8_hc = hc["bucket_target"].weights.get("b8_cyclical_commodity", 0.0)
+    assert b8_hc < b8_base, f"haircut이 b8을 줄여야 함: base={b8_base}, hc={b8_hc}"
+
+
+def test_node_vol_haircut_noop_without_technical_report(tmp_path):
+    """technical_report 없으면 무변경(회귀 보장)."""
+    up = _universe_14(tmp_path)
+    out1 = create_trader_allocator(_FakeStep(BucketTilt()))(_state_14(up))
+    out2 = create_trader_allocator(_FakeStep(BucketTilt()))(_state_14(up))
+    assert out1["bucket_target"].weights == out2["bucket_target"].weights
