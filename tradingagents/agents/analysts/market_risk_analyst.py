@@ -165,9 +165,9 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         PCA_LOOKBACK_DAYS = 365
         CREDIT_BALANCE_LOOKBACK_DAYS = 400
         MARKET_TIER_LOOKBACK_DAYS = 60
-        REALIZED_VOL_LOOKBACK_PERIOD = "120d"
-        SECTOR_DISP_HIST_PERIOD = "65d"
-        MEGA_CAP_HIST_PERIOD = "400d"
+        REALIZED_VOL_LOOKBACK_DAYS = 120
+        SECTOR_DISP_LOOKBACK_DAYS = 65
+        MEGA_CAP_LOOKBACK_DAYS = 400
 
         start_vol = as_of - timedelta(days=VOL_LOOKBACK_DAYS)
         start_5y = as_of - timedelta(days=FIVE_Y_LOOKBACK_DAYS)
@@ -200,7 +200,9 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             sector_returns_60d: dict[str, float] = {}
             for ticker in SECTOR_ETFS:
                 try:
-                    h = yf.Ticker(ticker).history(period=SECTOR_DISP_HIST_PERIOD, interval="1d")
+                    h = yf.Ticker(ticker).history(
+                        start=as_of - timedelta(days=SECTOR_DISP_LOOKBACK_DAYS),
+                        end=as_of + timedelta(days=1), interval="1d")
                     if h.empty or len(h) < 60:
                         continue
                     ret_60d = (h["Close"].iloc[-1] / h["Close"].iloc[-60]) - 1.0
@@ -226,8 +228,12 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 compute_mega_cap_concentration,
             )
 
-            rsp_hist = yf.Ticker("RSP").history(period=MEGA_CAP_HIST_PERIOD, interval="1d")
-            spy_hist = yf.Ticker("SPY").history(period=MEGA_CAP_HIST_PERIOD, interval="1d")
+            rsp_hist = yf.Ticker("RSP").history(
+                start=as_of - timedelta(days=MEGA_CAP_LOOKBACK_DAYS),
+                end=as_of + timedelta(days=1), interval="1d")
+            spy_hist = yf.Ticker("SPY").history(
+                start=as_of - timedelta(days=MEGA_CAP_LOOKBACK_DAYS),
+                end=as_of + timedelta(days=1), interval="1d")
             mega_cap_pct = compute_mega_cap_concentration(
                 rsp_hist["Close"] if not rsp_hist.empty else None,
                 spy_hist["Close"] if not spy_hist.empty else None,
@@ -451,7 +457,9 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         try:
             import yfinance as yf
             spy = yf.Ticker("SPY")
-            hist = spy.history(period=REALIZED_VOL_LOOKBACK_PERIOD, interval="1d")
+            hist = spy.history(
+                start=as_of - timedelta(days=REALIZED_VOL_LOOKBACK_DAYS),
+                end=as_of + timedelta(days=1), interval="1d")
             if not hist.empty:
                 daily_returns = hist["Close"].pct_change().dropna()
             else:
