@@ -168,8 +168,11 @@ def fetch_etf_ohlcv_batch(
 def _raw_foreign_flow_call(start: date, end: date, market: str = "KOSPI") -> pd.DataFrame:
     """KRX 투자자별 일일 순매수 거래대금 (KRW). 외국인/기관/개인."""
     from pykrx import stock
-    return stock.get_market_trading_value_by_date(
-        start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), market,
+    return _run_with_timeout(
+        lambda: stock.get_market_trading_value_by_date(
+            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), market,
+        ),
+        _PYKRX_CALL_TIMEOUT_S,
     )
 
 
@@ -256,8 +259,11 @@ def fetch_credit_balance(
 def _raw_index_ohlcv_call(code: str, start: date, end: date) -> pd.DataFrame:
     """KRX 시장 인덱스 OHLCV — KOSPI(1001), KOSDAQ(2001), KOSPI200(1028) 등."""
     from pykrx import stock
-    return stock.get_index_ohlcv(
-        start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), code,
+    return _run_with_timeout(
+        lambda: stock.get_index_ohlcv(
+            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), code,
+        ),
+        _PYKRX_CALL_TIMEOUT_S,
     )
 
 
@@ -324,7 +330,10 @@ def fetch_market_index(
 def _raw_pykrx_snapshot_call(target_date: date) -> pd.DataFrame:
     """Direct pykrx snapshot call — all ETFs on a single date in one shot."""
     from pykrx import stock
-    return stock.get_etf_ohlcv_by_ticker(target_date.strftime("%Y%m%d"))
+    return _run_with_timeout(
+        lambda: stock.get_etf_ohlcv_by_ticker(target_date.strftime("%Y%m%d")),
+        _PYKRX_CALL_TIMEOUT_S,
+    )
 
 
 def fetch_etf_snapshot_by_date(

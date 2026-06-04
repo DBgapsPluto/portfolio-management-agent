@@ -15,6 +15,8 @@ from typing import Final
 import pandas as pd
 import yfinance as yf
 
+from tradingagents.dataflows.pykrx_data import _PYKRX_CALL_TIMEOUT_S, _run_with_timeout
+
 logger = logging.getLogger(__name__)
 
 SP500_CONSTITUENTS_PATH: Final[Path] = Path("data/universe/sp500_constituents.json")
@@ -78,7 +80,12 @@ def _kospi_fundamental_at(pkstock, target: date, max_back: int = 7):
     d = target
     for _ in range(max_back + 1):
         try:
-            df = pkstock.get_market_fundamental(d.strftime("%Y%m%d"), market="KOSPI")
+            df = _run_with_timeout(
+                lambda: pkstock.get_market_fundamental(
+                    d.strftime("%Y%m%d"), market="KOSPI",
+                ),
+                _PYKRX_CALL_TIMEOUT_S,
+            )
         except Exception:
             df = None
         if df is not None and not df.empty and (df["PER"] > 0).any():
