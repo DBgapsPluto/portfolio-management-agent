@@ -12,7 +12,7 @@ philosophy.md: LLM-driven (deep, 1-2회).
 """
 import json
 import logging
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -38,13 +38,35 @@ def _fetch_current_prices(as_of: date) -> dict[str, float]:
 
     빈 dict 반환 = 휴장일이거나 fetch 실패 (qty=0 으로 graceful). pykrx ETF
     스냅샷이 KRX schema 변경(영문 컬럼)으로 깨져 공식 API 로 이전 (2026-06-03).
+
+    KRX OpenAPI 는 T+1~T+2 지연 — as_of 당일/최근 데이터가 아직 없으면 직전
+    영업일로 최대 7일 거슬러 올라가 가장 가까운 가용 종가를 사용한다 (안 그러면
+    오늘 날짜로 plan 실행 시 전 종목 qty=0).
     """
     try:
         from tradingagents.dataflows.krx_openapi import fetch_etf_close_map
-        return fetch_etf_close_map(as_of)
     except Exception as e:
         logger.warning("current_prices fetch failed: %s — qty column will be 0", e)
         return {}
+
+    d = as_of
+    for _ in range(8):  # as_of 포함 최대 8일 (주말+연휴 방어)
+        try:
+            prices = fetch_etf_close_map(d)
+        except Exception as e:
+            logger.warning("current_prices fetch failed (%s): %s — qty=0", d, e)
+            return {}
+        if prices:
+            if d != as_of:
+                logger.info(
+                    "current_prices: %s 미제공 → 직전 %s 종가 사용 (KRX T+1~T+2 지연)",
+                    as_of, d,
+                )
+            return prices
+        d -= timedelta(days=1)
+
+    logger.warning("current_prices: %s~%s 전 구간 빈 응답 — qty=0", d, as_of)
+    return {}
 
 
 def _serialize_for_json(value: Any) -> Any:
