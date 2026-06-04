@@ -3,7 +3,10 @@ import inspect
 from datetime import date
 
 from tradingagents.dataflows.universe import ETFEntry, Universe
-from tradingagents.skills.portfolio.candidate_selector import _eligible_for_bucket
+from tradingagents.schemas.llm_overlay import Stage3CandidateBoostView
+from tradingagents.skills.portfolio.candidate_selector import (
+    _eligible_for_bucket, apply_llm_candidate_boost,
+)
 
 
 def _make_universe(etfs):
@@ -56,3 +59,61 @@ def test_eligible_for_bucket_empty_universe():
     """Empty universe returns empty list."""
     universe = _make_universe([])
     assert _eligible_for_bucket(universe, "kr_equity") == []
+
+
+def test_apply_llm_candidate_boost_is_bounded():
+    view = Stage3CandidateBoostView(
+        ticker_boosts={"A1": 1.0},
+        subcategory_boosts={"semiconductor": 1.0},
+        confidence=1.0,
+        evidence=["semiconductor narrative"],
+        reasoning="test",
+    )
+    scores, audit = apply_llm_candidate_boost(
+        alpha_scores={"A1": 0.20, "A2": 0.20},
+        ticker_to_sub_category={"A1": "semiconductor", "A2": "consumer"},
+        llm_candidate_view=view,
+        allowed_tickers={"A1", "A2"},
+        boost_cap=0.08,
+    )
+    assert scores["A1"] <= 0.28 + 1e-9
+    assert scores["A2"] == 0.20
+    assert audit["A1"]["clipped_boost"] <= 0.08 + 1e-9
+
+
+def test_apply_llm_candidate_boost_ignores_unsupported_ticker():
+    view = Stage3CandidateBoostView(
+        ticker_boosts={"A999": 1.0},
+        subcategory_boosts={},
+        confidence=1.0,
+        evidence=[],
+        reasoning="test",
+    )
+    scores, audit = apply_llm_candidate_boost(
+        alpha_scores={"A1": 0.20},
+        ticker_to_sub_category={"A1": "semiconductor"},
+        llm_candidate_view=view,
+        allowed_tickers={"A1"},
+        boost_cap=0.08,
+    )
+    assert scores == {"A1": 0.20}
+    assert audit == {}
+
+
+def test_apply_llm_candidate_boost_does_not_flip_negative_alpha_positive():
+    view = Stage3CandidateBoostView(
+        ticker_boosts={"A1": 1.0},
+        subcategory_boosts={},
+        confidence=1.0,
+        evidence=["narrative"],
+        reasoning="test",
+    )
+    scores, audit = apply_llm_candidate_boost(
+        alpha_scores={"A1": -0.01},
+        ticker_to_sub_category={"A1": "semiconductor"},
+        llm_candidate_view=view,
+        allowed_tickers={"A1"},
+        boost_cap=0.08,
+    )
+    assert scores["A1"] <= 0.0
+    assert audit["A1"]["crossed_positive_alpha"] is True

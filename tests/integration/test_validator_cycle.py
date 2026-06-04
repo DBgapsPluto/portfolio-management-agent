@@ -86,7 +86,11 @@ def test_full_cycle_with_mocks(tmp_path):
                     "allocation_feedback": [],
                 }
             if agent_id == "fallback":
-                return {"validation_passed": True}
+                return {
+                    "weight_vector": bad_weights,
+                    "validation_passed": False,
+                    "fallback_used": True,
+                }
             if agent_id == "portfolio_manager":
                 return {"final_portfolio_path": "/tmp/p.json"}
             return {}

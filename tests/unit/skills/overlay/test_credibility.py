@@ -11,6 +11,16 @@ def test_cold_start_prior_0_3():
     assert get_credibility(cs, "kr_equity") == COLD_START_PRIOR == 0.3
 
 
+def test_load_credibility_bootstraps_missing_file(tmp_path, monkeypatch):
+    monkeypatch.setattr("tradingagents.skills.overlay.credibility.CRED_PATH", tmp_path / "cred.json")
+    loaded = load_credibility()
+
+    assert loaded.history_count == 8
+    assert loaded.bucket_cred["kr_equity"] == 0.45
+    assert loaded.bucket_cred["global_equity"] == 0.45
+    assert get_credibility(loaded, "kr_equity") > COLD_START_PRIOR
+
+
 def test_update_hit_increases_cred(tmp_path, monkeypatch):
     monkeypatch.setattr("tradingagents.skills.overlay.credibility.CRED_PATH", tmp_path / "cred.json")
     cs = CredibilityState(bucket_cred={"kr_equity": 0.3}, history_count=0, last_updated=date(2026, 6, 1))

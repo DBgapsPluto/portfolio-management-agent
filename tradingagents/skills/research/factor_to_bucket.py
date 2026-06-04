@@ -82,16 +82,18 @@ RISK_BUCKETS: Final[tuple[str, ...]] = (
 MANDATE_RISK_CAP: Final[float] = 0.70
 
 INITIAL_BASELINE: Final[dict[str, float]] = {
-    "kr_equity":             0.15,
-    "global_equity":         0.20,
-    "precious_metals":       0.08,
-    "cyclical_commodity_fx": 0.14,
-    "kr_bond":               0.15,
+    "kr_equity":             0.14,
+    "global_equity":         0.19,
+    "precious_metals":       0.10,
+    "cyclical_commodity_fx": 0.11,
+    "kr_bond":               0.16,
     "credit":                0.05,
-    "global_duration":       0.13,
-    "cash_mmf":              0.10,
+    "global_duration":       0.14,
+    "cash_mmf":              0.11,
 }
-# Σ위험 = 0.57, Σ안전 = 0.43, total = 1.0 (Option C — home bias, Gemini-validated).
+# Σ위험 = 0.54, Σ안전 = 0.46, total = 1.0.
+# 2026 strategic anchor — slightly more defensive than the prior Option C:
+# lower cyclical risk, higher precious/duration/cash ballast.
 
 # INITIAL_BETA — T1 2026-05-29: 8-bucket schema, 12×8 = 96 entries.
 # Expert prior (row sum = 0 invariant enforced).
@@ -153,33 +155,33 @@ INITIAL_BETA: Final[dict[tuple[str, str], float]] = {
     ("F6_krw_regime", "credit"):                 0.00,
     ("F6_krw_regime", "global_duration"):       +0.01,
     ("F6_krw_regime", "cash_mmf"):              -0.04,
-    # F7 equity_vol_regime (row sum = 0; gl_dur, precious 제거 — correlation breakdown)
-    ("F7_equity_vol_regime", "kr_equity"):             -0.05,
-    ("F7_equity_vol_regime", "global_equity"):         -0.06,
+    # F7 equity_vol_regime (row sum = 0; Stage 2 nudge, Stage 3 owns low-vol style)
+    ("F7_equity_vol_regime", "kr_equity"):             -0.025,
+    ("F7_equity_vol_regime", "global_equity"):         -0.030,
     ("F7_equity_vol_regime", "precious_metals"):        0.00,
-    ("F7_equity_vol_regime", "cyclical_commodity_fx"): -0.03,
-    ("F7_equity_vol_regime", "kr_bond"):               +0.02,
-    ("F7_equity_vol_regime", "credit"):                -0.02,
-    ("F7_equity_vol_regime", "global_duration"):       +0.04,
-    ("F7_equity_vol_regime", "cash_mmf"):              +0.10,
-    # F8 valuation (row sum = 0)
-    ("F8_valuation", "kr_equity"):             -0.04,
-    ("F8_valuation", "global_equity"):         -0.05,
-    ("F8_valuation", "precious_metals"):       +0.01,
-    ("F8_valuation", "cyclical_commodity_fx"): +0.01,
-    ("F8_valuation", "kr_bond"):               +0.02,
-    ("F8_valuation", "credit"):                +0.01,
-    ("F8_valuation", "global_duration"):       +0.02,
-    ("F8_valuation", "cash_mmf"):              +0.02,
-    # F9 market_dispersion (row sum = 0)
-    ("F9_market_dispersion", "kr_equity"):             -0.04,
-    ("F9_market_dispersion", "global_equity"):         -0.05,
-    ("F9_market_dispersion", "precious_metals"):       -0.02,
-    ("F9_market_dispersion", "cyclical_commodity_fx"): -0.02,
-    ("F9_market_dispersion", "kr_bond"):               +0.03,
-    ("F9_market_dispersion", "credit"):                -0.02,
-    ("F9_market_dispersion", "global_duration"):       +0.02,
-    ("F9_market_dispersion", "cash_mmf"):              +0.10,
+    ("F7_equity_vol_regime", "cyclical_commodity_fx"): -0.015,
+    ("F7_equity_vol_regime", "kr_bond"):               +0.010,
+    ("F7_equity_vol_regime", "credit"):                -0.010,
+    ("F7_equity_vol_regime", "global_duration"):       +0.020,
+    ("F7_equity_vol_regime", "cash_mmf"):              +0.050,
+    # F8 valuation (row sum = 0; Stage 2 nudge, Stage 3 owns value selection)
+    ("F8_valuation", "kr_equity"):             -0.020,
+    ("F8_valuation", "global_equity"):         -0.025,
+    ("F8_valuation", "precious_metals"):       +0.005,
+    ("F8_valuation", "cyclical_commodity_fx"): +0.005,
+    ("F8_valuation", "kr_bond"):               +0.010,
+    ("F8_valuation", "credit"):                +0.005,
+    ("F8_valuation", "global_duration"):       +0.010,
+    ("F8_valuation", "cash_mmf"):              +0.010,
+    # F9 market_dispersion (row sum = 0; systemic liquidity remains F10)
+    ("F9_market_dispersion", "kr_equity"):             -0.020,
+    ("F9_market_dispersion", "global_equity"):         -0.025,
+    ("F9_market_dispersion", "precious_metals"):       -0.010,
+    ("F9_market_dispersion", "cyclical_commodity_fx"): -0.010,
+    ("F9_market_dispersion", "kr_bond"):               +0.015,
+    ("F9_market_dispersion", "credit"):                -0.010,
+    ("F9_market_dispersion", "global_duration"):       +0.010,
+    ("F9_market_dispersion", "cash_mmf"):              +0.050,
     # F10 systemic_liquidity (row sum = 0; +z = tight FCI = stress → risk-off)
     ("F10_systemic_liquidity", "kr_equity"):             -0.06,
     ("F10_systemic_liquidity", "global_equity"):         -0.07,
@@ -189,15 +191,15 @@ INITIAL_BETA: Final[dict[tuple[str, str], float]] = {
     ("F10_systemic_liquidity", "credit"):                -0.04,
     ("F10_systemic_liquidity", "global_duration"):       +0.04,
     ("F10_systemic_liquidity", "cash_mmf"):              +0.09,
-    # F11 earnings_revision (row sum = 0; 2026-05-28 신규)
-    ("F11_earnings_revision", "kr_equity"):             +0.05,
-    ("F11_earnings_revision", "global_equity"):         +0.05,
-    ("F11_earnings_revision", "precious_metals"):       -0.01,
-    ("F11_earnings_revision", "cyclical_commodity_fx"): +0.01,
-    ("F11_earnings_revision", "kr_bond"):               -0.02,
-    ("F11_earnings_revision", "credit"):                +0.02,
-    ("F11_earnings_revision", "global_duration"):       -0.04,
-    ("F11_earnings_revision", "cash_mmf"):              -0.06,
+    # F11 earnings_revision (row sum = 0; Stage 2 nudge, Stage 3 owns earnings/momentum)
+    ("F11_earnings_revision", "kr_equity"):             +0.025,
+    ("F11_earnings_revision", "global_equity"):         +0.025,
+    ("F11_earnings_revision", "precious_metals"):       -0.005,
+    ("F11_earnings_revision", "cyclical_commodity_fx"): +0.005,
+    ("F11_earnings_revision", "kr_bond"):               -0.010,
+    ("F11_earnings_revision", "credit"):                +0.010,
+    ("F11_earnings_revision", "global_duration"):       -0.020,
+    ("F11_earnings_revision", "cash_mmf"):              -0.030,
     # F12 china_credit_impulse (row sum = 0; 2026-05-28 신규)
     ("F12_china_credit_impulse", "kr_equity"):             +0.04,
     ("F12_china_credit_impulse", "global_equity"):         +0.04,
@@ -295,6 +297,24 @@ PER_FACTOR_BUCKET_CONTRIB_CAP: Final[float] = 0.10
 β × z 가 cap 을 초과하면 cap 으로 clip.
 """
 
+TILT_BETA_SCALE: Final[float] = 0.25
+"""Stage 2 tilt: scale INITIAL_BETA for anchor+tilt path (not full bucket build)."""
+
+PER_FACTOR_TILT_CONTRIB_CAP: Final[float] = 0.025
+"""Per (factor, bucket) tilt cap (±2.5pp) vs 10pp for legacy baseline+factor path."""
+
+TILT_BETA: Final[dict[tuple[str, str], float]] = {
+    (f, b): INITIAL_BETA[(f, b)] * TILT_BETA_SCALE
+    for f in FACTORS
+    for b in BUCKETS
+    if (f, b) in INITIAL_BETA
+}
+
+TILT_TIPS_BETA_SCALE: Final[float] = 0.25
+TILT_TIPS_BETA: Final[dict[str, float]] = {
+    f: INITIAL_TIPS_BETA[f] * TILT_TIPS_BETA_SCALE for f in FACTORS
+}
+
 
 # ---------------------------------------------------------------------------
 # apply_factor_model — linear additive regression + per-contribution cap
@@ -347,6 +367,145 @@ def apply_factor_model(
     tips = max(0.0, min(1.0, tips))
 
     return bucket, tips, contributions
+
+
+def apply_factor_tilt(
+    factor_z: dict[str, float],
+    beta: dict[tuple[str, str], float] | None = None,
+    cap: float | None = None,
+    tips_beta: dict[str, float] | None = None,
+) -> tuple[dict[str, float], float, dict[str, dict[str, float]]]:
+    """Factor z → bucket *tilt* only (zero baseline), for anchor+tilt Stage 2."""
+    beta_v = beta if beta is not None else TILT_BETA
+    cap_v = cap if cap is not None else PER_FACTOR_TILT_CONTRIB_CAP
+    tips_beta_v = tips_beta if tips_beta is not None else TILT_TIPS_BETA
+
+    bucket: dict[str, float] = {b: 0.0 for b in BUCKETS}
+    contributions: dict[str, dict[str, float]] = {}
+
+    for f in FACTORS:
+        z = float(factor_z.get(f, 0.0))
+        contributions[f] = {}
+        for b in BUCKETS:
+            raw_contrib = beta_v.get((f, b), 0.0) * z
+            contrib = max(-cap_v, min(+cap_v, raw_contrib))
+            bucket[b] = bucket.get(b, 0.0) + contrib
+            contributions[f][b] = contrib
+
+    tips_tilt = sum(
+        tips_beta_v.get(f, 0.0) * float(factor_z.get(f, 0.0)) for f in FACTORS
+    )
+    return bucket, tips_tilt, contributions
+
+
+def apply_thesis_gates_to_tilt(
+    tilt_bucket: dict[str, float],
+    contributions: dict[str, dict[str, float]],
+    tags: list[str] | None,
+    *,
+    cap: float | None = None,
+) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+    """T2: zero precious/cyclical tilt when goldilocks thesis tag active."""
+    if not tags:
+        return tilt_bucket, contributions
+    cap_v = float(cap if cap is not None else PER_FACTOR_TILT_CONTRIB_CAP)
+    gated_tilt = dict(tilt_bucket)
+    gated_contrib = {f: dict(fmap) for f, fmap in contributions.items()}
+    if "goldilocks_narrative" in tags:
+        for b in ("precious_metals", "cyclical_commodity_fx"):
+            gated_tilt[b] = 0.0
+            for f in gated_contrib:
+                gated_contrib[f][b] = 0.0
+    elif "inflation_background" in tags and cap_v > 0.0:
+        half = cap_v * 0.5
+        for b in ("precious_metals", "cyclical_commodity_fx"):
+            if abs(gated_tilt.get(b, 0.0)) > half:
+                scale = half / max(abs(gated_tilt[b]), 1e-12)
+                gated_tilt[b] *= scale
+                for f in gated_contrib:
+                    gated_contrib[f][b] = max(
+                        -half, min(half, float(gated_contrib[f].get(b, 0.0))),
+                    )
+    return gated_tilt, gated_contrib
+
+
+def apply_anchor_tilt_model(
+    factor_z: dict[str, float],
+    anchor: dict[str, float],
+    *,
+    tips_anchor: float | None = None,
+    beta: dict[tuple[str, str], float] | None = None,
+    cap: float | None = None,
+    tips_beta: dict[str, float] | None = None,
+    thesis_tags: list[str] | None = None,
+) -> tuple[dict[str, float], float, dict[str, dict[str, float]]]:
+    """anchor + factor tilt (pre-projection)."""
+    tilt_bucket, tips_tilt, contributions = apply_factor_tilt(
+        factor_z, beta=beta, cap=cap, tips_beta=tips_beta,
+    )
+    tilt_bucket, contributions = apply_thesis_gates_to_tilt(
+        tilt_bucket, contributions, thesis_tags, cap=cap,
+    )
+    tips_base = (
+        tips_anchor if tips_anchor is not None else INITIAL_TIPS_BASELINE
+    )
+    bucket_raw = {
+        b: float(anchor.get(b, 0.0)) + float(tilt_bucket.get(b, 0.0))
+        for b in BUCKETS
+    }
+    tips = max(0.0, min(1.0, float(tips_base) + float(tips_tilt)))
+    return bucket_raw, tips, contributions
+
+
+def apply_anchor_tilt_model_with_safety(
+    factor_z: dict[str, float],
+    anchor: dict[str, float],
+    **kwargs: Any,
+) -> tuple[dict[str, float], float, dict[str, dict[str, float]], dict[str, object]]:
+    """anchor + tilt + project_to_mandate_qp + diagnostics (same shape as legacy)."""
+    bucket_raw, tips, contributions = apply_anchor_tilt_model(
+        factor_z, anchor, **kwargs,
+    )
+
+    pre_risk = sum(bucket_raw.get(b, 0.0) for b in RISK_BUCKETS)
+    pre_negatives = [b for b, w in bucket_raw.items() if w < -1e-9]
+    pre_sum = float(sum(bucket_raw.values()))
+
+    cap_eps = 1e-12
+    tilt_cap = kwargs.get("cap")
+    if tilt_cap is None:
+        tilt_cap = PER_FACTOR_TILT_CONTRIB_CAP
+    cap_hits_detail: list[tuple[str, str, float]] = []
+    for f, fmap in contributions.items():
+        for b, c in fmap.items():
+            if abs(abs(c) - float(tilt_cap)) < cap_eps:
+                cap_hits_detail.append((f, b, c))
+
+    bucket_projected = project_to_mandate_qp(bucket_raw)
+
+    keys = list(bucket_raw.keys())
+    diff_vec = np.array(
+        [bucket_projected[k] - bucket_raw[k] for k in keys], dtype=float
+    )
+    l2_dist = float(np.sqrt(np.sum(diff_vec**2)))
+
+    extreme_active = any(abs(float(z)) >= 2.5 for z in factor_z.values())
+
+    diagnostics: dict[str, object] = {
+        "pre_projection_risk_asset": float(pre_risk),
+        "pre_projection_negatives": pre_negatives,
+        "pre_projection_sum": pre_sum,
+        "mandate_violated_pre_projection": bool(pre_risk > MANDATE_RISK_CAP + 1e-9),
+        "extreme_factor_active": bool(extreme_active),
+        "projection_l2_distance": l2_dist,
+        "projection_intervened": bool(l2_dist > 0.01),
+        "cap_hits": len(cap_hits_detail),
+        "cap_hits_detail": cap_hits_detail,
+        "stage2_mode": "anchor_covenant_tilt",
+        "anchor_pre_projection": dict(bucket_raw),
+        "thesis_tags": list(kwargs.get("thesis_tags") or []),
+    }
+    return bucket_projected, tips, contributions, diagnostics
 
 
 # ---------------------------------------------------------------------------

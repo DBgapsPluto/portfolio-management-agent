@@ -18,6 +18,8 @@ ConvictionLevel = Literal["high", "medium", "low"]
 
 # Forward import to avoid circular reference
 from tradingagents.schemas.portfolio import BucketTarget  # noqa: E402
+from tradingagents.schemas.llm_overlay import Stage2NarrativeView  # noqa: E402
+from tradingagents.schemas.allocation_contract import AllocationContract  # noqa: E402
 
 
 class ResearchDecision(BaseModel):
@@ -34,6 +36,10 @@ class ResearchDecision(BaseModel):
     가 *명시적으로* set (이전 @property 가 marginal 로 derive 하던 path 제거).
     """
     bucket_target: BucketTarget
+    allocation_contract: AllocationContract | None = Field(
+        default=None,
+        description="Prior vs feasible macro contract (investability projection).",
+    )
     conviction: ConvictionLevel = Field(
         description="factor model 의 derive_conviction 결과 (high/medium/low).",
     )
@@ -63,6 +69,14 @@ class ResearchDecision(BaseModel):
         default_factory=dict,
         description="Projection audit trail. apply_factor_model_with_safety 의 출력. "
                     "Stage 6 narrative + monitoring 용.",
+    )
+    llm_narrative_views: list[Stage2NarrativeView] = Field(
+        default_factory=list,
+        description="Stage 2 LLM narrative policy views. Empty when disabled/fallback.",
+    )
+    llm_overlay_audit: dict[str, object] = Field(
+        default_factory=dict,
+        description="Stage 2 LLM overlay mode, gates, and blending audit trail.",
     )
 
     model_config = {

@@ -2,6 +2,7 @@ import pytest
 from datetime import date, datetime
 from tradingagents.schemas.llm_overlay import (
     LLMBucketView, CredibilityState, LLMOverlayJournal,
+    Stage2NarrativeView, Stage3CandidateBoostView,
 )
 
 
@@ -53,3 +54,65 @@ def test_llm_overlay_journal_optional_realized():
         final_target={"kr_equity": 0.16}, audit={"kr_equity": {"w_LLM": 0.072}},
     )
     assert j.realized_returns is None
+
+
+def test_stage2_narrative_view_contract():
+    v = Stage2NarrativeView(
+        base_scenario="goldilocks",
+        overlays=["policy_surprise", "valuation_extreme"],
+        bucket_deltas={
+            "kr_equity": 0.3,
+            "global_equity": 0.2,
+            "precious_metals": -0.1,
+            "cyclical_commodity_fx": 0.0,
+            "kr_bond": -0.2,
+            "credit": 0.0,
+            "global_duration": -0.1,
+            "cash_mmf": 0.1,
+        },
+        risk_budget_delta=0.2,
+        confidence=0.65,
+        evidence=["FOMC tone softened", "AI breadth narrowing"],
+        expiry_days=3,
+        conflict_with_quant=False,
+        reasoning="Narrative supports mild risk-on but concentration limits apply.",
+    )
+    assert v.bucket_deltas["kr_equity"] == 0.3
+    assert v.expiry_days == 3
+
+
+def test_stage2_narrative_view_rejects_unknown_bucket():
+    with pytest.raises(Exception):
+        Stage2NarrativeView(
+            base_scenario="goldilocks",
+            overlays=[],
+            bucket_deltas={"unknown_bucket": 1.0},
+            risk_budget_delta=0.0,
+            confidence=0.5,
+            evidence=[],
+            expiry_days=1,
+            conflict_with_quant=False,
+            reasoning="bad bucket",
+        )
+
+
+def test_stage3_candidate_boost_filters_to_allowed_tickers():
+    v = Stage3CandidateBoostView(
+        ticker_boosts={"A069500": 0.5, "A999999": 1.0},
+        subcategory_boosts={"semiconductor": 0.4},
+        confidence=0.55,
+        evidence=["semiconductor export surprise"],
+        reasoning="Prefer semis among the candidate longlist.",
+    )
+    assert v.filtered_ticker_boosts({"A069500"}) == {"A069500": 0.5}
+
+
+def test_stage3_candidate_boost_rejects_out_of_range_boost():
+    with pytest.raises(Exception):
+        Stage3CandidateBoostView(
+            ticker_boosts={"A069500": 1.2},
+            subcategory_boosts={},
+            confidence=0.5,
+            evidence=[],
+            reasoning="too strong",
+        )

@@ -1,33 +1,46 @@
 """Tier 1 end-to-end: 8-bucket factor model → allocator → mandate check."""
 import pytest
 from datetime import date
+from tradingagents.skills.research.bucket_anchors import blend_bucket_anchors
 from tradingagents.skills.research.factor_to_bucket import (
-    apply_factor_model_with_safety, INITIAL_BASELINE, BUCKETS,
+    apply_factor_model_with_safety,
+    apply_anchor_tilt_model_with_safety,
+    INITIAL_BASELINE,
+    BUCKETS,
+    FACTORS,
 )
 
 
+def _zero_factor_z() -> dict[str, float]:
+    return {f: 0.0 for f in FACTORS}
+
+
 def test_factor_model_returns_8_bucket_target():
-    """All-zero factor z → INITIAL_BASELINE."""
-    factor_z = {f: 0.0 for f in [
-        "F1_growth", "F2_inflation", "F3_real_rate", "F4_term_premium",
-        "F5_credit_cycle", "F6_krw_regime", "F7_equity_vol_regime",
-        "F8_valuation", "F9_market_dispersion", "F10_systemic_liquidity",
-        "F11_earnings_revision", "F12_china_credit_impulse",
-    ]}
+    """All-zero factor z → INITIAL_BASELINE (legacy path)."""
+    factor_z = _zero_factor_z()
     bucket, tips, contribs, diag = apply_factor_model_with_safety(factor_z)
     assert set(bucket.keys()) == set(BUCKETS)
     for b, w in INITIAL_BASELINE.items():
         assert abs(bucket[b] - w) < 1e-9
 
 
+def test_anchor_tilt_zero_z_matches_anchor_blend():
+    """All-zero z → projected weights ≈ anchor (not INITIAL_BASELINE)."""
+    anchor = blend_bucket_anchors("growth_inflation", "goldilocks")
+    bucket, _, _, diag = apply_anchor_tilt_model_with_safety(
+        _zero_factor_z(), anchor,
+    )
+    assert set(bucket.keys()) == set(BUCKETS)
+    for b in BUCKETS:
+        assert abs(bucket[b] - anchor[b]) < 1e-6, (
+            f"{b}: got {bucket[b]}, anchor {anchor[b]}"
+        )
+    assert diag.get("stage2_mode") == "anchor_covenant_tilt"
+
+
 def test_factor_shock_keeps_mandate_compliance():
     """Large F1 shock — risk bias — but mandate cap holds."""
-    factor_z = {f: 0.0 for f in [
-        "F1_growth", "F2_inflation", "F3_real_rate", "F4_term_premium",
-        "F5_credit_cycle", "F6_krw_regime", "F7_equity_vol_regime",
-        "F8_valuation", "F9_market_dispersion", "F10_systemic_liquidity",
-        "F11_earnings_revision", "F12_china_credit_impulse",
-    ]}
+    factor_z = _zero_factor_z()
     factor_z["F1_growth"] = 3.0  # extreme growth shock
     bucket, _, _, _ = apply_factor_model_with_safety(factor_z)
     risk_sum = sum(bucket[b] for b in ("kr_equity", "global_equity",

@@ -1,7 +1,10 @@
 import pytest
 from datetime import date
 from tradingagents.schemas.llm_overlay import LLMBucketView, CredibilityState
-from tradingagents.skills.overlay.apply import apply_llm_overlay, BAND
+from tradingagents.schemas.llm_overlay import Stage2NarrativeView
+from tradingagents.skills.overlay.apply import (
+    apply_llm_overlay, apply_stage2_narrative_overlay, BAND,
+)
 from tradingagents.skills.research.factor_to_bucket import INITIAL_BASELINE, RISK_BUCKETS, BUCKETS
 
 
@@ -70,3 +73,67 @@ def test_apply_overlay_negative_direction():
     consensus = {b: 1.0 for b in BUCKETS}
     final, audit = apply_llm_overlay(quant, views, novelty=1.0, consensus=consensus, credibility=_cred())
     assert audit["kr_equity"]["clipped_delta"] < 0
+
+
+def _make_narrative_view(**deltas):
+    return Stage2NarrativeView(
+        base_scenario="goldilocks",
+        overlays=["policy_surprise"],
+        bucket_deltas={**{b: 0.0 for b in BUCKETS}, **deltas},
+        risk_budget_delta=0.0,
+        confidence=0.8,
+        evidence=["policy shock"],
+        expiry_days=3,
+        conflict_with_quant=False,
+        reasoning="test",
+    )
+
+
+def test_stage2_narrative_overlay_is_capped_and_mandate_safe():
+    quant = dict(INITIAL_BASELINE)
+    views = [_make_narrative_view(kr_equity=1.0, global_duration=-1.0)] * 3
+    final, audit = apply_stage2_narrative_overlay(
+        quant_target=quant,
+        views=views,
+        novelty=1.0,
+        consensus={b: 1.0 for b in BUCKETS},
+        credibility=_cred(1.0),
+        band=0.03,
+        llm_max_mix=1.0,
+    )
+    assert audit["kr_equity"]["clipped_delta"] <= 0.03 + 1e-9
+    assert audit["kr_equity"]["clipped_delta"] > 0
+    assert abs(sum(final.values()) - 1.0) < 1e-6
+    assert sum(final[b] for b in RISK_BUCKETS) <= 0.70 + 1e-6
+
+
+def test_stage2_narrative_overlay_conflict_gate_reduces_effect():
+    quant = dict(INITIAL_BASELINE)
+    normal = [_make_narrative_view(kr_equity=1.0)]
+    conflict = [
+        _make_narrative_view(kr_equity=1.0).model_copy(
+            update={"conflict_with_quant": True}
+        )
+    ]
+    _, audit_normal = apply_stage2_narrative_overlay(
+        quant, normal, novelty=1.0, consensus={b: 1.0 for b in BUCKETS},
+        credibility=_cred(1.0), band=0.03, llm_max_mix=0.5,
+    )
+    _, audit_conflict = apply_stage2_narrative_overlay(
+        quant, conflict, novelty=1.0, consensus={b: 1.0 for b in BUCKETS},
+        credibility=_cred(1.0), band=0.03, llm_max_mix=0.5,
+    )
+    assert audit_conflict["kr_equity"]["raw_delta"] < audit_normal["kr_equity"]["raw_delta"]
+
+
+def test_stage2_narrative_overlay_no_views_is_noop_for_valid_quant_target():
+    quant = dict(INITIAL_BASELINE)
+    final, audit = apply_stage2_narrative_overlay(
+        quant_target=quant,
+        views=[],
+        novelty=1.0,
+        consensus={b: 1.0 for b in BUCKETS},
+        credibility=_cred(1.0),
+    )
+    assert final == quant
+    assert audit["risk_budget"]["clipped_delta"] == 0.0

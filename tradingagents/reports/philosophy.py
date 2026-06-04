@@ -8,6 +8,14 @@ import logging
 import re
 from pathlib import Path
 
+from tradingagents.reports.execution_trace import (
+    _aggregate_wm_5bucket,
+    render_execution_trace,
+    render_failure_philosophy_stub,
+    render_pipeline_narrative,
+)
+from tradingagents.skills.research.factor_to_bucket import BUCKETS
+
 logger = logging.getLogger(__name__)
 
 
@@ -16,12 +24,10 @@ You are writing a Korean asset-allocation strategy report for the DB GAPS invest
 Write in the style of a domestic WM monthly guide (e.g. 하나더넥스트 '이달의 투자가이드'):
 professional analyst tone, summary bullets, attraction tables (★), and portfolio weight tables.
 
+The document title and ## 의사결정 경로 section are inserted by the system — do NOT output them.
+Start directly with ## 투자가이드 요약.
+
 Use this document structure (fill every section; Korean only):
-
-# DB GAPS 자산배분 전략 리포트
-작성일: {as_of_date} | 리서치: DB GAPS Asset Allocation
-
----
 
 ## 투자가이드 요약
 - 3~5 bullet points with concrete numbers from inputs (regime, risk assets %, top holdings)
@@ -36,10 +42,12 @@ Use this document structure (fill every section; Korean only):
 | MMF | ★~★★★ | ... |
 
 ## 제안 포트폴리오 비중
-| 자산군 | 목표 비중 | 위험/안전 |
-|--------|-----------|-----------|
-| (5-bucket rows from inputs) | | |
-| 위험자산 합계 | (sum) | 위험 |
+Use the dual-column table from inputs (목표=feasible contract, 제출=final allocator weights).
+Do not invent percentages; if columns differ, explain pipeline path (Stage 3 sync/HRP, Stage 4 clip, Stage 5 fallback).
+| 자산군 | 목표(feasible) | 제출(final) | 위험/안전 |
+|--------|----------------|-------------|-----------|
+| (rows from WM dual table in inputs) | | | |
+| 위험자산 합계 | (feasible risk sum) | (final risk sum) | 위험 |
 
 ## 1. 매크로 환경 진단
 (≥600 chars — Stage 1 macro_quant: regime, yield curve, inflation, employment)
@@ -74,8 +82,9 @@ CRITICAL RULES (대회 §4.1 / §4.2):
 - Use hyphen (-) for bullet lists, not asterisks
 - Section headers may use ## but never wrap text in asterisks for emphasis
 - Attraction table may use ★ characters only
+- Narrative must align with ## 의사결정 경로 (already in inputs); do not claim 70% mandate if final risk differs without explaining validator/fallback
 
-Output the full document."""
+Output the full document body (no title line)."""
 
 
 RETRY_PROMPT = """\
@@ -163,6 +172,67 @@ def _bucket_field(bucket, field: str, default: float = 0.0) -> float:
     return float(getattr(bucket, field, default) or default)
 
 
+def _feasible_8bucket(state: dict) -> dict[str, float]:
+    rd = state.get("research_decision")
+    ac = getattr(rd, "allocation_contract", None) if rd is not None else None
+    if ac is not None:
+        return {b: float(ac.feasible_weights.get(b, 0.0)) for b in BUCKETS}
+    bucket = state.get("bucket_target")
+    if bucket is None:
+        return {}
+    if hasattr(bucket, "weights"):
+        return dict(bucket.weights)
+    return dict(bucket.get("weights") or {})
+
+
+def _final_8bucket(state: dict) -> dict[str, float]:
+    attr = state.get("allocation_attribution") or {}
+    align = attr.get("implementation_alignment") or {}
+    realized = align.get("realized_bucket_weights")
+    if realized:
+        return dict(realized)
+    wv = state.get("weight_vector")
+    if wv is None:
+        return {}
+    from tradingagents.skills.portfolio.contract_stage3 import realized_bucket_weights
+
+    cs = state.get("candidate_set")
+    b2t = getattr(cs, "bucket_to_tickers", None) if cs is not None else None
+    if b2t:
+        return realized_bucket_weights(dict(wv.weights), b2t)
+    return {}
+
+
+def format_wm_dual_portfolio_table(state: dict) -> str:
+    """WM 5-bucket: 목표(feasible) vs 제출(final)."""
+    feas = _aggregate_wm_5bucket(_feasible_8bucket(state))
+    final = _aggregate_wm_5bucket(_final_8bucket(state))
+    if not feas and not final:
+        return "(no bucket weights)"
+    rows = [
+        "| 자산군 | 목표(feasible) | 제출(final) |",
+        "|--------|----------------|-------------|",
+    ]
+    labels = {
+        "kr_equity": "국내주식",
+        "global_equity": "해외주식",
+        "fx_commodity": "FX/원자재",
+        "bond": "채권",
+        "cash_mmf": "MMF",
+    }
+    risk_keys = ("kr_equity", "global_equity", "fx_commodity")
+    for key, label in labels.items():
+        rows.append(
+            f"| {label} | {feas.get(key, 0) * 100:.1f}% | {final.get(key, 0) * 100:.1f}% |"
+        )
+    rows.append(
+        f"| 위험자산 합계 | "
+        f"{sum(feas.get(k, 0) for k in risk_keys) * 100:.1f}% | "
+        f"{sum(final.get(k, 0) for k in risk_keys) * 100:.1f}% |"
+    )
+    return "\n".join(rows)
+
+
 def _format_bucket_target(bucket) -> str:
     if bucket is None:
         return "(none)"
@@ -234,7 +304,8 @@ def _build_state_summary(state: dict) -> str:
         "### Stage 2 — Research Decision\n"
         f"{state.get('research_debate_summary', '')}\n"
         f"Scenario / factors: {_format_scenario_probs(rd)}\n"
-        f"5-bucket target: {_format_bucket_target(bucket)}\n\n"
+        f"5-bucket target (executed): {_format_bucket_target(bucket)}\n"
+        f"WM dual portfolio table:\n{format_wm_dual_portfolio_table(state)}\n\n"
         "### Stage 3 — Method choice\n"
         f"Selected: {_resolve_method(state)}\n"
         f"Reasoning: {method_reasoning}\n\n"
@@ -276,6 +347,42 @@ def generate_philosophy(state: dict, deep_llm) -> str:
 
 
 def write_philosophy(state: dict, deep_llm, out_path: Path) -> Path:
-    text = generate_philosophy(state, deep_llm)
+    as_of_date = state.get("as_of_date", "unknown")
+    header = (
+        f"# DB GAPS 자산배분 전략 리포트\n"
+        f"작성일: {as_of_date} | 리서치: DB GAPS Asset Allocation\n\n"
+    )
+    path = render_pipeline_narrative(state)
+    body = generate_philosophy(state, deep_llm)
+    trace = render_execution_trace(state)
+    text = f"{header}{path}\n\n{body.rstrip()}\n\n{trace}\n"
     out_path.write_text(text, encoding="utf-8")
     return out_path
+
+
+def write_failure_philosophy(state: dict, error_message: str, out_path: Path) -> Path:
+    """Deterministic philosophy.md when contract/sync aborts (Philo fail)."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    text = render_failure_philosophy_stub(state, error_message)
+    out_path.write_text(text, encoding="utf-8")
+    return out_path
+
+
+def write_failure_philosophy_for_state(
+    state: dict,
+    error_message: str,
+    *,
+    artifacts_dir: str | None = None,
+) -> str | None:
+    """Best-effort failure doc under artifacts/{as_of}/philosophy.md."""
+    as_of = state.get("as_of_date", "unknown")
+    base = artifacts_dir
+    if base is None:
+        cfg = state.get("config")
+        if isinstance(cfg, dict):
+            base = cfg.get("artifacts_dir")
+    if not base:
+        return None
+    out_path = Path(base) / str(as_of) / "philosophy.md"
+    write_failure_philosophy(state, error_message, out_path)
+    return str(out_path)

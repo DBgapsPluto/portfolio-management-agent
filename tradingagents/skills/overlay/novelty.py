@@ -17,6 +17,13 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 SALIENCE_HISTORY_PATH: Final[Path] = Path("data/llm_overlay/salience_history.parquet")
+MIN_HISTORY_POINTS: Final[int] = 10
+BOOTSTRAP_SALIENCE_LEVELS: Final[tuple[float, ...]] = (
+    0.35, 0.40, 0.45, 0.50, 0.55,
+    0.35, 0.40, 0.45, 0.50, 0.55,
+    0.35, 0.40, 0.45, 0.50, 0.55,
+    0.35, 0.40, 0.45, 0.50, 0.55,
+)
 
 
 def _safe_get(obj, *path, default=None):
@@ -67,18 +74,25 @@ def load_salience_history(as_of: date, window_days: int = 60) -> pd.Series:
     return df.set_index("date")["salience"]
 
 
+def _bootstrap_salience_history() -> pd.Series:
+    return pd.Series(BOOTSTRAP_SALIENCE_LEVELS, dtype=float)
+
+
 def compute_novelty(news_report: Any, as_of: date, window_days: int = 60) -> float:
     """News salience anomaly score, in [0, 1]."""
     if news_report is None:
         return 0.0
     today = _compute_today_salience(news_report)
     history = load_salience_history(as_of, window_days)
-    if len(history) < 10:
-        return 0.0
+    if len(history) < MIN_HISTORY_POINTS:
+        history = _bootstrap_salience_history()
     mu = float(history.mean())
     sd = float(history.std(ddof=1)) or 1e-9
     z = (today - mu) / sd
     return float(np.clip(z / 3.0, 0.0, 1.0))
 
 
-__all__ = ["compute_novelty", "append_daily_salience", "load_salience_history", "SALIENCE_HISTORY_PATH"]
+__all__ = [
+    "compute_novelty", "append_daily_salience", "load_salience_history",
+    "SALIENCE_HISTORY_PATH", "MIN_HISTORY_POINTS", "BOOTSTRAP_SALIENCE_LEVELS",
+]

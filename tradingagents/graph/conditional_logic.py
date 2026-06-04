@@ -4,6 +4,7 @@ from typing import Literal
 
 from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
+from tradingagents.skills.portfolio.contract_stage3 import contract_stage3_active
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
 from tradingagents.skills.portfolio.cov_estimator import compute_robust_cov
 
@@ -11,10 +12,33 @@ from tradingagents.skills.portfolio.cov_estimator import compute_robust_cov
 MAX_ALLOCATION_ATTEMPTS = 2
 
 
+def _contract_skip_allocator_retry(state) -> bool:
+    """P0-2 / P2a: contract mode skips validator → retry_allocator loop."""
+    if not bool(state.get("contract_skip_allocator_retry", True)):
+        config = state.get("config")
+        if isinstance(config, dict) and "contract_skip_allocator_retry" in config:
+            if not config["contract_skip_allocator_retry"]:
+                return False
+        else:
+            from tradingagents.default_config import DEFAULT_CONFIG
+            if not DEFAULT_CONFIG.get("contract_skip_allocator_retry", True):
+                return False
+    rd = state.get("research_decision")
+    enabled = True
+    config = state.get("config")
+    if isinstance(config, dict) and "allocation_contract_enabled" in config:
+        enabled = bool(config["allocation_contract_enabled"])
+    return contract_stage3_active(rd, allocation_contract_enabled=enabled)
+
+
 def validation_router(state) -> Literal["finalize", "retry_allocator", "fallback"]:
-    """Per D4: pass → finalize. Fail + attempts<MAX → retry. Fail + attempts==MAX → fallback."""
+    """Per D4: pass → finalize. Contract mode skips retry_allocator (P0-2)."""
     if state.get("validation_passed"):
         return "finalize"
+    if state.get("fallback_used"):
+        return "finalize"
+    if _contract_skip_allocator_retry(state):
+        return "fallback"
     attempts = state.get("allocation_attempts", 0)
     if attempts < MAX_ALLOCATION_ATTEMPTS:
         return "retry_allocator"
@@ -69,7 +93,8 @@ def create_fallback_normalizer(cache_path: str | None = None):
             )
             return {
                 "weight_vector": new_wv,
-                "validation_passed": True,
+                "validation_passed": False,
+                "fallback_used": True,
             }
         except Exception as e:
             return _emergency_cash_portfolio(state, error=str(e))
@@ -144,8 +169,6 @@ def _emergency_cash_portfolio(state, error: str = "no weight_vector") -> dict:
             f"Emergency fallback failed ({error}); no 안전자산 ETFs in universe"
         )
 
-    # Take up to 5 safe ETFs, equal-weighted. If <5, accept >0.20 single-asset
-    # exposure but log loudly — this is an emergency path, manual review required.
     selected = safe_etfs[:5]
     weight = 1.0 / len(selected)
     weights = {t: weight for t in selected}
@@ -153,7 +176,10 @@ def _emergency_cash_portfolio(state, error: str = "no weight_vector") -> dict:
     cap_violation_note = (
         ""
         if len(selected) >= 5
-        else f" WARNING: only {len(selected)} 안전자산 ETF(s) in universe — single weight {weight:.2%} > 20% cap. Manual review CRITICAL."
+        else (
+            f" WARNING: only {len(selected)} 안전자산 ETF(s) in universe — "
+            f"single weight {weight:.2%} > 20% cap. Manual review CRITICAL."
+        )
     )
 
     new_wv = WeightVector(
@@ -166,5 +192,6 @@ def _emergency_cash_portfolio(state, error: str = "no weight_vector") -> dict:
     )
     return {
         "weight_vector": new_wv,
-        "validation_passed": True,
+        "validation_passed": False,
+        "fallback_used": True,
     }

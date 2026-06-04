@@ -18,6 +18,10 @@ from tradingagents.agents.validator.mandate_validator import create_mandate_vali
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.builder import build_main_graph
 from tradingagents.graph.conditional_logic import create_fallback_normalizer
+from tradingagents.skills.portfolio.bucket_sync import (
+    BucketSyncError,
+    ContractInfeasibleError,
+)
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.observability.run_archive import (
     archive_metadata, archive_wrap_node,
@@ -26,6 +30,30 @@ from tradingagents.presets.loader import PresetLoader
 import tradingagents.skills._registry_init  # noqa: F401 — register all skills
 
 logger = logging.getLogger(__name__)
+
+_CONTRACT_PIPELINE_ERRORS = (ContractInfeasibleError, BucketSyncError)
+
+
+def _wrap_contract_pipeline_failure(node_fn, artifacts_dir: str):
+    """Philo fail: persist philosophy.md before re-raising contract aborts."""
+    def wrapped(state):
+        try:
+            return node_fn(state)
+        except _CONTRACT_PIPELINE_ERRORS as exc:
+            from tradingagents.reports.philosophy import write_failure_philosophy_for_state
+            path = write_failure_philosophy_for_state(
+                state, str(exc), artifacts_dir=artifacts_dir,
+            )
+            updates: dict = {
+                "pipeline_failure": {
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                },
+            }
+            if path:
+                updates["philosophy_doc_path"] = path
+            raise exc
+    return wrapped
 
 
 class TradingAgentsGraph:
@@ -81,8 +109,9 @@ class TradingAgentsGraph:
         # AgentState 직접 접근 → macro_report / risk_report / news_report / prior_research_decision 모두 가용.
         research_debate_node = research_estimator  # plain node
 
+        allocator_node = create_portfolio_allocator(quick, deep, cache_path=cache_path)
         allocator = archive_wrap_node(
-            create_portfolio_allocator(quick, deep, cache_path=cache_path),
+            _wrap_contract_pipeline_failure(allocator_node, artifacts_dir),
             ["candidate_set", "weight_vector", "method_choice",
              "allocation_attribution"],
         )
@@ -100,7 +129,7 @@ class TradingAgentsGraph:
 
         # Stage 2 research_decision도 archive (Stage 2 Phase 1 산출물).
         research_debate_node = archive_wrap_node(
-            research_debate_node,
+            _wrap_contract_pipeline_failure(research_debate_node, artifacts_dir),
             ["research_decision", "research_debate_summary", "bucket_target"],
         )
 

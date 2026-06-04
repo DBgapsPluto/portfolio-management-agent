@@ -10,8 +10,10 @@ import pytest
 from tradingagents.agents.allocator.portfolio_allocator import (
     create_portfolio_allocator, _hrp_per_bucket, _build_sector_mapper_and_bounds,
     _apply_min_weight_threshold, _apply_subcategory_cap,
+    _build_stage3_llm_longlists,
 )
 from tradingagents.dataflows.universe import sync_from_xlsx
+from tradingagents.schemas.allocation_contract import BucketEnvelope
 from tradingagents.schemas.portfolio import (
     BucketTarget, CandidateSet, OptimizationMethod,
 )
@@ -47,6 +49,27 @@ def _candidates() -> CandidateSet:
         selection_criteria="test",
         total_candidates=6,
     )
+
+
+def test_build_stage3_llm_longlists_from_attribution():
+    attribution = {
+        "buckets": {
+            "kr_equity": {
+                "chosen": ["A069500"],
+                "ranked_order": ["A069500", "A091160"],
+                "alpha_scores": {"A069500": 0.2, "A091160": 0.1},
+                "impl_scores": {"A069500": 0.05, "A091160": -0.02},
+                "per_ticker": {
+                    "A069500": {"sub_category": "index_broad"},
+                    "A091160": {"sub_category": "semiconductor"},
+                },
+            }
+        }
+    }
+    longlists = _build_stage3_llm_longlists(attribution, max_per_bucket=2)
+    assert longlists["kr_equity"][0]["ticker"] == "A069500"
+    assert longlists["kr_equity"][0]["alpha_score"] == 0.2
+    assert longlists["kr_equity"][1]["sub_category"] == "semiconductor"
 
 
 def test_hrp_per_bucket_single_asset_per_bucket():
@@ -137,6 +160,22 @@ def test_sector_mapper_strict_then_relaxed():
     _, lower, upper = _build_sector_mapper_and_bounds(candidates, target, attempts=1)
     assert lower["kr_equity"] == 0.15  # 0.20 - 0.05
     assert upper["kr_equity"] == 0.25  # 0.20 + 0.05
+
+
+def test_sector_mapper_uses_allocation_contract_envelope():
+    candidates = _candidates()
+    target = _bucket_target()
+    envelope = {
+        b: BucketEnvelope(lo=0.15, hi=0.25) if b == "kr_equity"
+        else BucketEnvelope(lo=w, hi=w)
+        for b, w in target.weights.items()
+    }
+    _, lower, upper = _build_sector_mapper_and_bounds(
+        candidates, target, attempts=0,
+        bucket_envelope=envelope,
+    )
+    assert lower["kr_equity"] == pytest.approx(0.15)
+    assert upper["kr_equity"] == pytest.approx(0.25)
 
 
 def test_sector_mapper_splits_bond_when_tips_share_positive():
@@ -454,6 +493,26 @@ def test_subcategory_cap_no_lookup_returns_unchanged():
     assert _apply_subcategory_cap(weights, cs, sub_category_lookup={}) == weights
 
 
+def test_subcategory_cap_degenerate_routes_excess_to_cash():
+    """단일 sub_category bucket → cap 후 excess 는 cash_mmf 로."""
+    weights = {"A_GOLD": 0.18, "A_CASH": 0.02}
+    sub_lookup = {"A_GOLD": "gold", "A_CASH": "mmf"}
+    cs = CandidateSet(
+        bucket_to_tickers={
+            "precious_metals": ["A_GOLD"],
+            "cash_mmf": ["A_CASH"],
+        },
+        selection_criteria="t",
+        total_candidates=2,
+    )
+    new_w = _apply_subcategory_cap(
+        weights, cs, sub_category_lookup=sub_lookup, max_share=0.50,
+    )
+    assert new_w["A_GOLD"] == pytest.approx(0.09, abs=1e-6)  # 18% bucket × 50%
+    assert new_w["A_CASH"] > 0.02
+    assert sum(new_w.values()) == pytest.approx(sum(weights.values()), abs=1e-6)
+
+
 def test_node_force_method_override_uses_state_value(tmp_path, monkeypatch):
     """state['force_method']='nco' 시 method_picker 호출 안 함, NCO 강제."""
     from datetime import date
@@ -480,6 +539,10 @@ def test_node_force_method_override_uses_state_value(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "tradingagents.agents.allocator.portfolio_allocator.fetch_returns_matrix",
         lambda eligible, start, end, cache_path=None: returns[[t for t in eligible if t in returns.columns]],
+    )
+    monkeypatch.setattr(
+        "tradingagents.agents.allocator.portfolio_allocator.load_universe",
+        lambda _path: universe,
     )
 
     state = make_allocator_state(

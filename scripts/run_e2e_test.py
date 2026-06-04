@@ -16,6 +16,17 @@ from pathlib import Path
 
 # .env auto-load (FRED/ECOS/OPENAI/KRX keys). 다른 backtest 스크립트들과 동일 패턴.
 _ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+# pandas_ta shim (tests/conftest.py 와 동일 — PyPI pandas-ta 미배포 환경).
+if "pandas_ta" not in sys.modules:
+    try:
+        import pandas_ta_classic as _ta_classic  # type: ignore
+        sys.modules["pandas_ta"] = _ta_classic
+    except ImportError:
+        pass
+
 try:
     from dotenv import load_dotenv
     load_dotenv(dotenv_path=_ROOT / ".env")

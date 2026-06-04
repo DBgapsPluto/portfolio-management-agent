@@ -4,7 +4,7 @@ Pipeline:
   Stage 1 (4 analyst struct + 4 summary) → AgentState
     → compute_all_factors(state) → FactorScores (9 z-vector)
     → apply_prior_smoothing (EMA in factor space, λ=1 default no-op)
-    → apply_factor_model_with_safety(z) → (bucket, tips, contributions, diagnostics)
+    → anchor+tilt or apply_factor_model_with_safety(z) → (bucket, tips, contributions, diagnostics)
     → derive_dominant_scenario + derive_conviction (deterministic legacy compat)
     → ResearchDecision
 
@@ -18,18 +18,36 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.dataflows.universe import load_universe
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.schemas.research import ResearchDecision
+from tradingagents.skills.portfolio.alpha_probe import compute_alpha_scores_for_eligible
+from tradingagents.skills.portfolio.bucket_sync import ContractInfeasibleError
+from tradingagents.skills.research.allocation_contract import build_allocation_contract
 from tradingagents.skills.research.factor_estimators import (
     FactorScore,
     FactorScores,
     compute_all_factors,
 )
+from tradingagents.skills.research.bucket_anchors import (
+    anchor_tips_share,
+    compose_anchor_covenant,
+    thesis_tags,
+    validate_anchor,
+)
 from tradingagents.skills.research.factor_to_bucket import (
+    BUCKETS,
     FACTORS,
     INITIAL_BASELINE,
+    apply_anchor_tilt_model_with_safety,
     apply_factor_model_with_safety,
 )
+from tradingagents.agents.overlay.llm_bucket_overlay import (
+    generate_stage2_narrative_views,
+)
+from tradingagents.skills.overlay.apply import apply_stage2_narrative_overlay
+from tradingagents.skills.overlay.credibility import load_credibility
+from tradingagents.skills.overlay.novelty import append_daily_salience, compute_novelty
 
 
 # Temporal smoothing (factor space). EMA infrastructure 유지 — default no-op.
@@ -120,6 +138,15 @@ def _apply_confidence_to_bucket(
 CONVICTION_HIGH_ALIGN: float = 0.6       # 3 중 2 동의 (3-factor sign vote)
 CONVICTION_MED_ALIGN: float = 0.3        # 3 중 1 동의
 
+STAGE2_LLM_MODE_DISABLED = "disabled"
+STAGE2_LLM_MODE_SHADOW = "shadow"
+STAGE2_LLM_MODE_LOW_IMPACT = "low_impact"
+STAGE2_LLM_MODES = {
+    STAGE2_LLM_MODE_DISABLED,
+    STAGE2_LLM_MODE_SHADOW,
+    STAGE2_LLM_MODE_LOW_IMPACT,
+}
+
 # Backtest prep (2026-05-26): scenario hysteresis — z-score 가 threshold 직전·직후
 # 에서 진동하면 scenario jump → portfolio 출렁임 → backtest noise. prior decision
 # 의 scenario 가 relaxed entry zone (threshold - band) 안에 있으면 유지.
@@ -171,6 +198,30 @@ def _blend_factors_with_prior(
         valuation=_blend(new.valuation, "F8_valuation"),
         market_dispersion=_blend(new.market_dispersion, "F9_market_dispersion"),
     )
+
+
+def _config_value(state: dict, key: str, default: Any) -> Any:
+    config = state.get("config") if isinstance(state, dict) else None
+    if isinstance(config, dict) and key in config:
+        return config[key]
+    return DEFAULT_CONFIG.get(key, default)
+
+
+def _compute_stage2_narrative_consensus(views) -> dict[str, float]:
+    """K-sample sign agreement for Stage 2 narrative bucket deltas."""
+    if not views:
+        return {b: 0.0 for b in BUCKETS}
+    consensus: dict[str, float] = {}
+    for bucket in BUCKETS:
+        signs = []
+        for view in views:
+            delta = view.bucket_deltas.get(bucket, 0.0)
+            if abs(delta) < 0.1:
+                signs.append(0)
+            else:
+                signs.append(1 if delta > 0 else -1)
+        consensus[bucket] = 0.0 if all(s == 0 for s in signs) else abs(sum(signs)) / len(signs)
+    return consensus
 
 
 def _strict_classify_scenario(
@@ -380,22 +431,98 @@ def create_research_manager(deep_llm):
             factor_scores, prior_decision, _EMA_LAMBDA,
         )
 
-        # 3. Factor → bucket + QP mandate projection + safety diagnostics
-        bucket, tips_share, contributions, safety_diag = apply_factor_model_with_safety(
-            factor_scores.to_dict()
+        macro_report = state.get("macro_report")
+        regime = getattr(macro_report, "regime", None) if macro_report else None
+        regime_quadrant = (
+            getattr(regime, "quadrant", None) if regime is not None else None
         )
+        if regime_quadrant is None:
+            regime_quadrant = "growth_disinflation"
+
+        prior_scenario_for_anchor = (
+            getattr(prior_decision, "dominant_scenario", None)
+            if prior_decision is not None else None
+        )
+        dominant_scenario_pre = derive_dominant_scenario(
+            factor_scores, prior_scenario=prior_scenario_for_anchor,
+        )
+
+        anchor_tilt_on = bool(_config_value(state, "stage2_anchor_tilt_enabled", True))
+        regime_w = float(_config_value(state, "stage2_anchor_regime_weight", 0.45))
+        scenario_w = float(_config_value(state, "stage2_anchor_scenario_weight", 0.55))
+        max_regime_pp = float(_config_value(state, "stage2_regime_modifier_pp", 0.02))
+        goldilocks_pc_cap = float(
+            _config_value(state, "stage2_scenario_real_cap_goldilocks_pc", 0.14),
+        )
+
+        if anchor_tilt_on:
+            bucket_anchor, anchor_pure, anchor_audit = compose_anchor_covenant(
+                regime_quadrant,
+                dominant_scenario_pre,
+                max_regime_pp=max_regime_pp,
+                goldilocks_pc_cap=goldilocks_pc_cap,
+            )
+            tilt_tags = thesis_tags(regime_quadrant, dominant_scenario_pre)
+            tips_anchor = anchor_tips_share(
+                dominant_scenario_pre,
+                regime_quadrant,
+                regime_weight=regime_w,
+                scenario_weight=scenario_w,
+            )
+            if not validate_anchor(bucket_anchor):
+                logger.warning(
+                    "research_manager: invalid bucket anchor — fallback legacy factor model",
+                )
+                bucket, tips_share, contributions, safety_diag = (
+                    apply_factor_model_with_safety(factor_scores.to_dict())
+                )
+                safety_diag["stage2_mode"] = "legacy_fallback_invalid_anchor"
+            else:
+                bucket, tips_share, contributions, safety_diag = (
+                    apply_anchor_tilt_model_with_safety(
+                        factor_scores.to_dict(),
+                        bucket_anchor,
+                        tips_anchor=tips_anchor,
+                        thesis_tags=tilt_tags,
+                    )
+                )
+                safety_diag["stage2_mode"] = "anchor_covenant_tilt"
+                safety_diag["stage2_anchor_regime_quadrant"] = regime_quadrant
+                safety_diag["stage2_anchor_scenario"] = dominant_scenario_pre
+                safety_diag["anchor_scenario_pure"] = dict(anchor_pure)
+                safety_diag["anchor_covenant"] = dict(bucket_anchor)
+                safety_diag["stage2_anchor_blend"] = dict(bucket_anchor)
+                safety_diag["stage2_anchor_tips"] = tips_anchor
+                safety_diag["thesis_tags"] = tilt_tags
+                safety_diag.update(anchor_audit)
+                bucket_post_tilt = dict(bucket)
+                safety_diag["drift_covenant_to_tilt_pp"] = {
+                    b: (float(bucket_post_tilt.get(b, 0.0)) - float(bucket_anchor.get(b, 0.0)))
+                    * 100.0
+                    for b in BUCKETS
+                }
+        else:
+            bucket, tips_share, contributions, safety_diag = apply_factor_model_with_safety(
+                factor_scores.to_dict(),
+            )
+            safety_diag["stage2_mode"] = "legacy_baseline_factor"
 
         # 2026-05-26 #8 fix — regime confidence × bucket sizing mapping.
         # Stage 1 의 LLM regime classifier confidence 를 bucket sizing 에 반영.
         # macro_report.regime.confidence (있으면) → 위험자산 multiplier (1.05/1.0/0.92).
-        macro_report = state.get("macro_report")
-        regime = getattr(macro_report, "regime", None) if macro_report else None
         regime_confidence = (
             float(getattr(regime, "confidence", 0.0)) if regime else None
         )
+        bucket_pre_confidence = dict(bucket)
         bucket, confidence_mult = _apply_confidence_to_bucket(
             bucket, regime_confidence,
         )
+        if safety_diag.get("stage2_mode") == "anchor_covenant_tilt":
+            safety_diag["drift_tilt_to_confidence_pp"] = {
+                b: (float(bucket.get(b, 0.0)) - float(bucket_pre_confidence.get(b, 0.0)))
+                * 100.0
+                for b in BUCKETS
+            }
         if abs(confidence_mult - 1.0) > 1e-9:
             logger.info(
                 "research_manager: confidence (%.2f) → risk_multiplier %.2f applied to bucket",
@@ -404,10 +531,9 @@ def create_research_manager(deep_llm):
         safety_diag["regime_confidence"] = regime_confidence
         safety_diag["confidence_risk_multiplier"] = confidence_mult
 
-        # 3.5 Tier 3 — LLM bucket overlay (feature-flagged OFF by default).
-        # Salience history is appended every run (cheap); the overlay itself only
-        # runs when tier3_llm_overlay_enabled. On any failure → fall back to quant.
-        from tradingagents.skills.overlay.novelty import append_daily_salience
+        # 3.5 Stage 2 LLM narrative overlay.
+        # Salience history is appended every run (cheap). Live impact is controlled
+        # by stage2_llm_overlay_mode: disabled | shadow | low_impact.
         news_report = state.get("news_report")
         as_of_str = state.get("as_of_date")
         try:
@@ -420,12 +546,116 @@ def create_research_manager(deep_llm):
             except Exception as e:
                 logger.warning("Tier 3 salience persistence failed: %s", e)
 
+        stage2_llm_mode = str(_config_value(
+            state, "stage2_llm_overlay_mode", STAGE2_LLM_MODE_DISABLED,
+        ))
+        if stage2_llm_mode not in STAGE2_LLM_MODES:
+            logger.warning(
+                "unknown stage2_llm_overlay_mode=%s; disabling overlay",
+                stage2_llm_mode,
+            )
+            stage2_llm_mode = STAGE2_LLM_MODE_DISABLED
+
+        bucket_pre_llm = dict(bucket)
+        llm_narrative_views = []
+        llm_overlay_audit: dict[str, Any] = {
+            "mode": stage2_llm_mode,
+            "applied": False,
+            "reason": "disabled",
+            "quant_target": dict(bucket),
+        }
+        min_stage2_novelty = float(_config_value(state, "stage2_llm_min_novelty", 0.05))
+        stage2_novelty = (
+            compute_novelty(news_report, _as_of) if news_report is not None else 0.0
+        )
+        if stage2_llm_mode in {STAGE2_LLM_MODE_SHADOW, STAGE2_LLM_MODE_LOW_IMPACT}:
+            if stage2_novelty < min_stage2_novelty:
+                llm_overlay_audit = {
+                    "mode": stage2_llm_mode,
+                    "applied": False,
+                    "reason": "novelty_below_threshold",
+                    "novelty": stage2_novelty,
+                    "min_novelty": min_stage2_novelty,
+                    "quant_target": dict(bucket),
+                }
+                safety_diag["stage2_llm_overlay_applied"] = False
+        if (
+            stage2_llm_mode in {STAGE2_LLM_MODE_SHADOW, STAGE2_LLM_MODE_LOW_IMPACT}
+            and stage2_novelty >= min_stage2_novelty
+        ):
+            try:
+                llm_narrative_views = generate_stage2_narrative_views(
+                    llm=deep_llm,
+                    state=state,
+                    factor_z=factor_scores.to_dict(),
+                    quant_target=bucket,
+                    safety_diag=safety_diag,
+                    k=int(_config_value(state, "stage2_llm_k_samples", 3)),
+                    temperature=float(_config_value(
+                        state, "llm_overlay_temperature", 0.1,
+                    )),
+                )
+                novelty = compute_novelty(news_report, _as_of)
+                consensus = _compute_stage2_narrative_consensus(llm_narrative_views)
+                credibility = load_credibility()
+                blended_bucket, blend_audit = apply_stage2_narrative_overlay(
+                    quant_target=bucket,
+                    views=llm_narrative_views,
+                    novelty=novelty,
+                    consensus=consensus,
+                    credibility=credibility,
+                    band=float(_config_value(state, "stage2_llm_band", 0.03)),
+                    llm_max_mix=float(_config_value(state, "stage2_llm_max_mix", 0.20)),
+                )
+                llm_overlay_audit = {
+                    "mode": stage2_llm_mode,
+                    "applied": (
+                        stage2_llm_mode == STAGE2_LLM_MODE_LOW_IMPACT
+                        and bool(llm_narrative_views)
+                    ),
+                    "reason": "ok" if llm_narrative_views else "no_views",
+                    "views_count": len(llm_narrative_views),
+                    "novelty": novelty,
+                    "consensus": consensus,
+                    "quant_target": dict(bucket),
+                    "candidate_target": dict(blended_bucket),
+                    "blend": blend_audit,
+                }
+                if stage2_llm_mode == STAGE2_LLM_MODE_LOW_IMPACT and llm_narrative_views:
+                    bucket = blended_bucket
+                    safety_diag["stage2_llm_overlay_applied"] = True
+                    logger.info(
+                        "Stage 2 LLM overlay applied (views=%d, novelty=%.2f)",
+                        len(llm_narrative_views), novelty,
+                    )
+                else:
+                    safety_diag["stage2_llm_overlay_applied"] = False
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Stage 2 LLM overlay failed, keeping quant bucket: %s", e)
+                llm_overlay_audit = {
+                    "mode": stage2_llm_mode,
+                    "applied": False,
+                    "reason": "fallback_error",
+                    "error": str(e),
+                    "quant_target": dict(bucket),
+                }
+                safety_diag["stage2_llm_overlay_applied"] = False
+
+        if safety_diag.get("stage2_mode") == "anchor_covenant_tilt":
+            safety_diag["drift_confidence_to_llm_pp"] = {
+                b: (float(bucket.get(b, 0.0)) - float(bucket_pre_llm.get(b, 0.0)))
+                * 100.0
+                for b in BUCKETS
+            }
+
+        # Legacy Tier 3 — old 8-bucket LLMBucketView overlay remains off by default.
+        # Kept for backward compatibility while the Stage2NarrativeView path above
+        # becomes the preferred live/shadow mechanism.
         if _TIER3_OVERLAY_ENABLED:
             try:
                 import asyncio
-                from tradingagents.skills.overlay.novelty import compute_novelty
                 from tradingagents.skills.overlay.consensus import compute_consensus
-                from tradingagents.skills.overlay.credibility import load_credibility
+                from tradingagents.skills.overlay.credibility import load_credibility as _legacy_load_credibility
                 from tradingagents.skills.overlay.apply import apply_llm_overlay
                 from tradingagents.agents.overlay.llm_bucket_overlay import generate_llm_views
 
@@ -436,7 +666,7 @@ def create_research_manager(deep_llm):
                 ))
                 _novelty = compute_novelty(news_report, _as_of)
                 _consensus = compute_consensus(_views)
-                _cred = load_credibility()
+                _cred = _legacy_load_credibility()
                 bucket, _overlay_audit = apply_llm_overlay(
                     quant_target=bucket, views=_views,
                     novelty=_novelty, consensus=_consensus, credibility=_cred,
@@ -478,14 +708,9 @@ def create_research_manager(deep_llm):
             )
         safety_diag["extreme_components"] = extreme_components
 
-        # 4. Legacy compat fields — scenario hysteresis 적용 (backtest prep).
-        prior_scenario = (
-            getattr(prior_decision, "dominant_scenario", None)
-            if prior_decision is not None else None
-        )
-        dominant_scenario = derive_dominant_scenario(
-            factor_scores, prior_scenario=prior_scenario,
-        )
+        # 4. Legacy compat fields — scenario (already derived for anchor; reuse).
+        prior_scenario = prior_scenario_for_anchor
+        dominant_scenario = dominant_scenario_pre
         if prior_scenario and prior_scenario != dominant_scenario:
             logger.info(
                 "research_manager: scenario transition %s → %s (priority %d → %d)",
@@ -516,11 +741,102 @@ def create_research_manager(deep_llm):
             safety_diag.get("projection_intervened"),
         )
 
-        # 5. BucketTarget
+        # 5. Allocation contract — prior (post-LLM) → investability → feasible
         z_dict = factor_scores.to_dict()
         z_str_top = ", ".join(
             f"{f}={z_dict[f]:+.2f}"
             for f in sorted(z_dict, key=lambda k: -abs(z_dict[k]))[:3]
+        )
+        prior_weights = dict(bucket)
+        allocation_contract = None
+        contract_enabled = bool(_config_value(
+            state, "allocation_contract_enabled", True,
+        ))
+        eligible_by_bucket: dict[str, list[str]] | None = None
+        alpha_scores_by_bucket: dict[str, dict[str, float]] | None = None
+        if contract_enabled:
+            universe = None
+            universe_path = _config_value(state, "universe_path", None)
+            cache_path = _config_value(state, "etf_price_cache_path", None)
+            if universe_path:
+                try:
+                    universe = load_universe(universe_path)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "allocation_contract: universe load failed (%s)", exc,
+                    )
+            if universe is not None and as_of_date_val is not None:
+                probe_target = BucketTarget(
+                    weights=dict(prior_weights),
+                    bond_tips_share=tips_share,
+                    rationale="alpha probe",
+                )
+                tech_report = state.get("technical_report")
+                factor_panel = (
+                    getattr(tech_report, "factor_panel", None)
+                    if tech_report is not None else None
+                )
+                scenario_boost_on = bool(_config_value(
+                    state, "stage3_scenario_boost_enabled", False,
+                ))
+                boost_scale = 1.0 if scenario_boost_on else 0.0
+                eligible_by_bucket, alpha_scores_by_bucket = (
+                    compute_alpha_scores_for_eligible(
+                        universe,
+                        probe_target,
+                        as_of_date_val,
+                        factor_panel=factor_panel,
+                        cache_path=cache_path,
+                        dominant_scenario=dominant_scenario,
+                        factor_scores=factor_scores.to_dict(),
+                        regime_quadrant=(
+                            getattr(regime, "quadrant", None) if regime else None
+                        ),
+                        regime_confidence=regime_confidence or 0.5,
+                        risk_adjusted=getattr(tech_report, "risk_adjusted", None),
+                        trend_quant=getattr(tech_report, "trend_quantification", None),
+                        extended=getattr(tech_report, "extended_indicators", None),
+                        etf_states=getattr(tech_report, "individual_etf_states", None),
+                        boost_scale=boost_scale,
+                    )
+                )
+                safety_diag["alpha_probe_counts"] = {
+                    b: len(eligible_by_bucket.get(b, [])) for b in BUCKETS
+                }
+            try:
+                contract = build_allocation_contract(
+                    prior_weights=prior_weights,
+                    bond_tips_share=tips_share,
+                    universe=universe,
+                    as_of=as_of_date_val,
+                    factor_contributions=contributions,
+                    config=(
+                        _config if isinstance(_config, dict) else DEFAULT_CONFIG
+                    ),
+                    eligible_by_bucket=eligible_by_bucket,
+                    alpha_scores_by_bucket=alpha_scores_by_bucket,
+                )
+            except ContractInfeasibleError as exc:
+                safety_diag["contract_infeasible"] = str(exc)
+                safety_diag["pipeline_failure"] = {
+                    "error_type": type(exc).__name__,
+                    "message": str(exc),
+                }
+                from tradingagents.reports.philosophy import (
+                    write_failure_philosophy_for_state,
+                )
+                write_failure_philosophy_for_state(state, str(exc))
+                raise
+            allocation_contract = contract
+            safety_diag["allocation_contract"] = contract.model_dump()
+            safety_diag["prior_bucket_weights"] = dict(contract.prior_weights)
+            safety_diag["feasible_bucket_weights"] = dict(contract.feasible_weights)
+            safety_diag["binding_stage2"] = dict(contract.binding_stage2)
+
+        feasible_weights = (
+            allocation_contract.feasible_weights
+            if allocation_contract is not None
+            else prior_weights
         )
         rationale = (
             f"Factor model: dominant_scenario={dominant_scenario}, conviction={conviction}. "
@@ -528,7 +844,7 @@ def create_research_manager(deep_llm):
         )[:500]
 
         target = BucketTarget(
-            weights=dict(bucket),
+            weights=dict(feasible_weights),
             bond_tips_share=tips_share,
             rationale=rationale,
         )
@@ -536,6 +852,7 @@ def create_research_manager(deep_llm):
         # 6. ResearchDecision — factor model 만 (C5: 24-cell field 제거됨)
         decision = ResearchDecision(
             bucket_target=target,
+            allocation_contract=allocation_contract,
             conviction=conviction,
             dominant_scenario=dominant_scenario,
             # Factor model
@@ -543,6 +860,8 @@ def create_research_manager(deep_llm):
             factor_contributions=contributions,
             baseline_bucket=dict(INITIAL_BASELINE),
             safety_diagnostics=safety_diag,
+            llm_narrative_views=llm_narrative_views,
+            llm_overlay_audit=llm_overlay_audit,
         )
 
         # Stage 2 audit (Task 0): top-3 contributors (|β·z| 큰 순) — "왜 이 bucket?" trace.
@@ -573,18 +892,38 @@ def create_research_manager(deep_llm):
             f"{diag_line}\n"
             f"Factor z-scores:\n"
             + "\n".join(f"  {f}: {z:+.2f}" for f, z in z_dict.items())
-            + f"\n\n## Bucket Target\n"
+            + f"\n\n## Bucket Target (feasible → allocator)\n"
             + "\n".join(
                 f"  {b}: {w*100:.1f}%"
                 for b, w in target.items()
             )
             + f"\n위험자산 합: {target.risk_asset_weight*100:.1f}%"
         )
+        if allocation_contract is not None:
+            summary += "\n\n## Macro prior (factor + LLM)\n" + "\n".join(
+                f"  {b}: {allocation_contract.prior_weights[b]*100:.1f}%"
+                for b in sorted(allocation_contract.prior_weights)
+            )
+            thin = [
+                b for b, why in allocation_contract.binding_stage2.items()
+                if why not in ("ok",)
+            ]
+            if thin:
+                summary += "\n\nInvestability bindings: " + ", ".join(
+                    f"{b}={allocation_contract.binding_stage2[b]}" for b in thin
+                )
 
-        return {
+        state_updates: dict[str, object] = {
             "bucket_target": target,
             "research_decision": decision,
             "research_debate_summary": summary,
         }
+        if eligible_by_bucket is not None:
+            state_updates["eligible_by_bucket"] = eligible_by_bucket
+        if alpha_scores_by_bucket is not None:
+            state_updates["alpha_scores_by_bucket"] = alpha_scores_by_bucket
+        if contract_enabled:
+            state_updates["allocator_retry_skipped"] = True
+        return state_updates
 
     return node

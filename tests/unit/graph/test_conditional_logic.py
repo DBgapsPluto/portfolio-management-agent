@@ -37,7 +37,8 @@ def test_emergency_cash_portfolio_uses_safe_etfs(tmp_path):
         "allocation_attempts": 2,
     }
     result = _emergency_cash_portfolio(state)
-    assert result["validation_passed"] is True
+    assert result["validation_passed"] is False
+    assert result.get("fallback_used") is True
     new_wv = result["weight_vector"]
     # Test fixture has only 2 safe ETFs (1 bond + 1 MMF) → 50% each.
     # In real universe with ≥5 safe ETFs, each ≤ 20%.
@@ -83,4 +84,34 @@ def test_fallback_re_optimizes_with_constraints(tmp_path):
     new_wv = result["weight_vector"]
     assert all(w <= 0.20 + 1e-6 for w in new_wv.weights.values())
     assert abs(sum(new_wv.weights.values()) - 1.0) < 1e-3
-    assert result["validation_passed"] is True
+    assert result["validation_passed"] is False
+    assert result.get("fallback_used") is True
+
+
+def test_contract_mode_skips_retry_goes_to_fallback():
+    from tests.integration._allocator_state_helpers import (
+        make_research_decision_with_contract,
+        make_synthetic_universe,
+    )
+
+    universe = make_synthetic_universe(n_per_bucket=2)
+    rd = make_research_decision_with_contract(universe)
+    state = {
+        "validation_passed": False,
+        "allocation_attempts": 1,
+        "research_decision": rd,
+        "config": {
+            "allocation_contract_enabled": True,
+            "contract_skip_allocator_retry": True,
+        },
+    }
+    assert validation_router(state) == "fallback"
+
+
+def test_fallback_used_routes_to_finalize():
+    state = {
+        "validation_passed": False,
+        "allocation_attempts": 3,
+        "fallback_used": True,
+    }
+    assert validation_router(state) == "finalize"

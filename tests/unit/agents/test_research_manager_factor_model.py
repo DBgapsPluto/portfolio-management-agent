@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from tradingagents.agents.managers.research_manager import create_research_manager
+from tradingagents.schemas.llm_overlay import Stage2NarrativeView, CredibilityState
 from tradingagents.schemas.research import ResearchDecision
 
 
@@ -98,6 +99,35 @@ def test_bucket_target_mandate_safe():
     assert abs(bt.total - 1.0) < 1e-6
 
 
+def test_research_decision_has_allocation_contract_when_universe_configured(monkeypatch):
+    from pathlib import Path
+
+    from tradingagents.dataflows.universe import load_universe
+    from tests.integration._allocator_state_helpers import patch_contract_alpha_probe
+
+    upath = Path("data/universe.json")
+    if not upath.exists():
+        pytest.skip("universe.json not present")
+    universe = load_universe(str(upath))
+    patch_contract_alpha_probe(monkeypatch, universe)
+
+    node = create_research_manager(deep_llm=None)
+    state = _full_state()
+    state["universe_path"] = str(upath)
+    state["as_of_date"] = "2024-06-03"
+    state["config"] = {"allocation_contract_enabled": True}
+    result = node(state)
+    rd = result["research_decision"]
+    assert rd.allocation_contract is not None
+    assert rd.allocation_contract.prior_weights
+    assert rd.allocation_contract.feasible_weights
+    assert abs(sum(rd.allocation_contract.feasible_weights.values()) - 1.0) < 1e-5
+    assert result["bucket_target"].weights == rd.allocation_contract.feasible_weights
+    assert rd.safety_diagnostics.get("stage2_mode") == "anchor_covenant_tilt"
+    assert "anchor_covenant" in rd.safety_diagnostics
+    assert "anchor_scenario_pure" in rd.safety_diagnostics
+
+
 def test_research_decision_has_safety_diagnostics():
     node = create_research_manager(deep_llm=None)
     state = _full_state()
@@ -156,6 +186,102 @@ def test_research_decision_conviction_set():
     result = node(state)
     rd = result["research_decision"]
     assert rd.conviction in VALID_CONVICTIONS
+
+
+def test_research_manager_applies_stage2_llm_overlay_low_impact(monkeypatch):
+    from tradingagents.agents.managers import research_manager as rm
+
+    def _views(**kwargs):
+        return [Stage2NarrativeView(
+            base_scenario="goldilocks",
+            overlays=["policy_surprise"],
+            bucket_deltas={"kr_equity": 1.0},
+            risk_budget_delta=0.0,
+            confidence=0.8,
+            evidence=["policy surprise"],
+            expiry_days=3,
+            conflict_with_quant=False,
+            reasoning="test",
+        )]
+
+    monkeypatch.setattr(rm, "generate_stage2_narrative_views", _views)
+    monkeypatch.setattr(rm, "compute_novelty", lambda news_report, as_of: 1.0)
+    monkeypatch.setattr(rm, "load_credibility", lambda: CredibilityState(
+        bucket_cred={b: 1.0 for b in rm.BUCKETS},
+        history_count=100,
+        last_updated=rm.date(2026, 6, 1),
+    ))
+
+    node = create_research_manager(deep_llm=object())
+    state = _full_state()
+    state["config"] = {
+        "stage2_llm_overlay_mode": "low_impact",
+        "stage2_llm_k_samples": 1,
+        "stage2_llm_max_mix": 1.0,
+        "stage2_llm_band": 0.03,
+    }
+    result = node(state)
+    rd = result["research_decision"]
+    assert rd.llm_narrative_views
+    assert rd.llm_overlay_audit["mode"] == "low_impact"
+    assert rd.llm_overlay_audit["applied"] is True
+    assert rd.bucket_target.weights["kr_equity"] >= rd.llm_overlay_audit["quant_target"]["kr_equity"]
+
+
+def test_research_manager_stage2_llm_shadow_keeps_quant_target(monkeypatch):
+    from tradingagents.agents.managers import research_manager as rm
+
+    def _views(**kwargs):
+        return [Stage2NarrativeView(
+            base_scenario="goldilocks",
+            overlays=["policy_surprise"],
+            bucket_deltas={"kr_equity": 1.0},
+            risk_budget_delta=0.0,
+            confidence=0.8,
+            evidence=["policy surprise"],
+            expiry_days=3,
+            conflict_with_quant=False,
+            reasoning="test",
+        )]
+
+    monkeypatch.setattr(rm, "generate_stage2_narrative_views", _views)
+    monkeypatch.setattr(rm, "compute_novelty", lambda news_report, as_of: 1.0)
+    monkeypatch.setattr(rm, "load_credibility", lambda: CredibilityState(
+        bucket_cred={b: 1.0 for b in rm.BUCKETS},
+        history_count=100,
+        last_updated=rm.date(2026, 6, 1),
+    ))
+
+    node = create_research_manager(deep_llm=object())
+    state = _full_state()
+    state["config"] = {
+        "stage2_llm_overlay_mode": "shadow",
+        "stage2_llm_k_samples": 1,
+        "stage2_llm_max_mix": 1.0,
+        "stage2_llm_band": 0.03,
+    }
+    result = node(state)
+    rd = result["research_decision"]
+    assert rd.llm_overlay_audit["mode"] == "shadow"
+    assert rd.llm_overlay_audit["applied"] is False
+    assert rd.bucket_target.weights == rd.llm_overlay_audit["quant_target"]
+
+
+def test_research_manager_stage2_llm_disabled_does_not_call_llm(monkeypatch):
+    from tradingagents.agents.managers import research_manager as rm
+
+    def _views(**kwargs):
+        raise AssertionError("LLM should not be called when disabled")
+
+    monkeypatch.setattr(rm, "generate_stage2_narrative_views", _views)
+    node = create_research_manager(deep_llm=object())
+    state = _full_state()
+    state["config"] = {"stage2_llm_overlay_mode": "disabled"}
+    result = node(state)
+    rd = result["research_decision"]
+    assert rd.llm_narrative_views == []
+    assert rd.llm_overlay_audit["mode"] == "disabled"
+    assert rd.llm_overlay_audit["applied"] is False
 
 
 # ---- 2026-05-26 #5 fix: late_cycle scenario cell ----

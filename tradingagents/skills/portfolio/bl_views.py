@@ -87,6 +87,7 @@ def generate_bl_views(
     regime_confidence: float,
     candidates: dict[str, list[str]],
     sub_category_lookup: dict[str, str] | None = None,
+    bucket_returns_override: dict[str, float] | None = None,
     breakdown_out: dict | None = None,
 ) -> tuple[dict[str, float], list[float], dict[str, float | bool]]:
     """
@@ -103,14 +104,21 @@ def generate_bl_views(
         "view_conf_multi_applied": False,
     }
 
-    if scenario is None or scenario not in SCENARIO_BUCKET_RULEBOOK:
+    if bucket_returns_override:
+        bucket_returns = dict(bucket_returns_override)
+        if breakdown_out is not None:
+            breakdown_out["returns_source"] = "allocation_contract"
+            breakdown_out["scenario"] = scenario
+    elif scenario is not None and scenario in SCENARIO_BUCKET_RULEBOOK:
+        bucket_returns = SCENARIO_BUCKET_RULEBOOK[scenario]
+        if breakdown_out is not None:
+            breakdown_out["returns_source"] = "scenario_rulebook"
+    else:
         if breakdown_out is not None:
             breakdown_out["fallback_reason"] = "unknown_scenario"
             breakdown_out["scenario"] = scenario
             breakdown_out["tilt_params"] = default_tilt
         return {}, [], default_tilt
-
-    bucket_returns = SCENARIO_BUCKET_RULEBOOK[scenario]
     conf_value = max(regime_confidence, BL_VIEW_MIN_CONFIDENCE)
 
     tilt_raw = SCENARIO_BL_TILT.get(scenario)

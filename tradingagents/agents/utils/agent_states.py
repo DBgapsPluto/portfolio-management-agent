@@ -87,6 +87,10 @@ class AgentState(MessagesState):
     # D4: Validator cycle
     allocation_attempts: Annotated[int, "Retry counter for Validator → Allocator cycle"]
     allocation_feedback: Annotated[list[Violation], "Violations to inject into Allocator on retry"]
+    fallback_used: Annotated[
+        bool,
+        "True after fallback normalizer ran; router finalizes without further retries",
+    ]
 
     # === Stage 7: Final ===
     final_portfolio_path: Annotated[str, "Path to artifacts/portfolio.json"]
@@ -137,7 +141,7 @@ def _create_empty_state(
         portfolio_numerics=None,
         rebalance_mode=None,
         validation_report=None, validation_passed=None,
-        allocation_attempts=0, allocation_feedback=[],
+        allocation_attempts=0, allocation_feedback=[], fallback_used=False,
         final_portfolio_path="", philosophy_doc_path="", trade_plan_csv_path="",
         warnings=[],
         previous_portfolio=previous_portfolio,

@@ -148,10 +148,48 @@ DEFAULT_CONFIG.update({
     # Tier 0: expanding-window z-baseline (Pesaran-Timmermann 1995). Default off
     # for backward compat — opt-in per run or backtest sweep.
     "use_dynamic_baseline": False,
-    # Tier 3 LLM overlay (default OFF — opt-in; forward-tuning required)
+    # Tier 3 legacy LLM overlay (default OFF — Stage 2 narrative overlay is preferred)
     "tier3_llm_overlay_enabled": False,
     "tier3_llm_k_samples": 5,
     "tier3_band": 0.05,
     "tier3_ewma_alpha": 0.10,
     "tier3_cred_cold_start": 0.30,
+    # Stage 2/3 LLM-Quant blend rollout gates.
+    # Modes: disabled | shadow | low_impact.
+    # Stage 2 is default-on at low impact; bounded gates keep quant as the anchor.
+    "stage2_llm_overlay_mode": "low_impact",
+    "stage2_llm_k_samples": 3,
+    "stage2_llm_max_mix": 0.20,
+    "stage2_llm_band": 0.03,
+    "stage3_llm_overlay_mode": "low_impact",
+    "stage3_llm_k_samples": 2,
+    "stage3_llm_candidate_boost_cap": 0.08,
+    "stage3_llm_longlist_max_per_bucket": 8,
+    "llm_overlay_temperature": 0.1,
+    # Stage 2 allocation contract (prior → investability → feasible).
+    "allocation_contract_enabled": True,
+    "contract_skip_allocator_retry": True,
+    "contract_overlay_risk_clip": True,
+    # Stage 4: lens/aggregator가 빈 overlay를 낼 때 mandate cluster cap(0.25)으로 2차 최적화.
+    "mandate_cluster_overlay_repair": True,
+    "mandate_cluster_overlay_cap": 0.25,
+    "mandate_cluster_overlay_cap_margin": 1e-4,
+    "stage2_llm_min_novelty": 0.05,
+    # Stage 2 anchor+tilt: regime/scenario bucket anchor + reduced factor tilt.
+    "stage2_anchor_tilt_enabled": True,
+    "stage2_anchor_regime_weight": 0.45,
+    "stage2_anchor_scenario_weight": 0.55,
+    "stage2_regime_modifier_pp": 0.02,
+    "stage2_scenario_real_cap_goldilocks_pc": 0.14,
+    "contract_single_etf_cap": 0.05,
+    "contract_envelope_band_pp": 0.02,
+    # Phase 2 — optional overrides (only read when allocation_contract is present).
+    # Contract mode defaults: spill off, scenario boost off, HRP, cov proxy blend.
+    # Do not set stage3_cash_spillover_enabled / stage3_scenario_boost_enabled here:
+    # global False would break the legacy (non-contract) allocator path.
+    "contract_optimizer_method": "hrp",
+    "cov_factor_proxy_enabled": True,
+    "cov_factor_proxy_blend": 0.25,
+    # Stage 3 B: post-HRP mandate QP toward feasible_weights when risk>70% or mass gap.
+    "stage3_post_hrp_mandate_qp": True,
 })

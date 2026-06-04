@@ -93,7 +93,7 @@ def test_build_main_graph_routes_to_fallback_on_max_attempts():
                 return {"validation_passed": False, "validation_report": None,
                         "allocation_feedback": []}
             if agent_id == "fallback":
-                return {"validation_passed": True}
+                return {"validation_passed": False, "fallback_used": True}
             if agent_id == "portfolio_manager":
                 return {"final_portfolio_path": "/tmp/p.json"}
             return {}

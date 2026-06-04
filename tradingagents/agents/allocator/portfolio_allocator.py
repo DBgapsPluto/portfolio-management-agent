@@ -17,17 +17,43 @@ import pandas as pd
 from pypfopt import EfficientFrontier, HRPOpt, risk_models, expected_returns
 
 from tradingagents.dataflows.universe import load_universe
+from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.schemas.portfolio import OptimizationMethod, WeightVector
 from tradingagents.skills.portfolio.candidate_selector import (
+    build_quant_longlists_for_llm,
     list_eligible_tickers,
     select_etf_candidates,
 )
 from tradingagents.skills.portfolio.method_picker import MethodChoice, pick_optimization_method
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
+from tradingagents.skills.portfolio.bucket_sync import (
+    BucketSyncError,
+    sync_bucket_target_executed,
+)
 from tradingagents.skills.portfolio.cash_spillover import adjust_bucket_targets
 from tradingagents.skills.portfolio.diversification import compute_enb
 from tradingagents.skills.portfolio.nco import compute_nco_weights
-from tradingagents.skills.portfolio.cov_estimator import compute_robust_cov
+from tradingagents.schemas.allocation_contract import BucketEnvelope
+from tradingagents.skills.portfolio.cov_estimator import (
+    blend_cov_with_factor_proxy,
+    compute_pairwise_selection_cov,
+    compute_robust_cov,
+)
+from tradingagents.skills.portfolio.contract_stage3 import (
+    apply_theme_portfolio_limits,
+    build_implementation_alignment,
+    contract_stage3_active,
+    enforce_stage3_mandate_qp,
+    realized_bucket_weights,
+    redistribute_subcategory_excess_to_cash,
+)
+from tradingagents.skills.portfolio.hrp_shortfall import (
+    finalize_per_bucket_mass,
+    place_unallocated_in_cash,
+)
+from tradingagents.agents.overlay.llm_candidate_overlay import (
+    generate_stage3_candidate_boost_view,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +66,15 @@ RETRY_BAND_WIDTH: float = 0.05         # attempts>0 시 bucket equality → ±5%
 HRP_WATER_FILL_MAX_ITERS: int = 20     # HRP per-bucket cap 보정 max 반복
 PRICE_LOOKBACK_DAYS_ALLOC: int = 365 * 3   # returns matrix fetch 윈도우
 CORRELATION_THRESHOLD_ALLOC: float = 0.85  # cluster-aware fallback corr cut
+STAGE3_LLM_MODE_DISABLED = "disabled"
+STAGE3_LLM_MODE_SHADOW = "shadow"
+STAGE3_LLM_MODE_LOW_IMPACT = "low_impact"
+STAGE3_LLM_MODES = {
+    STAGE3_LLM_MODE_DISABLED,
+    STAGE3_LLM_MODE_SHADOW,
+    STAGE3_LLM_MODE_LOW_IMPACT,
+}
+STAGE3_LLM_LONGLIST_MAX_PER_BUCKET: int = 8
 
 # 2026-05-26 #2 fix — min weight threshold.
 # HRP/MIN_VAR 가 marginal contribution 자산에 0.17% (원유) 같은 micro-position
@@ -59,6 +94,45 @@ ENB_WARNING_THRESHOLD: float = 3.0
 # Phase 4c (Stage 3 phase4c-enb-critical spec, 2026-05-30).
 ENB_CRITICAL_THRESHOLD: float = 2.0
 ENB_FALLBACK_MIN_TICKERS: int = 5
+
+
+def _normalize_weights_sum(weights: dict[str, float]) -> dict[str, float]:
+    total = sum(weights.values())
+    if total <= 1e-12 or abs(total - 1.0) <= 1e-6:
+        return weights
+    return {k: float(v / total) for k, v in weights.items()}
+
+
+def _state_config_value(state: dict, key: str, default):
+    config = state.get("config") if isinstance(state, dict) else None
+    if isinstance(config, dict) and key in config:
+        return config[key]
+    return DEFAULT_CONFIG.get(key, default)
+
+
+def _build_stage3_llm_longlists(
+    attribution: dict,
+    max_per_bucket: int = STAGE3_LLM_LONGLIST_MAX_PER_BUCKET,
+) -> dict[str, list[dict]]:
+    """Build compact LLM candidate context from quant selector attribution."""
+    out: dict[str, list[dict]] = {}
+    for bucket, bucket_attr in (attribution.get("buckets") or {}).items():
+        ranked = list(bucket_attr.get("ranked_order") or [])
+        alpha_scores = bucket_attr.get("alpha_scores") or {}
+        impl_scores = bucket_attr.get("impl_scores") or {}
+        per_ticker = bucket_attr.get("per_ticker") or {}
+        rows = []
+        for ticker in ranked[:max_per_bucket]:
+            ticker_attr = per_ticker.get(ticker) or {}
+            rows.append({
+                "ticker": ticker,
+                "sub_category": ticker_attr.get("sub_category"),
+                "alpha_score": alpha_scores.get(ticker),
+                "impl_score": impl_scores.get(ticker),
+            })
+        if rows:
+            out[bucket] = rows
+    return out
 
 
 def create_portfolio_allocator(
@@ -137,15 +211,29 @@ def create_portfolio_allocator(
         # candidates"). Off-diagonal pairs with < MIN_COV_OBS_CANDIDATE overlap → 0
         # (treat as uncorrelated); diagonal = per-ticker variance (always estimable),
         # floored positive for minimum_torsion.
-        sigma = returns.cov(min_periods=MIN_COV_OBS_CANDIDATE)
-        _var = returns.var()  # per-ticker variance on each ticker's own obs
-        _diag = _var.reindex(sigma.index).to_numpy()
-        _diag = np.where(np.isfinite(_diag) & (_diag > 0), _diag, 1e-8)
-        # writable copy — DataFrame.values can be read-only (np.fill_diagonal then raises)
-        _sigma_arr = sigma.to_numpy(dtype=float, copy=True)
-        np.fill_diagonal(_sigma_arr, _diag)                   # positive diagonal
-        _sigma_arr = np.nan_to_num(_sigma_arr, nan=0.0)       # off-diagonal NaN → 0
-        sigma = pd.DataFrame(_sigma_arr, index=sigma.index, columns=sigma.columns)
+        allocation_contract_enabled = bool(_state_config_value(
+            state, "allocation_contract_enabled", True,
+        ))
+        contract_mode = contract_stage3_active(
+            research_decision,
+            allocation_contract_enabled=allocation_contract_enabled,
+        )
+        cov_proxy_blend = float(_state_config_value(
+            state, "cov_factor_proxy_blend", 0.25,
+        ))
+        cov_proxy_on = bool(_state_config_value(
+            state, "cov_factor_proxy_enabled", True,
+        ))
+        sigma_breakdown: dict = {}
+        sigma = compute_pairwise_selection_cov(
+            returns, min_periods=MIN_COV_OBS_CANDIDATE,
+        )
+        if contract_mode and cov_proxy_on:
+            sigma = blend_cov_with_factor_proxy(
+                sigma, returns, factor_panel,
+                blend=cov_proxy_blend,
+                breakdown_out=sigma_breakdown,
+            )
         capital_krw = float(state.get("capital_krw") or state.get("capital") or 1_000_000_000)
 
         # 2. Multi-factor + corr de-dup + (Phase C) scenario sub_category boost.
@@ -223,60 +311,222 @@ def create_portfolio_allocator(
                 ),
             }
 
-        candidates = select_etf_candidates(
-            universe, bucket_target,
-            as_of=as_of,
-            returns=returns,
-            factor_panel=factor_panel,
-            sigma=sigma,
-            capital_krw=capital_krw,
-            regime_quadrant=regime.quadrant if regime else None,
-            regime_confidence=regime.confidence if regime else 0.5,
-            correlation_threshold=CORRELATION_THRESHOLD_ALLOC,
-            dominant_scenario=dominant_scenario,
-            attribution=attribution,
-            risk_adjusted=getattr(tech_report, "risk_adjusted", None),
-            trend_quant=getattr(tech_report, "trend_quantification", None),
-            extended=getattr(tech_report, "extended_indicators", None),
-            etf_states=getattr(tech_report, "individual_etf_states", None),
-            clusters=getattr(tech_report, "correlation_clusters", None),
-            # 2026-05-26 fix-B — macro alignment boost (F2_inflation, F5_credit).
-            factor_scores=(
-                getattr(research_decision, "factor_scores", None)
-                if research_decision is not None else None
-            ),
+        if contract_mode:
+            scenario_boost_on = bool(_state_config_value(
+                state, "stage3_scenario_boost_enabled", False,
+            ))
+        else:
+            scenario_boost_on = bool(_state_config_value(
+                state, "stage3_scenario_boost_enabled", True,
+            ))
+        boost_scale = 1.0 if scenario_boost_on else 0.0
+
+        precomputed_alpha = (
+            state.get("alpha_scores_by_bucket")
+            if contract_mode else None
         )
 
-        # Phase 2a — Stage 2 원본 bucket_target 별도 보존 (spillover 전 macro 결정)
+        def _run_candidate_selection(llm_candidate_view=None):
+            return select_etf_candidates(
+                universe, bucket_target,
+                as_of=as_of,
+                returns=returns,
+                factor_panel=factor_panel,
+                sigma=sigma,
+                capital_krw=capital_krw,
+                regime_quadrant=regime.quadrant if regime else None,
+                regime_confidence=regime.confidence if regime else 0.5,
+                correlation_threshold=CORRELATION_THRESHOLD_ALLOC,
+                dominant_scenario=dominant_scenario,
+                boost_scale=boost_scale,
+                attribution=attribution,
+                risk_adjusted=getattr(tech_report, "risk_adjusted", None),
+                trend_quant=getattr(tech_report, "trend_quantification", None),
+                extended=getattr(tech_report, "extended_indicators", None),
+                etf_states=getattr(tech_report, "individual_etf_states", None),
+                clusters=getattr(tech_report, "correlation_clusters", None),
+                # 2026-05-26 fix-B — macro alignment boost (F2_inflation, F5_credit).
+                factor_scores=(
+                    getattr(research_decision, "factor_scores", None)
+                    if research_decision is not None else None
+                ),
+                llm_candidate_view=llm_candidate_view,
+                llm_candidate_boost_cap=float(_state_config_value(
+                    state, "stage3_llm_candidate_boost_cap", 0.08,
+                )),
+                precomputed_alpha_scores_by_bucket=precomputed_alpha,
+            )
+
+        stage3_llm_mode = str(_state_config_value(
+            state, "stage3_llm_overlay_mode", STAGE3_LLM_MODE_DISABLED,
+        ))
+        if stage3_llm_mode not in STAGE3_LLM_MODES:
+            logger.warning(
+                "unknown stage3_llm_overlay_mode=%s; disabling overlay",
+                stage3_llm_mode,
+            )
+            stage3_llm_mode = STAGE3_LLM_MODE_DISABLED
+
+        llm_candidate_view = None
+        stage3_llm_audit = {
+            "mode": stage3_llm_mode,
+            "applied": False,
+            "reason": "disabled",
+        }
+        if stage3_llm_mode in {STAGE3_LLM_MODE_SHADOW, STAGE3_LLM_MODE_LOW_IMPACT}:
+            longlist_max = int(_state_config_value(
+                state, "stage3_llm_longlist_max_per_bucket",
+                STAGE3_LLM_LONGLIST_MAX_PER_BUCKET,
+            ))
+            longlists = build_quant_longlists_for_llm(
+                universe,
+                bucket_target,
+                as_of,
+                returns=returns,
+                factor_panel=factor_panel,
+                max_per_bucket=longlist_max,
+                regime_quadrant=regime.quadrant if regime else None,
+                regime_confidence=regime.confidence if regime else 0.5,
+                dominant_scenario=dominant_scenario,
+                factor_scores=(
+                    getattr(research_decision, "factor_scores", None)
+                    if research_decision is not None else None
+                ),
+                risk_adjusted=getattr(tech_report, "risk_adjusted", None),
+                trend_quant=getattr(tech_report, "trend_quantification", None),
+                extended=getattr(tech_report, "extended_indicators", None),
+                etf_states=getattr(tech_report, "individual_etf_states", None),
+            )
+            _factor_scores = (
+                getattr(research_decision, "factor_scores", None)
+                if research_decision is not None else None
+            )
+            _factor_z = (
+                _factor_scores.to_dict()
+                if _factor_scores is not None and hasattr(_factor_scores, "to_dict")
+                else None
+            )
+            llm_candidate_view = generate_stage3_candidate_boost_view(
+                llm=deep_llm or quick_llm,
+                state=state,
+                bucket_longlists=longlists,
+                factor_z=_factor_z,
+                dominant_scenario=dominant_scenario,
+                k=int(_state_config_value(state, "stage3_llm_k_samples", 2)),
+                temperature=float(_state_config_value(
+                    state, "llm_overlay_temperature", 0.1,
+                )),
+            )
+            stage3_llm_audit = {
+                "mode": stage3_llm_mode,
+                "applied": False,
+                "reason": "ok" if llm_candidate_view is not None else "no_view",
+                "longlists": longlists,
+                "view": (
+                    llm_candidate_view.model_dump()
+                    if llm_candidate_view is not None else None
+                ),
+            }
+
+        candidates = _run_candidate_selection(
+            llm_candidate_view=(
+                llm_candidate_view
+                if stage3_llm_mode == STAGE3_LLM_MODE_LOW_IMPACT
+                else None
+            ),
+        )
+        if (
+            stage3_llm_mode == STAGE3_LLM_MODE_LOW_IMPACT
+            and llm_candidate_view is not None
+        ):
+            stage3_llm_audit["applied"] = True
+        attribution["llm_candidate_overlay"] = stage3_llm_audit
+
+        # Phase 2a — Stage 2 bucket targets (feasible = state; prior = macro view)
         attribution["config"]["bucket_target_stage2"] = {
             **dict(bucket_target.weights),
             "bond_tips_share": bucket_target.bond_tips_share,
         }
+        if research_decision is not None and research_decision.allocation_contract:
+            ac = research_decision.allocation_contract
+            attribution["config"]["bucket_target_prior"] = {
+                **dict(ac.prior_weights),
+                "bond_tips_share": ac.bond_tips_share,
+            }
+            attribution["config"]["binding_stage2"] = dict(ac.binding_stage2)
 
-        # Phase 1 — cash spillover (Stage 2 macro ↔ Stage 3 micro 화해)
-        alpha_scores_by_bucket = _collect_alpha_scores_per_bucket(attribution)
-        spillover_result = adjust_bucket_targets(
-            bucket_target=bucket_target,
-            bucket_chosen=candidates.bucket_to_tickers,
-            alpha_scores_by_bucket=alpha_scores_by_bucket,
-            returns=returns,
-        )
-        bucket_target = spillover_result.adjusted_bucket_target
-        attribution["cash_spillover"] = spillover_result.model_dump()
-        logger.info(
-            "spillover: total_to_cash=%.4f, cap_triggered=%s, overflow_buckets=%s",
-            spillover_result.total_spillover_to_cash,
-            spillover_result.cash_cap_triggered,
-            list(spillover_result.cash_overflow_to_buckets.keys()),
-        )
-        # attribution config 의 bucket_target snapshot 도 update (감사 용이).
-        attribution["config"]["bucket_target"] = dict(bucket_target.weights)
-        attribution["config"]["bond_tips_share"] = bucket_target.bond_tips_share
-
-        # Phase 2a — post-spillover snapshot 도 별도 키로 저장 (audit trail)
-        attribution["config"]["bucket_target_post_spillover"] = dict(
-            attribution["config"]["bucket_target"]
-        )
+        if contract_mode and state.get("alpha_scores_by_bucket"):
+            alpha_scores_by_bucket = {
+                b: dict(scores)
+                for b, scores in state["alpha_scores_by_bucket"].items()
+            }
+        else:
+            alpha_scores_by_bucket = _collect_alpha_scores_per_bucket(attribution)
+        if contract_mode:
+            binding_s2: dict[str, str] = {}
+            prior_for_sync = dict(bucket_target.weights)
+            if research_decision is not None and research_decision.allocation_contract:
+                ac = research_decision.allocation_contract
+                binding_s2 = dict(ac.binding_stage2)
+                prior_for_sync = dict(ac.prior_weights)
+            eligible_sync = state.get("eligible_by_bucket") or eligible_by_bucket
+            try:
+                bucket_target, sync_audit = sync_bucket_target_executed(
+                    bucket_target=bucket_target,
+                    bucket_chosen=candidates.bucket_to_tickers,
+                    alpha_scores_by_bucket=alpha_scores_by_bucket,
+                    prior_weights=prior_for_sync,
+                    binding_stage2=binding_s2,
+                    eligible_by_bucket=eligible_sync,
+                    as_of_date=state.get("as_of_date"),
+                )
+            except BucketSyncError as exc:
+                from tradingagents.reports.philosophy import (
+                    write_failure_philosophy_for_state,
+                )
+                write_failure_philosophy_for_state(state, str(exc))
+                raise
+            attribution["bucket_sync_audit"] = sync_audit
+            attribution["cash_spillover"] = {
+                "skipped": True,
+                "reason": "bucket_sync_contract",
+            }
+            attribution["config"]["bucket_target_executed"] = dict(bucket_target.weights)
+            attribution["config"]["bucket_target"] = dict(bucket_target.weights)
+            attribution["config"]["bond_tips_share"] = bucket_target.bond_tips_share
+            attribution["config"]["contract_mode"] = True
+        else:
+            spill_enabled = bool(_state_config_value(
+                state, "stage3_cash_spillover_enabled", True,
+            ))
+            if spill_enabled:
+                spillover_result = adjust_bucket_targets(
+                    bucket_target=bucket_target,
+                    bucket_chosen=candidates.bucket_to_tickers,
+                    alpha_scores_by_bucket=alpha_scores_by_bucket,
+                    returns=returns,
+                )
+                bucket_target = spillover_result.adjusted_bucket_target
+                attribution["cash_spillover"] = spillover_result.model_dump()
+                logger.info(
+                    "spillover: total_to_cash=%.4f, cap_triggered=%s, overflow_buckets=%s",
+                    spillover_result.total_spillover_to_cash,
+                    spillover_result.cash_cap_triggered,
+                    list(spillover_result.cash_overflow_to_buckets.keys()),
+                )
+                attribution["config"]["bucket_target"] = dict(bucket_target.weights)
+                attribution["config"]["bond_tips_share"] = bucket_target.bond_tips_share
+                attribution["config"]["bucket_target_post_spillover"] = dict(
+                    attribution["config"]["bucket_target"]
+                )
+            else:
+                attribution["cash_spillover"] = {
+                    "skipped": True,
+                    "reason": "config_disabled",
+                }
+            attribution["config"]["contract_mode"] = False
+        if sigma_breakdown:
+            attribution["selection_cov"] = dict(sigma_breakdown)
 
         all_candidates = [
             t for tickers in candidates.bucket_to_tickers.values() for t in tickers
@@ -310,17 +560,42 @@ def create_portfolio_allocator(
                 inputs={"force_method": force_method},
             )
         else:
-            method_choice = pick_optimization_method(
-                regime_quadrant=regime.quadrant if regime else "unknown",
-                regime_confidence=regime.confidence if regime else 0.5,
-                systemic_score=risk_score.score if risk_score else 5.0,
-                systemic_regime=risk_score.regime if risk_score else "neutral",
-                research_decision=research_decision,
-                feedback=feedback_str,
-                degraded_inputs=degraded_inputs,
-                regime_staleness=regime_staleness,
-                systemic_staleness=systemic_staleness,
-            )
+            if contract_mode:
+                fixed_method = str(_state_config_value(
+                    state, "contract_optimizer_method", "hrp",
+                ))
+                method_choice = MethodChoice(
+                    method=OptimizationMethod(fixed_method),
+                    reasoning=(
+                        "allocation_contract: fixed optimizer "
+                        f"({fixed_method})"
+                    ),
+                    rule_fired="contract_fixed_method",
+                    rule_index=-2,
+                    inputs={"contract_optimizer_method": fixed_method},
+                )
+            else:
+                method_choice = pick_optimization_method(
+                    regime_quadrant=regime.quadrant if regime else "unknown",
+                    regime_confidence=regime.confidence if regime else 0.5,
+                    systemic_score=risk_score.score if risk_score else 5.0,
+                    systemic_regime=risk_score.regime if risk_score else "neutral",
+                    research_decision=research_decision,
+                    feedback=feedback_str,
+                    degraded_inputs=degraded_inputs,
+                    regime_staleness=regime_staleness,
+                    systemic_staleness=systemic_staleness,
+                )
+
+        bucket_envelope: dict[str, BucketEnvelope] | None = None
+        bl_bucket_returns: dict[str, float] | None = None
+        theme_limits = []
+        if contract_mode and research_decision is not None:
+            ac = research_decision.allocation_contract
+            bucket_envelope = dict(ac.envelope)
+            if ac.implied_bucket_returns:
+                bl_bucket_returns = dict(ac.implied_bucket_returns)
+            theme_limits = list(ac.theme_limits)
 
         # 4. Optimize WITH bucket-constraints (D12).
         # bond bucket의 sub-bucket(TIPS/nominal) weight 강제 위해 sub_category lookup 전달.
@@ -335,9 +610,13 @@ def create_portfolio_allocator(
             attempts=attempts,
             sub_category_lookup=sub_category_lookup,
             attribution=attribution["optimization"],
-            # Phase 3b: BL views adapter context
             scenario=dominant_scenario,
             regime_confidence=regime.confidence if regime else 0.5,
+            bucket_envelope=bucket_envelope,
+            bl_bucket_returns=bl_bucket_returns,
+            factor_panel=factor_panel if contract_mode else None,
+            cov_factor_proxy_blend=cov_proxy_blend if contract_mode and cov_proxy_on else 0.0,
+            theme_limits=theme_limits,
         )
 
         # Phase 4a — top-level cov_breakdown 노출 (optimization 하위에도 존재)
@@ -353,7 +632,13 @@ def create_portfolio_allocator(
         attribution["enb"] = float(enb_value)
 
         enb_action = "none"
-        if 0 < enb_value < ENB_CRITICAL_THRESHOLD:
+        if contract_mode and 0 < enb_value < ENB_CRITICAL_THRESHOLD:
+            enb_action = "warning_only_contract"
+            logger.warning(
+                "ENB %.2f < %.2f (CRITICAL) — contract mode: warning only, no EW fallback",
+                enb_value, ENB_CRITICAL_THRESHOLD,
+            )
+        elif not contract_mode and 0 < enb_value < ENB_CRITICAL_THRESHOLD:
             n_selected = len(wv.weights)
             if n_selected >= ENB_FALLBACK_MIN_TICKERS:
                 ew_weights = {t: 1.0 / n_selected for t in wv.weights}
@@ -393,6 +678,31 @@ def create_portfolio_allocator(
 
         attribution["enb_action"] = enb_action
 
+        if contract_mode and research_decision is not None:
+            ac = research_decision.allocation_contract
+            unalloc = float(
+                attribution.get("hrp_unallocated_mass")
+                or attribution.get("nco_unallocated_mass")
+                or 0.0
+            )
+            if bool(_state_config_value(state, "stage3_post_hrp_mandate_qp", True)):
+                w_mandate, qp_audit = enforce_stage3_mandate_qp(
+                    wv.weights,
+                    candidates.bucket_to_tickers,
+                    dict(ac.feasible_weights),
+                    unallocated_mass=unalloc,
+                )
+                attribution["stage3_mandate_qp"] = qp_audit
+                if qp_audit.get("triggered"):
+                    wv = wv.model_copy(update={"weights": w_mandate})
+            realized = realized_bucket_weights(
+                wv.weights, candidates.bucket_to_tickers,
+            )
+            attribution["implementation_alignment"] = build_implementation_alignment(
+                ac,
+                realized,
+            )
+
         attribution["method_picker"] = {
             "method":       method_choice.method.value,
             "rule_fired":   method_choice.rule_fired,
@@ -420,10 +730,12 @@ def create_portfolio_allocator(
 
         return {
             "candidate_set": candidates,
+            "bucket_target": bucket_target,
             "weight_vector": wv,
             "method_choice": method_choice,
             "allocation_attribution": attribution,
             "allocation_attempts": attempts + 1,
+            "allocator_retry_skipped": contract_mode,
         }
 
     return node
@@ -432,6 +744,7 @@ def create_portfolio_allocator(
 def _build_sector_mapper_and_bounds(
     candidates, bucket_target, attempts: int,
     sub_category_lookup: dict[str, str | None] | None = None,
+    bucket_envelope: dict[str, BucketEnvelope] | None = None,
 ) -> tuple[dict[str, str], dict[str, float], dict[str, float]]:
     """Map ticker → bucket (or sub-bucket); build (lower, upper) bounds.
 
@@ -504,13 +817,56 @@ def _build_sector_mapper_and_bounds(
         if "bond_nominal" not in sectors_present:
             target_map["bond_tips"] = target_map.pop("bond_nominal") + target_map.get("bond_tips", 0.0)
 
-    if attempts == 0:
-        sector_lower = dict(target_map)
-        sector_upper = dict(target_map)
-    else:
-        band = RETRY_BAND_WIDTH
-        sector_lower = {b: round(max(0.0, w - band), 10) for b, w in target_map.items()}
-        sector_upper = {b: round(min(1.0, w + band), 10) for b, w in target_map.items()}
+    use_envelope = bucket_envelope is not None and len(bucket_envelope) > 0
+
+    def _sector_bounds_for_key(sector_key: str, center: float) -> tuple[float, float]:
+        if not use_envelope:
+            if attempts == 0:
+                return center, center
+            band = RETRY_BAND_WIDTH
+            return (
+                round(max(0.0, center - band), 10),
+                round(min(1.0, center + band), 10),
+            )
+        if sector_key in ("bond_tips", "bond_nominal"):
+            env = bucket_envelope.get("global_duration")
+            if env is None:
+                if attempts == 0:
+                    return center, center
+                band = RETRY_BAND_WIDTH
+                return (
+                    round(max(0.0, center - band), 10),
+                    round(min(1.0, center + band), 10),
+                )
+            tips_share = bucket_target.bond_tips_share
+            if sector_key == "bond_tips":
+                lo, hi = env.lo * tips_share, env.hi * tips_share
+            else:
+                lo = env.lo * (1.0 - tips_share)
+                hi = env.hi * (1.0 - tips_share)
+        else:
+            env = bucket_envelope.get(sector_key)
+            if env is None:
+                if attempts == 0:
+                    return center, center
+                band = RETRY_BAND_WIDTH
+                return (
+                    round(max(0.0, center - band), 10),
+                    round(min(1.0, center + band), 10),
+                )
+            lo, hi = env.lo, env.hi
+        if attempts > 0:
+            band = RETRY_BAND_WIDTH
+            lo = max(0.0, lo - band)
+            hi = min(1.0, hi + band)
+        return round(lo, 10), round(hi, 10)
+
+    sector_lower = {}
+    sector_upper = {}
+    for sector_key, center in target_map.items():
+        lo, hi = _sector_bounds_for_key(sector_key, center)
+        sector_lower[sector_key] = lo
+        sector_upper[sector_key] = hi
 
     return sector_mapper, sector_lower, sector_upper
 
@@ -542,6 +898,11 @@ def _optimize_with_bucket_constraints(
     *,
     scenario: str | None = None,
     regime_confidence: float = 0.5,
+    bucket_envelope: dict[str, BucketEnvelope] | None = None,
+    bl_bucket_returns: dict[str, float] | None = None,
+    factor_panel: pd.DataFrame | dict | None = None,
+    cov_factor_proxy_blend: float = 0.0,
+    theme_limits: list | None = None,
 ) -> tuple[WeightVector, pd.DataFrame]:
     """Optimize with simultaneous (single-cap, bucket sum) constraints.
 
@@ -556,7 +917,13 @@ def _optimize_with_bucket_constraints(
     """
     sector_mapper, sector_lower, sector_upper = _build_sector_mapper_and_bounds(
         candidates, bucket_target, attempts, sub_category_lookup,
+        bucket_envelope=bucket_envelope,
     )
+    if attribution is not None and bucket_envelope:
+        attribution["bucket_envelope_bounds"] = {
+            b: {"lo": sector_lower.get(b), "hi": sector_upper.get(b)}
+            for b in sector_lower
+        }
 
     valid = [t for t in returns.columns if t in sector_mapper]
     returns_raw = returns[valid]
@@ -589,6 +956,12 @@ def _optimize_with_bucket_constraints(
 
     cov_breakdown: dict = {}
     S = compute_robust_cov(returns, breakdown_out=cov_breakdown)
+    if cov_factor_proxy_blend > 0 and factor_panel is not None:
+        S = blend_cov_with_factor_proxy(
+            S, returns, factor_panel,
+            blend=cov_factor_proxy_blend,
+            breakdown_out=cov_breakdown,
+        )
     if attribution is not None:
         attribution["cov_breakdown"] = cov_breakdown
 
@@ -596,6 +969,7 @@ def _optimize_with_bucket_constraints(
         wv = _hrp_per_bucket(
             returns, candidates, bucket_target, sub_category_lookup,
             attribution=attribution,
+            theme_limits=theme_limits,
         )
         sigma_df = S if isinstance(S, pd.DataFrame) else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
         return wv, sigma_df
@@ -628,6 +1002,7 @@ def _optimize_with_bucket_constraints(
                 regime_confidence=regime_confidence,
                 candidates=candidates.bucket_to_tickers,
                 sub_category_lookup=sub_category_lookup,
+                bucket_returns_override=bl_bucket_returns,
                 breakdown_out=bl_breakdown,
             )
             if attribution is not None:
@@ -762,7 +1137,14 @@ def _optimize_with_bucket_constraints(
         f"Optimizer violated {SINGLE_ASSET_CAP*100:.0f}% cap after clip: {violators}"
     )
 
-    constraint_label = "strict bucket equality" if attempts == 0 else "±5%p bucket band"
+    if bucket_envelope:
+        constraint_label = "allocation contract envelope"
+        if attempts > 0:
+            constraint_label += " (retry widened)"
+    else:
+        constraint_label = (
+            "strict bucket equality" if attempts == 0 else "±5%p bucket band"
+        )
     expected_vol = None
     expected_sharpe = None
     try:
@@ -779,10 +1161,21 @@ def _optimize_with_bucket_constraints(
         weights, candidates, sub_category_lookup=sub_category_lookup,
         attribution=attribution,
     )
+    if theme_limits:
+        cash_tickers = list(candidates.bucket_to_tickers.get("cash_mmf") or [])
+        weights, theme_events = apply_theme_portfolio_limits(
+            weights,
+            theme_limits,
+            sub_category_lookup or {},
+            cash_tickers=cash_tickers,
+        )
+        if attribution is not None and theme_events:
+            attribution["theme_limits_applied"] = theme_events
     # 2026-05-26 #2 fix — min weight threshold.
     weights = _apply_min_weight_threshold(
         weights, candidates, attribution=attribution,
     )
+    weights = _normalize_weights_sum(weights)
     sigma_df = S if isinstance(S, pd.DataFrame) else pd.DataFrame(S, index=returns.columns, columns=returns.columns)
     return WeightVector(
         method=method,
@@ -850,11 +1243,24 @@ def _apply_subcategory_cap(
             ]
             others_total = sum(new_weights[t] for t in others)
             if others_total <= 0:
-                logger.debug(
-                    "sub_category cap skip: bucket %s sub_cat %s 가 단독 점유 "
-                    "(redistribute 대상 없음) → cap 미적용",
-                    bucket, sc,
+                excess = sc_sum - cap_value
+                scale = cap_value / sc_sum
+                for t in tickers:
+                    new_weights[t] *= scale
+                cash_tickers = [
+                    t for t in new_weights
+                    if bucket_of.get(t) == "cash_mmf"
+                ]
+                new_weights = redistribute_subcategory_excess_to_cash(
+                    new_weights, tickers, excess, cash_tickers,
                 )
+                capped_subcats.append({
+                    "bucket": bucket, "sub_category": sc,
+                    "original_sum": float(sc_sum),
+                    "capped_to": float(cap_value),
+                    "redistributed_to_cash": bool(cash_tickers),
+                    "degenerate_single_subcat": True,
+                })
                 continue
             # cap 적용 → 비례 축소 + excess 를 다른 sub_cat 자산에 redistribute
             excess = sc_sum - cap_value
@@ -994,6 +1400,7 @@ def _hrp_per_bucket(
     returns: pd.DataFrame, candidates, bucket_target,
     sub_category_lookup: dict[str, str | None] | None = None,
     attribution: dict | None = None,
+    theme_limits: list | None = None,
 ) -> WeightVector:
     """HRP within each bucket × bucket target, with ITERATIVE water-filling cap.
 
@@ -1089,51 +1496,16 @@ def _hrp_per_bucket(
 
             final.update(capped)
 
-    total = sum(final.values())
-    final_norm_intervened = False
-    if total > 0 and abs(total - 1.0) > 1e-9:
-        # Iterative water-filling normalization: distribute 1.0 across all assets
-        # while respecting the SINGLE_ASSET_CAP per-asset cap. 발동되면 bucket
-        # target 일부 미충족 — Stage 3 audit Task 3 가시화 대상.
-        final_norm_intervened = True
-        logger.info(
-            "HRP final normalization: sum=%.6f ≠ 1.0 → water-fill redistribute",
-            total,
-        )
-        target_total = 1.0
-        remaining = target_total
-        normalized: dict[str, float] = {}
-        uncapped = list(final.keys())
-        raw = dict(final)
-        raw_total = sum(raw.values())
-        # Scale proportionally first, then iteratively clip and redistribute.
-        scaled_raw = {t: w / raw_total for t, w in raw.items()}
-        for _ in range(HRP_WATER_FILL_MAX_ITERS):
-            capped_tickers = [t for t in uncapped if scaled_raw[t] >= SINGLE_ASSET_CAP - 1e-9]
-            for t in capped_tickers:
-                normalized[t] = min(scaled_raw[t], SINGLE_ASSET_CAP)
-                uncapped.remove(t)
-            if not capped_tickers:
-                for t in uncapped:
-                    normalized[t] = scaled_raw[t]
-                break
-            free = remaining - sum(normalized.values())
-            if not uncapped or free <= 0:
-                break
-            sub_total = sum(scaled_raw[t] for t in uncapped)
-            if sub_total <= 0:
-                break
-            scaled_raw = {t: scaled_raw[t] / sub_total * free for t in uncapped}
-            remaining = free
-        else:
-            for t in uncapped:
-                normalized[t] = scaled_raw[t]
-        final = normalized
-
+    final, mass_audit = finalize_per_bucket_mass(
+        final,
+        candidates.bucket_to_tickers,
+        target_map,
+        label="hrp",
+    )
     if attribution is not None:
         if bucket_shortfalls:
             attribution["hrp_bucket_shortfalls"] = bucket_shortfalls
-        attribution["hrp_final_norm_intervened"] = final_norm_intervened
+        attribution.update(mass_audit)
 
     violators = [(t, w) for t, w in final.items() if w > SINGLE_ASSET_CAP + 1e-6]
     assert not violators, (
@@ -1149,6 +1521,27 @@ def _hrp_per_bucket(
     final = _apply_min_weight_threshold(
         final, candidates, attribution=attribution,
     )
+    if theme_limits:
+        cash_tickers = list(candidates.bucket_to_tickers.get("cash_mmf") or [])
+        final, theme_events = apply_theme_portfolio_limits(
+            final,
+            theme_limits,
+            sub_category_lookup or {},
+            cash_tickers=cash_tickers,
+        )
+        if attribution is not None and theme_events:
+            attribution["theme_limits_applied"] = theme_events
+    unalloc_hrp = float(
+        (attribution or {}).get("hrp_unallocated_mass", 0.0) or 0.0
+    )
+    if unalloc_hrp > 1e-9:
+        final = place_unallocated_in_cash(
+            final,
+            list(candidates.bucket_to_tickers.get("cash_mmf") or []),
+            unalloc_hrp,
+        )
+    else:
+        final = _normalize_weights_sum(final)
     return WeightVector(
         method=OptimizationMethod.HRP,
         weights=final,
@@ -1270,58 +1663,17 @@ def _nco_per_bucket(
 
             final.update(capped)
 
-    total = sum(final.values())
-    final_norm_intervened = False
-    if total > 0 and abs(total - 1.0) > 1e-9:
-        final_norm_intervened = True
-        logger.info(
-            "NCO final normalization: sum=%.6f ≠ 1.0 → water-fill redistribute",
-            total,
-        )
-        target_total = 1.0
-        remaining = target_total
-        normalized: dict[str, float] = {}
-        uncapped = list(final.keys())
-        raw = dict(final)
-        raw_total = sum(raw.values())
-        scaled_raw = {t: w / raw_total for t, w in raw.items()}
-        for _ in range(HRP_WATER_FILL_MAX_ITERS):
-            capped_tickers = [t for t in uncapped if scaled_raw[t] >= SINGLE_ASSET_CAP - 1e-9]
-            for t in capped_tickers:
-                normalized[t] = min(scaled_raw[t], SINGLE_ASSET_CAP)
-                uncapped.remove(t)
-            if not capped_tickers:
-                for t in uncapped:
-                    normalized[t] = scaled_raw[t]
-                break
-            free = remaining - sum(normalized.values())
-            if not uncapped or free <= 0:
-                break
-            sub_total = sum(scaled_raw[t] for t in uncapped)
-            if sub_total <= 0:
-                break
-            scaled_raw = {t: scaled_raw[t] / sub_total * free for t in uncapped}
-            remaining = free
-        else:
-            for t in uncapped:
-                normalized[t] = scaled_raw[t]
-        final = normalized
-        # Fallback: water-fill exhausted cap slots but sum < 1.0 (all assets capped).
-        # Proportionally scale to 1.0 (cap constraint relaxed when unavoidable).
-        final_sum = sum(final.values())
-        if final_sum > 0 and abs(final_sum - 1.0) > 1e-9:
-            logger.warning(
-                "NCO final normalization: water-fill cap-saturated (sum=%.6f) "
-                "→ proportional rescale to 1.0 (cap relaxed for unavoidable case)",
-                final_sum,
-            )
-            final = {t: w / final_sum for t, w in final.items()}
-            final_norm_intervened = True  # mark for attribution
-
+    final, mass_audit = finalize_per_bucket_mass(
+        final,
+        candidates.bucket_to_tickers,
+        target_map,
+        label="nco",
+    )
+    final_norm_intervened = bool(mass_audit.get("nco_final_norm_intervened"))
     if attribution is not None:
         if bucket_shortfalls:
             attribution["nco_bucket_shortfalls"] = bucket_shortfalls
-        attribution["nco_final_norm_intervened"] = final_norm_intervened
+        attribution.update(mass_audit)
         attribution["nco_breakdown_per_pool"] = nco_breakdown_per_pool
 
     violators = [(t, w) for t, w in final.items() if w > SINGLE_ASSET_CAP + 1e-6]
@@ -1347,6 +1699,17 @@ def _nco_per_bucket(
     final = _apply_min_weight_threshold(
         final, candidates, attribution=attribution,
     )
+    unalloc_nco = float(
+        (attribution or {}).get("nco_unallocated_mass", 0.0) or 0.0
+    )
+    if unalloc_nco > 1e-9:
+        final = place_unallocated_in_cash(
+            final,
+            list(candidates.bucket_to_tickers.get("cash_mmf") or []),
+            unalloc_nco,
+        )
+    else:
+        final = _normalize_weights_sum(final)
     return WeightVector(
         method=OptimizationMethod.NCO,
         weights=final,

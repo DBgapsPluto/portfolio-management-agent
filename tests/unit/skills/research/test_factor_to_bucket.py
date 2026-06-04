@@ -12,6 +12,7 @@ import math
 
 import pytest
 
+from tradingagents.skills.research.bucket_anchors import blend_bucket_anchors
 from tradingagents.skills.research.factor_to_bucket import (
     BUCKETS,
     FACTORS,
@@ -21,10 +22,14 @@ from tradingagents.skills.research.factor_to_bucket import (
     INITIAL_TIPS_BETA,
     MANDATE_RISK_CAP,
     PER_FACTOR_BUCKET_CONTRIB_CAP,
+    PER_FACTOR_TILT_CONTRIB_CAP,
     RISK_BUCKETS,
     SIGN_RESTRICTION,
+    TILT_BETA_SCALE,
+    apply_anchor_tilt_model_with_safety,
     apply_factor_model,
     apply_factor_model_with_safety,
+    apply_factor_tilt,
 )
 
 
@@ -55,6 +60,37 @@ def test_initial_baseline_sums_to_one():
 def test_initial_baseline_satisfies_mandate():
     risk = sum(INITIAL_BASELINE[b] for b in RISK_BUCKETS)
     assert risk <= 0.70
+
+
+def test_initial_baseline_is_2026_strategic_anchor():
+    assert INITIAL_BASELINE == {
+        "kr_equity": 0.14,
+        "global_equity": 0.19,
+        "precious_metals": 0.10,
+        "cyclical_commodity_fx": 0.11,
+        "kr_bond": 0.16,
+        "credit": 0.05,
+        "global_duration": 0.14,
+        "cash_mmf": 0.11,
+    }
+    assert math.isclose(
+        sum(INITIAL_BASELINE[b] for b in RISK_BUCKETS),
+        0.54,
+        abs_tol=1e-12,
+    )
+
+
+def test_initial_beta_rows_sum_to_zero_for_strategic_prior():
+    for f in FACTORS:
+        row_sum = sum(INITIAL_BETA.get((f, b), 0.0) for b in BUCKETS)
+        assert math.isclose(row_sum, 0.0, abs_tol=1e-12), f"{f}: row sum {row_sum}"
+
+
+def test_micro_factor_beta_rows_are_compressed_stage2_nudges():
+    assert abs(INITIAL_BETA[("F7_equity_vol_regime", "cash_mmf")]) <= 0.05
+    assert abs(INITIAL_BETA[("F8_valuation", "global_equity")]) <= 0.03
+    assert abs(INITIAL_BETA[("F9_market_dispersion", "cash_mmf")]) <= 0.05
+    assert abs(INITIAL_BETA[("F11_earnings_revision", "cash_mmf")]) <= 0.03
 
 
 # ---------------------------------------------------------------------------
@@ -280,12 +316,12 @@ def test_risk_buckets_subset():
     assert all(b in BUCKETS for b in RISK_BUCKETS)
 
 
-def test_initial_baseline_option_c_57pct_risk():
+def test_initial_baseline_2026_anchor_54pct_risk():
     assert abs(sum(INITIAL_BASELINE.values()) - 1.0) < 1e-9
     risk_sum = sum(INITIAL_BASELINE[b] for b in RISK_BUCKETS)
-    assert abs(risk_sum - 0.57) < 1e-9
+    assert abs(risk_sum - 0.54) < 1e-9
     safe_sum = sum(INITIAL_BASELINE[b] for b in BUCKETS if b not in RISK_BUCKETS)
-    assert abs(safe_sum - 0.43) < 1e-9
+    assert abs(safe_sum - 0.46) < 1e-9
     assert MANDATE_RISK_CAP == 0.70
 
 
@@ -424,3 +460,28 @@ def test_load_calibrated_beta_picks_latest_date(tmp_path):
         (d / "calibrated_beta.json").write_text(json.dumps({"F1_growth|kr_equity": val}))
     beta = load_calibrated_beta(tmp_path)
     assert beta[("F1_growth", "kr_equity")] == 0.09  # latest date wins (sorted)
+
+
+def test_apply_factor_tilt_starts_from_zero():
+    tilt, tips_tilt, _contribs = apply_factor_tilt(_zero_z())
+    for b in BUCKETS:
+        assert math.isclose(tilt[b], 0.0, abs_tol=1e-12)
+    assert math.isclose(tips_tilt, 0.0, abs_tol=1e-12)
+
+
+def test_tilt_beta_is_scaled_initial_beta():
+    from tradingagents.skills.research.factor_to_bucket import TILT_BETA
+    for (f, b), v in INITIAL_BETA.items():
+        assert math.isclose(TILT_BETA[(f, b)], v * TILT_BETA_SCALE, abs_tol=1e-12)
+
+
+def test_anchor_tilt_zero_z_uses_anchor_not_baseline():
+    anchor = blend_bucket_anchors("growth_disinflation", "goldilocks")
+    bucket, _, _, diag = apply_anchor_tilt_model_with_safety(_zero_z(), anchor)
+    for b in BUCKETS:
+        assert abs(bucket[b] - anchor[b]) < 1e-6
+    assert diag["stage2_mode"] == "anchor_covenant_tilt"
+
+
+def test_tilt_cap_smaller_than_legacy_cap():
+    assert PER_FACTOR_TILT_CONTRIB_CAP < PER_FACTOR_BUCKET_CONTRIB_CAP

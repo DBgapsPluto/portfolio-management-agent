@@ -1,4 +1,5 @@
 """Tier-1 extended indicators — Bollinger / ADX / Stochastic / Volume / Divergence / Weekly."""
+import warnings
 from typing import Literal
 
 import numpy as np
@@ -99,7 +100,8 @@ def compute_extended_indicators(
     close = sub["close"].astype(float)
     high = sub["high"].astype(float)
     low = sub["low"].astype(float)
-    volume = sub["volume"].astype(float)
+    # float64: pandas-ta MFI/OBV warn and slow down on int64 volume (FutureWarning spam).
+    volume = pd.to_numeric(sub["volume"], errors="coerce").astype(np.float64)
 
     bb = ta.bbands(close, length=20, std=2.0)
     bb_lower = float(bb.iloc[-1, 0])
@@ -119,7 +121,10 @@ def compute_extended_indicators(
     obv_val = float(obv_series.iloc[-1])
     obv_slope = _obv_slope(obv_series, window=20)
 
-    mfi_val = _clamp_bounded(float(ta.mfi(high, low, close, volume, length=14).iloc[-1]), "mfi")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=FutureWarning)
+        mfi_series = ta.mfi(high, low, close, volume, length=14)
+    mfi_val = _clamp_bounded(float(mfi_series.iloc[-1]), "mfi")
 
     rsi_series = ta.rsi(close, length=14)
     macd_df = ta.macd(close, fast=12, slow=26, signal=9)

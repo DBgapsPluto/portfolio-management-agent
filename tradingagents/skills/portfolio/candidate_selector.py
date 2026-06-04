@@ -11,6 +11,7 @@ from tradingagents.dataflows.etf_metrics import (
 )
 from tradingagents.dataflows.krx_openapi import KRXOpenAPIError
 from tradingagents.dataflows.universe import Universe
+from tradingagents.schemas.llm_overlay import Stage3CandidateBoostView
 from tradingagents.schemas.portfolio import BucketTarget, CandidateSet
 from tradingagents.schemas.technical import ETFRanking
 from tradingagents.skills.portfolio.factor_scorer import (
@@ -31,6 +32,64 @@ logger = logging.getLogger(__name__)
 # substitute (예: KOSPI200 = 암묵적 반도체) 잘 선정함이 확인되어 원복.
 # 필요 시 파라미터로 0.5 등 조정 가능.
 DEFAULT_BOOST_SCALE: float = 1.0
+DEFAULT_LLM_CANDIDATE_BOOST_CAP: float = 0.08
+
+
+def apply_llm_candidate_boost(
+    *,
+    alpha_scores: dict[str, float],
+    ticker_to_sub_category: dict[str, str | None],
+    llm_candidate_view: Stage3CandidateBoostView | None,
+    allowed_tickers: set[str],
+    boost_cap: float = DEFAULT_LLM_CANDIDATE_BOOST_CAP,
+) -> tuple[dict[str, float], dict[str, dict]]:
+    """Apply bounded LLM narrative boost to candidate alpha scores.
+
+    This is score-only. It cannot add unsupported tickers and cannot turn a
+    non-positive quant alpha into a positive alpha eligible for selection.
+    """
+    if llm_candidate_view is None:
+        return dict(alpha_scores), {}
+
+    cap = max(0.0, float(boost_cap))
+    confidence = max(0.0, min(1.0, float(llm_candidate_view.confidence)))
+    allowed_boosts = llm_candidate_view.filtered_ticker_boosts(allowed_tickers)
+    boosted = dict(alpha_scores)
+    audit: dict[str, dict] = {}
+
+    for ticker in allowed_tickers:
+        if ticker not in boosted:
+            continue
+        ticker_dir = allowed_boosts.get(ticker, 0.0)
+        sub_category = ticker_to_sub_category.get(ticker)
+        sub_dir = (
+            llm_candidate_view.subcategory_boosts.get(sub_category, 0.0)
+            if sub_category else 0.0
+        )
+        if ticker_dir == 0.0 and sub_dir == 0.0:
+            continue
+        raw_direction = ticker_dir + sub_dir
+        raw_boost = confidence * cap * raw_direction
+        clipped_boost = float(max(-cap, min(cap, raw_boost)))
+        original = boosted[ticker]
+        candidate_score = original + clipped_boost
+        crossed_positive = original <= 0.0 < candidate_score
+        if crossed_positive:
+            candidate_score = 0.0
+        boosted[ticker] = candidate_score
+        audit[ticker] = {
+            "original_score": original,
+            "ticker_direction": ticker_dir,
+            "subcategory": sub_category,
+            "subcategory_direction": sub_dir,
+            "confidence": confidence,
+            "raw_boost": raw_boost,
+            "clipped_boost": clipped_boost,
+            "final_score": candidate_score,
+            "crossed_positive_alpha": crossed_positive,
+        }
+
+    return boosted, audit
 
 
 
@@ -67,6 +126,64 @@ def list_eligible_tickers(
     return out
 
 
+def build_quant_longlists_for_llm(
+    universe: Universe,
+    bucket_target: BucketTarget,
+    as_of: date,
+    *,
+    returns: pd.DataFrame,
+    factor_panel: dict[str, FactorPanel],
+    max_per_bucket: int = 8,
+    regime_quadrant: str | None = None,
+    regime_confidence: float = 0.5,
+    dominant_scenario: str | None = None,
+    factor_scores: dict[str, float] | None = None,
+    risk_adjusted: dict | None = None,
+    trend_quant: dict | None = None,
+    extended: dict | None = None,
+    etf_states: dict | None = None,
+) -> dict[str, list[dict]]:
+    """Quant-ranked longlists for Stage 3 LLM (no ENB selection — single-pass allocator)."""
+    universe = universe.tradable_at(as_of)
+    aum_lookup = {e.ticker: e.aum_krw for e in universe.etfs}
+    out: dict[str, list[dict]] = {}
+    for bucket_name, weight in bucket_target.items():
+        if bucket_name == "bond_tips_share" or weight <= 0:
+            continue
+        eligible = _eligible_for_bucket(universe, bucket_name)
+        if not eligible:
+            continue
+        alpha_scores, _panels = _compute_alpha_scores(
+            eligible,
+            returns,
+            aum_lookup,
+            regime_quadrant,
+            regime_confidence,
+            precomputed_panel=factor_panel,
+            dominant_scenario=dominant_scenario,
+            factor_scores=factor_scores,
+            risk_adjusted=risk_adjusted,
+            trend_quant=trend_quant,
+            extended=extended,
+            etf_states=etf_states,
+        )
+        ranked = sorted(
+            alpha_scores.keys(), key=lambda t: alpha_scores[t], reverse=True,
+        )
+        sub_lookup = {e.ticker: e.sub_category for e in eligible}
+        rows = []
+        for ticker in ranked[:max_per_bucket]:
+            rows.append({
+                "ticker": ticker,
+                "sub_category": sub_lookup.get(ticker),
+                "alpha_score": alpha_scores.get(ticker),
+                "impl_score": None,
+            })
+        if rows:
+            out[bucket_name] = rows
+    return out
+
+
 @register_skill(name="select_etf_candidates", category="portfolio")
 def select_etf_candidates(
     universe: Universe,
@@ -91,7 +208,10 @@ def select_etf_candidates(
     etf_states: dict | None = None,
     clusters: list | None = None,
     factor_scores: dict[str, float] | None = None,
+    llm_candidate_view: Stage3CandidateBoostView | None = None,
+    llm_candidate_boost_cap: float = DEFAULT_LLM_CANDIDATE_BOOST_CAP,
     require_positive_alpha: bool = True,
+    precomputed_alpha_scores_by_bucket: dict[str, dict[str, float]] | None = None,
 ) -> CandidateSet:
     """Filter universe by bucket target, then multi-factor rank + corr de-dup.
 
@@ -189,6 +309,8 @@ def select_etf_candidates(
             "correlation_threshold": correlation_threshold,
             "longlist_multiplier":   longlist_multiplier,
         })
+        if precomputed_alpha_scores_by_bucket is not None:
+            attribution["config"]["alpha_source"] = "stage2_precomputed"
         attribution["buckets"] = {}
 
     # Iterate over all 8 buckets from the BucketTarget dict.
@@ -242,18 +364,32 @@ def select_etf_candidates(
             )
         else:
             rank_break: dict | None = {} if bucket_attr is not None else None
-            alpha_scores, panels_for_impl = _compute_alpha_scores(
-                eligible, returns, aum_lookup,
-                regime_quadrant, regime_confidence,
-                precomputed_panel=factor_panel,
-                dominant_scenario=dominant_scenario,
-                breakdown_out=rank_break,
-                normalization=normalization,
-                boost_scale=boost_scale,
-                risk_adjusted=risk_adjusted, trend_quant=trend_quant,
-                extended=extended, etf_states=etf_states,
-                factor_scores=factor_scores,
-            )
+            if precomputed_alpha_scores_by_bucket is not None:
+                bucket_pre = precomputed_alpha_scores_by_bucket.get(bucket_name) or {}
+                eligible_tickers = [e.ticker for e in eligible]
+                alpha_scores = {
+                    t: float(bucket_pre.get(t, 0.0)) for t in eligible_tickers
+                }
+                panels_for_impl = _build_panels(
+                    eligible, returns, aum_lookup, factor_panel,
+                )
+                if bucket_attr is not None:
+                    bucket_attr["alpha_source"] = "stage2_precomputed"
+            else:
+                alpha_scores, panels_for_impl = _compute_alpha_scores(
+                    eligible, returns, aum_lookup,
+                    regime_quadrant, regime_confidence,
+                    precomputed_panel=factor_panel,
+                    dominant_scenario=dominant_scenario,
+                    breakdown_out=rank_break,
+                    normalization=normalization,
+                    boost_scale=boost_scale,
+                    risk_adjusted=risk_adjusted, trend_quant=trend_quant,
+                    extended=extended, etf_states=etf_states,
+                    factor_scores=factor_scores,
+                    llm_candidate_view=llm_candidate_view,
+                    llm_candidate_boost_cap=llm_candidate_boost_cap,
+                )
             impl_scores = compute_impl_score(
                 panels_for_impl,
                 normalization=normalization,
@@ -463,6 +599,8 @@ def _compute_alpha_scores(
     extended: dict | None = None,
     etf_states: dict | None = None,
     factor_scores: dict[str, float] | None = None,
+    llm_candidate_view: Stage3CandidateBoostView | None = None,
+    llm_candidate_boost_cap: float = DEFAULT_LLM_CANDIDATE_BOOST_CAP,
 ) -> tuple[dict[str, float], dict[str, FactorPanel]]:
     """alpha scores dict + panel dict 반환. scenario boost 가산 포함."""
     panels = _build_panels(eligible, returns, aum_lookup, precomputed_panel)
@@ -530,6 +668,20 @@ def _compute_alpha_scores(
                     "boost": float(macro_align_boost),
                 }
             breakdown[ticker]["final_score"] = scores[ticker]
+
+    scores, llm_boost_audit = apply_llm_candidate_boost(
+        alpha_scores=scores,
+        ticker_to_sub_category=sub_cat_lookup,
+        llm_candidate_view=llm_candidate_view,
+        allowed_tickers=set(scores),
+        boost_cap=llm_candidate_boost_cap,
+    )
+    if llm_boost_audit and breakdown_out is not None:
+        breakdown_out["llm_candidate_boost"] = llm_boost_audit
+        for ticker, audit in llm_boost_audit.items():
+            if ticker in breakdown:
+                breakdown[ticker]["llm_candidate_boost"] = audit
+                breakdown[ticker]["final_score"] = scores[ticker]
 
     if breakdown_out is not None:
         breakdown_out["regime_weights"] = regime_weights

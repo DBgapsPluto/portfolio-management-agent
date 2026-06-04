@@ -57,7 +57,7 @@ def build_main_graph(preset, node_factory):
             "fallback": "fallback",
         },
     )
-    sg.add_edge("fallback", "portfolio_manager")
+    sg.add_edge("fallback", "validator")
     sg.add_edge("portfolio_manager", END)
 
     return sg.compile()

@@ -34,9 +34,22 @@ from tradingagents.observability.overlay_stats import record_overlay_outcome
 from tradingagents.schemas.risk_overlay import RiskOverlay
 from tradingagents.skills.portfolio.returns_matrix import fetch_returns_matrix
 from tradingagents.skills.risk.portfolio_metrics import compute_portfolio_numerics
+from tradingagents.skills.portfolio.contract_stage3 import (
+    clip_overlay_bucket_risk,
+    contract_stage3_active,
+)
 from tradingagents.skills.risk.severity_aggregator import aggregate_lens_concerns
+from tradingagents.skills.mandate.correlation_check import DEFAULT_CLUSTER_CAP
+from tradingagents.default_config import DEFAULT_CONFIG
 
 logger = logging.getLogger(__name__)
+
+
+def _state_config(state: dict, key: str, default):
+    config = state.get("config")
+    if isinstance(config, dict) and key in config:
+        return config[key]
+    return DEFAULT_CONFIG.get(key, default)
 
 
 # Stage 4 audit (2026-05-26, Task 0): Stage 1 sentinel marker.
@@ -95,6 +108,49 @@ def _extract_risk_signals(risk_report) -> dict:
         "funding_staleness": funding_stale,
         "all_degraded": all_degraded,
     }
+
+
+def _mandate_overlay_cap(state: dict) -> float:
+    cap = float(
+        _state_config(state, "mandate_cluster_overlay_cap", DEFAULT_CLUSTER_CAP),
+    )
+    margin = float(_state_config(state, "mandate_cluster_overlay_cap_margin", 1e-4))
+    return max(0.0, cap - margin)
+
+
+def _supplement_mandate_cluster_overlay(
+    overlay: RiskOverlay,
+    numerics,
+    state: dict,
+) -> RiskOverlay:
+    """Fill cluster_caps when numerics exceed mandate cap but lenses left overlay empty."""
+    if not bool(_state_config(state, "mandate_cluster_overlay_repair", False)):
+        return overlay
+    cap = _mandate_overlay_cap(state)
+    caps = dict(overlay.cluster_caps)
+    repairs: list[str] = []
+    for cid, exposure in (numerics.cluster_exposure or {}).items():
+        if exposure <= cap + 1e-6:
+            continue
+        prev = caps.get(cid)
+        caps[cid] = cap if prev is None else min(prev, cap)
+        repairs.append(f"{cid}:{exposure:.1%}->{cap:.1%}")
+    if not repairs:
+        return overlay
+    decision = overlay.severity_decision[:120]
+    decision = f"{decision}; mandate_cluster_repair[{', '.join(repairs[:3])}]"[:200]
+    strength = overlay.strength_applied if overlay.strength_applied > 0 else 1.0
+    logger.info(
+        "risk_judge: mandate_cluster_overlay_repair → %d cluster cap(s) at %.4f",
+        len(repairs), cap,
+    )
+    return overlay.model_copy(
+        update={
+            "cluster_caps": caps,
+            "strength_applied": strength,
+            "severity_decision": decision,
+        },
+    )
 
 
 def create_risk_judge(
@@ -205,67 +261,57 @@ def create_risk_judge(
         # 호출 시 silent 잘못된 overlay 산출 위험. Stage 3 audit Task 0 이 이미
         # degraded_inputs 시 MIN_VARIANCE 강제했으므로, Stage 4 는 추가 overlay
         # 안 만드는 게 보수적 (empty overlay = Stage 3 결과 보존).
-        if risk_signals["all_degraded"]:
-            logger.warning(
-                "risk_judge: risk_signals 모두 sentinel "
-                "(systemic_stale=%s, vix_stale=%s, funding_stale=%s) → "
-                "lens 호출 skip + empty overlay (Stage 3 결과 보존)",
-                risk_signals["systemic_staleness"],
-                risk_signals["vix_term_staleness"],
-                risk_signals["funding_staleness"],
-            )
-            overlay = RiskOverlay.no_concerns(as_of_date=as_of)
-            rj_attribution["skipped"] = "risk_signals_degraded"
-            rj_attribution["risk_signal_staleness"] = {
-                "systemic": risk_signals["systemic_staleness"],
-                "vix_term": risk_signals["vix_term_staleness"],
-                "funding": risk_signals["funding_staleness"],
-            }
-            return {
-                "weight_vector": weight_vector_1,
-                "risk_overlay": overlay,
-                "portfolio_numerics": numerics,
-                "risk_judge_attribution": rj_attribution,
-                "risk_debate_summary": (
-                    "## Risk Overlay\n"
-                    "**risk_signals_degraded**: Stage 1 risk_report 의 systemic / "
-                    "vix_term / funding_stress 모두 sentinel (staleness≥99)\n"
-                    "→ lens skip, empty overlay (Stage 3 결과 보존)\n"
-                    f"Strength applied: 0.00\n"
-                )[:2000],
-            }
-
-        # Stage 4 audit Task 1: lens 호출 전 input snapshot.
         rj_attribution["risk_signal_staleness"] = {
             "systemic": risk_signals["systemic_staleness"],
             "vix_term": risk_signals["vix_term_staleness"],
             "funding": risk_signals["funding_staleness"],
         }
 
-        # 4. 3 lens 호출
-        tail_concern = run_tail_risk_lens(
-            numerics,
-            systemic_score=risk_signals["systemic_score"],
-            vix_term_regime=risk_signals["vix_term_regime"],
-            funding_regime=risk_signals["funding_regime"],
-        )
-        conc_concern = run_concentration_lens(numerics, weight_vector_1)
-        macro_concern = run_macro_conditional_lens(
-            weight_vector_1, candidate_set,
-            research_decision=research_decision,
-            systemic_score=risk_signals["systemic_score"],
-            regime_quadrant=regime_quadrant,
-        )
-
-        concerns = [tail_concern, conc_concern, macro_concern]
-        for c in concerns:
-            logger.info(
-                "lens %s → level=%s, evidence: %s",
-                c.lens, c.level, c.evidence[:120],
+        if risk_signals["all_degraded"]:
+            logger.warning(
+                "risk_judge: risk_signals 모두 sentinel "
+                "(systemic_stale=%s, vix_stale=%s, funding_stale=%s) → "
+                "lens skip; mandate_cluster_overlay_repair may still apply",
+                risk_signals["systemic_staleness"],
+                risk_signals["vix_term_staleness"],
+                risk_signals["funding_staleness"],
             )
+            overlay = RiskOverlay.no_concerns(as_of_date=as_of)
+            rj_attribution["skipped"] = "risk_signals_degraded"
+            concerns: list = []
+        else:
+            # 4. 3 lens 호출
+            tail_concern = run_tail_risk_lens(
+                numerics,
+                systemic_score=risk_signals["systemic_score"],
+                vix_term_regime=risk_signals["vix_term_regime"],
+                funding_regime=risk_signals["funding_regime"],
+            )
+            conc_concern = run_concentration_lens(numerics, weight_vector_1)
+            macro_concern = run_macro_conditional_lens(
+                weight_vector_1, candidate_set,
+                research_decision=research_decision,
+                systemic_score=risk_signals["systemic_score"],
+                regime_quadrant=regime_quadrant,
+            )
+            concerns = [tail_concern, conc_concern, macro_concern]
+        if concerns:
+            for c in concerns:
+                logger.info(
+                    "lens %s → level=%s, evidence: %s",
+                    c.lens, c.level, c.evidence[:120],
+                )
+            overlay = aggregate_lens_concerns(concerns, as_of_date=as_of)
+            rj_attribution["lens_concerns"] = [
+                {
+                    "lens": c.lens,
+                    "level": c.level,
+                    "evidence": c.evidence[:200],
+                }
+                for c in concerns
+            ]
 
-        # 5. severity-gated 합의
-        overlay = aggregate_lens_concerns(concerns, as_of_date=as_of)
+        overlay = _supplement_mandate_cluster_overlay(overlay, numerics, state)
         logger.info(
             "severity_aggregator: strength=%.2f, multiplier=%.2f, "
             "ceilings=%d, cluster_caps=%d, decision: %s",
@@ -274,18 +320,10 @@ def create_risk_judge(
             overlay.severity_decision[:120],
         )
 
-        # Stage 4 audit Task 1: lens 결과 + aggregate 결과 attribution.
-        rj_attribution["lens_concerns"] = [
-            {
-                "lens": c.lens,
-                "level": c.level,
-                "evidence": c.evidence[:200],
-            }
-            for c in concerns
-        ]
         rj_attribution["strength_applied"] = overlay.strength_applied
         rj_attribution["severity_decision"] = overlay.severity_decision
         rj_attribution["multiplier"] = overlay.risk_asset_multiplier
+        rj_attribution["mandate_cluster_caps"] = dict(overlay.cluster_caps)
 
         # 6. overlay 적용 (empty면 1차 그대로) + outcome 기록 (Stage 3 Task 4 의
         # overlay attribution 도 함께 채워짐).
@@ -296,16 +334,46 @@ def create_risk_judge(
             attribution=rj_attribution,
         )
         overlay = overlay.model_copy(update={"overlay_apply_outcome": outcome})
+
+        rd = state.get("research_decision")
+        contract_on = contract_stage3_active(
+            rd,
+            allocation_contract_enabled=bool(
+                _state_config(state, "allocation_contract_enabled", True),
+            ),
+        )
+        if contract_on and bool(_state_config(state, "contract_overlay_risk_clip", True)):
+            clipped, clip_audit = clip_overlay_bucket_risk(
+                weight_vector_2.weights,
+                candidate_set.bucket_to_tickers,
+            )
+            if clip_audit.get("clip_applied"):
+                weight_vector_2 = weight_vector_2.model_copy(
+                    update={"weights": clipped},
+                )
+                rj_attribution["overlay_risk_clip"] = clip_audit
+                logger.info(
+                    "overlay risk clip: %.4f → %.4f",
+                    clip_audit.get("risk_sum_pre_clip"),
+                    clip_audit.get("risk_sum_post_clip"),
+                )
+
+        numerics = compute_portfolio_numerics(
+            weight_vector_2, returns, clusters=clusters,
+        )
+
         logger.info(
-            "risk_judge complete: outcome=%s, weight_changed=%s",
+            "risk_judge complete: outcome=%s, weight_changed=%s, "
+            "max_cluster=%.3f",
             outcome, weight_vector_2.weights != weight_vector_1.weights,
+            numerics.max_cluster_exposure,
         )
 
         # Summary
         lens_str = "\n".join(
             f"  {c.lens}: {c.level} — {c.evidence[:120]}"
             for c in concerns
-        )
+        ) if concerns else "  (lens skipped — degraded signals)"
         weight_changed = weight_vector_2.weights != weight_vector_1.weights
         summary = (
             f"## Risk Overlay\n"

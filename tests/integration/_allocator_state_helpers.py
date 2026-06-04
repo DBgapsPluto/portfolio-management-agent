@@ -13,7 +13,9 @@ import pandas as pd
 
 from tradingagents.dataflows.universe import ETFEntry, Universe
 from tradingagents.schemas.portfolio import BucketTarget
+from tradingagents.skills.portfolio.candidate_selector import list_eligible_tickers
 from tradingagents.skills.portfolio.factor_scorer import FactorPanel
+from tradingagents.skills.research.factor_to_bucket import BUCKETS
 
 
 # bucket → (universe category, risk_label, sub_category) for synthetic ETFs.
@@ -141,6 +143,78 @@ def make_research_decision(
         factor_contributions={},
         baseline_bucket={},
         safety_diagnostics={},
+    )
+
+
+def make_positive_alpha_by_bucket(
+    universe: Universe,
+    bucket_target: BucketTarget,
+    as_of: date,
+    *,
+    alpha: float = 0.05,
+) -> tuple[dict[str, list[str]], dict[str, dict[str, float]]]:
+    """Eligible tickers + uniform positive alpha (Stage 2 contract integration)."""
+    eligible = list_eligible_tickers(universe, bucket_target, as_of=as_of)
+    scores = {
+        b: {t: alpha for t in eligible.get(b, [])}
+        for b in BUCKETS
+    }
+    return eligible, scores
+
+
+def patch_contract_alpha_probe(monkeypatch, universe: Universe):
+    """Research manager contract path: ensure n_selectable > 0 in integration tests."""
+
+    def _fake_probe(universe_arg, bucket_target, as_of, **kwargs):
+        return make_positive_alpha_by_bucket(universe_arg, bucket_target, as_of)
+
+    monkeypatch.setattr(
+        "tradingagents.agents.managers.research_manager.compute_alpha_scores_for_eligible",
+        _fake_probe,
+    )
+
+
+def make_research_decision_with_contract(
+    universe: Universe,
+    *,
+    as_of: date | None = None,
+    conviction: str = "medium",
+    dominant_scenario: str = "goldilocks",
+    bucket_target: BucketTarget | None = None,
+    factor_contributions: dict | None = None,
+):
+    """ResearchDecision with AllocationContract (Stage 3 contract path)."""
+    from tradingagents.schemas.research import ResearchDecision
+    from tradingagents.skills.research.allocation_contract import build_allocation_contract
+
+    bt = bucket_target or make_bucket_target()
+    prior = dict(bt.weights)
+    as_of_val = as_of or date(2026, 5, 28)
+    eligible, alpha_by_bucket = make_positive_alpha_by_bucket(universe, bt, as_of_val)
+    contract = build_allocation_contract(
+        prior_weights=prior,
+        bond_tips_share=bt.bond_tips_share,
+        universe=universe,
+        as_of=as_of_val,
+        factor_contributions=factor_contributions or {"F1_growth": {b: 0.01 for b in prior}},
+        config={"contract_single_etf_cap": 0.20, "contract_envelope_band_pp": 0.02},
+        eligible_by_bucket=eligible,
+        alpha_scores_by_bucket=alpha_by_bucket,
+    )
+    feasible_bt = BucketTarget(
+        weights=dict(contract.feasible_weights),
+        bond_tips_share=contract.bond_tips_share,
+        rationale=bt.rationale,
+    )
+    return ResearchDecision(
+        bucket_target=feasible_bt,
+        conviction=conviction,
+        dominant_scenario=dominant_scenario,
+        factor_scores={},
+        factor_contributions=factor_contributions or {},
+        baseline_bucket={},
+        safety_diagnostics={},
+        allocation_contract=contract,
     )
 
 

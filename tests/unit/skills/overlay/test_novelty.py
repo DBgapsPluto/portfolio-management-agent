@@ -16,6 +16,19 @@ def test_compute_novelty_returns_zero_when_no_history(tmp_path, monkeypatch):
     assert compute_novelty(nr, date(2026, 6, 1)) == 0.0
 
 
+def test_compute_novelty_uses_bootstrap_when_history_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr("tradingagents.skills.overlay.novelty.SALIENCE_HISTORY_PATH",
+                        tmp_path / "salience.parquet")
+    nr = MagicMock()
+    nr.release_surprise.high_importance_today = 100
+    nr.news_sentiment.avg_sentiment.macro = 1.0
+
+    novelty = compute_novelty(nr, date(2026, 6, 1))
+
+    assert 0.0 <= novelty <= 1.0
+    assert novelty > 0.0
+
+
 def test_compute_novelty_none_report_zero():
     assert compute_novelty(None, date(2026, 6, 1)) == 0.0
 

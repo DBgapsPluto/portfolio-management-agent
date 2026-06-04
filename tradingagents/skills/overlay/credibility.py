@@ -12,11 +12,14 @@ from pathlib import Path
 from typing import Final
 
 from tradingagents.schemas.llm_overlay import CredibilityState
+from tradingagents.skills.research.factor_to_bucket import BUCKETS
 
 logger = logging.getLogger(__name__)
 
 CRED_PATH: Final[Path] = Path("data/llm_overlay/credibility.json")
 COLD_START_PRIOR: Final[float] = 0.3
+BOOTSTRAP_CREDIBILITY_PRIOR: Final[float] = 0.45
+BOOTSTRAP_HISTORY_COUNT: Final[int] = 8
 EWMA_ALPHA: Final[float] = 0.1
 MIN_SIGNAL_THRESHOLD: Final[float] = 0.005
 
@@ -40,7 +43,11 @@ def update_credibility(state: CredibilityState, bucket: str,
 
 def load_credibility() -> CredibilityState:
     if not CRED_PATH.exists():
-        return CredibilityState(bucket_cred={}, history_count=0, last_updated=date.today())
+        return CredibilityState(
+            bucket_cred={b: BOOTSTRAP_CREDIBILITY_PRIOR for b in BUCKETS},
+            history_count=BOOTSTRAP_HISTORY_COUNT,
+            last_updated=date.today(),
+        )
     data = json.loads(CRED_PATH.read_text())
     return CredibilityState(
         bucket_cred=data.get("bucket_cred", {}),
@@ -58,5 +65,8 @@ def save_credibility(state: CredibilityState) -> None:
     }, indent=2))
 
 
-__all__ = ["get_credibility", "update_credibility", "load_credibility", "save_credibility",
-           "COLD_START_PRIOR", "EWMA_ALPHA", "CRED_PATH"]
+__all__ = [
+    "get_credibility", "update_credibility", "load_credibility", "save_credibility",
+    "COLD_START_PRIOR", "BOOTSTRAP_CREDIBILITY_PRIOR", "BOOTSTRAP_HISTORY_COUNT",
+    "EWMA_ALPHA", "CRED_PATH",
+]
