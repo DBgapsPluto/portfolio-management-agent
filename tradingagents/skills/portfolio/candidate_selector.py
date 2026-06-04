@@ -117,21 +117,41 @@ def select_representative_candidates(
     underlying_index: dict[str, str],
     bucket_weight: float,
     capital_krw: float,
+    name: dict[str, str] | None = None,
+    quadrant: str | None = None,
+    dominant_scenario: str | None = None,
     trace: dict | None = None,
 ) -> list[str]:
     """버킷 내 대표 운반체 선정 (결정론).
 
-    core 우선 → AUM → index dedup → **N = min(n_floor, core distinct)**(버킷당 대표 최소;
-    단일-20% 강제 시 thematic 보충). 같은-버킷 broad ETF 는 상관성이 높아 adaptive
-    다양화는 이득이 작으므로 minimal-N 을 의도적 설계로 채택.
+    core 우선 → 레짐 조건부 정렬(듀레이션·헤지 페널티 → AUM) → index dedup →
+    **N = min(n_floor, core distinct)**. 같은-버킷 broad ETF 는 상관성이 높아 adaptive
+    다양화 이득이 작으므로 minimal-N 을 의도적 설계로 채택.
+
+    레짐 인자(name/quadrant/dominant_scenario)는 전부 기본값 → 미전달 시 기존 AUM 정렬과
+    동일(no-op). 듀레이션은 _DURATION_BUCKETS·인플레 quadrant 에서, 헤지는 _HEDGE_BUCKETS·
+    USD강세 신호에서만 페널티가 켜진다 (spec 2026-06-04). 순수 재정렬이라 풀을 비우지 않음.
 
     capital_krw 는 §6(hysteresis/adaptive-N) 예약 — v1 미사용.
     """
     if not eligible:
         return []
+    name = name or {}
+    prefer_short, prefer_unhedged = regime_selection_prefs(quadrant, dominant_scenario)
+
+    def _dur_pen(t: str) -> int:
+        if bucket_key not in _DURATION_BUCKETS or not prefer_short:
+            return 0
+        return duration_tier(name.get(t, ""))
+
+    def _hedge_pen(t: str) -> int:
+        if bucket_key not in _HEDGE_BUCKETS or not prefer_unhedged:
+            return 0
+        return 1 if is_hedged(name.get(t, "")) else 0
 
     def _rank(ts: list[str]) -> list[str]:
-        return sorted(ts, key=lambda t: (-aum.get(t, 0.0), t))
+        # 레짐 조건부: (듀레이션 페널티, 헤지 페널티, -AUM, ticker). 페널티 미적용 시 AUM 정렬과 동일.
+        return sorted(ts, key=lambda t: (_dur_pen(t), _hedge_pen(t), -aum.get(t, 0.0), t))
 
     def _dedup(ts: list[str], seen_keys: set[str]) -> list[str]:
         out: list[str] = []
@@ -155,10 +175,13 @@ def select_representative_candidates(
     n = min(n_floor, len(deduped_core))
     selected = deduped_core[:n]
 
-    # forced fill — feasibility 한정. thematic 을 sub_category 별 round-robin(AUM 순).
+    # forced fill — feasibility 한정. thematic 을 sub_category 별 round-robin(AUM 순, 레짐 무관).
     if len(selected) < n_floor:
         core_members = set(core)
-        thematic = _rank([t for t in eligible if t not in core_members])
+        thematic = sorted(
+            [t for t in eligible if t not in core_members],
+            key=lambda t: (-aum.get(t, 0.0), t),
+        )
         groups: dict[str | None, list[str]] = {}
         for t in thematic:
             groups.setdefault(sub_category.get(t), []).append(t)

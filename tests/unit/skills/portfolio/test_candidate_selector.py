@@ -182,3 +182,80 @@ def test_regime_selection_prefs():
     assert regime_selection_prefs("growth_disinflation", "kr_stress") == (False, True)
     assert regime_selection_prefs("growth_disinflation", "global_credit") == (False, True)
     assert regime_selection_prefs(None, None) == (False, False)
+
+
+# === Task 2: selector 레짐 조건부 정렬 ===
+
+def _call_regime(rows, bucket_key, *, quadrant, scenario="neutral", w=0.10):
+    """rows: (ticker, aum, sub, idx, name). 레짐 인자 포함 호출."""
+    eligible = [t for t, *_ in rows]
+    aum = {t: a for t, a, _, _, _ in rows}
+    sub = {t: s for t, _, s, _, _ in rows}
+    idx = {t: i for t, _, _, i, _ in rows}
+    name = {t: nm for t, _, _, _, nm in rows}
+    return select_representative_candidates(
+        bucket_key=bucket_key, eligible=eligible, aum=aum,
+        sub_category=sub, underlying_index=idx, name=name,
+        quadrant=quadrant, dominant_scenario=scenario,
+        bucket_weight=w, capital_krw=1_000_000_000,
+    )
+
+
+# 실 universe 축약: a3_us_rates 30년(H, 최대 AUM) / 30년(UH) / 10년(UH)
+_A3_ROWS = [
+    ("A453850", 1.82e12, "us_treasury", "미국30년국채", "ACE 미국30년국채액티브(H)"),
+    ("A476760", 3.171e11, "us_treasury", "미국30년국채", "ACE 미국30년국채액티브"),
+    ("A305080", 2.446e11, "us_treasury", "미국채10년", "TIGER 미국채10년선물"),
+]
+
+
+def test_a3_inflation_picks_short_unhedged():
+    # growth_inflation → 단기·UH 선호 → AUM 1등 30년(H) 대신 10년(UH)
+    out = _call_regime(_A3_ROWS, "a3_us_rates", quadrant="growth_inflation", w=0.08)
+    assert out == ["A305080"]
+
+
+def test_a3_disinflation_keeps_aum_default():
+    # growth_disinflation → 페널티 0 → AUM 1등(30년 H) 유지 (회귀 보장)
+    out = _call_regime(_A3_ROWS, "a3_us_rates", quadrant="growth_disinflation", w=0.08)
+    assert out == ["A453850"]
+
+
+def test_a2_inflation_prefers_shorter_kr_bond():
+    rows = [
+        ("KB30", 900.0, "kr_treasury", "국고채30년", "KODEX 국고채30년액티브"),
+        ("KB3",  100.0, "kr_treasury", "국고채3년", "KODEX 국고채3년"),
+    ]
+    out = _call_regime(rows, "a2_kr_rates", quadrant="growth_inflation", w=0.10)
+    assert out == ["KB3"]   # 단기 선호로 AUM 9배 큰 30년을 이김
+
+
+def test_a5_inflation_prefers_unhedged_gold():
+    rows = [
+        ("GOLDH", 500.0, "gold", "골드선물", "KODEX 골드선물(H)"),
+        ("GOLDP", 300.0, "gold", "금현물", "ACE KRX금현물"),
+    ]
+    out = _call_regime(rows, "a5_gold_infl", quadrant="growth_inflation", w=0.10)
+    assert out == ["GOLDP"]   # AUM 더 작아도 UH(금현물) 우선
+
+
+def test_b8_oil_only_hedged_is_noop():
+    # 유가는 (H)뿐 + b8은 필터 버킷 아님 → AUM 1등 그대로
+    rows = [
+        ("A261220", 1428.0, "oil_energy", "WTI", "KODEX WTI원유선물(H)"),
+        ("AENERGY", 410.0, "materials_energy", "에너지", "TIGER 200 에너지화학"),
+    ]
+    out = _call_regime(rows, "b8_cyclical_commodity", quadrant="growth_inflation", w=0.10)
+    assert out == ["A261220"]
+
+
+def test_credit_scenario_prefers_unhedged_in_a3():
+    # 비인플레(growth_disinflation)지만 global_credit → prefer_unhedged 만 켜짐
+    # 듀레이션 페널티 0 이라 30년끼리는 UH가 H를 이김
+    rows = [
+        ("A453850", 1.82e12, "us_treasury", "미국30년국채", "ACE 미국30년국채액티브(H)"),
+        ("A476760", 3.171e11, "us_treasury", "미국30년국채A", "ACE 미국30년국채액티브"),
+    ]
+    out = _call_regime(rows, "a3_us_rates", quadrant="growth_disinflation",
+                       scenario="global_credit", w=0.08)
+    assert out == ["A476760"]   # UH 30년
