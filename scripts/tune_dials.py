@@ -11,9 +11,12 @@ import itertools
 import json
 import logging
 import math
+import socket
 import statistics
 from datetime import date, timedelta
 from pathlib import Path
+
+socket.setdefaulttimeout(30)   # pykrx/KRX 가 timeout 없이 무한 hang 하는 것 방지(전역)
 
 # .env auto-load (FRED/ECOS/OPENAI/KRX 키). run_backtest.py 와 동일 패턴.
 _ROOT = Path(__file__).resolve().parent.parent
@@ -49,6 +52,21 @@ def _capture_tilt(graph, d: str) -> BucketTilt:
     out = run_stage(graph, STAGE, state)
     tilt_dict = out["allocation_attribution"]["step_a"]["tilt"]
     return BucketTilt(tilts=tilt_dict)
+
+
+def _fetch_forward(union, d_date, end, attempts: int = 3):
+    """날짜당 forward 수익 행렬 1회 fetch + 재시도(pykrx/KRX transient stall 방어).
+
+    socket 전역 timeout 으로 stall 은 30s 후 예외 → 재시도. 모두 실패면 None(그 날짜 제외)."""
+    for i in range(attempts):
+        try:
+            rm = fetch_returns_matrix(union, d_date, end)
+            if rm is not None and not rm.empty:
+                return rm
+            logger.warning("forward fetch 빈 결과 (try %d/%d)", i + 1, attempts)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("forward fetch 실패 (try %d/%d): %s", i + 1, attempts, e)
+    return None
 
 
 def _combo_weights(graph, d: str, tilt: BucketTilt, floor: float, margin: float) -> dict:
@@ -94,8 +112,11 @@ def main() -> None:
         end = d_date + timedelta(days=math.ceil(HORIZON * 1.6))
         logger.info("date %s: %d combos, fetching %d tickers forward (1 fetch)...",
                     d, len(combo_w), len(union))
-        rm = fetch_returns_matrix(union, d_date, end)
+        rm = _fetch_forward(union, d_date, end)
         logger.info("date %s: forward matrix %s", d, None if rm is None else rm.shape)
+        if rm is None:
+            logger.warning("date %s: forward fetch 전부 실패 → 이 날짜 제외", d)
+            continue
         for (floor, margin), w in combo_w.items():
             perf = score_forward_performance(w, d_date, HORIZON, returns_matrix=rm)
             if perf.get("status") == "ok":
