@@ -5,6 +5,7 @@ from tradingagents.skills.portfolio.gaps_buckets import GAPS_BUCKET_KEYS
 from tradingagents.skills.portfolio.candidate_selector import (
     _normalize_index, CORE_SUBCATEGORIES, KNOWN_THEMATIC,
     select_representative_candidates,
+    duration_tier, is_hedged, regime_selection_prefs,
 )
 
 
@@ -138,3 +139,46 @@ def test_forced_fill_skips_thematic_duping_core_index():
     ]
     out = _call(rows, "b1_kr_equity", w=0.30)   # n_floor=2
     assert "ABROAD" in out and "AT_OTHER" in out and "AT_DUP" not in out
+
+
+# === Task 1: 레짐 조건부 risk-filter 순수 함수 ===
+
+def test_duration_tier_from_year():
+    assert duration_tier("ACE 미국30년국채액티브(H)") == 3
+    assert duration_tier("TIGER 미국채10년선물") == 2
+    assert duration_tier("KODEX 국고채3년") == 1
+
+
+def test_duration_tier_from_tokens():
+    assert duration_tier("KODEX CD금리액티브(합성)") == 0
+    assert duration_tier("KODEX 머니마켓액티브") == 0
+    assert duration_tier("KODEX 종합채권(AA-이상)액티브") == 2
+    assert duration_tier("PLUS 미국장기우량회사채") == 3
+    assert duration_tier("PLUS 미국단기회사채(AAA~A)") == 1
+    assert duration_tier("TIGER 중장기국채") == 2
+    assert duration_tier("KODEX 200") == 2   # 마커 없음 → 기본 중기
+
+
+def test_is_hedged_kr_convention():
+    assert is_hedged("ACE 미국30년국채액티브(H)") is True
+    assert is_hedged("TIGER 미국30년국채스트립액티브(합성 H)") is True
+    assert is_hedged("ACE 미국30년국채엔화노출액티브(H)") is True
+    assert is_hedged("ACE 미국30년국채액티브") is False
+    assert is_hedged("KODEX 미국S&P500산업재(합성)") is False
+    assert is_hedged("ACE KRX금현물") is False
+
+
+def test_is_hedged_uh_guard():
+    # (UH) 환노출 명시 표기는 (H)로 끝나는 글자에 오탐되지 않아야 함
+    assert is_hedged("ACE 미국30년국채(UH)") is False
+
+
+def test_regime_selection_prefs():
+    assert regime_selection_prefs("growth_inflation", "neutral") == (True, True)
+    assert regime_selection_prefs("recession_inflation", "neutral") == (True, True)
+    assert regime_selection_prefs("growth_disinflation", "neutral") == (False, False)
+    assert regime_selection_prefs("recession_disinflation", "neutral") == (False, False)
+    # 비인플레라도 stress/credit 시나리오면 UH 선호만 켜짐
+    assert regime_selection_prefs("growth_disinflation", "kr_stress") == (False, True)
+    assert regime_selection_prefs("growth_disinflation", "global_credit") == (False, True)
+    assert regime_selection_prefs(None, None) == (False, False)

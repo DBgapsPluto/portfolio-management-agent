@@ -11,6 +11,48 @@ import re
 
 from tradingagents.skills.portfolio.within_bucket import SINGLE_CAP
 
+# === 레짐 조건부 risk-filter (Step B, spec 2026-06-04) ===
+# 듀레이션 필터 적용 버킷(채권), 헤지 필터 적용 버킷(안전 외화자산).
+_DURATION_BUCKETS: set[str] = {"a2_kr_rates", "a3_us_rates"}
+_HEDGE_BUCKETS: set[str] = {"a3_us_rates", "a5_gold_infl"}
+_INFLATION_QUADRANTS: set[str] = {"growth_inflation", "recession_inflation"}
+_UNHEDGED_SCENARIOS: set[str] = {"kr_stress", "global_credit"}
+
+
+def duration_tier(name: str) -> int:
+    """ETF명에서 듀레이션 tier. 0=초단기 … 3=장기 (클수록 인플레 레짐 페널티 큼)."""
+    m = re.search(r"(\d+)\s*년", name)
+    if m:
+        y = int(m.group(1))
+        return 3 if y >= 20 else 2 if y >= 7 else 1   # ≥20y 장기 / 7~19y 중기 / 1~6y 단기
+    if any(k in name for k in ("CD", "KOFR", "머니마켓", "MMF", "SOFR", "초단기", "통안")):
+        return 0
+    if "중장기" in name or "중기" in name or "종합" in name:   # 장기 토큰보다 먼저
+        return 2
+    if any(k in name for k in ("장기", "스트립", "초장기")):
+        return 3
+    if "단기" in name:
+        return 1
+    return 2   # 기본 중기
+
+
+def is_hedged(name: str) -> bool:
+    """환헤지 여부. KR 관례: (H)/(합성 H) → 헤지, 무표기·(합성)·(UH) → UH."""
+    n = name.strip()
+    if n.endswith("(UH)"):       # 환노출 명시 — "H)"로 끝나 오탐되지 않게 먼저 배제
+        return False
+    return n.endswith("H)")      # (H) / (합성 H) / 엔화노출(H) → 헤지
+
+
+def regime_selection_prefs(
+    quadrant: str | None, scenario: str | None,
+) -> tuple[bool, bool]:
+    """(prefer_short_duration, prefer_unhedged). 인플레/USD강세 신호 → 단기·UH 선호."""
+    prefer_short = quadrant in _INFLATION_QUADRANTS
+    prefer_unhedged = prefer_short or scenario in _UNHEDGED_SCENARIOS
+    return prefer_short, prefer_unhedged
+
+
 # 각 버킷의 '대표(broad) 노출' sub_category (v1 시드, 튜닝 대상).
 CORE_SUBCATEGORIES: dict[str, set[str]] = {
     "a1_cash":               {"mmf_kr"},
