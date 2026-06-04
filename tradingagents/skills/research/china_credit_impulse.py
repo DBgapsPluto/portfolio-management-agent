@@ -15,8 +15,8 @@ from tradingagents.dataflows.bis_credit import fetch_bis_china_credit
 logger = logging.getLogger(__name__)
 
 
-def compute_china_credit_impulse(as_of: date) -> dict[str, float] | None:
-    """Returns dict with 'impulse', 'ratio', 'yoy' keys, or None if insufficient history (<6 quarters)."""
+def compute_china_credit_impulse(as_of: date) -> dict | None:
+    """Returns dict with 'impulse', 'ratio', 'yoy', 'last_date' keys, or None if insufficient history (<6 quarters)."""
     try:
         series = fetch_bis_china_credit(as_of=as_of)
     except Exception as e:
@@ -38,6 +38,7 @@ def compute_china_credit_impulse(as_of: date) -> dict[str, float] | None:
         "impulse": float(impulse),
         "ratio":   float(s[-1]),
         "yoy":     float(yoy),
+        "last_date": series.index[-1],  # 실제 분기 말일 — staleness stamp용
     }
 
 

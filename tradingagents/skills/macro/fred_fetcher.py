@@ -3,7 +3,7 @@ from datetime import date
 
 import pandas as pd
 
-from tradingagents.dataflows.fred import fetch_fred_series
+from tradingagents.dataflows.fred import FRED_SERIES, fetch_fred_series
 from tradingagents.dataflows.series_cache import fetch_series_with_cache
 from tradingagents.skills.registry import register_skill
 
@@ -32,7 +32,9 @@ def fetch_fred_series_skill(
     return fetch_series_with_cache(
         _live,
         namespace="fred",
-        cache_key=series,
+        # logical name 대신 resolved series_id 로 캐시 — series 매핑 교체(예: china_cli
+        # NOSTSAM→AASTSAM) 시 옛 series 캐시를 hit 하지 않도록 자동 분리.
+        cache_key=FRED_SERIES.get(series, series),
         as_of=as_of_date or end,
         max_staleness=max_staleness,
     )

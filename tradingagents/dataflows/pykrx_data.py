@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import date
 from pathlib import Path
 
@@ -9,6 +10,33 @@ from tenacity import (
 )
 
 logger = logging.getLogger(__name__)
+
+# pykrx/KRX 가 timeout 없이 socket read 에서 무한 hang → 각 ETF 호출에 하드 timeout.
+_PYKRX_CALL_TIMEOUT_S = 30
+
+
+def _run_with_timeout(fn, timeout: float):
+    """fn() 을 daemon thread 에서 실행, timeout 초과 시 TimeoutError (스레드-safe).
+
+    SIGALRM 과 달리 메인 스레드가 아니어도(langgraph 병렬 노드) 동작하고, hang
+    스레드는 daemon 이라 프로세스 종료를 막지 않는다. 내부 예외는 그대로 전파.
+    """
+    box: dict = {}
+
+    def _worker():
+        try:
+            box["result"] = fn()
+        except BaseException as e:  # noqa: BLE001 — 내부 예외 전파용
+            box["error"] = e
+
+    th = threading.Thread(target=_worker, daemon=True)
+    th.start()
+    th.join(timeout)
+    if th.is_alive():
+        raise TimeoutError(f"call exceeded {timeout}s hard timeout")
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
 
 
 @retry(
@@ -31,10 +59,24 @@ def _raw_pykrx_call(ticker: str, start: date, end: date) -> pd.DataFrame:
 
 
 def fetch_etf_ohlcv(ticker: str, start: date, end: date) -> pd.DataFrame:
-    """Fetch one ETF's OHLCV. Returns columns [open, high, low, close, volume, ticker, date]."""
-    raw = _raw_pykrx_call(ticker, start, end)
+    """Fetch one ETF's OHLCV. Returns columns [open, high, low, close, volume, ticker, date].
+
+    pykrx 무한 hang 방어: 호출(retry 포함)을 하드 timeout 으로 감싸고, timeout/실패
+    ticker 는 빈 df 로 graceful skip + 로그 (silent 누락 방지 — prices 가 technical
+    analyst 전체의 유일 입력이라 한 ticker hang 이 노드 전체를 freeze 시킨다).
+    """
+    empty = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    try:
+        raw = _run_with_timeout(
+            lambda: _raw_pykrx_call(ticker, start, end), _PYKRX_CALL_TIMEOUT_S,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "ETF %s OHLCV fetch failed (%s) — skip", ticker, type(e).__name__,
+        )
+        return empty
     if raw is None or raw.empty:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        return empty
 
     rename = {
         "시가": "open", "고가": "high", "저가": "low",
@@ -162,39 +204,15 @@ def fetch_foreign_flow(
     return s
 
 
-@retry(
-    reraise=True,
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=1, max=8),
-    retry=retry_if_exception_type((ConnectionError, TimeoutError, OSError)),
-)
-def _raw_credit_balance_call(start: date, end: date) -> pd.DataFrame:
-    """KRX 일별 신용공여(=신용잔고) — 전체 시장 합계."""
-    from pykrx import stock
-    return stock.get_market_trading_value_by_date(
-        start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), market="KOSPI",
-        etf=False, etn=False, elw=False, detail=True,
-    )
-
-
 def _live_credit_balance(start: date, end: date) -> pd.Series:
-    try:
-        raw = _raw_credit_balance_call(start, end)
-    except Exception as e:
-        logger.warning("Credit balance fetch failed: %s", e)
-        return pd.Series(dtype=float, name="credit_balance")
+    """KOFIA FreeSIS 신용거래융자 잔고 (KRW).
 
-    if raw is None or raw.empty:
-        return pd.Series(dtype=float, name="credit_balance")
-
-    candidates = ["신용공여", "신용잔고", "융자잔고", "신용거래융자"]
-    col = next((c for c in candidates if c in raw.columns), None)
-    if col is None:
-        logger.warning("Credit column not found in pykrx output: %s", list(raw.columns))
-        return pd.Series(dtype=float, name="credit_balance")
-    s = raw[col].copy()
-    s.name = "credit_balance"
-    return s
+    pykrx 1.2.8 / KRX 공식 OpenAPI / KRX 정보데이터시스템 / 한국은행 ECOS 어디에도
+    시장 전체 신용잔고가 없어 금융투자협회 FreeSIS 로 이전 (2026-06-04, 브라우저
+    XHR 캡처로 plain-requests endpoint·schema 확정).
+    """
+    from tradingagents.dataflows.kofia_freesis import fetch_credit_loan_balance
+    return fetch_credit_loan_balance(start, end)
 
 
 def fetch_credit_balance(
@@ -202,18 +220,14 @@ def fetch_credit_balance(
     use_cache: bool = True,
     max_staleness: int = 7,
 ) -> pd.Series:
-    """KRX 신용잔고 시계열 (KRW). pykrx detail=True의 '신용공여' 컬럼 사용.
+    """시장 전체 신용거래융자 잔고 시계열 (KRW). 소스: KOFIA FreeSIS.
 
-    KNOWN LIMITATION (2026-05 audit, pykrx 1.2.8):
-      `get_market_trading_value_by_date(detail=True)`가 현재 거래주체별
-      "거래대금"(외국인합계/기관계/개인 등) 컬럼만 반환하고 "신용공여" /
-      "신용잔고" 컬럼은 포함하지 않는다. KRX가 신용잔고 endpoint를 분리한
-      것으로 추정 — 함수명은 trading_value지만 detail=True 시 historical로
-      신용 데이터가 같이 왔던 시절의 기대값과 다름.
-      → 빈 Series 반환 → kr_margin_debt sentinel(signal="normal", staleness=99).
-      해결책: 네이버 증권 신용잔고 페이지 스크레이프 (`finance.naver.com`의
-      투자자별 신용공여 잔고 페이지) 또는 KRX 정보데이터시스템 OpenAPI 직접
-      호출. 둘 다 신규 모듈 작성 필요.
+    데이터 소스 (2026-06-04 실증으로 확정):
+      KRX 공식 OpenAPI / KRX 정보데이터시스템 / 한국은행 ECOS 어디에도 시장 전체
+      신용잔고가 없음 (pykrx `get_market_trading_value_by_date` 는 종목별 거래대금
+      함수라 부적합). 유일한 소스는 금융투자협회 FreeSIS(신용공여 잔고 추이,
+      STATSCU0100000070) 이며 `kofia_freesis.fetch_credit_loan_balance` 가 담당.
+      실패 시 빈 Series → kr_margin_debt sentinel(signal="normal", staleness=99).
 
     Cache: ~/.tradingagents/cache/pykrx_index/credit_balance/{end}.json
     """

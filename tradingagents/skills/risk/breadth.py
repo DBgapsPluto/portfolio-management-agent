@@ -1,6 +1,6 @@
 """Market breadth real implementation.
 
-KOSPI200: pykrx로 200 종목 daily pct change → advancing/declining 카운트
+KOSPI200: pykrx 시총 top-200 종목 daily pct change → advancing/declining 카운트
 SP500:   11 SPDR 섹터 ETF(XLF/XLK/XLE/XLV/XLI/XLY/XLP/XLU/XLB/XLRE/XLC)를 proxy로 사용
          (전체 500 종목 yfinance fetch는 비용이 크고 rate-limit 위험)
 
@@ -20,47 +20,35 @@ SP500_SECTOR_ETFS = [
     "XLF", "XLK", "XLE", "XLV", "XLI", "XLY",
     "XLP", "XLU", "XLB", "XLRE", "XLC",
 ]
-KOSPI200_INDEX_CODE = "1028"
 
 
 def _kospi200_breadth(as_of: date) -> BreadthSnapshot:
-    """KRX KOSPI200 일별 200 종목 등락 카운트.
+    """KOSPI200 근사 — 시가총액 top-200 종목 등락 카운트.
 
     pykrx `get_market_ohlcv_by_ticker(date, "KOSPI")`가 단일 일자의 모든 KOSPI
-    종목 OHLCV를 반환. "등락률" 컬럼이 이미 계산돼 있어 그대로 사용.
+    종목 OHLCV(시가총액·등락률 컬럼 포함)를 반환 → 시총 top-200 을 KOSPI200 proxy
+    로 사용. "등락률"이 이미 계산돼 있어 그대로 advancing/declining 카운트.
 
-    KNOWN LIMITATION (2026-05 audit, pykrx 1.2.8):
-      `stock.get_index_portfolio_deposit_file(date, "1028")`이 모든 날짜에
-      빈 list 반환 — KRX가 KOSPI200 구성종목 endpoint를 변경했으나 pykrx가
-      따라가지 못함. 결과적으로 빈 constituents → ValueError → sentinel
-      (staleness_days=99, advancing_pct=0.5) fallback.
-      systemic_score에는 SP500 sector breadth + breadth_us가 그대로 들어가고
-      KOSPI200 breadth는 0.5 neutral로 들어감. systemic_score의 KR breadth
-      가중치는 작아서 영향 제한적.
-      해결책 후보: (a) KOSPI200 ETF(069500.KS)의 11 KR 섹터 ETF로 proxy
-      (SP500과 동일 패턴), (b) KRX OpenAPI 직접 호출, (c) pykrx 패치.
+    KNOWN LIMITATION (2026-06-04 재조사, pykrx 1.2.8):
+      `stock.get_index_portfolio_deposit_file(date, "1028")`이 1028/1001/1002 모든
+      지수에서 빈 list 반환 — KRX 구성종목 endpoint schema 변경. KRX 공식 OpenAPI
+      에도 구성종목 endpoint 가 없음(전부 404). 깨끗한 KOSPI200 멤버십 소스 부재가
+      확정돼, 시총 top-200 proxy 로 대체(실측 advancing_pct 가 sentinel 0.5 와
+      명백히 다른 실신호). 실제 KOSPI200 은 float-adjusted·섹터 cap 이라 순수 시총
+      top-200 과 일부 차이(우선주 소수 포함 가능). 둘 다 실패 시에만 sentinel.
     """
     try:
         from pykrx import stock
-        constituents = set(stock.get_index_portfolio_deposit_file(
-            as_of.strftime("%Y%m%d"), KOSPI200_INDEX_CODE,
-        ))
-        if not constituents:
-            raise ValueError("empty KOSPI200 constituents")
-
         df = stock.get_market_ohlcv_by_ticker(
             as_of.strftime("%Y%m%d"), market="KOSPI",
         )
         if df is None or df.empty:
             raise ValueError("no KOSPI snapshot")
-        # KOSPI200에 속하는 행만 선택
-        df = df.loc[df.index.intersection(constituents)]
-        if df.empty:
-            raise ValueError("KOSPI200 constituents not in snapshot")
-        if "등락률" not in df.columns:
-            raise ValueError("등락률 column missing")
+        if "시가총액" not in df.columns or "등락률" not in df.columns:
+            raise ValueError("required columns (시가총액/등락률) missing")
 
-        change_pct = df["등락률"].dropna()
+        top200 = df.nlargest(200, "시가총액")
+        change_pct = top200["등락률"].dropna()
         total = max(len(change_pct), 1)
         advancing = int((change_pct > 0).sum())
         declining = int((change_pct < 0).sum())

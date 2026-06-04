@@ -55,6 +55,38 @@ def test_cache_writes_on_live_success(tmp_path):
     assert (s1 == s2).all()
 
 
+def test_empty_cache_does_not_block_live_refetch(tmp_path):
+    """빈 결과가 캐시된 뒤(일시적 fetch 실패) 같은 as_of 재호출 시 live 를 다시 시도.
+
+    회귀: 깨진 pykrx 가 빈 credit_balance 를 as_of 캐시(`{}`)에 저장 → KOFIA 연결
+    후에도 그 빈 캐시가 fetch 를 영구 차단했다 (kr_margin sentinel 고착).
+    빈 dict 는 캐시 히트가 아니라 miss 로 취급해야 한다.
+    """
+    call_count = {"n": 0}
+
+    def fetcher() -> pd.Series:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return pd.Series(dtype=float, name="x")  # 1차: 빈 (일시 실패)
+        return pd.Series(
+            [42.0], index=pd.to_datetime(["2026-05-16"]), name="x",
+        )
+
+    s1 = fetch_series_with_cache(
+        fetcher, namespace="test", cache_key="x",
+        as_of=date(2026, 5, 16), cache_dir=tmp_path,
+    )
+    assert s1.empty
+
+    s2 = fetch_series_with_cache(
+        fetcher, namespace="test", cache_key="x",
+        as_of=date(2026, 5, 16), cache_dir=tmp_path,
+    )
+    assert call_count["n"] == 2  # 빈 캐시 무시 → live 재호출
+    assert not s2.empty
+    assert s2.iloc[-1] == 42.0
+
+
 def test_cache_falls_back_on_live_failure(tmp_path):
     """첫 호출 성공 → 캐시 적재. 두 번째 호출 (다른 as_of) live 실패 시 stale fallback."""
     success_series = pd.Series(
@@ -131,6 +163,32 @@ def test_fetch_frame_with_cache(tmp_path):
     assert call_count["n"] == 1
     assert list(f1.columns) == ["X", "Y"]
     assert (f1 == f2).all().all()
+
+
+def test_empty_frame_cache_does_not_block_live_refetch(tmp_path):
+    """frame 버전도 빈 결과를 캐시 히트로 취급하지 않고 live 재시도 (series 와 동일)."""
+    from tradingagents.dataflows.series_cache import fetch_frame_with_cache
+
+    call_count = {"n": 0}
+
+    def fetcher() -> pd.DataFrame:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return pd.DataFrame()  # 1차: 빈 (일시 실패)
+        return pd.DataFrame({"X": [1.0]}, index=pd.to_datetime(["2026-05-16"]))
+
+    f1 = fetch_frame_with_cache(
+        fetcher, namespace="frame_test", cache_key="empty",
+        as_of=date(2026, 5, 16), cache_dir=tmp_path,
+    )
+    assert f1.empty
+
+    f2 = fetch_frame_with_cache(
+        fetcher, namespace="frame_test", cache_key="empty",
+        as_of=date(2026, 5, 16), cache_dir=tmp_path,
+    )
+    assert call_count["n"] == 2  # 빈 캐시 무시 → live 재호출
+    assert not f2.empty
 
 
 def test_cache_directory_layout(tmp_path):

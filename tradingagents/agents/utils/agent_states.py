@@ -63,6 +63,10 @@ class AgentState(MessagesState):
 
     # === Stage 5: Validation ===
     validation_report: Annotated[Optional[ValidationReport], "Mandate validator output"]
+    mandate_validator_attribution: Annotated[
+        Optional[dict],
+        "Mandate validator attribution trace (Stage 5 audit) — per-rule pass/violation detail",
+    ]
     validation_passed: Annotated[Optional[bool], "True/False/None pre-validation"]
     rebalance_mode: Annotated[
         Optional[str],
@@ -129,6 +133,7 @@ def _create_empty_state(
         correlation_clusters=[],
         rebalance_mode=None,
         validation_report=None, validation_passed=None,
+        mandate_validator_attribution=None,
         allocation_attempts=0, allocation_feedback=[],
         final_portfolio_path="", philosophy_doc_path="", trade_plan_csv_path="",
         warnings=[],

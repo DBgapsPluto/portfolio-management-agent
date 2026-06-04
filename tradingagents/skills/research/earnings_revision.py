@@ -25,13 +25,20 @@ def load_sp500_constituents() -> list[str]:
         logger.warning("SP500 constituents file missing: %s", SP500_CONSTITUENTS_PATH)
         return []
     with open(SP500_CONSTITUENTS_PATH) as f:
-        return json.load(f)
+        raw = json.load(f)
+    # yfinance 는 클래스주(BRK.B, BF.B)를 하이픈 표기(BRK-B)로 쓴다 — 점 표기는 404.
+    return [t.replace(".", "-") for t in raw]
 
 
 def compute_sp500_net_revision(
-    as_of: date, lookback_days: int = 30, coverage_threshold: float = 0.5,
+    as_of: date, lookback_days: int = 30, coverage_threshold: float = 0.2,
 ) -> float | None:
-    """SP500 net revision proxy via yfinance upgrades_downgrades."""
+    """SP500 net revision proxy via yfinance upgrades_downgrades.
+
+    coverage_threshold: up/down 등급변경이 있는 종목 비율 하한. 30일 내 실제
+    상향/하향이 있는 종목은 정상 시장에서 ~25%(main/reit/init 제외)라 0.5 는
+    비현실적이어서 항상 None 이었다 → 0.2 로 현실화 (2026-06 실측 기반).
+    """
     constituents = load_sp500_constituents()
     if not constituents:
         return None
@@ -44,8 +51,11 @@ def compute_sp500_net_revision(
                 continue
             ud_idx = ud.index if isinstance(ud.index, pd.DatetimeIndex) else pd.to_datetime(ud.index)
             recent = ud[ud_idx >= cutoff]
-            ups = (recent["Action"].astype(str).str.lower() == "upgrade").sum()
-            downs = (recent["Action"].astype(str).str.lower() == "downgrade").sum()
+            # yfinance Action 코드: 신규 'up'/'down' + 레거시 'upgrade'/'downgrade'
+            # 둘 다 인식 (2026 yfinance 가 약어로 변경 — 'main'/'reit'/'init' 은 제외).
+            action = recent["Action"].astype(str).str.lower()
+            ups = action.isin(["up", "upgrade"]).sum()
+            downs = action.isin(["down", "downgrade"]).sum()
             if ups + downs > 0:
                 total_up += int(ups)
                 total_down += int(downs)
