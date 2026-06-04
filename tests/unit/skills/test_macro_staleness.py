@@ -42,3 +42,16 @@ def test_china_credit_impulse_stamps_real_staleness(monkeypatch):
     snap = mq._build_china_credit_impulse_snapshot(date(2026, 6, 2))
     assert snap is not None
     assert snap.staleness_days > 1000  # 2023-06 → 2026-06 ≈ 1068일
+
+
+def test_shiller_url_recovered_off_stale_yale():
+    """CAPE 소스가 2023-09 에서 멈춘 yale 이 아니라 최신 shillerdata 여야 한다."""
+    from tradingagents.dataflows.shiller_cape import SHILLER_URL
+    assert "econ.yale.edu" not in SHILLER_URL
+    assert "ie_data" in SHILLER_URL
+
+
+def test_china_cli_uses_amplitude_adjusted_series():
+    """china_cli 가 frozen Normalized(NOSTSAM) 가 아니라 최신 Amplitude Adjusted 여야."""
+    from tradingagents.dataflows.fred import FRED_SERIES
+    assert FRED_SERIES["china_cli"] == "CHNLOLITOAASTSAM"

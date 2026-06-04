@@ -18,7 +18,12 @@ from tenacity import (
 
 logger = logging.getLogger(__name__)
 
-SHILLER_URL: Final[str] = "http://www.econ.yale.edu/~shiller/data/ie_data.xls"
+# econ.yale.edu/~shiller 는 2023-09 에서 멈춤 — Shiller 가 데이터를 shillerdata.com
+# 으로 이전(2026.06+ 최신). ver= 캐시버스터 없이도 최신 파일을 반환한다.
+SHILLER_URL: Final[str] = (
+    "https://img1.wsimg.com/blobby/go/e5e77e0b-59d1-44d9-ab25-4763ac982e53/"
+    "downloads/c9b8cf0f-f01a-49f5-9ea5-d19443390ab2/ie_data.xls"
+)
 
 
 def _decimal_year_to_date(dy: float) -> pd.Timestamp:

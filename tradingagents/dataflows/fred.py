@@ -82,7 +82,8 @@ FRED_SERIES = {
     # Tier-3 확장: cross-asset risk-on/off
     "usd_krw": "DEXKOUS",              # KRW per USD (daily)
     "dxy": "DTWEXBGS",                 # Trade-weighted broad dollar index (daily)
-    "china_cli": "CHNLOLITONOSTSAM",   # OECD China amplitude-adjusted CLI (monthly)
+    "china_cli": "CHNLOLITOAASTSAM",   # OECD China amplitude-adjusted CLI (monthly).
+                                       # Normalized(NOSTSAM)은 2024-01 frozen → AA(2026-04+).
     # Tier-4 확장: Policy uncertainty + Tail risk
     "us_epu": "USEPUINDXM",            # Baker-Bloom-Davis US Economic Policy Uncertainty (monthly)
     "global_epu": "GEPUCURRENT",       # Global EPU current-price weighted (monthly)
