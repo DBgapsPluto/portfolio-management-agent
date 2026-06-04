@@ -166,7 +166,9 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         CREDIT_BALANCE_LOOKBACK_DAYS = 400
         MARKET_TIER_LOOKBACK_DAYS = 60
         REALIZED_VOL_LOOKBACK_DAYS = 120
-        SECTOR_DISP_LOOKBACK_DAYS = 65
+        # 60 거래일 수익률(len>=60, iloc[-60]) 요건 → 캘린더 90일(~63 거래일) 필요.
+        # 65(~46 거래일)는 항상 부족해 전 섹터 skip → F9 dispersion 빈 dict 였음.
+        SECTOR_DISP_LOOKBACK_DAYS = 90
         MEGA_CAP_LOOKBACK_DAYS = 400
 
         start_vol = as_of - timedelta(days=VOL_LOOKBACK_DAYS)
