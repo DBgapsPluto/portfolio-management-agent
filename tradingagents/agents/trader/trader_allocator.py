@@ -231,10 +231,34 @@ def create_trader_allocator(step_a_llm):
             weights={t: round(w, 6) for t, w in weights.items() if w > 1e-6},
             rationale=f"quadrant-anchor tilt + AUM within-bucket. risk={risk_pct*100:.1f}%",
         )
+        # Step A 비중 분해(앵커→시나리오→판단→최종) — "왜 이 비중인지" 역추적용.
+        # 항등식: baseline + scenario_delta + tilt_applied == final.
+        step_a_buckets: dict[str, dict[str, float]] = {}
+        for b in GAPS_BUCKET_KEYS:
+            base_r = round(q_baseline.get(b, 0.0), 6)
+            scen_r = round(anchor.get(b, 0.0) - q_baseline.get(b, 0.0), 6)
+            fin_r = round(bucket_weights.get(b, 0.0), 6)
+            if fin_r <= 1e-6 and abs(scen_r) <= 1e-9 and not tilt.tilts.get(b):
+                continue
+            step_a_buckets[b] = {
+                "baseline": base_r,
+                "scenario_delta": scen_r,
+                "tilt_requested": round(tilt.tilts.get(b, 0.0), 6),
+                "tilt_applied": round(fin_r - base_r - scen_r, 6),
+                "final": fin_r,
+            }
         attribution = {
             "bucket_weights": bucket_weights,
             "realized_risk_pct": risk_pct,
             "n_holdings": len(weight_vector.weights),
+            "step_a": {
+                "quadrant": quadrant,
+                "scenario": scenario,
+                "confidence": confidence,
+                "conviction": conviction,
+                "tilt_rationale": tilt.rationale,
+                "buckets": step_a_buckets,
+            },
         }
         return {
             "bucket_target": bucket_target,

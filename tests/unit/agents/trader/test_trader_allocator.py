@@ -207,3 +207,31 @@ def test_node_a3_inflation_selects_short_unhedged(tmp_path):
     node = create_trader_allocator(_FakeStep(BucketTilt()))
     out = node(_state_14(str(p), macro))
     assert out["candidate_set"].bucket_to_tickers.get("a3_us_rates") == ["A305080"]
+
+
+def test_attribution_records_step_a_decomposition(tmp_path):
+    up = _universe_14(tmp_path)
+    step_a = _FakeStep(BucketTilt(
+        tilts={"b3_global_tech": 0.04, "b2_dm_core": -0.04},
+        rationale="AI 모멘텀 강화로 테크 비중 확대"))
+    node = create_trader_allocator(step_a_llm=step_a)
+    st = _state_14(up)
+    st["research_decision"] = ResearchThesis(
+        conviction="high", dominant_scenario="kr_boom", thesis_md="t")
+    sa = node(st)["allocation_attribution"]["step_a"]
+
+    # regime/scenario 맥락 + LLM 근거 보존 (현재는 폐기됨)
+    assert sa["quadrant"] == "growth_disinflation"  # macro_report None → fallback
+    assert sa["scenario"] == "kr_boom"
+    assert sa["conviction"] == "high"
+    assert sa["tilt_rationale"] == "AI 모멘텀 강화로 테크 비중 확대"
+
+    # kr_boom 은 b1_kr_equity 를 끌어올림 (scenario_delta > 0)
+    assert sa["buckets"]["b1_kr_equity"]["scenario_delta"] > 0
+    # LLM 이 요청한 raw tilt 가 기록됨
+    assert sa["buckets"]["b3_global_tech"]["tilt_requested"] == 0.04
+
+    # 분해 항등식: baseline + scenario_delta + tilt_applied == final
+    for d in sa["buckets"].values():
+        assert abs(d["baseline"] + d["scenario_delta"]
+                   + d["tilt_applied"] - d["final"]) < 1e-6

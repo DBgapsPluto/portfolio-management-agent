@@ -171,6 +171,38 @@ def format_bucket_target_14(bucket_target) -> str:
     return "\n".join(lines) or "(빈 배분)"
 
 
+def format_step_a_decomposition(attribution) -> str:
+    """Step A 버킷 비중 분해(앵커→시나리오→판단→최종)를 markdown 표로.
+
+    attribution = state['allocation_attribution']; step_a 가 없으면 '(미산출)'.
+    """
+    from tradingagents.skills.portfolio.gaps_buckets import (
+        GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
+    )
+    sa = attribution.get("step_a") if isinstance(attribution, dict) else None
+    buckets = (sa or {}).get("buckets") or {}
+    if not buckets:
+        return "(미산출)"
+    lines = [
+        f"Regime {sa.get('quadrant', '?')} / Scenario {sa.get('scenario', '?')} "
+        f"(conf {float(sa.get('confidence', 0)) * 100:.0f}%, "
+        f"conviction {sa.get('conviction', '?')})",
+        "| 버킷 | 앵커 | 시나리오 | 판단(tilt) | 최종 |",
+        "|------|------|----------|-----------|------|",
+    ]
+    for k in GAPS_BUCKET_KEYS:
+        d = buckets.get(k)
+        if not d:
+            continue
+        lines.append(
+            f"| {BUCKET_KR_NAME[k]} | {d['baseline'] * 100:.1f}% "
+            f"| {d['scenario_delta'] * 100:+.1f}% | {d['tilt_applied'] * 100:+.1f}% "
+            f"| {d['final'] * 100:.1f}% |"
+        )
+    lines.append(f"판단 근거: {sa.get('tilt_rationale') or '(없음)'}")
+    return "\n".join(lines)
+
+
 def _resolve_weights(state: dict) -> dict[str, float]:
     wv = state.get("weight_vector")
     if wv is not None:
@@ -228,7 +260,9 @@ def _build_state_summary(state: dict) -> str:
         f"버킷 배분(14): {format_bucket_target_14(bucket)}\n\n"
         "### Stage 3 — Method choice\n"
         f"Selected: {_resolve_method(state)}\n"
-        f"Reasoning: {method_reasoning}\n\n"
+        f"Reasoning: {method_reasoning}\n"
+        "버킷 tilt 분해(Step A — 앵커→시나리오→판단→최종):\n"
+        f"{format_step_a_decomposition(state.get('allocation_attribution'))}\n\n"
         "### Stage 5 — Mandate Validation\n"
         f"{_format_validation(validation)}\n"
         f"Rebalance mode: {rebalance_mode}\n\n"
