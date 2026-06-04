@@ -82,8 +82,11 @@ def fetch_series_with_cache(
     cache = TieredCache(base / namespace, name=cache_key)
 
     # 1) Cache-first: 같은 as_of payload가 이미 있으면 live 호출 없이 반환.
+    #    빈 dict({})는 캐시 히트가 아니라 miss 로 취급 — 일시적 fetch 실패가 빈
+    #    결과로 캐시되면 데이터 소스 복구 후에도 영구 차단되기 때문 (kr_margin
+    #    sentinel 고착 회귀).
     cached = cache.read(as_of)
-    if cached is not None:
+    if cached:
         return dict_to_series(cached, name=cache_key)
 
     # 2) Cache miss → live + fallback chain (TieredCache가 walk-back 처리).

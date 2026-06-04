@@ -14,6 +14,32 @@ def _series(values, name):
     return pd.Series(values, index=idx, name=name)
 
 
+def test_live_credit_balance_delegates_to_kofia(monkeypatch):
+    """_live_credit_balance 는 KOFIA FreeSIS fetch_credit_loan_balance 로 위임한다.
+
+    pykrx 1.2.8 이 시장 전체 신용잔고를 제공하지 않아 KOFIA 로 이전(2026-06-04).
+    """
+    from tradingagents.dataflows.pykrx_data import _live_credit_balance
+
+    captured = {}
+
+    def fake_kofia(start, end):
+        captured["range"] = (start, end)
+        return pd.Series(
+            [1.0e12], index=pd.to_datetime(["2026-06-02"]), name="credit_balance",
+        )
+
+    monkeypatch.setattr(
+        "tradingagents.dataflows.kofia_freesis.fetch_credit_loan_balance", fake_kofia
+    )
+
+    s = _live_credit_balance(date(2026, 3, 2), date(2026, 6, 2))
+
+    assert captured["range"] == (date(2026, 3, 2), date(2026, 6, 2))
+    assert s.iloc[-1] == 1.0e12
+    assert s.name == "credit_balance"
+
+
 def _patch_cache_dir(monkeypatch, tmp_path):
     import tradingagents.default_config as cfg
     # setitem so the shared dict reference (imported elsewhere) sees the update
