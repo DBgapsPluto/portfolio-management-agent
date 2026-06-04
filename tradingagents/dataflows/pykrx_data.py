@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import date
 from pathlib import Path
 
@@ -9,6 +10,33 @@ from tenacity import (
 )
 
 logger = logging.getLogger(__name__)
+
+# pykrx/KRX 가 timeout 없이 socket read 에서 무한 hang → 각 ETF 호출에 하드 timeout.
+_PYKRX_CALL_TIMEOUT_S = 30
+
+
+def _run_with_timeout(fn, timeout: float):
+    """fn() 을 daemon thread 에서 실행, timeout 초과 시 TimeoutError (스레드-safe).
+
+    SIGALRM 과 달리 메인 스레드가 아니어도(langgraph 병렬 노드) 동작하고, hang
+    스레드는 daemon 이라 프로세스 종료를 막지 않는다. 내부 예외는 그대로 전파.
+    """
+    box: dict = {}
+
+    def _worker():
+        try:
+            box["result"] = fn()
+        except BaseException as e:  # noqa: BLE001 — 내부 예외 전파용
+            box["error"] = e
+
+    th = threading.Thread(target=_worker, daemon=True)
+    th.start()
+    th.join(timeout)
+    if th.is_alive():
+        raise TimeoutError(f"call exceeded {timeout}s hard timeout")
+    if "error" in box:
+        raise box["error"]
+    return box.get("result")
 
 
 @retry(
@@ -31,10 +59,24 @@ def _raw_pykrx_call(ticker: str, start: date, end: date) -> pd.DataFrame:
 
 
 def fetch_etf_ohlcv(ticker: str, start: date, end: date) -> pd.DataFrame:
-    """Fetch one ETF's OHLCV. Returns columns [open, high, low, close, volume, ticker, date]."""
-    raw = _raw_pykrx_call(ticker, start, end)
+    """Fetch one ETF's OHLCV. Returns columns [open, high, low, close, volume, ticker, date].
+
+    pykrx 무한 hang 방어: 호출(retry 포함)을 하드 timeout 으로 감싸고, timeout/실패
+    ticker 는 빈 df 로 graceful skip + 로그 (silent 누락 방지 — prices 가 technical
+    analyst 전체의 유일 입력이라 한 ticker hang 이 노드 전체를 freeze 시킨다).
+    """
+    empty = pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    try:
+        raw = _run_with_timeout(
+            lambda: _raw_pykrx_call(ticker, start, end), _PYKRX_CALL_TIMEOUT_S,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "ETF %s OHLCV fetch failed (%s) — skip", ticker, type(e).__name__,
+        )
+        return empty
     if raw is None or raw.empty:
-        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+        return empty
 
     rename = {
         "시가": "open", "고가": "high", "저가": "low",
