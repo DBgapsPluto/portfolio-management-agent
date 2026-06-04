@@ -8,8 +8,13 @@ Tracing: set LANGSMITH_TRACING=true and LANGSMITH_API_KEY to enable
 multi-agent run-tree visualization at https://smith.langchain.com/.
 """
 import click
+from dotenv import load_dotenv
 
 from tradingagents.observability.tracing import setup_tracing
+
+# `gaps` 콘솔 스크립트 진입점은 cli.main 이므로 (루트 main.py 가 아님) 여기서
+# .env 를 로드해야 OPENAI_API_KEY / KRX 자격증명이 셸 export 없이도 채워진다.
+load_dotenv()
 
 
 @click.group()
