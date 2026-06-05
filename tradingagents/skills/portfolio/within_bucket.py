@@ -70,3 +70,48 @@ def realized_risk_weight(
 ) -> float:
     """최종 weight 중 universe.json bucket=='위험' 인 종목 비중 합 (mandate ≤0.70)."""
     return sum(w for t, w in weights.items() if risk_flag.get(t) == "위험")
+
+
+# cap 하 합=1 이 가능한 최소 종목 수 (ceil(1/0.20)=5). 이보다 적으면 컷오프 보류.
+_MIN_FEASIBLE_HOLDINGS: int = math.ceil(1.0 / SINGLE_CAP - _EPS)
+
+
+def _redistribute_single_cap(weights: dict[str, float]) -> dict[str, float]:
+    """20% 단일 cap water-filling — 초과분을 미달 종목에 비례 재분배."""
+    w = dict(weights)
+    for _ in range(50):
+        over = [t for t, x in w.items() if x > SINGLE_CAP + _EPS]
+        if not over:
+            break
+        excess = sum(w[t] - SINGLE_CAP for t in over)
+        for t in over:
+            w[t] = SINGLE_CAP
+        under = {t: x for t, x in w.items() if x < SINGLE_CAP - _EPS}
+        tot = sum(under.values())
+        if tot <= _EPS:
+            break
+        for t in under:
+            w[t] += excess * under[t] / tot
+    return w
+
+
+def drop_negligible_holdings(
+    weights: dict[str, float], floor: float,
+) -> dict[str, float]:
+    """실행상 무의미한 극소액 잔여를 제거하고 비례 재분배 + 20% cap 재적용.
+
+    '비율 컷오프'가 아니다 — floor 를 작게(예: 0.01) 두어 분산 목적의 소액
+    포지션(2~5%)은 보존하고, 성과 기여가 거래비용보다도 작은 잔여(예: 0.25%)만
+    정리한다. floor≤0 이면 no-op. 제거 후 종목이 _MIN_FEASIBLE_HOLDINGS(5) 미만이면
+    20% cap 하 합=1 이 불가능하고 분산도 과도하게 훼손되므로 원본을 유지한다(방어).
+    """
+    if floor <= 0:
+        return dict(weights)
+    kept = {t: w for t, w in weights.items() if w >= floor}
+    if len(kept) < _MIN_FEASIBLE_HOLDINGS:
+        return dict(weights)
+    s = sum(kept.values())
+    if s <= _EPS:
+        return dict(weights)
+    redistributed = {t: w / s for t, w in kept.items()}
+    return _redistribute_single_cap(redistributed)

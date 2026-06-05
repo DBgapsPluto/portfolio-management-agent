@@ -1,7 +1,46 @@
 import pytest
 from tradingagents.skills.portfolio.within_bucket import (
-    aum_weighted_allocation, InfeasibleBucket, SINGLE_CAP,
+    aum_weighted_allocation, drop_negligible_holdings, InfeasibleBucket, SINGLE_CAP,
 )
+
+
+def test_drop_negligible_removes_residual_keeps_diversifiers():
+    """실행상 무의미한 잔여(0.5%)는 제거하되, 분산 목적 소액(3.5%)은 보존."""
+    w = {f"big{i}": 0.16 for i in range(6)}      # 6×16% = 96%
+    w["residual"] = 0.005                          # 0.5% — 실행상 잔여
+    w["div"] = 0.035                               # 3.5% — 분산 포지션
+    out = drop_negligible_holdings(w, floor=0.01)
+    assert "residual" not in out                   # 잔여 제거
+    assert "div" in out                            # 분산은 보존 (비율 컷오프 아님)
+    assert sum(out.values()) == pytest.approx(1.0)
+
+
+def test_drop_negligible_redistributes_proportionally():
+    """제거 후 남은 비중은 비례 재분배 (상대 순서 보존)."""
+    w = {"a": 0.50, "b": 0.30, "c": 0.195, "residual": 0.005}
+    out = drop_negligible_holdings(w, floor=0.01)
+    assert out["a"] > out["b"] > out["c"]
+    assert sum(out.values()) == pytest.approx(1.0)
+
+
+def test_drop_negligible_respects_single_cap_after_redistribute():
+    """비례 재분배가 큰 포지션을 20% 위로 밀면 cap 재적용."""
+    w = {"big": 0.40, "b": 0.15, "c": 0.15, "d": 0.15, "e": 0.145, "residual": 0.005}
+    out = drop_negligible_holdings(w, floor=0.01)
+    assert all(v <= SINGLE_CAP + 1e-9 for v in out.values())
+    assert sum(out.values()) == pytest.approx(1.0)
+
+
+def test_drop_negligible_noop_when_too_few_holdings():
+    """제거 후 5종목 미만이면(20% cap 하 합=1 불가) 원본 유지."""
+    w = {"a": 0.50, "b": 0.49, "residual": 0.01}
+    out = drop_negligible_holdings(w, floor=0.02)
+    assert out == w
+
+
+def test_drop_negligible_floor_zero_is_noop():
+    w = {"a": 0.5, "b": 0.5}
+    assert drop_negligible_holdings(w, floor=0.0) == w
 
 
 def test_single_stock_takes_full_bucket_weight():

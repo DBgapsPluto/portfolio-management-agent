@@ -25,7 +25,7 @@ from tradingagents.skills.portfolio.gaps_buckets import (
     GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
 )
 from tradingagents.skills.portfolio.within_bucket import (
-    aum_weighted_allocation, InfeasibleBucket, SINGLE_CAP,
+    aum_weighted_allocation, drop_negligible_holdings, InfeasibleBucket, SINGLE_CAP,
 )
 from tradingagents.skills.portfolio.scenario_anchor import (
     QUADRANT_BASELINE, hard_band, effective_band, project_to_band,
@@ -39,6 +39,11 @@ from tradingagents.skills.mandate.concentration_check import RISK_BUCKET_NAMES
 from tradingagents.skills.portfolio.sub_category import bucket_for_etf
 
 logger = logging.getLogger(__name__)
+
+# 실행상 무의미한 극소액 잔여(성과 기여 < 거래비용)의 비중 하한. 이 미만 종목은
+# 정리하고 재분배 — 단 '비율 컷오프'가 아니라 잔여만 (분산 소액 2~5%는 보존).
+# portfolio_dials["min_holding_weight"] 로 런타임 조정 가능.
+NEGLIGIBLE_FLOOR: float = 0.01
 
 
 def _load_universe(path: str) -> Universe:
@@ -225,6 +230,15 @@ def create_trader_allocator(step_a_llm):
         def _is_risk(t):
             e = _meta.get(t)
             return bool(e) and bucket_for_etf(e) in RISK_BUCKET_NAMES
+        weights = repair_risk_cap(weights, _is_risk)
+        s = sum(weights.values())
+        if s > 0:
+            weights = {t: w / s for t, w in weights.items()}
+
+        # 실행상 무의미한 극소액 잔여 정리 (분산 소액 2~5%는 보존) → 재분배가 risk
+        # 비율을 흔들 수 있어 repair_risk_cap 을 재적용해 70% cap 재보장.
+        _floor = float(_dials.get("min_holding_weight", NEGLIGIBLE_FLOOR))
+        weights = drop_negligible_holdings(weights, _floor)
         weights = repair_risk_cap(weights, _is_risk)
         s = sum(weights.values())
         if s > 0:
