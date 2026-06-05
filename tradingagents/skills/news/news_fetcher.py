@@ -13,6 +13,13 @@ DEFAULT_RSS = [
     "https://www.cnbc.com/id/100003114/device/rss/rss.html",
     "https://seekingalpha.com/feed.xml",
     "https://www.mk.co.kr/rss/50200011/",
+    # 거시·지정학 전용 소스 (2026-06-05) — 종목 편중 feed만으론 이란 전쟁 같은
+    # 지정학 이벤트가 빈약. 모두 live 검증. impact-classify 우선순위는
+    # categorizer.prioritize_macro_relevant 가 보장.
+    "http://feeds.bbci.co.uk/news/world/rss.xml",          # BBC World
+    "https://www.aljazeera.com/xml/rss/all.xml",            # Al Jazeera (중동 강점)
+    "https://www.cnbc.com/id/100727362/device/rss/rss.html",  # CNBC World
+    "https://www.cnbc.com/id/20910258/device/rss/rss.html",   # CNBC Economy
 ]
 
 

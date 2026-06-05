@@ -17,7 +17,7 @@ SUMMARY_MAX_CHARS: int = 2000
 
 from tradingagents.schemas.reports import NewsReport
 from tradingagents.skills.news.event_calendar import fetch_event_calendar_skill
-from tradingagents.skills.news.categorizer import categorize_news
+from tradingagents.skills.news.categorizer import categorize_news, prioritize_macro_relevant
 from tradingagents.skills.news.cb_speaker_tracker import (
     compute_speaker_aggregate, extract_speaker_events,
 )
@@ -98,6 +98,22 @@ def _summarize_sentiment(snap) -> str:
         f"    {cat}: {h[:80]}"
         for cat, h in list(snap.top_headline_per_category.items())[:3]
     ]
+    # 섹터/투자 테마 지형 (category 와 직교 축) — count 내림차순, 상위 3개 대표
+    # 헤드라인. 테마 없으면 블록 생략 (잡음 방지).
+    theme_block = ""
+    if snap.theme_counts:
+        ranked_themes = sorted(snap.theme_counts.items(), key=lambda x: -x[1])
+        theme_str = ", ".join(f"{th} {n}" for th, n in ranked_themes)
+        theme_top_lines = [
+            f"    {th}: {snap.theme_top_headline.get(th, '')[:80]}"
+            for th, _ in ranked_themes[:3]
+            if snap.theme_top_headline.get(th)
+        ]
+        theme_block = (
+            f"  Themes: {theme_str}\n"
+            + ("  Top per theme:\n" + "\n".join(theme_top_lines) + "\n"
+               if theme_top_lines else "")
+        )
     return (
         f"Tier-3 (news sentiment, n={sum(snap.counts.values())}):\n"
         f"  Counts: {counts_str}\n"
@@ -105,6 +121,7 @@ def _summarize_sentiment(snap) -> str:
         f"  Dominant: {snap.dominant_category}, Rising: {rising}\n"
         f"  Dispersion: {snap.sentiment_dispersion:.2f}\n"
         f"  Top per category:\n" + "\n".join(top_lines) + "\n"
+        + theme_block
     )
 
 
@@ -133,6 +150,9 @@ def create_macro_news_analyst(quick_llm, deep_llm):
 
         events = fetch_event_calendar_skill(as_of, days=EVENT_CALENDAR_LOOKAHEAD_DAYS)
         items = fetch_macro_news_skill(window_days=NEWS_WINDOW_DAYS, as_of=as_of)
+        # 거시·지정학 뉴스가 종목 헤드라인 볼륨에 밀려 impact-classify cap 밖으로
+        # 잘리지 않도록 budget 앞쪽으로 우선 배치 (cost 0).
+        items = prioritize_macro_relevant(items)
         logger.info(
             "macro_news: %d events + %d news items fetched", len(events), len(items),
         )

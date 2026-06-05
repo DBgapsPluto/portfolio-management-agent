@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from statistics import mean, stdev
 
 from tradingagents.schemas.news import (
-    CategorizedNewsItem, NewsCategory, NewsSentimentSnapshot,
+    CategorizedNewsItem, NewsCategory, NewsSentimentSnapshot, ThemeTag,
 )
 from tradingagents.skills.registry import register_skill
 
@@ -88,6 +88,7 @@ def compute_news_sentiment_snapshot(
         return NewsSentimentSnapshot(
             counts={}, avg_sentiment={}, dominant_category=None,
             sentiment_dispersion=0.0, top_headline_per_category={},
+            theme_counts={}, theme_top_headline={},
             count_change_vs_7d={}, rising_category=None,
             source_date=as_of,
         )
@@ -104,6 +105,9 @@ def compute_news_sentiment_snapshot(
     top_per_cat: dict[NewsCategory, tuple[str, float]] = {}  # (headline, abs_score)
     counts_24h: dict[NewsCategory, int] = {}
     counts_prev7d: dict[NewsCategory, int] = {}
+    # 테마 축 집계 (category 와 독립). 한 뉴스가 여러 테마면 각각에 카운트.
+    theme_counts: dict[ThemeTag, int] = {}
+    theme_top: dict[ThemeTag, tuple[str, float]] = {}  # (headline, abs_score)
 
     for c in categorized:
         cat = c.category
@@ -113,6 +117,11 @@ def compute_news_sentiment_snapshot(
         prev = top_per_cat.get(cat)
         if prev is None or abs(score) > prev[1]:
             top_per_cat[cat] = (c.item.headline[:120], abs(score))
+        for th in c.themes:
+            theme_counts[th] = theme_counts.get(th, 0) + 1
+            tprev = theme_top.get(th)
+            if tprev is None or abs(score) > tprev[1]:
+                theme_top[th] = (c.item.headline[:120], abs(score))
         pub = _ts(c.item.published_at)
         if pub >= cutoff_24h:
             counts_24h[cat] = counts_24h.get(cat, 0) + 1
@@ -141,10 +150,13 @@ def compute_news_sentiment_snapshot(
             if rising is None or recent > counts_24h.get(rising, 0):
                 rising = cat
 
+    theme_top_headline = {th: h for th, (h, _) in theme_top.items()}
+
     return NewsSentimentSnapshot(
         counts=counts, avg_sentiment=avg_sent,
         dominant_category=dominant, sentiment_dispersion=dispersion,
         top_headline_per_category=top_headline_per_cat,
+        theme_counts=theme_counts, theme_top_headline=theme_top_headline,
         count_change_vs_7d=change, rising_category=rising,
         source_date=as_of,
     )

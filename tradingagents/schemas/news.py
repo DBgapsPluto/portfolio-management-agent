@@ -161,6 +161,12 @@ class ReleaseSurpriseSnapshot(StalenessAware):
 NewsCategory = Literal[
     "policy", "macro", "corporate", "geopolitical", "market_commentary",
 ]
+# 섹터/투자 테마 — category(성격)와 직교하는 축. 한 뉴스가 동시에 여러 테마를
+# 가질 수 있다 (예: 'corporate' 성격 + 'ai_semis' 테마). keyword 기반 (cost 0).
+ThemeTag = Literal[
+    "ai_semis", "ev_battery", "energy", "defense_space",
+    "biotech_health", "crypto_fintech",
+]
 ClassifierSource = Literal["keyword", "llm"]
 
 
@@ -171,6 +177,13 @@ class CategorizedNewsItem(BaseModel):
     sentiment_score: float = Field(ge=-1, le=1)
     classifier_source: ClassifierSource = Field(
         description="keyword=비용0 1차 매칭, llm=2차 fallback",
+    )
+    themes: list[ThemeTag] = Field(
+        default_factory=list,
+        description=(
+            "섹터/투자 테마 태그 (0개 이상). category와 직교 — 한 뉴스가 여러 "
+            "테마 가능. keyword 매칭으로만 채움 (LLM 미사용)."
+        ),
     )
 
 
@@ -183,6 +196,10 @@ class NewsSentimentSnapshot(StalenessAware):
         default=0.0, description="카테고리간 avg_sentiment 표준편차 (분열도).",
     )
     top_headline_per_category: dict[NewsCategory, str] = Field(default_factory=dict)
+    # 섹터/투자 테마 분포 (category와 직교 축). stage2가 "지금 AI 집중·에너지·
+    # 크립토 등 어떤 테마 지형인지" 명시적으로 받게 한다.
+    theme_counts: dict[ThemeTag, int] = Field(default_factory=dict)
+    theme_top_headline: dict[ThemeTag, str] = Field(default_factory=dict)
     # Momentum (어제·최근 7일 평균 대비)
     count_change_vs_7d: dict[NewsCategory, float] = Field(
         default_factory=dict,

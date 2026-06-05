@@ -14,6 +14,7 @@ def _ci(
     category: str = "macro",
     score: float = 0.0,
     when: datetime | None = None,
+    themes: list[str] | None = None,
 ) -> CategorizedNewsItem:
     return CategorizedNewsItem(
         item=NewsItem(
@@ -23,7 +24,27 @@ def _ci(
         ),
         category=category,  # type: ignore[arg-type]
         sentiment_score=score, classifier_source="keyword",
+        themes=themes or [],  # type: ignore[arg-type]
     )
+
+
+def test_snapshot_aggregates_theme_counts():
+    """snapshot이 theme별 카운트를 집계한다 (category와 별개 축)."""
+    items = [
+        _ci("Nvidia AI chip surge", category="corporate", score=0.5, themes=["ai_semis"]),
+        _ci("TSMC expands fab", category="corporate", score=0.3, themes=["ai_semis"]),
+        _ci("Oil drops on OPEC", category="macro", score=-0.2, themes=["energy"]),
+    ]
+    snap = compute_news_sentiment_snapshot(items, as_of=date(2026, 6, 5))
+    assert snap.theme_counts["ai_semis"] == 2
+    assert snap.theme_counts["energy"] == 1
+    assert snap.theme_top_headline["ai_semis"]  # 대표 헤드라인 채워짐
+
+
+def test_snapshot_theme_counts_empty_when_no_themes():
+    """테마 태그 없는 뉴스만 있으면 theme_counts 비어있음."""
+    snap = compute_news_sentiment_snapshot([_ci("Fed holds")], as_of=date(2026, 6, 5))
+    assert snap.theme_counts == {}
 
 
 def test_score_sentiment_fills_scores_from_llm():
