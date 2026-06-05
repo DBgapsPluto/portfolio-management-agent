@@ -95,6 +95,23 @@ def _redistribute_single_cap(weights: dict[str, float]) -> dict[str, float]:
     return w
 
 
+def aggregate_weights_to_buckets(
+    weights: dict[str, float], selections: dict[str, list[str]],
+) -> dict[str, float]:
+    """최종 ETF weights 를 14-bucket 비중으로 역집계 (selections=bucket→tickers).
+
+    컷오프(drop_negligible_holdings)로 weights 에서 빠진 종목의 bucket 은 자동으로
+    제외되므로, bucket_target/attribution(→ philosophy)이 실현 비중을 정확히 반영한다.
+    """
+    ticker_to_bucket = {t: b for b, ts in selections.items() for t in ts}
+    out: dict[str, float] = {}
+    for t, w in weights.items():
+        b = ticker_to_bucket.get(t)
+        if b is not None:
+            out[b] = out.get(b, 0.0) + w
+    return out
+
+
 def drop_negligible_holdings(
     weights: dict[str, float], floor: float,
 ) -> dict[str, float]:

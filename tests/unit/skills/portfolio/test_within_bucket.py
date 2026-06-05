@@ -1,7 +1,24 @@
 import pytest
 from tradingagents.skills.portfolio.within_bucket import (
-    aum_weighted_allocation, drop_negligible_holdings, InfeasibleBucket, SINGLE_CAP,
+    aggregate_weights_to_buckets, aum_weighted_allocation,
+    drop_negligible_holdings, InfeasibleBucket, SINGLE_CAP,
 )
+
+
+def test_aggregate_weights_to_buckets_sums_by_bucket():
+    selections = {"b1_kr_equity": ["A", "B"], "b8_cyclical_commodity": ["C"]}
+    out = aggregate_weights_to_buckets({"A": 0.3, "B": 0.2, "C": 0.5}, selections)
+    assert out["b1_kr_equity"] == pytest.approx(0.5)
+    assert out["b8_cyclical_commodity"] == pytest.approx(0.5)
+
+
+def test_aggregate_weights_to_buckets_excludes_cutoff_holdings():
+    """컷오프로 weights 에서 빠진 종목의 bucket 은 realized 집계에서 자동 제외 —
+    bucket_target/philosophy 가 실현 비중을 정확히 반영하는 핵심."""
+    selections = {"b1_kr_equity": ["A", "B"], "b9_risk_credit": ["C"]}
+    out = aggregate_weights_to_buckets({"A": 0.6, "B": 0.4}, selections)  # C 컷오프됨
+    assert "b9_risk_credit" not in out
+    assert out["b1_kr_equity"] == pytest.approx(1.0)
 
 
 def test_drop_negligible_removes_residual_keeps_diversifiers():

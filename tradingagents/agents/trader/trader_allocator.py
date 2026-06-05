@@ -25,7 +25,8 @@ from tradingagents.skills.portfolio.gaps_buckets import (
     GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
 )
 from tradingagents.skills.portfolio.within_bucket import (
-    aum_weighted_allocation, drop_negligible_holdings, InfeasibleBucket, SINGLE_CAP,
+    aggregate_weights_to_buckets, aum_weighted_allocation,
+    drop_negligible_holdings, InfeasibleBucket, SINGLE_CAP,
 )
 from tradingagents.skills.portfolio.scenario_anchor import (
     QUADRANT_BASELINE, hard_band, effective_band, project_to_band,
@@ -244,10 +245,15 @@ def create_trader_allocator(step_a_llm):
         if s > 0:
             weights = {t: w / s for t, w in weights.items()}
 
+        # 컷오프로 ETF 가 빠지면 bucket 실현 비중도 변하므로, 최종 ETF weights 를
+        # 14-bucket 으로 역집계해 bucket_target/attribution(→ philosophy)에 쓴다.
+        # step_a 분해는 Step A '의도'라 컷오프 전 bucket_weights 를 그대로 유지한다.
+        realized_bucket_weights = aggregate_weights_to_buckets(weights, selections)
+
         # 대회 공식 위험자산(RISK_BUCKET_NAMES) 합 — validator·repair 와 동일 정의로 리포팅
         risk_pct = sum(w for t, w in weights.items() if _is_risk(t))
         bucket_target = BucketTarget(
-            weights=bucket_weights,
+            weights=realized_bucket_weights,
             rationale=(getattr(state.get("research_decision"), "dominant_scenario", "")
                        + f" / risk={risk_pct*100:.1f}%")[:500],
         )
@@ -278,7 +284,7 @@ def create_trader_allocator(step_a_llm):
                 "final": fin_r,
             }
         attribution = {
-            "bucket_weights": bucket_weights,
+            "bucket_weights": realized_bucket_weights,
             "realized_risk_pct": risk_pct,
             "n_holdings": len(weight_vector.weights),
             "vol_haircut": {"bucket_vol": bucket_vol},
