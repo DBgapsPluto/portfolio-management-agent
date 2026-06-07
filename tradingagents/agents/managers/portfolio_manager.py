@@ -83,6 +83,9 @@ def _build_full_trace_portfolio(state: dict) -> dict:
         "mandate_validator_attribution": _serialize_for_json(
             state.get("mandate_validator_attribution"),
         ),
+        "correlation_clusters": _serialize_for_json(
+            state.get("correlation_clusters", [])
+        ),
     }
 
 
