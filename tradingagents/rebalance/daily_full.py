@@ -64,6 +64,17 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
 
     prev_qty, prev_cash, prev_target = _load_prev(previous_path)
     prices = fetch_current_prices(date.fromisoformat(as_of))
+    # 현재가 부재(KRX 데이터 미제공/휴장+지연) → 보유 재평가 불가 → 거래계획 생성 시
+    # 전액현금 빈 산출물이 나오고 그게 다음 seed 를 오염시킨다. 산출물을 만들지 말고 skip.
+    if not prices:
+        logger.warning(
+            "daily: 현재가 fetch 실패(KRX 데이터 부재) — 리밸런싱 skip, 산출물 미생성 (as_of=%s)",
+            as_of,
+        )
+        return RebalanceResult(
+            as_of=as_of, tier="skipped",
+            trigger={"reason": "no_current_prices"},
+        )
     universe = load_universe(Path(DEFAULT_CONFIG.get("universe_path", "./data/universe.json")))
     is_risk = make_is_risk(universe)
     current = reprice_holdings(prev_qty, prev_cash, prices)
