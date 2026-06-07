@@ -110,6 +110,11 @@ def build_rebalance_plan(
         cur_qty = int(prev_qty.get(t, 0))            # 실제 보유수량
         eff_target_w = current.get(t, 0.0) + delta.get(t, 0.0)
         tgt_qty = int(round(eff_target_w * current_value / p)) if p > 0 else cur_qty
+        # target 이 cap 이하인데 정수 반올림으로 단일 cap(0.20)을 미세 초과하는 것 방지 —
+        # cap 이하 최대 수량으로 floor (target 자체가 cap 초과면 건드리지 않음 → validate 가 잡음)
+        if p > 0 and eff_target_w <= HARD_SINGLE_CAP + FLOAT_TOLERANCE:
+            cap_qty = int(HARD_SINGLE_CAP * current_value / p)
+            tgt_qty = min(tgt_qty, cap_qty)
         dq = tgt_qty - cur_qty
         if dq == 0:
             action = "HOLD"
