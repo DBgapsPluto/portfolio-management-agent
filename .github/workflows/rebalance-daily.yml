@@ -1,0 +1,40 @@
+name: rebalance-daily
+# 매 한국 영업일(월~금) 07:00 KST = UTC 전날 22:00 — 미국장 마감 후, 한국장 개장 전 (스펙 §13.1)
+on:
+  schedule:
+    - cron: "0 22 * * 0-4"
+  workflow_dispatch: {}
+
+concurrency:
+  group: rebalance-daily
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[test]"
+      - name: Run daily rebalance
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          LATEST=$(ls -d artifacts/*/ 2>/dev/null | grep -E '[0-9]{4}-[0-9]{2}-[0-9]{2}' | sort | tail -1)
+          gaps rebalance daily --from "${LATEST%/}" || gaps rebalance daily
+      - name: Commit artifacts
+        run: |
+          git config user.name "rebalance-bot"
+          git config user.email "rebalance-bot@users.noreply.github.com"
+          git add artifacts/
+          git diff --cached --quiet || git commit -m "chore(rebalance): daily artifacts $(date -u +%F)"
+          git push
