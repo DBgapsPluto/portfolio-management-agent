@@ -17,6 +17,7 @@ from tradingagents.rebalance.overlay import defensive_overlay, risk_on_overlay
 from tradingagents.rebalance.reassess import reassess_target
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.rebalance.types import RebalanceResult
+from tradingagents.monitor.notify import send_rebalance_alert
 
 logger = logging.getLogger(__name__)
 
@@ -116,4 +117,11 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
         deep_llm=None,
     )
     res.trigger = trig_ctx
+    if res.plan:
+        top = [f"{tl.ticker} {tl.action} {tl.delta_qty}"
+               for tl in res.plan if tl.action != "HOLD"][:10]
+        passed = res.validation.passed if res.validation else "n/a"
+        send_rebalance_alert(tier=res.tier, action=res.tier,
+                             summary=f"turnover {res.turnover:.2%}, passed={passed}",
+                             top_trades=top)
     return res
