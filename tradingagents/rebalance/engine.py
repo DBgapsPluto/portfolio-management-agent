@@ -10,6 +10,7 @@ from tradingagents.skills.portfolio.sub_category import bucket_for_etf
 from tradingagents.skills.mandate.concentration_check import (
     RISK_BUCKET_NAMES, HARD_SINGLE_CAP, HARD_RISK_ASSET_CAP, FLOAT_TOLERANCE,
 )
+from tradingagents.rebalance.types import TradeLine
 
 logger = logging.getLogger(__name__)
 
@@ -82,3 +83,54 @@ def compute_deltas(
         elif d != 0.0:
             skipped.append(t)
     return delta, skipped
+
+
+def build_rebalance_plan(
+    current: dict[str, float], target: dict[str, float], capital: int,
+    prices: dict[str, float], is_risk: Callable[[str], bool], dials: dict,
+) -> dict:
+    """현재→목표 거래계획. 잔여는 현금 보유(sweep 안 함). 실현 비중·turnover 산출.
+
+    Returns dict: plan·skipped_no_trade·cash_residual_krw·realized_weights·turnover.
+    """
+    delta, skipped = compute_deltas(current, target, dials, is_risk)
+
+    plan: list[TradeLine] = []
+    invested = 0
+    buy_krw = 0
+    sell_krw = 0
+    target_value: dict[str, float] = {}
+    for t in (set(current) | set(target)) - {CASH_KEY}:
+        p = prices.get(t, 0.0)
+        cur_qty = int(round(current.get(t, 0.0) * capital / p)) if p > 0 else 0
+        # band 로 생략된 종목은 현재 유지 → 실행 delta 만 목표에 반영
+        eff_target_w = current.get(t, 0.0) + delta.get(t, 0.0)
+        tgt_qty = int(round(eff_target_w * capital / p)) if p > 0 else cur_qty
+        dq = tgt_qty - cur_qty
+        if dq == 0:
+            action = "HOLD"
+        elif dq > 0:
+            action = "BUY"; buy_krw += dq * p
+        else:
+            action = "SELL"; sell_krw += (-dq) * p
+        if p > 0:
+            target_value[t] = tgt_qty * p
+            invested += tgt_qty * p
+        plan.append(TradeLine(
+            ticker=t, action=action, current_qty=cur_qty, target_qty=tgt_qty,
+            delta_qty=dq, delta_amount_krw=int(dq * p),
+        ))
+
+    cash_residual = max(capital - invested, 0)
+    realized = {t: v / capital for t, v in target_value.items()}
+    if cash_residual > 0:
+        realized[CASH_KEY] = cash_residual / capital
+    turnover = (buy_krw + sell_krw) / capital if capital else 0.0
+
+    return {
+        "plan": sorted(plan, key=lambda tl: -abs(tl.delta_amount_krw)),
+        "skipped_no_trade": skipped,
+        "cash_residual_krw": int(cash_residual),
+        "realized_weights": realized,
+        "turnover": turnover,
+    }
