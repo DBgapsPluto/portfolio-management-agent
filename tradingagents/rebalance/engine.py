@@ -110,9 +110,9 @@ def build_rebalance_plan(
         cur_qty = int(prev_qty.get(t, 0))            # 실제 보유수량
         eff_target_w = current.get(t, 0.0) + delta.get(t, 0.0)
         tgt_qty = int(round(eff_target_w * current_value / p)) if p > 0 else cur_qty
-        # target 이 cap 이하인데 정수 반올림으로 단일 cap(0.20)을 미세 초과하는 것 방지 —
-        # cap 이하 최대 수량으로 floor (target 자체가 cap 초과면 건드리지 않음 → validate 가 잡음)
-        if p > 0 and eff_target_w <= HARD_SINGLE_CAP + FLOAT_TOLERANCE:
+        # hard mandate: 단일 ETF realized 비중 HARD_SINGLE_CAP(0.20) 무조건 초과 불가.
+        # eff_target_w 가 cap 을 초과하더라도(e.g. defensive_overlay 물채우기) 수량을 floor.
+        if p > 0:
             cap_qty = int(HARD_SINGLE_CAP * current_value / p)
             tgt_qty = min(tgt_qty, cap_qty)
         dq = tgt_qty - cur_qty
