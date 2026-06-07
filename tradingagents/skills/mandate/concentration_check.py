@@ -31,6 +31,8 @@ def validate_concentration(weights: WeightVector, universe: Universe) -> Validat
     bucket_lookup = {e.ticker: bucket_for_etf(e) for e in universe.etfs}
 
     for ticker, w in weights.weights.items():
+        if ticker == "CASH":   # 현금은 단일 ETF cap 대상 아님 (실제 ETF 아님)
+            continue
         if w > HARD_SINGLE_CAP + FLOAT_TOLERANCE:
             violations.append(Violation(
                 rule="single_etf_cap",

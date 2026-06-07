@@ -93,26 +93,23 @@ def compute_deltas(
 
 
 def build_rebalance_plan(
-    current: dict[str, float], target: dict[str, float], capital: int,
+    current: dict[str, float], target: dict[str, float],
+    prev_qty: dict[str, int], current_value: int,
     prices: dict[str, float], is_risk: Callable[[str], bool], dials: dict,
 ) -> dict:
-    """현재→목표 거래계획. 잔여는 현금 보유(sweep 안 함). 실현 비중·turnover 산출.
-
-    Returns dict: plan·skipped_no_trade·cash_residual_krw·realized_weights·turnover.
-    """
+    """현재→목표 거래계획. 실제 보유수량(prev_qty)·현재 평가액(V) 기준.
+    잔여는 현금 보유(sweep 안 함). 실현 비중·turnover 산출."""
     delta, skipped = compute_deltas(current, target, dials, is_risk)
-
     plan: list[TradeLine] = []
     invested = 0
     buy_krw = 0
     sell_krw = 0
     target_value: dict[str, float] = {}
-    for t in (set(current) | set(target)) - {CASH_KEY}:
+    for t in (set(current) | set(target) | set(prev_qty)) - {CASH_KEY}:
         p = prices.get(t, 0.0)
-        cur_qty = int(round(current.get(t, 0.0) * capital / p)) if p > 0 else 0
-        # band 로 생략된 종목은 현재 유지 → 실행 delta 만 목표에 반영
+        cur_qty = int(prev_qty.get(t, 0))            # 실제 보유수량
         eff_target_w = current.get(t, 0.0) + delta.get(t, 0.0)
-        tgt_qty = int(round(eff_target_w * capital / p)) if p > 0 else cur_qty
+        tgt_qty = int(round(eff_target_w * current_value / p)) if p > 0 else cur_qty
         dq = tgt_qty - cur_qty
         if dq == 0:
             action = "HOLD"
@@ -127,13 +124,11 @@ def build_rebalance_plan(
             ticker=t, action=action, current_qty=cur_qty, target_qty=tgt_qty,
             delta_qty=dq, delta_amount_krw=int(dq * p),
         ))
-
-    cash_residual = max(capital - invested, 0)
-    realized = {t: v / capital for t, v in target_value.items()}
-    if cash_residual > 0:
-        realized[CASH_KEY] = cash_residual / capital
-    turnover = (buy_krw + sell_krw) / capital if capital else 0.0
-
+    cash_residual = max(current_value - invested, 0)
+    realized = {t: v / current_value for t, v in target_value.items()} if current_value > 0 else {}
+    if cash_residual > 0 and current_value > 0:
+        realized[CASH_KEY] = cash_residual / current_value
+    turnover = (buy_krw + sell_krw) / current_value if current_value else 0.0
     return {
         "plan": sorted(plan, key=lambda tl: -abs(tl.delta_amount_krw)),
         "skipped_no_trade": skipped,
@@ -145,25 +140,34 @@ def build_rebalance_plan(
 
 def validate_rebalance(
     realized: dict[str, float], universe, clusters, previous_weights,
-    capital: int, floor_pct: float,
+    current_value: int, floor_pct: float,
 ) -> ValidationReport:
-    """realized 비중(종목)에 전체 mandate 재검증. CASH 는 제외 후 종목만 재정규화."""
+    """realized(현금 포함, 합≈1) 비중에 전체 mandate 재검증.
+    현금은 분모에만 기여(위험/단일 cap 분자 제외) → 재정규화하지 않음.
+    universe_check 만 현금 제외 종목셋으로 수행(CASH 는 실제 ticker 아님)."""
+    if not realized or sum(realized.values()) <= 0:
+        return ValidationReport(passed=False, violations=[Violation(
+            rule="weight_validity", description="no realized weight", severity="hard",
+            suggested_fix="check reprice")])
+    # full (cash 포함) — concentration / correlation / turnover
+    full_wv = WeightVector(method=OptimizationMethod.AUM_WEIGHTED, weights=realized,
+                           rationale="rebalance realized")
+    # stock only (cash 제외, 재정규화) — universe membership
     stock = {t: w for t, w in realized.items() if t != CASH_KEY}
     s = sum(stock.values())
     if s <= 0:
         return ValidationReport(passed=False, violations=[Violation(
             rule="weight_validity", description="no stock weight", severity="hard",
             suggested_fix="check reprice")])
-    norm = {t: w / s for t, w in stock.items()}
-    wv = WeightVector(method=OptimizationMethod.AUM_WEIGHTED, weights=norm,
-                      rationale="rebalance realized")
-
+    stock_wv = WeightVector(method=OptimizationMethod.AUM_WEIGHTED,
+                            weights={t: w / s for t, w in stock.items()},
+                            rationale="rebalance stock")
     violations: list[Violation] = []
-    violations += validate_universe(wv, universe).violations
-    violations += validate_concentration(wv, universe).violations
-    violations += validate_correlation_concentration(wv, clusters).violations
+    violations += validate_universe(stock_wv, universe).violations
+    violations += validate_concentration(full_wv, universe).violations
+    violations += validate_correlation_concentration(full_wv, clusters).violations
     violations += validate_turnover_feasibility(
-        wv, previous_weights, capital, floor_pct=floor_pct).violations
+        full_wv, previous_weights, current_value, floor_pct=floor_pct).violations
     return ValidationReport(
         passed=not any(v.severity == "hard" for v in violations),
         violations=violations,
@@ -183,13 +187,15 @@ def run_rebalance(
 
     is_risk = make_is_risk(universe)
     current = reprice_holdings(prev_qty, prev_cash, prices)
-
-    plan_out = build_rebalance_plan(current, target_weights, capital, prices, is_risk, dials)
+    current_value = sum(prev_qty.get(t, 0) * prices.get(t, 0.0) for t in prev_qty) + prev_cash
+    if current_value <= 0:
+        current_value = capital   # fallback (e.g. first run / no holdings)
+    plan_out = build_rebalance_plan(current, target_weights, prev_qty, current_value, prices, is_risk, dials)
 
     floor = dials.get("turnover_floor_monthly", 0.0) if tier == "monthly" else 0.0
     validation = validate_rebalance(
         plan_out["realized_weights"], universe=universe, clusters=clusters,
-        previous_weights=previous_weights, capital=capital, floor_pct=floor)
+        previous_weights=previous_weights, current_value=current_value, floor_pct=floor)
 
     res = RebalanceResult(
         as_of=as_of, tier=tier,
