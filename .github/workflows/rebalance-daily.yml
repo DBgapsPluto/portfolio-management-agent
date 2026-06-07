@@ -31,7 +31,9 @@ jobs:
           KRX_PW: ${{ secrets.KRX_PW }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          LATEST=$(ls -d artifacts/*/ 2>/dev/null | grep -E '[0-9]{4}-[0-9]{2}-[0-9]{2}' | sort | tail -1)
+          # seed = 당일(UTC) 제외, as_of 이전 가장 최근 산출물 (스펙 §10 — 당일 자기 산출물을 seed로 쓰는 연쇄 방지)
+          TODAY=$(date -u +%F)
+          LATEST=$(ls -d artifacts/*/ 2>/dev/null | grep -E '[0-9]{4}-[0-9]{2}-[0-9]{2}' | grep -v "/${TODAY}/" | sort | tail -1)
           gaps rebalance daily --from "${LATEST%/}" || gaps rebalance daily
       - name: Commit artifacts
         run: |
