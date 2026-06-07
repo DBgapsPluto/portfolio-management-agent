@@ -57,6 +57,7 @@ def rebalance(tier, as_of, week, month, previous_path):
         from tradingagents.rebalance import monthly_full
         if month is None:
             raise click.UsageError("--month required for monthly")
-        result = monthly_full.run(month=month, as_of=target,
-                                  previous_path=previous_path)
+        result = monthly_full.run(month=month, as_of=target, previous_path=previous_path)
         click.echo(result.summary)
+        for label, p in result.rebalance_paths.items():
+            click.echo(f"  {label}: {p}")
