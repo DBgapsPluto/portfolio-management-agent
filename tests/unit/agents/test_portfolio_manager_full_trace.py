@@ -116,7 +116,7 @@ def test_portfolio_manager_writes_full_trace_and_warnings(tmp_path):
 
     # current_prices fetch 실패 시나리오 (qty=0 warning 트리거)
     with patch(
-        "tradingagents.agents.managers.portfolio_manager._fetch_current_prices",
+        "tradingagents.rebalance.pricing.fetch_etf_close_map",
         return_value={},
     ):
         node = create_portfolio_manager(deep_llm, artifacts_dir=str(artifacts_dir))
@@ -155,7 +155,7 @@ def test_portfolio_manager_no_warnings_when_prices_available(tmp_path):
         "A114260": 100000.0, "A459580": 1000000.0,
     }
     with patch(
-        "tradingagents.agents.managers.portfolio_manager._fetch_current_prices",
+        "tradingagents.rebalance.pricing.fetch_etf_close_map",
         return_value=fake_prices,
     ):
         node = create_portfolio_manager(deep_llm, artifacts_dir=str(artifacts_dir))
