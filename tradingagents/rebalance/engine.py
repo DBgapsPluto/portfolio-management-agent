@@ -125,9 +125,12 @@ def build_rebalance_plan(
             delta_qty=dq, delta_amount_krw=int(dq * p),
         ))
     cash_residual = max(current_value - invested, 0)
-    realized = {t: v / current_value for t, v in target_value.items()} if current_value > 0 else {}
-    if cash_residual > 0 and current_value > 0:
-        realized[CASH_KEY] = cash_residual / current_value
+    # 정수 qty 반올림으로 invested 가 current_value 를 넘으면 합>1 이 되어 WeightVector(합≈1)
+    # 제약을 깬다. 분모를 invested+cash(=max(V,invested))로 잡아 realized 합을 1.0 으로 정규화.
+    denom = invested + cash_residual
+    realized = {t: v / denom for t, v in target_value.items()} if denom > 0 else {}
+    if cash_residual > 0 and denom > 0:
+        realized[CASH_KEY] = cash_residual / denom
     turnover = (buy_krw + sell_krw) / current_value if current_value else 0.0
     return {
         "plan": sorted(plan, key=lambda tl: -abs(tl.delta_amount_krw)),
