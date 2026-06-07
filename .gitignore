@@ -2,8 +2,14 @@
 .claude/
 .venv/
 
-# Stage 3 run artifacts (anchor reports, ablation, sensitivity)
-artifacts/
+# Stage 3 run artifacts — 운영 산출물(실전 portfolio/trade_plan/rebalancing)만 추적,
+# 백테스트·튜닝·ablation·philosophy 등은 제외. 워크플로(daily)의 artifacts commit이 동작하도록.
+artifacts/*
+!artifacts/2026-[0-9][0-9]-[0-9][0-9]/
+artifacts/2026-[0-9][0-9]-[0-9][0-9]/*
+!artifacts/2026-[0-9][0-9]-[0-9][0-9]/portfolio.json
+!artifacts/2026-[0-9][0-9]-[0-9][0-9]/trade_plan.csv
+!artifacts/2026-[0-9][0-9]-[0-9][0-9]/*(rebalancing)*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
