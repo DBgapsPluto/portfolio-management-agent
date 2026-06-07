@@ -25,8 +25,8 @@ def test_large_delta_kept():
 
 
 def test_cap_buffer_exempt_forces_small_sell():
-    # A가 0.203(cap 0.19 초과)인데 목표 0.200 → Δ=-0.003 (band 미만)이지만
-    # cap-방향 축소라 band 예외로 실행해야 (finding #2).
+    # A가 0.203(cap 0.20 hard 초과)인데 목표 0.200 → Δ=-0.003 (band 미만)이지만
+    # cap-방향 축소라 band 예외로 실행해야 (finding #2). 예외는 HARD_SINGLE_CAP(0.20) 기준.
     cur = {"A": 0.203, "B": 0.797}
     tgt = {"A": 0.200, "B": 0.800}
     delta, skipped = compute_deltas(cur, tgt, _dials(), is_risk=lambda t: False)
@@ -41,3 +41,13 @@ def test_risk_cap_exempt_forces_risk_reduction():
     is_risk = lambda t: t == "R"
     delta, skipped = compute_deltas(cur, tgt, _dials(), is_risk=is_risk)
     assert "R" in delta and delta["R"] < 0
+
+
+def test_way_over_cap_small_sell_not_exempt():
+    # 0.25(cap 0.20 크게 초과)에서 작은 셀(→0.248)은 cap 복귀 불가 → band 예외 X, skip.
+    # current+d <= HARD_SINGLE_CAP 가드가 "barely over(복귀 가능)"만 예외함을 lock-in.
+    cur = {"A": 0.25, "B": 0.75}
+    tgt = {"A": 0.248, "B": 0.752}     # Δ_A=-0.002 (band 미만), 0.248 여전히 cap 초과
+    delta, skipped = compute_deltas(cur, tgt, _dials(), is_risk=lambda t: False)
+    assert "A" not in delta            # 예외 발동 안 함
+    assert "A" in skipped
