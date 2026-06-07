@@ -4,13 +4,14 @@
 """
 import logging
 from collections.abc import Callable
+from pathlib import Path
 
 from tradingagents.dataflows.universe import Universe
 from tradingagents.skills.portfolio.sub_category import bucket_for_etf
 from tradingagents.skills.mandate.concentration_check import (
     RISK_BUCKET_NAMES, HARD_SINGLE_CAP, HARD_RISK_ASSET_CAP, FLOAT_TOLERANCE,
 )
-from tradingagents.rebalance.types import TradeLine
+from tradingagents.rebalance.types import TradeLine, RebalanceResult
 from tradingagents.schemas.portfolio import WeightVector, OptimizationMethod
 from tradingagents.schemas.mandate import ValidationReport, Violation
 from tradingagents.skills.mandate.universe_check import validate_universe
@@ -167,3 +168,47 @@ def validate_rebalance(
         passed=not any(v.severity == "hard" for v in violations),
         violations=violations,
     )
+
+
+def run_rebalance(
+    *, as_of: str, tier: str, capital: int,
+    prev_qty: dict[str, int], prev_cash: int,
+    target_weights: dict[str, float], prices: dict[str, float],
+    universe, clusters, previous_weights, dials: dict,
+    out_dir: Path, previous_path: str, deep_llm=None,
+) -> RebalanceResult:
+    """리밸런싱 1회: 재평가 → 거래계획 → 재검증 → 산출물 3종."""
+    from tradingagents.reports.rebalance_plan import write_rebalance_plan, write_rebalance_json
+    from tradingagents.reports.rebalance_rationale import write_rebalance_rationale
+
+    is_risk = make_is_risk(universe)
+    current = reprice_holdings(prev_qty, prev_cash, prices)
+
+    plan_out = build_rebalance_plan(current, target_weights, capital, prices, is_risk, dials)
+
+    floor = dials.get("turnover_floor_monthly", 0.0) if tier == "monthly" else 0.0
+    validation = validate_rebalance(
+        plan_out["realized_weights"], universe=universe, clusters=clusters,
+        previous_weights=previous_weights, capital=capital, floor_pct=floor)
+
+    res = RebalanceResult(
+        as_of=as_of, tier=tier,
+        current_weights=current, target_weights=target_weights,
+        realized_weights=plan_out["realized_weights"], plan=plan_out["plan"],
+        turnover=plan_out["turnover"], cash_residual_krw=plan_out["cash_residual_krw"],
+        cash_weight=plan_out["realized_weights"].get(CASH_KEY, 0.0),
+        skipped_no_trade=plan_out["skipped_no_trade"],
+        trigger={"tier": tier}, validation=validation,
+    )
+
+    lookup = {e.ticker: {"name": e.name, "category": e.category} for e in universe.etfs}
+    out_dir = Path(out_dir)
+    csv_path = out_dir / f"{as_of}(rebalancing)_plan.csv"
+    json_path = out_dir / f"{as_of}(rebalancing).json"
+    md_path = out_dir / f"{as_of}(rebalancing)_rationale.md"
+    write_rebalance_plan(res, lookup, csv_path)
+    write_rebalance_json(res, json_path, previous_path)
+    write_rebalance_rationale(res, md_path, deep_llm=deep_llm)
+    res.paths = {"json": str(json_path), "plan_csv": str(csv_path),
+                 "rationale_md": str(md_path)}
+    return res
