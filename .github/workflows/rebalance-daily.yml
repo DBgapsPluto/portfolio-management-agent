@@ -27,6 +27,8 @@ jobs:
           ECOS_API_KEY: ${{ secrets.ECOS_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           KRX_API_KEY: ${{ secrets.KRX_API_KEY }}
+          KRX_ID: ${{ secrets.KRX_ID }}          # VKOSPI 등 KRX 웹 로그인 (KRX_API_KEY와 별개)
+          KRX_PW: ${{ secrets.KRX_PW }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           LATEST=$(ls -d artifacts/*/ 2>/dev/null | grep -E '[0-9]{4}-[0-9]{2}-[0-9]{2}' | sort | tail -1)
