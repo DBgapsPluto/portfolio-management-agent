@@ -11,9 +11,21 @@ triggers:
   - name: kospi_drop
     condition: "kospi_return_1d < -0.02"
     action: alert
+  # Downgraded from rebalance_proposal to alert (legacy_018_trigger: alert).
+  # §5.2 drift layer at 0.19 (single_etf_abs_cap) is the authoritative hard
+  # rebalance trigger. 0.18 is retained as a softer early-warning only.
   - name: drift_breach_imminent
     condition: "any_etf_weight > 0.18"
-    action: rebalance_proposal
+    action: alert
   - name: vol_normalization
     condition: "vix < 18 AND vix_change_5d < -0.30"
     action: risk_on_proposal
+
+# Plan B reassess proxies (§5.6). Parsed into daily evaluation in a follow-up task.
+# daily_full._eval_triggers defaults reassess_fired=False until then.
+rebalance:
+  reassess_triggers:
+    - name: yield_curve_regime_shift
+      condition: "spread_10y_2y_bps < -50"
+    - name: vol_regime_shift
+      condition: "vix_change_5d > 0.30 OR (vix < 18 AND vix_change_5d < -0.30)"

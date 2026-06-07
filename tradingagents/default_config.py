@@ -54,6 +54,9 @@ DEFAULT_CONFIG = {
         "single_etf_abs_cap": 0.19,
         "risk_asset_abs_cap": 0.68,
         "turnover_floor_monthly": 0.10,
+        "single_etf_rel_band": 0.05,
+        "defensive_target": 0.55,
+        "reassess_tilt_step": 0.05,
     },
 }
 
