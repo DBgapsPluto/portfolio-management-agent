@@ -27,10 +27,11 @@ QUADRANT_BASELINE: dict[RegimeQuadrant, dict[str, float]] = {
         "b4_china": 0.03, "b5_other_intl": 0.05, "b6_defensive_equity": 0.05,
         "b7_reits": 0.04, "b8_cyclical_commodity": 0.03, "b9_risk_credit": 0.02,
     },
+    # v2 수정(리플레이션): 장기 듀레이션 테크는 인플레 국면서 코어 대비 부진 → b3 0.11→0.08, b2 0.09→0.12.
     "growth_inflation": {
         "a1_cash": 0.09, "a2_kr_rates": 0.07, "a3_us_rates": 0.08,
         "a4_safe_fx": 0.07, "a5_gold_infl": 0.12,
-        "b1_kr_equity": 0.10, "b2_dm_core": 0.09, "b3_global_tech": 0.11,
+        "b1_kr_equity": 0.10, "b2_dm_core": 0.12, "b3_global_tech": 0.08,
         "b4_china": 0.03, "b5_other_intl": 0.04, "b6_defensive_equity": 0.05,
         "b7_reits": 0.03, "b8_cyclical_commodity": 0.09, "b9_risk_credit": 0.03,
     },
@@ -41,12 +42,13 @@ QUADRANT_BASELINE: dict[RegimeQuadrant, dict[str, float]] = {
         "b4_china": 0.01, "b5_other_intl": 0.02, "b6_defensive_equity": 0.07,
         "b7_reits": 0.02, "b8_cyclical_commodity": 0.02, "b9_risk_credit": 0.02,
     },
+    # v2 수정(스태그플레이션): 현금은 인플레로 잠식 → a1 0.15→0.11, 금/원자재로 이전(a5 0.15→0.17, b8 0.11→0.13).
     "recession_inflation": {
-        "a1_cash": 0.15, "a2_kr_rates": 0.07, "a3_us_rates": 0.10,
-        "a4_safe_fx": 0.08, "a5_gold_infl": 0.15,
+        "a1_cash": 0.11, "a2_kr_rates": 0.07, "a3_us_rates": 0.10,
+        "a4_safe_fx": 0.08, "a5_gold_infl": 0.17,
         "b1_kr_equity": 0.05, "b2_dm_core": 0.06, "b3_global_tech": 0.04,
         "b4_china": 0.02, "b5_other_intl": 0.03, "b6_defensive_equity": 0.08,
-        "b7_reits": 0.03, "b8_cyclical_commodity": 0.11, "b9_risk_credit": 0.03,
+        "b7_reits": 0.03, "b8_cyclical_commodity": 0.13, "b9_risk_credit": 0.03,
     },
 }
 
