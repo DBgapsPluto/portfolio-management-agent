@@ -11,6 +11,12 @@ from tradingagents.skills.mandate.concentration_check import (
     RISK_BUCKET_NAMES, HARD_SINGLE_CAP, HARD_RISK_ASSET_CAP, FLOAT_TOLERANCE,
 )
 from tradingagents.rebalance.types import TradeLine
+from tradingagents.schemas.portfolio import WeightVector, OptimizationMethod
+from tradingagents.schemas.mandate import ValidationReport, Violation
+from tradingagents.skills.mandate.universe_check import validate_universe
+from tradingagents.skills.mandate.concentration_check import validate_concentration
+from tradingagents.skills.mandate.correlation_check import validate_correlation_concentration
+from tradingagents.skills.mandate.turnover_check import validate_turnover_feasibility
 
 logger = logging.getLogger(__name__)
 
@@ -134,3 +140,30 @@ def build_rebalance_plan(
         "realized_weights": realized,
         "turnover": turnover,
     }
+
+
+def validate_rebalance(
+    realized: dict[str, float], universe, clusters, previous_weights,
+    capital: int, floor_pct: float,
+) -> ValidationReport:
+    """realized 비중(종목)에 전체 mandate 재검증. CASH 는 제외 후 종목만 재정규화."""
+    stock = {t: w for t, w in realized.items() if t != CASH_KEY}
+    s = sum(stock.values())
+    if s <= 0:
+        return ValidationReport(passed=False, violations=[Violation(
+            rule="weight_validity", description="no stock weight", severity="hard",
+            suggested_fix="check reprice")])
+    norm = {t: w / s for t, w in stock.items()}
+    wv = WeightVector(method=OptimizationMethod.AUM_WEIGHTED, weights=norm,
+                      rationale="rebalance realized")
+
+    violations: list[Violation] = []
+    violations += validate_universe(wv, universe).violations
+    violations += validate_concentration(wv, universe).violations
+    violations += validate_correlation_concentration(wv, clusters).violations
+    violations += validate_turnover_feasibility(
+        wv, previous_weights, capital, floor_pct=floor_pct).violations
+    return ValidationReport(
+        passed=not any(v.severity == "hard" for v in violations),
+        violations=violations,
+    )
