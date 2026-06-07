@@ -43,8 +43,7 @@ def _eval_triggers(
     """Return (tier, trigger_ctx, reassess_fired)."""
     trig = daily_triggers.run(as_of=as_of, portfolio_path=previous_path, current_weights=current)
     drift = evaluate_drift(current, prev_target, dials, is_risk)
-    # reassess proxy — daily_triggers populates _reassess_fired when implemented (Task 6)
-    reassess_fired = bool(trig.context.get("_reassess_fired"))
+    reassess_fired = daily_triggers.evaluate_reassess(trig.context)
     tier = route_tier(trig.suggested_action, drift, reassess_fired)
     return (
         tier,

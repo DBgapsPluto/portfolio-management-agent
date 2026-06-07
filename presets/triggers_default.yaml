@@ -28,4 +28,4 @@ rebalance:
     - name: yield_curve_regime_shift
       condition: "spread_10y_2y_bps < -50"
     - name: vol_regime_shift
-      condition: "vix_change_5d > 0.30 OR (vix < 18 AND vix_change_5d < -0.30)"
+      condition: "vix_change_5d > 0.30 OR vix < 18 AND vix_change_5d < -0.30"

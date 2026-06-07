@@ -67,6 +67,24 @@ class _ConditionParser:
                 raise ValueError(f"Unknown operator: {op!r}")
 
 
+def evaluate_reassess(ctx: dict) -> bool:
+    """yaml rebalance.reassess_triggers 를 ctx 로 평가 — 하나라도 발화하면 True (regime 재진단 필요)."""
+    try:
+        with _TRIGGERS_YAML.open() as f:
+            data = yaml.safe_load(f)
+    except Exception:
+        return False
+    reassess = (data.get("rebalance") or {}).get("reassess_triggers", [])
+    for t in reassess:
+        cond = t.get("condition", "")
+        try:
+            if _ConditionParser(cond, ctx).evaluate():
+                return True
+        except (ValueError, KeyError):
+            continue   # malformed or missing ctx var → skip this trigger
+    return False
+
+
 def _load_triggers() -> list[dict]:
     with _TRIGGERS_YAML.open() as f:
         data = yaml.safe_load(f)
