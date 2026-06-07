@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from tradingagents.dataflows.fred import fetch_fred_series
+from tradingagents.dataflows.pykrx_data import fetch_etf_snapshot_by_date, fetch_market_index
 from tradingagents.skills.risk.volatility import fetch_volatility_index
 
 _TRIGGERS_YAML = Path(__file__).parent.parent.parent / "presets" / "triggers_default.yaml"
@@ -71,10 +73,7 @@ def _load_triggers() -> list[dict]:
     return data["triggers"]
 
 
-def _build_context(as_of: date) -> dict[str, Any]:
-    from tradingagents.dataflows.fred import fetch_fred_series
-    from tradingagents.dataflows.pykrx_data import fetch_etf_snapshot_by_date
-
+def _build_context(as_of: date, current_weights: dict[str, float] | None = None) -> dict[str, Any]:
     # VIX
     vix_snap = fetch_volatility_index("VIX", as_of)
     vix = vix_snap.current_value
@@ -105,15 +104,25 @@ def _build_context(as_of: date) -> dict[str, Any]:
         spread_10y_2y_bps = 0.0
 
     # KOSPI 1-day return
-    kospi_return_1d = 0.0  # placeholder — KOSPI index fetch not in scope here
+    try:
+        kospi = fetch_market_index("1001", as_of - timedelta(days=5), as_of)
+        kospi_return_1d = (
+            float((kospi.iloc[-1] - kospi.iloc[-2]) / kospi.iloc[-2])
+            if len(kospi) >= 2 else 0.0
+        )
+    except Exception:
+        kospi_return_1d = 0.0
 
-    # Max ETF weight from snapshot
-    snap = fetch_etf_snapshot_by_date(as_of)
-    if not snap.empty and "close" in snap.columns and snap["close"].sum() > 0:
-        weights = snap["close"] / snap["close"].sum()
-        any_etf_weight = float(weights.max())
+    # ETF weight — prefer real holdings, fall back to snapshot
+    if current_weights:
+        any_etf_weight = max(current_weights.values())
     else:
-        any_etf_weight = 0.0
+        snap = fetch_etf_snapshot_by_date(as_of)
+        if not snap.empty and "close" in snap.columns and snap["close"].sum() > 0:
+            weights = snap["close"] / snap["close"].sum()
+            any_etf_weight = float(weights.max())
+        else:
+            any_etf_weight = 0.0
 
     return {
         "vix": vix,
@@ -126,7 +135,7 @@ def _build_context(as_of: date) -> dict[str, Any]:
     }
 
 
-def run(as_of: str | date, portfolio_path: Path | None = None) -> TriggerResult:
+def run(as_of: str | date, portfolio_path: Path | None = None, current_weights: dict[str, float] | None = None) -> TriggerResult:
     """Evaluate all daily triggers against current market context.
 
     Args:
@@ -139,7 +148,7 @@ def run(as_of: str | date, portfolio_path: Path | None = None) -> TriggerResult:
     if isinstance(as_of, str):
         as_of = date.fromisoformat(as_of)
 
-    ctx = _build_context(as_of)
+    ctx = _build_context(as_of, current_weights=current_weights)
     triggers = _load_triggers()
 
     fired: list[str] = []
