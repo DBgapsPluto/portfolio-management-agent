@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from tradingagents.agents.managers import portfolio_manager as pm
+import tradingagents.rebalance.pricing as pricing
 from tradingagents.agents.managers.portfolio_manager import create_portfolio_manager
 from tradingagents.dataflows.universe import sync_from_xlsx
 from tradingagents.schemas.portfolio import (
@@ -22,11 +22,9 @@ def test_current_prices_falls_back_to_prior_available_day(monkeypatch):
             return {"A069500": 12345.0}
         return {}
 
-    monkeypatch.setattr(
-        "tradingagents.dataflows.krx_openapi.fetch_etf_close_map", fake_close_map
-    )
+    monkeypatch.setattr(pricing, "fetch_etf_close_map", fake_close_map, raising=False)
 
-    result = pm._fetch_current_prices(date(2026, 6, 4))
+    result = pricing.fetch_current_prices(date(2026, 6, 4))
 
     assert result == {"A069500": 12345.0}
     assert date(2026, 6, 2) in tried  # 거슬러 올라가 6/2까지 시도
@@ -34,12 +32,9 @@ def test_current_prices_falls_back_to_prior_available_day(monkeypatch):
 
 def test_current_prices_empty_when_no_recent_data(monkeypatch):
     """전 구간 미제공이면 빈 dict (qty=0 graceful) — 무한 루프 없이 종료."""
-    monkeypatch.setattr(
-        "tradingagents.dataflows.krx_openapi.fetch_etf_close_map",
-        lambda d: {},
-    )
+    monkeypatch.setattr(pricing, "fetch_etf_close_map", lambda d: {}, raising=False)
 
-    result = pm._fetch_current_prices(date(2026, 6, 4))
+    result = pricing.fetch_current_prices(date(2026, 6, 4))
 
     assert result == {}
 

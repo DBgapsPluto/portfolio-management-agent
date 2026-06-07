@@ -45,18 +45,27 @@ def rebalance(tier, as_of, week, month, previous_path):
     """Run a 3-tier rebalancing pipeline (Plan 4 Task 9-11)."""
     target = as_of or date.today().isoformat()
     if tier == "daily":
-        from tradingagents.rebalance import daily_triggers
-        # D15: pass current portfolio path if available so drift trigger fires
-        result = daily_triggers.run(as_of=target, portfolio_path=previous_path)
-        click.echo(result.summary)
+        from tradingagents.rebalance import daily_full
+        result = daily_full.run(as_of=target, previous_path=previous_path)
+        click.echo(f"tier={result.tier}")
+        if result.plan:
+            for label, p in result.paths.items():
+                click.echo(f"  {label}: {p}")
+        else:
+            click.echo("  (no trades — monitoring only)")
     elif tier == "weekly":
-        from tradingagents.rebalance import weekly_tilt
-        result = weekly_tilt.run(as_of=target, previous_path=previous_path)
-        click.echo(result.summary)
+        # Plan B replaced standalone weekly with daily reassess logic.
+        # Use: rebalance daily --from <prev_path> instead.
+        click.secho(
+            "DEPRECATED: weekly tier is superseded by Plan B daily reassess. "
+            "Run: rebalance daily --from <prev_path>",
+            fg="yellow",
+        )
     elif tier == "monthly":
         from tradingagents.rebalance import monthly_full
         if month is None:
             raise click.UsageError("--month required for monthly")
-        result = monthly_full.run(month=month, as_of=target,
-                                  previous_path=previous_path)
+        result = monthly_full.run(month=month, as_of=target, previous_path=previous_path)
         click.echo(result.summary)
+        for label, p in result.rebalance_paths.items():
+            click.echo(f"  {label}: {p}")

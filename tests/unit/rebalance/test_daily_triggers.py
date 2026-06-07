@@ -66,9 +66,9 @@ def test_run_no_triggers_fired():
 
     with patch.object(daily_triggers, "fetch_volatility_index",
                       side_effect=[fake_vix, fake_vkospi]), \
-         patch("tradingagents.dataflows.fred.fetch_fred_series") as fred_mock, \
-         patch("tradingagents.dataflows.pykrx_data.fetch_etf_snapshot_by_date") \
-            as snap_mock:
+         patch.object(daily_triggers, "fetch_fred_series") as fred_mock, \
+         patch.object(daily_triggers, "fetch_etf_snapshot_by_date") as snap_mock, \
+         patch.object(daily_triggers, "fetch_market_index") as kospi_mock:
         import pandas as pd
         # 2-day VIX series for vix_change_1d
         fred_mock.side_effect = [
@@ -77,6 +77,7 @@ def test_run_no_triggers_fired():
             pd.Series([4.5, 4.5]),        # us_2y
         ]
         snap_mock.return_value = pd.DataFrame()
+        kospi_mock.return_value = pd.Series([100.0, 100.0])
 
         result = daily_triggers.run(as_of="2026-06-15")
         assert result.fired == []
@@ -91,9 +92,9 @@ def test_run_vix_spike_fires():
 
     with patch.object(daily_triggers, "fetch_volatility_index",
                       side_effect=[fake_vix, fake_vkospi]), \
-         patch("tradingagents.dataflows.fred.fetch_fred_series") as fred_mock, \
-         patch("tradingagents.dataflows.pykrx_data.fetch_etf_snapshot_by_date") \
-            as snap_mock:
+         patch.object(daily_triggers, "fetch_fred_series") as fred_mock, \
+         patch.object(daily_triggers, "fetch_etf_snapshot_by_date") as snap_mock, \
+         patch.object(daily_triggers, "fetch_market_index") as kospi_mock:
         import pandas as pd
         fred_mock.side_effect = [
             pd.Series([35.0, 35.5]),
@@ -101,6 +102,7 @@ def test_run_vix_spike_fires():
             pd.Series([4.5, 4.5]),
         ]
         snap_mock.return_value = pd.DataFrame()
+        kospi_mock.return_value = pd.Series([100.0, 100.0])
 
         result = daily_triggers.run(as_of="2026-06-15")
         assert "vix_spike" in result.fired
@@ -115,9 +117,9 @@ def test_run_vol_normalization_fires():
 
     with patch.object(daily_triggers, "fetch_volatility_index",
                       side_effect=[fake_vix, fake_vkospi]), \
-         patch("tradingagents.dataflows.fred.fetch_fred_series") as fred_mock, \
-         patch("tradingagents.dataflows.pykrx_data.fetch_etf_snapshot_by_date") \
-            as snap_mock:
+         patch.object(daily_triggers, "fetch_fred_series") as fred_mock, \
+         patch.object(daily_triggers, "fetch_etf_snapshot_by_date") as snap_mock, \
+         patch.object(daily_triggers, "fetch_market_index") as kospi_mock:
         import pandas as pd
         # 6 entries: t-5=28, ..., t=17 → vix_change_5d = (17-28)/28 ≈ -0.39
         fred_mock.side_effect = [
@@ -126,6 +128,7 @@ def test_run_vol_normalization_fires():
             pd.Series([4.5, 4.5]),
         ]
         snap_mock.return_value = pd.DataFrame()
+        kospi_mock.return_value = pd.Series([100.0, 100.0])
 
         result = daily_triggers.run(as_of="2026-06-15")
         assert "vol_normalization" in result.fired
@@ -141,9 +144,9 @@ def test_run_vol_normalization_does_not_fire_when_vix_high():
 
     with patch.object(daily_triggers, "fetch_volatility_index",
                       side_effect=[fake_vix, fake_vkospi]), \
-         patch("tradingagents.dataflows.fred.fetch_fred_series") as fred_mock, \
-         patch("tradingagents.dataflows.pykrx_data.fetch_etf_snapshot_by_date") \
-            as snap_mock:
+         patch.object(daily_triggers, "fetch_fred_series") as fred_mock, \
+         patch.object(daily_triggers, "fetch_etf_snapshot_by_date") as snap_mock, \
+         patch.object(daily_triggers, "fetch_market_index") as kospi_mock:
         import pandas as pd
         # 40 → 24 = -0.40 in 5 days, but vix still 24 (>= 18)
         fred_mock.side_effect = [
@@ -152,6 +155,7 @@ def test_run_vol_normalization_does_not_fire_when_vix_high():
             pd.Series([4.5, 4.5]),
         ]
         snap_mock.return_value = pd.DataFrame()
+        kospi_mock.return_value = pd.Series([100.0, 100.0])
 
         result = daily_triggers.run(as_of="2026-06-15")
         assert "vol_normalization" not in result.fired
