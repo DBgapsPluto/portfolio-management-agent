@@ -2,7 +2,7 @@ from tradingagents.rebalance.engine import compute_deltas
 
 
 def _dials(**kw):
-    base = dict(no_trade_band=0.005, single_etf_abs_cap=0.20,
+    base = dict(no_trade_band=0.005, single_etf_abs_cap=0.19,
                risk_asset_abs_cap=0.68)
     base.update(kw); return base
 
@@ -35,9 +35,9 @@ def test_cap_buffer_exempt_forces_small_sell():
 
 
 def test_risk_cap_exempt_forces_risk_reduction():
-    # 위험자산 합 0.69 > 0.68 → 위험 종목 축소 델타는 작아도 실행.
-    cur = {"R": 0.69, "S": 0.31}
-    tgt = {"R": 0.688, "S": 0.312}     # Δ_R=-0.002 (band 미만)
+    # 위험자산 합 0.71 > hard cap 0.70 → 위험 종목 축소 델타는 작아도 실행.
+    cur = {"R": 0.71, "S": 0.29}
+    tgt = {"R": 0.708, "S": 0.292}     # Δ_R=-0.002 (band 미만), cur_risk 0.71 > 0.70
     is_risk = lambda t: t == "R"
     delta, skipped = compute_deltas(cur, tgt, _dials(), is_risk=is_risk)
     assert "R" in delta and delta["R"] < 0

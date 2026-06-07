@@ -7,7 +7,9 @@ from collections.abc import Callable
 
 from tradingagents.dataflows.universe import Universe
 from tradingagents.skills.portfolio.sub_category import bucket_for_etf
-from tradingagents.skills.mandate.concentration_check import RISK_BUCKET_NAMES
+from tradingagents.skills.mandate.concentration_check import (
+    RISK_BUCKET_NAMES, HARD_SINGLE_CAP, HARD_RISK_ASSET_CAP, FLOAT_TOLERANCE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,13 +57,12 @@ def compute_deltas(
     current: dict[str, float], target: dict[str, float],
     dials: dict, is_risk: Callable[[str], bool],
 ) -> tuple[dict[str, float], list[str]]:
-    """목표−현재 델타. no-trade band 적용, 단 cap-방향 버퍼초과 델타는 예외 실행.
+    """목표−현재 델타. no-trade band 적용, 단 hard cap-방향 위반 해소 델타는 예외 실행.
 
-    Returns (delta(실행할 것만), skipped_tickers). CASH_KEY 는 제외(현금은 거래 안 함).
+    band 예외는 hard mandate cap(단일 0.20 / 위험 0.70) 기준 — finding #2.
+    Returns (delta(실행할 것만), skipped_tickers). CASH_KEY 는 제외.
     """
     band = dials["no_trade_band"]
-    single_cap = dials["single_etf_abs_cap"]
-    risk_cap = dials["risk_asset_abs_cap"]
     cur_risk = risk_total(current, is_risk)
 
     tickers = (set(current) | set(target)) - {CASH_KEY}
@@ -72,12 +73,12 @@ def compute_deltas(
         if abs(d) >= band:
             delta[t] = d
             continue
-        # band 미만 — cap-방향 예외 검사
-        cur_w = current.get(t, 0.0)
-        over_single = cur_w > single_cap and d < 0 and (cur_w + d) <= single_cap
-        over_risk = cur_risk > risk_cap and is_risk(t) and d < 0
+        over_single = (current.get(t, 0.0) > HARD_SINGLE_CAP
+                       and d < 0
+                       and current.get(t, 0.0) + d <= HARD_SINGLE_CAP + FLOAT_TOLERANCE)
+        over_risk = (cur_risk > HARD_RISK_ASSET_CAP and is_risk(t) and d < 0)
         if over_single or over_risk:
-            delta[t] = d          # 강제 실행
+            delta[t] = d
         elif d != 0.0:
             skipped.append(t)
     return delta, skipped
