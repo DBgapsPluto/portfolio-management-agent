@@ -4,8 +4,12 @@
   "trigger": {
     "tier": "event:emergency_defensive"
   },
-  "current_weights": {},
-  "target_weights": {},
+  "current_weights": {
+    "CASH": 1.0
+  },
+  "target_weights": {
+    "CASH": 1.0
+  },
   "realized_weights": {
     "CASH": 1.0
   },
@@ -25,5 +29,5 @@
     ],
     "suggestions": []
   },
-  "previous_portfolio_path": ""
+  "previous_portfolio_path": "artifacts/2026-06-07"
 }
