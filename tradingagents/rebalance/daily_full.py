@@ -1,6 +1,6 @@
 """daily 오케스트레이션 — reprice → triggers → tier target → run_rebalance (스펙 §5).
 
-LLM 0. clusters=[] (daily overlays/reassess는 ticker set 불변 — correlation 검증 생략).
+LLM 0. correlation cluster 는 artifacts 에서 최신 영속화 값을 재사용한다.
 """
 import json
 import logging
@@ -18,8 +18,48 @@ from tradingagents.rebalance.reassess import reassess_target
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.rebalance.types import RebalanceResult
 from tradingagents.monitor.notify import send_rebalance_alert
+from tradingagents.schemas.technical import Cluster
 
 logger = logging.getLogger(__name__)
+
+
+def _load_clusters(previous_path: str | None, artifacts_dir: str | None = None) -> list[Cluster]:
+    """Return most-recent persisted Cluster list from portfolio.json artifacts.
+
+    Priority: scan artifacts/<date>/portfolio.json newest-first for a non-empty
+    correlation_clusters list; deserialize each dict → Cluster(**d).
+    Falls back to [] with a warning when nothing is found.
+    """
+    search_dirs: list[Path] = []
+    base = Path(artifacts_dir or DEFAULT_CONFIG.get("artifacts_dir", "./artifacts"))
+    if base.exists():
+        # date-named subdirs, sorted newest-first
+        search_dirs = sorted(
+            (d for d in base.iterdir() if d.is_dir()),
+            key=lambda d: d.name, reverse=True,
+        )
+    # also check the previous_path directory itself (may hold a portfolio.json)
+    if previous_path:
+        prev = Path(previous_path)
+        if prev not in search_dirs and prev.is_dir():
+            search_dirs.insert(0, prev)
+
+    for d in search_dirs:
+        pj = d / "portfolio.json"
+        if not pj.exists():
+            continue
+        try:
+            raw = json.loads(pj.read_text(encoding="utf-8"))
+            cc = raw.get("correlation_clusters", [])
+            if cc:
+                clusters = [Cluster(**item) for item in cc]
+                logger.debug("daily: clusters 재사용 ← %s (%d개)", pj, len(clusters))
+                return clusters
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("daily: portfolio.json 읽기 실패(%s) — 건너뜀: %s", pj, exc)
+
+    logger.warning("daily: clusters 확보 실패 — correlation 검증 생략")
+    return []
 
 
 def _load_prev(previous_path: str | None) -> tuple[dict, int, dict]:
@@ -54,11 +94,7 @@ def _eval_triggers(
 
 
 def run(as_of: str, previous_path: str | None = None, out_dir=None) -> RebalanceResult:
-    """Daily orchestration entry point.
-
-    NOTE: clusters=[] — daily overlays/reassess keep the ticker set unchanged,
-    so cluster-share delta is minimal. Correlation mandate check is skipped.
-    """
+    """Daily orchestration entry point."""
     capital: int = DEFAULT_CONFIG.get("capital_krw", 1_000_000_000)
     dials: dict = DEFAULT_CONFIG.get("rebalance", {})
 
@@ -114,16 +150,13 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
     )
     resolved_out.mkdir(parents=True, exist_ok=True)
 
-    if tier not in ("none", "alert"):
-        logger.warning(
-            "daily: clusters 미확보 — correlation 검증 생략(종목 교체 0). tier=%s", tier
-        )
+    clusters = _load_clusters(previous_path)
 
     res = run_rebalance(
         as_of=as_of, tier=tier, capital=capital,
         prev_qty=prev_qty, prev_cash=prev_cash,
         target_weights=target, prices=prices, universe=universe,
-        clusters=[], previous_weights=prev_target, dials=dials,
+        clusters=clusters, previous_weights=prev_target, dials=dials,
         out_dir=resolved_out, previous_path=previous_path or "",
         deep_llm=None,
     )
