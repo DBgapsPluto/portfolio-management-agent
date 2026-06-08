@@ -18,7 +18,9 @@ def test_fetch_news_returns_items():
     ]
     fake_feed.feed = type("FD", (), {})()
     fake_feed.feed.get = lambda key, default=None: "Test Feed"
-    with patch("feedparser.parse", return_value=fake_feed):
+    fake_resp = type("R", (), {"content": b"<rss/>"})()
+    with patch("tradingagents.dataflows.news_macro.requests.get", return_value=fake_resp), \
+         patch("feedparser.parse", return_value=fake_feed):
         items = fetch_macro_news(["https://reuters.example/rss"], window_days=10000)
     assert len(items) == 1
     assert isinstance(items[0], NewsItem)
@@ -74,8 +76,29 @@ def test_fetch_macro_news_populates_description():
         }],
         "feed": {"title": "Reuters"},
     })()
-    with patch("feedparser.parse", return_value=fake_feed):
+    fake_resp = type("R", (), {"content": b"<rss/>"})()
+    with patch("tradingagents.dataflows.news_macro.requests.get", return_value=fake_resp), \
+         patch("feedparser.parse", return_value=fake_feed):
         items = fetch_macro_news(["https://reuters.example/rss"], window_days=10000)
     assert len(items) == 1
     assert items[0].description is not None
     assert "Federal Reserve" in items[0].description
+
+
+def test_fetch_macro_news_uses_timeout():
+    """회귀 방지: RSS fetch 는 timeout 으로 hang 을 막아야 한다.
+
+    feedparser.parse(url) 은 timeout 이 없어 응답 없는 소스에서 무한 hang →
+    Stage 1 freeze (2026-06-08 실측 26분). requests.get(timeout=) 으로 가드.
+    """
+    captured = {}
+
+    def fake_get(url, **kw):
+        captured.update(kw)
+        return type("R", (), {"content": b""})()
+
+    fake_feed = type("F", (), {"entries": [], "feed": {}})()
+    with patch("tradingagents.dataflows.news_macro.requests.get", side_effect=fake_get), \
+         patch("feedparser.parse", return_value=fake_feed):
+        fetch_macro_news(["https://x.example/rss"])
+    assert captured.get("timeout") is not None, "RSS fetch must pass a timeout"
