@@ -3,13 +3,15 @@ from tradingagents.rebalance.engine import run_rebalance
 
 
 def _uni():
-    etfs = []
-    for t in ["A069500", "A229200", "A233740"]:            # kr_equity (RISK)
-        etfs.append(ETFEntry(ticker=t, name=t, aum_krw=1e12,
-                    underlying_index="x", bucket="위험", category="국내주식_지수"))
-    for t in ["A357870", "A357880", "A357890", "A357900"]:  # cash_mmf (SAFE)
-        etfs.append(ETFEntry(ticker=t, name=t, aum_krw=1e11,
-                    underlying_index="x", bucket="안전", category="금리연계형/초단기채권"))
+    # category cap 충돌 회피 — 서로 다른 category 로 분산 (앞 3종 위험, 뒤 4종 안전).
+    risk = [("A069500", "국내주식_지수"), ("A229200", "해외주식_지수"),
+            ("A233740", "FX 및 원자재")]
+    safe = [("A357870", "금리연계형/초단기채권"), ("A357880", "국내채권_종합"),
+            ("A357890", "해외채권_종합"), ("A357900", "국내채권_회사채")]
+    etfs = [ETFEntry(ticker=t, name=t, aum_krw=1e12, underlying_index="x",
+                     bucket="위험", category=c) for t, c in risk]
+    etfs += [ETFEntry(ticker=t, name=t, aum_krw=1e11, underlying_index="x",
+                      bucket="안전", category=c) for t, c in safe]
     return Universe(version="t", etfs=etfs)
 
 

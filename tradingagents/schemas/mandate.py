@@ -14,6 +14,7 @@ class Violation(BaseModel):
         "universe_membership",
         "risk_asset_cap",            # 70%
         "single_etf_cap",            # 20%
+        "category_cap",              # 세부자산(category)별 상한 (대회 §2.2)
         "turnover_floor",
         "correlation_concentration",
         # Stage 5 정리에서 신설 (Weight integrity 사전 검증)
