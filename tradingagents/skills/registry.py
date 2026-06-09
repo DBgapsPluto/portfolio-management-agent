@@ -32,6 +32,7 @@ _SKILL_MODULES: list[str] = [
     "tradingagents.skills.technical.momentum_ranker",
     "tradingagents.skills.technical.trend_state",
     "tradingagents.skills.technical.correlation_cluster",
+    "tradingagents.skills.technical.semi_momentum",
     "tradingagents.skills.news.event_calendar",
     "tradingagents.skills.news.news_fetcher",
     "tradingagents.skills.news.impact_classifier",
