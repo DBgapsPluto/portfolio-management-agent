@@ -6,6 +6,7 @@ import pandas as pd
 from tradingagents.skills.risk.kr_corp_spread import compute_kr_corp_spread
 from tradingagents.skills.risk.kr_margin_debt import compute_kr_margin_debt
 from tradingagents.skills.risk.kr_market_tier import compute_kr_market_tier
+from tradingagents.skills.risk.kr_short_rate import compute_kr_short_rate
 from tradingagents.skills.risk.kr_yield_curve import compute_kr_yield_curve
 
 
@@ -190,3 +191,43 @@ def test_kr_corp_bbb_optional():
                                   as_of=date(2026, 5, 10))
     assert snap.corp_bbb_yield_3y == 0.0
     assert snap.bbb_aa_quality_spread_bps == 0.0
+
+
+# ============ KR Short Rate (CD91) ============
+
+def test_kr_short_rate_calm():
+    cd = _daily([2.9] * 30)
+    t3 = _daily([3.9] * 30)  # CD < 국고채3y → spread 음수 → calm
+    snap = compute_kr_short_rate(cd, t3, as_of=date(2026, 5, 10))
+    assert abs(snap.cd91 - 2.9) < 1e-6
+    assert abs(snap.cd91_minus_treasury3y_bps - (-100.0)) < 1e-6
+    assert snap.regime == "calm"
+
+
+def test_kr_short_rate_stress():
+    cd = _daily([4.5] * 30)
+    t3 = _daily([3.9] * 30)  # CD > 국고채3y → funding stress
+    snap = compute_kr_short_rate(cd, t3, as_of=date(2026, 5, 10))
+    assert snap.cd91_minus_treasury3y_bps > 0
+    assert snap.regime == "stress"
+
+
+def test_kr_short_rate_elevated():
+    cd = _daily([3.85] * 30)
+    t3 = _daily([3.9] * 30)  # spread = -5bps → elevated (-20 < -5 ≤ 0)
+    snap = compute_kr_short_rate(cd, t3, as_of=date(2026, 5, 10))
+    assert snap.regime == "elevated"
+
+
+def test_kr_short_rate_minus20_boundary():
+    cd = _daily([3.7] * 30)
+    t3 = _daily([3.9] * 30)  # spread = -20bps 경계 → elevated (schema: -20 포함)
+    snap = compute_kr_short_rate(cd, t3, as_of=date(2026, 5, 10))
+    assert abs(snap.cd91_minus_treasury3y_bps - (-20.0)) < 1e-6
+    assert snap.regime == "elevated"
+
+
+def test_kr_short_rate_empty_sentinel():
+    snap = compute_kr_short_rate(pd.Series([], dtype=float), pd.Series([], dtype=float),
+                                 as_of=date(2026, 5, 10))
+    assert snap.staleness_days == 99

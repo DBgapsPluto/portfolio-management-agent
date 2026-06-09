@@ -228,6 +228,18 @@ class KRMarketTierSnapshot(StalenessAware):
     )
 
 
+class KRShortRateSnapshot(StalenessAware):
+    """CD 91일 금리 vs 국고채 3y. 자금시장 funding stress 진단.
+
+    CD > 국고채3y (양수 spread) = 단기 자금시장 경색 (funding stress).
+    """
+    cd91: float = Field(description="CD 91일 금리 (%)")
+    cd91_minus_treasury3y_bps: float = Field(
+        description="(CD91 - 국고채3y) × 100, bps. 양수=자금시장 funding stress")
+    regime: Literal["calm", "elevated", "stress"] = Field(
+        description="spread < -20bps calm, -20~0 elevated, >0 stress")
+
+
 class EquityBondCorrelationSnapshot(StalenessAware):
     """Equity-bond 60일 rolling correlation. 통상 음수(분산효과).
 
