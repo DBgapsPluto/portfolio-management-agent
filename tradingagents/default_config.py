@@ -124,6 +124,7 @@ DEFAULT_CONFIG.update({
         "us_1y_yield": 1,
         # Tier-3 확장
         "usd_krw": 1,
+        "usd_jpy": 1,
         "dxy": 1,
         "china_cli": 35,        # OECD CLI 익월말 공표
         # Tier-4 확장

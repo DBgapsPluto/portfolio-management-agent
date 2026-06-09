@@ -81,6 +81,7 @@ FRED_SERIES = {
     "us_1y_yield": "DGS1",             # 1y Treasury yield (Fed path 보조 proxy)
     # Tier-3 확장: cross-asset risk-on/off
     "usd_krw": "DEXKOUS",              # KRW per USD (daily)
+    "usd_jpy": "DEXJPUS",              # JPY per USD (daily). A4 fold-in.
     "dxy": "DTWEXBGS",                 # Trade-weighted broad dollar index (daily)
     "china_cli": "CHNLOLITOAASTSAM",   # OECD China amplitude-adjusted CLI (monthly).
                                        # Normalized(NOSTSAM)은 2024-01 frozen → AA(2026-04+).
