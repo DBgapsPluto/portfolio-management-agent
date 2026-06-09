@@ -184,6 +184,10 @@ class KRYieldCurveSnapshot(StalenessAware):
     treasury_30y: float = Field(default=0.0, description="국고채 30년 yield (%)")
     spread_30y_5y_bps: float = Field(
         default=0.0, description="(30y - 5y) × 100, bps. 장기 term premium")
+    curve_shape: Literal["steep", "flat", "inverted", "humped"] = Field(
+        default="flat",
+        description="3y/5y/10y/30y butterfly 분류. inverted(10y-3y<0) / "
+                    "humped(belly 2·5y-3y-30y > +20bps) / steep(10y-3y > +50bps) / flat")
 
 
 class KRCorpSpreadSnapshot(StalenessAware):

@@ -219,7 +219,6 @@ class FXSnapshot(StalenessAware):
         default=0.0, description="JPY/KRW 1개월 % 변화 (+ = 엔 강세 vs 원)")
 
 
-
 class RiskAppetiteSnapshot(StalenessAware):
     """Copper/Gold ratio. Cyclical (Cu) vs Defensive (Au). 위험선호 proxy.
 

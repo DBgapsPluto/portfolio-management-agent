@@ -174,6 +174,32 @@ def test_kr_yc_long_end_zero_value_not_missing():
     assert abs(snap.spread_30y_5y_bps - 400.0) < 1e-6  # (4.0-0.0)*100, NOT 0
 
 
+def test_kr_yc_curve_shape_steep():
+    snap = compute_kr_yield_curve(
+        _daily([3.0] * 260), _daily([3.8] * 260), as_of=date(2026, 5, 10),
+        treasury_5y=_daily([3.3] * 260), treasury_30y=_daily([4.0] * 260))
+    assert snap.curve_shape == "steep"  # slope 80bps>50, belly -40 not humped
+
+
+def test_kr_yc_curve_shape_inverted():
+    snap = compute_kr_yield_curve(
+        _daily([3.5] * 260), _daily([3.3] * 260), as_of=date(2026, 5, 10),
+        treasury_5y=_daily([3.4] * 260), treasury_30y=_daily([3.2] * 260))
+    assert snap.curve_shape == "inverted"  # slope -20bps<0
+
+
+def test_kr_yc_curve_shape_humped():
+    snap = compute_kr_yield_curve(
+        _daily([3.0] * 260), _daily([3.2] * 260), as_of=date(2026, 5, 10),
+        treasury_5y=_daily([3.6] * 260), treasury_30y=_daily([3.1] * 260))
+    assert snap.curve_shape == "humped"  # belly 2*3.6-3.0-3.1=1.1→110bps>20
+
+
+def test_kr_yc_curve_shape_flat_no_long_end():
+    snap = compute_kr_yield_curve(_daily([3.0]), _daily([3.2]), as_of=date(2026, 5, 10))
+    assert snap.curve_shape == "flat"  # 5y/30y 없음 → flat
+
+
 # ============ KR Corp Spread BBB- Quality ============
 
 def test_kr_corp_bbb_quality_spread():

@@ -549,11 +549,17 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         try:
             krw = fetch_fred_series_skill("usd_krw", start_macro, as_of, as_of_date=as_of)
             dxy = fetch_fred_series_skill("dxy", start_macro, as_of, as_of_date=as_of)
-            usd_jpy = fetch_fred_series_skill("usd_jpy", start_macro, as_of, as_of_date=as_of)
-            fx = compute_fx_overlay(krw, dxy, as_of=as_of, usd_jpy=usd_jpy)
         except Exception as e:
             logger.warning("fx (USD/KRW + DXY) fetch failed → sentinel: %s", e)
             fx = _sentinel_fx(as_of)
+        else:
+            # A4: usd_jpy 실패가 krw/dxy 가용성을 깨지 않도록 분리 (jpy_krw만 degrade).
+            usd_jpy = None
+            try:
+                usd_jpy = fetch_fred_series_skill("usd_jpy", start_macro, as_of, as_of_date=as_of)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("usd_jpy fetch failed → jpy_krw=0.0, krw/dxy 유지: %s", e)
+            fx = compute_fx_overlay(krw, dxy, as_of=as_of, usd_jpy=usd_jpy)
 
         # Tier-3: Risk appetite (Copper/Gold via yfinance)
         try:
