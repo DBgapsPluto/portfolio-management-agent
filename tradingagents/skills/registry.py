@@ -32,6 +32,10 @@ _SKILL_MODULES: list[str] = [
     "tradingagents.skills.technical.momentum_ranker",
     "tradingagents.skills.technical.trend_state",
     "tradingagents.skills.technical.correlation_cluster",
+    "tradingagents.skills.technical.semi_momentum",
+    "tradingagents.skills.macro.chip_cycle",
+    "tradingagents.skills.macro.emerging_market",
+    "tradingagents.skills.macro.kr_sector_export",
     "tradingagents.skills.news.event_calendar",
     "tradingagents.skills.news.news_fetcher",
     "tradingagents.skills.news.impact_classifier",
@@ -41,6 +45,8 @@ _SKILL_MODULES: list[str] = [
     "tradingagents.skills.mandate.concentration_check",
     "tradingagents.skills.mandate.turnover_check",
     "tradingagents.skills.mandate.correlation_check",
+    "tradingagents.skills.risk.reit_driver",
+    "tradingagents.skills.risk.hy_decompression",
 ]
 
 

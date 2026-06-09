@@ -212,6 +212,11 @@ class FXSnapshot(StalenessAware):
         default=None,
         description="BIS Real Effective Exchange Rate (1994+, index). None=fetch fail.",
     )
+    # A4 fold-in (2026-06-09): 엔/원 cross. a4_safe_fx 엔 2종의 1차 driver.
+    jpy_krw: float = Field(
+        default=0.0, description="KRW per 1 JPY (= usd_krw / usd_jpy). 엔/원 cross")
+    jpy_krw_change_1m_pct: float = Field(
+        default=0.0, description="JPY/KRW 1개월 % 변화 (+ = 엔 강세 vs 원)")
 
 
 class RiskAppetiteSnapshot(StalenessAware):
@@ -376,3 +381,32 @@ class EarningsRevisionSnapshot(StalenessAware):
         default=None,
         description="KOSPI200 forward EPS implied 1m. None=fetch fail.",
     )
+
+
+class ChipCycleSnapshot(StalenessAware):
+    """반도체 제조 PPI (FRED PCU334413334413, 월간). 칩 가격 사이클."""
+    chip_ppi: float = Field(description="반도체 PPI level")
+    chip_ppi_yoy_pct: float = Field(description="12개월 전 대비 % (칩 가격 인플/디플)")
+    momentum_3mo_pct: float = Field(default=0.0, description="3개월 변화율 %")
+    accelerating: bool = Field(default=False, description="3mo > 0 and YoY > 0")
+
+
+class EmergingMarketSnapshot(StalenessAware):
+    """신흥국 광역 (EEM 주식, EMB 달러채) + 달러 대비 상대강도."""
+    em_equity_ret_3m_pct: float = Field(description="EEM 63일 수익률 %")
+    em_equity_ret_6m_pct: float = Field(description="EEM 126일 수익률 %")
+    em_debt_ret_3m_pct: float = Field(description="EMB 63일 수익률 % (캐리 proxy)")
+    em_vs_dxy_rel: float = Field(description="EEM 3m − DXY 3m (달러 약세 시 EM 우호)")
+    regime: Literal["risk_on", "neutral", "risk_off"] = Field(
+        description="em_vs_dxy_rel > +3 risk_on, < -3 risk_off, else neutral")
+
+
+class KRSectorExportSnapshot(StalenessAware):
+    """KR 섹터별 수출물량 YoY (ECOS 403Y002). 섹터 펀더멘털 모멘텀."""
+    semi_yoy_pct: float = Field(default=0.0, description="반도체 수출물량 YoY %")
+    battery_yoy_pct: float = Field(default=0.0, description="전지 YoY %")
+    display_yoy_pct: float = Field(default=0.0, description="디스플레이 YoY %")
+    chem_yoy_pct: float = Field(default=0.0, description="화학 YoY %")
+    steel_yoy_pct: float = Field(default=0.0, description="철강 YoY %")
+    leader_sector: str = Field(default="", description="YoY 최고 섹터")
+    laggard_sector: str = Field(default="", description="YoY 최저 섹터")

@@ -220,3 +220,15 @@ class RiskAdjustedMetrics(StalenessAware):
     is_mean_reversion_candidate: bool = Field(
         description="B%<0 + RSI<35 + return_z_30d<-1.5 동시 만족시 True.",
     )
+
+
+# ---------- Tier-6: Semiconductor Momentum ----------
+
+
+class SemiMomentumSnapshot(StalenessAware):
+    """미·글로벌 반도체 모멘텀 (^SOX 미국, SMH 글로벌). 성장테마 상대강도."""
+    sox_ret_3m_pct: float = Field(description="^SOX 63일 수익률 %")
+    sox_ret_6m_pct: float = Field(description="^SOX 126일 수익률 %")
+    smh_ret_3m_pct: float = Field(description="SMH 63일 수익률 %")
+    smh_vs_spy_rel_3m: float = Field(description="SMH 3m − SPY 3m (성장테마 상대강도)")
+    sox_minus_smh_div_3m: float = Field(description="^SOX 3m − SMH 3m (미국 vs 글로벌 반도체 디버전스)")

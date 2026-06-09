@@ -11,6 +11,7 @@ from tradingagents.schemas.macro import (
     CommodityMomentumSnapshot, USEquityValuationSnapshot,
     GeopoliticalRiskSnapshot, ChinaCreditImpulseSnapshot,
     EarningsRevisionSnapshot,
+    ChipCycleSnapshot, EmergingMarketSnapshot, KRSectorExportSnapshot,
 )
 from tradingagents.schemas.risk import (
     VolatilitySnapshot, SpreadSnapshot, SentimentSnapshot,
@@ -18,14 +19,15 @@ from tradingagents.schemas.risk import (
     VIXTermStructureSnapshot, SkewSnapshot, VxnSnapshot,
     RealYieldsSnapshot, FundingStressSnapshot, CreditQualitySnapshot,
     KRYieldCurveSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
-    KRMarketTierSnapshot, EquityBondCorrelationSnapshot,
+    KRMarketTierSnapshot, KRShortRateSnapshot, EquityBondCorrelationSnapshot,
     RealVolSnapshot, ExcessBondPremiumSnapshot,
+    REITDriverSnapshot, HYDecompressionSnapshot,
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
     ExtendedIndicatorPanel, TrendQuantification,
     UniverseBreadthSnapshot, SectorRotationSnapshot,
-    RiskAdjustedMetrics,
+    RiskAdjustedMetrics, SemiMomentumSnapshot,
 )
 from tradingagents.schemas.news import (
     CalendarEvent, RankedNews, GlobalOvernightSnapshot,
@@ -85,6 +87,10 @@ class MacroReport(_AnalystReport):
     # === Tier 0 F1 reform — INDPRO YoY + Real PCE YoY ===
     us_indpro_yoy_pct: float | None = None
     us_real_pce_yoy_pct: float | None = None
+    # === B3/B5/B1 (2026-06-09) — Chip cycle + EM + KR sector export ===
+    chip_cycle: ChipCycleSnapshot | None = None
+    emerging_market: EmergingMarketSnapshot | None = None
+    kr_sector_export: KRSectorExportSnapshot | None = None
 
 
 class RiskReport(_AnalystReport):
@@ -118,6 +124,11 @@ class RiskReport(_AnalystReport):
     real_vol: RealVolSnapshot | None = None
     # === Tier 0 (2026-05-28) ===
     excess_bond_premium: ExcessBondPremiumSnapshot | None = None
+    # === A2 (2026-06-09) — KR short-rate funding stress ===
+    kr_short_rate: KRShortRateSnapshot | None = None
+    # === B7/B9 (2026-06-09) — REIT driver + HY decompression ===
+    reit_driver: REITDriverSnapshot | None = None
+    hy_decompression: HYDecompressionSnapshot | None = None
 
 
 class TechnicalReport(_AnalystReport):
@@ -162,6 +173,8 @@ class TechnicalReport(_AnalystReport):
         default_factory=dict,
         description="Ticker → Sortino/Calmar/skew/kurt/reversion candidate.",
     )
+    # === B3 (2026-06-09) — Semiconductor momentum (SOX/SMH vs SPY) ===
+    semi_momentum: SemiMomentumSnapshot | None = None
 
 
 class NewsReport(_AnalystReport):

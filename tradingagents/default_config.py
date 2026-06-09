@@ -119,11 +119,13 @@ DEFAULT_CONFIG.update({
         # Tier-2 확장
         "us_nfci": 7,           # NFCI 주간 공표 (수요일, 직전 주 종가 기준)
         "us_anfci": 7,
+        "us_mortgage_30y": 7,
         "us_5y5y_breakeven": 1,
         "us_michigan_1y": 15,   # 매월 중순 preliminary, 말 final
         "us_1y_yield": 1,
         # Tier-3 확장
         "usd_krw": 1,
+        "usd_jpy": 1,
         "dxy": 1,
         "china_cli": 35,        # OECD CLI 익월말 공표
         # Tier-4 확장
@@ -145,12 +147,23 @@ DEFAULT_CONFIG.update({
         "kr_treasury_3y": 1,
         "kr_treasury_10y": 1,
         "kr_corp_aa_3y": 1,
+        "kr_treasury_5y": 1,
+        "kr_treasury_30y": 1,
+        "kr_corp_bbb_3y": 1,
+        "kr_cd91": 1,
         # Tier 0 additions (2026-05-28)
         "us_indpro": 17,                # IP released ~17th of month for prior month
         "us_real_pce": 30,              # BEA quarterly + 1 month lag
         "us_acm_term_premium_10y": 5,   # NY Fed weekly update
         "kr_reer": 17,                  # BIS monthly
         "ted_spread": 1,                # daily
+        # Plan B fold-in (2026-06-09)
+        "us_chip_ppi": 30,              # Semiconductor PPI (monthly)
+        "kr_export_semi": 30,           # Semiconductor exports (monthly)
+        "kr_export_battery": 30,        # Battery exports (monthly)
+        "kr_export_display": 30,        # Display exports (monthly)
+        "kr_export_chem": 30,           # Chemical exports (monthly)
+        "kr_export_steel": 30,          # Steel exports (monthly)
     },
     # Tracing / observability
     "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",

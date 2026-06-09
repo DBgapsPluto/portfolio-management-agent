@@ -179,6 +179,15 @@ class KRYieldCurveSnapshot(StalenessAware):
         description="percentile_5y >0.5 normal / 0.15~0.5 flat / <0.15 inverted. "
                     "데이터 부족 시 절대 임계 fallback (+50bps normal, -10~+50 flat, <-10 inverted)."
     )
+    # A2 fold-in (2026-06-09): long-end terms. default=0.0 후방호환.
+    treasury_5y: float = Field(default=0.0, description="국고채 5년 yield (%)")
+    treasury_30y: float = Field(default=0.0, description="국고채 30년 yield (%)")
+    spread_30y_5y_bps: float = Field(
+        default=0.0, description="(30y - 5y) × 100, bps. 장기 term premium")
+    curve_shape: Literal["steep", "flat", "inverted", "humped"] = Field(
+        default="flat",
+        description="3y/5y/10y/30y butterfly 분류. inverted(10y-3y<0) / "
+                    "humped(belly 2·5y-3y-30y > +20bps) / steep(10y-3y > +50bps) / flat")
 
 
 class KRCorpSpreadSnapshot(StalenessAware):
@@ -189,6 +198,11 @@ class KRCorpSpreadSnapshot(StalenessAware):
     percentile_5y: float = Field(ge=0, le=1)
     regime: Literal["calm", "elevated", "stress"] = Field(
         description="percentile<0.5 calm, 0.5~0.85 elevated, >0.85 stress"
+    )
+    # A2 fold-in (2026-06-09): BBB- 등급 신용 커브. default=0.0 후방호환.
+    corp_bbb_yield_3y: float = Field(default=0.0, description="회사채 BBB- 3y yield (%)")
+    bbb_aa_quality_spread_bps: float = Field(
+        default=0.0, description="(BBB- - AA-) × 100, bps. 등급 프리미엄(낮은 등급 risk)"
     )
 
 
@@ -216,6 +230,18 @@ class KRMarketTierSnapshot(StalenessAware):
     signal: Literal["large_cap_risk_off", "neutral", "small_cap_risk_on"] = Field(
         description="diff>+3% small_cap_risk_on, diff<-3% large_cap_risk_off"
     )
+
+
+class KRShortRateSnapshot(StalenessAware):
+    """CD 91일 금리 vs 국고채 3y. 자금시장 funding stress 진단.
+
+    CD > 국고채3y (양수 spread) = 단기 자금시장 경색 (funding stress).
+    """
+    cd91: float = Field(description="CD 91일 금리 (%)")
+    cd91_minus_treasury3y_bps: float = Field(
+        description="(CD91 - 국고채3y) × 100, bps. 양수=자금시장 funding stress")
+    regime: Literal["calm", "elevated", "stress"] = Field(
+        description="spread < -20bps calm, -20~0 elevated, >0 stress")
 
 
 class EquityBondCorrelationSnapshot(StalenessAware):
@@ -256,3 +282,34 @@ class ExcessBondPremiumSnapshot(StalenessAware):
     """
     ebp: float = Field(description="Monthly EBP (1973+)")
     ebp_zscore_5y: float = Field(default=0.0, description="5-year rolling z-score")
+
+
+class REITDriverSnapshot(StalenessAware):
+    """리츠 거시 드라이버 (US REIT 모멘텀·dispersion + 모기지 스프레드).
+
+    KR REIT 가격은 universe 등재로 technical sector_rotation에 반영됨(여기선 US 거시축).
+    """
+    us_reit_ret_3m_pct: float = Field(description="VNQ 63일 수익률 %")
+    us_reit_ret_6m_pct: float = Field(description="VNQ 126일 수익률 %")
+    us_reit_dispersion: float = Field(
+        default=0.0, description="VNQ/XLRE/SCHH 63일 수익률 cross-sectional std (pp)")
+    mortgage_30y: float = Field(default=0.0, description="30y 모기지 금리 %")
+    mortgage_minus_10y_bps: float = Field(
+        default=0.0, description="(모기지 − 10Y국채) × 100, bps. 부동산 금융비용 스프레드")
+    regime: Literal["easing", "neutral", "tightening"] = Field(
+        default="neutral", description="모기지 스프레드 추세 기반(현재 neutral 고정, percentile은 후속)")
+
+
+class HYDecompressionSnapshot(StalenessAware):
+    """하이일드 − IG OAS 디컴프레션. within-credit risk 신호.
+
+    ⚠️ live-only: backtest에서 us_hy_oas·us_ig_oas가 둘 다 BAA10Y로 fallback되면
+    hy_minus_ig=0으로 붕괴(collapsed=True로 표시). 2023-06 이전 historical은 무의미.
+    """
+    hy_oas_bps: float = Field(description="US HY OAS (bps)")
+    ig_oas_bps: float = Field(description="US IG OAS (bps)")
+    hy_minus_ig_bps: float = Field(description="HY − IG (bps). 확대 = 신용 차별화/distress")
+    collapsed: bool = Field(
+        default=False, description="True면 HY==IG (backtest BAA10Y fallback) → 신호 무의미")
+    regime: Literal["calm", "widening", "stress"] = Field(
+        default="calm", description="hy_minus_ig <300 calm, 300~500 widening, >500 stress")

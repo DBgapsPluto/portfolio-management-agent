@@ -81,6 +81,7 @@ FRED_SERIES = {
     "us_1y_yield": "DGS1",             # 1y Treasury yield (Fed path 보조 proxy)
     # Tier-3 확장: cross-asset risk-on/off
     "usd_krw": "DEXKOUS",              # KRW per USD (daily)
+    "usd_jpy": "DEXJPUS",              # JPY per USD (daily). A4 fold-in.
     "dxy": "DTWEXBGS",                 # Trade-weighted broad dollar index (daily)
     "china_cli": "CHNLOLITOAASTSAM",   # OECD China amplitude-adjusted CLI (monthly).
                                        # Normalized(NOSTSAM)은 2024-01 frozen → AA(2026-04+).
@@ -116,6 +117,10 @@ FRED_SERIES = {
     "kr_reer": "RBKRBIS",                 # BIS Real Effective Exchange Rate KR (1994+, monthly)
     # F10 SOFR-TED stitching (pre-2018 proxy)
     "ted_spread": "TEDRATE",              # TED Spread (1986-2022, discontinued)
+    # Plan B fold-in (2026-06-09): chip sector PPI (B3)
+    "us_chip_ppi": "PCU334413334413",   # 반도체·관련소자 PPI (월간, B3)
+    # Plan C fold-in (2026-06-09): mortgage rate (B7)
+    "us_mortgage_30y": "MORTGAGE30US",  # 30y 모기지 (weekly, B7)
 }
 
 

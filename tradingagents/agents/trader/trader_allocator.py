@@ -36,7 +36,8 @@ from tradingagents.skills.portfolio.vol_haircut import (
     bucket_volatility, apply_vol_haircut,
 )
 from tradingagents.skills.mandate.risk_repair import repair_risk_cap
-from tradingagents.skills.mandate.concentration_check import RISK_BUCKET_NAMES
+from tradingagents.skills.mandate.category_repair import repair_category_caps
+from tradingagents.skills.mandate.concentration_check import RISK_BUCKET_NAMES, CATEGORY_CAPS
 from tradingagents.skills.portfolio.sub_category import bucket_for_etf
 
 logger = logging.getLogger(__name__)
@@ -225,25 +226,27 @@ def create_trader_allocator(step_a_llm):
         if s > 0:
             weights = {t: w / s for t, w in weights.items()}
 
-        # 위험자산 70% cap deterministic repair (spec §7) — validator 정의(bucket_for_etf)로 측정해
-        # realized 위험 ≤70% 보장 → 결정론 retry 무한루프/크래시 방지.
+        # 위험자산 70% + 세부자산(category) cap deterministic repair (spec §7, 대회 §2.2) —
+        # validator 정의(bucket_for_etf / e.category)로 측정해 realized 가 모든 cap 이내 보장.
+        # category↔risk 교대 3회로 상호작용 수렴. Stage 5 가 하드 검증.
         _meta = {e.ticker: e for e in uni.etfs}
+        _cat_of = {e.ticker: e.category for e in uni.etfs}
         def _is_risk(t):
             e = _meta.get(t)
             return bool(e) and bucket_for_etf(e) in RISK_BUCKET_NAMES
-        weights = repair_risk_cap(weights, _is_risk)
-        s = sum(weights.values())
-        if s > 0:
-            weights = {t: w / s for t, w in weights.items()}
+        def _repair_all(w):
+            for _ in range(3):
+                w = repair_category_caps(w, _cat_of, CATEGORY_CAPS)
+                w = repair_risk_cap(w, _is_risk)
+            s = sum(w.values())
+            return {t: x / s for t, x in w.items()} if s > 0 else w
+        weights = _repair_all(weights)
 
-        # 실행상 무의미한 극소액 잔여 정리 (분산 소액 2~5%는 보존) → 재분배가 risk
-        # 비율을 흔들 수 있어 repair_risk_cap 을 재적용해 70% cap 재보장.
+        # 실행상 무의미한 극소액 잔여 정리 (분산 소액 2~5%는 보존) → 재분배가 cap
+        # 비율을 흔들 수 있어 repair 를 재적용해 모든 cap 재보장.
         _floor = float(_dials.get("min_holding_weight", NEGLIGIBLE_FLOOR))
         weights = drop_negligible_holdings(weights, _floor)
-        weights = repair_risk_cap(weights, _is_risk)
-        s = sum(weights.values())
-        if s > 0:
-            weights = {t: w / s for t, w in weights.items()}
+        weights = _repair_all(weights)
 
         # 컷오프로 ETF 가 빠지면 bucket 실현 비중도 변하므로, 최종 ETF weights 를
         # 14-bucket 으로 역집계해 bucket_target/attribution(→ philosophy)에 쓴다.

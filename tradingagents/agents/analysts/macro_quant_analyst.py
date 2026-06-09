@@ -27,7 +27,11 @@ from tradingagents.schemas.macro import (
     KRExportSnapshot, KRLeadingIndexSnapshot, PolicyUncertaintySnapshot,
     RegimeClassification, RiskAppetiteSnapshot, TailRiskSnapshot,
     USEquityValuationSnapshot, USLeadingIndexSnapshot,
+    ChipCycleSnapshot, EmergingMarketSnapshot, KRSectorExportSnapshot,
 )
+from tradingagents.skills.macro.chip_cycle import compute_chip_cycle
+from tradingagents.skills.macro.emerging_market import compute_emerging_market
+from tradingagents.skills.macro.kr_sector_export import compute_kr_sector_export
 from tradingagents.schemas.reports import MacroReport
 from tradingagents.skills.research.china_credit_impulse import compute_china_credit_impulse
 from tradingagents.skills.research.earnings_revision import (
@@ -180,6 +184,51 @@ def _build_commodity_momentum(as_of: date) -> CommodityMomentumSnapshot | None:
         )
     except Exception as e:
         logger.warning("commodity_momentum failed: %s", e)
+        return None
+
+
+def _build_chip_cycle(as_of: date) -> ChipCycleSnapshot | None:
+    """US chip PPI cycle snapshot — B3 component."""
+    from tradingagents.skills.macro.fred_fetcher import fetch_fred_series_skill
+    try:
+        start = as_of - timedelta(days=365 * 3)
+        ppi = fetch_fred_series_skill("us_chip_ppi", start, as_of, as_of_date=as_of)
+        return compute_chip_cycle(ppi, as_of=as_of)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("chip_cycle failed: %s", e)
+        return None
+
+
+def _build_emerging_market(as_of: date) -> EmergingMarketSnapshot | None:
+    """EEM/EMB/DXY emerging market snapshot — B5 component."""
+    from tradingagents.dataflows.equity_indices import fetch_equity_index_close
+    from tradingagents.skills.macro.fred_fetcher import fetch_fred_series_skill
+    try:
+        start = as_of - timedelta(days=300)
+        eem = fetch_equity_index_close("eem", start, as_of)
+        emb = fetch_equity_index_close("emb", start, as_of)
+        dxy = fetch_fred_series_skill("dxy", start, as_of, as_of_date=as_of)
+        return compute_emerging_market(eem, emb, dxy, as_of=as_of)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("emerging_market failed: %s", e)
+        return None
+
+
+def _build_kr_sector_export(as_of: date) -> KRSectorExportSnapshot | None:
+    """KR sector-level export breakdown snapshot — B1 component."""
+    from tradingagents.skills.macro.ecos_fetcher import fetch_ecos_series_skill
+    try:
+        start = as_of - timedelta(days=365 * 2)
+        series = {
+            "semi": fetch_ecos_series_skill("kr_export_semi", start, as_of, freq="M", as_of_date=as_of),
+            "battery": fetch_ecos_series_skill("kr_export_battery", start, as_of, freq="M", as_of_date=as_of),
+            "display": fetch_ecos_series_skill("kr_export_display", start, as_of, freq="M", as_of_date=as_of),
+            "chem": fetch_ecos_series_skill("kr_export_chem", start, as_of, freq="M", as_of_date=as_of),
+            "steel": fetch_ecos_series_skill("kr_export_steel", start, as_of, freq="M", as_of_date=as_of),
+        }
+        return compute_kr_sector_export(series, as_of=as_of)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("kr_sector_export failed: %s", e)
         return None
 
 
@@ -549,10 +598,17 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         try:
             krw = fetch_fred_series_skill("usd_krw", start_macro, as_of, as_of_date=as_of)
             dxy = fetch_fred_series_skill("dxy", start_macro, as_of, as_of_date=as_of)
-            fx = compute_fx_overlay(krw, dxy, as_of=as_of)
         except Exception as e:
             logger.warning("fx (USD/KRW + DXY) fetch failed → sentinel: %s", e)
             fx = _sentinel_fx(as_of)
+        else:
+            # A4: usd_jpy 실패가 krw/dxy 가용성을 깨지 않도록 분리 (jpy_krw만 degrade).
+            usd_jpy = None
+            try:
+                usd_jpy = fetch_fred_series_skill("usd_jpy", start_macro, as_of, as_of_date=as_of)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("usd_jpy fetch failed → jpy_krw=0.0, krw/dxy 유지: %s", e)
+            fx = compute_fx_overlay(krw, dxy, as_of=as_of, usd_jpy=usd_jpy)
 
         # Tier-3: Risk appetite (Copper/Gold via yfinance)
         try:
@@ -653,6 +709,11 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
         geopolitical_risk_snapshot = _build_geopolitical_risk(as_of)
         china_credit_impulse_snap = _build_china_credit_impulse_snapshot(as_of)
         earnings_revision_snap = _build_earnings_revision(as_of)
+
+        # B3/B5/B1 — chip cycle + emerging market + KR sector export (Task 6).
+        chip_cycle_snap = _build_chip_cycle(as_of)
+        emerging_market_snap = _build_emerging_market(as_of)
+        kr_sector_export_snap = _build_kr_sector_export(as_of)
 
         # Stage 1 audit (Task 2): sentinel inventory before regime classification.
         # 어느 snapshot이 fetch 실패로 sentinel인지 카운트 → narrative summary 로 노출.
@@ -848,6 +909,10 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             geopolitical_risk=geopolitical_risk_snapshot,
             china_credit_impulse=china_credit_impulse_snap,
             earnings_revision=earnings_revision_snap,
+            # ★ B3/B5/B1 Task 6 — chip cycle + emerging market + KR sector export
+            chip_cycle=chip_cycle_snap,
+            emerging_market=emerging_market_snap,
+            kr_sector_export=kr_sector_export_snap,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"macro_report": report, "macro_summary": summary}

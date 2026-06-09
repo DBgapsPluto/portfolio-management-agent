@@ -3,11 +3,17 @@ from datetime import date, datetime, timedelta
 from time import mktime
 
 import feedparser
+import requests
 
 from tradingagents.dataflows.pit_guard import is_pit_stale
 from tradingagents.schemas.news import CalendarEvent, NewsItem
 
 logger = logging.getLogger(__name__)
+
+# RSS fetch 방어: feedparser.parse(url) 은 timeout 이 없어 응답 없는 소스에서
+# 무한 hang → Stage 1 freeze. requests 로 받아 본문만 넘긴다 (코드베이스 표준 패턴).
+_HTTP_TIMEOUT_S = 12
+_UA = "Mozilla/5.0 (compatible; gaps-macro-news/1.0)"
 
 
 from tradingagents.dataflows.event_calendar_fetcher import (
@@ -58,7 +64,8 @@ def fetch_macro_news(rss_urls: list[str], window_days: int = 7,
     items: list[NewsItem] = []
     for url in rss_urls:
         try:
-            feed = feedparser.parse(url)
+            resp = requests.get(url, headers={"User-Agent": _UA}, timeout=_HTTP_TIMEOUT_S)
+            feed = feedparser.parse(resp.content)
         except Exception as e:
             logger.warning("RSS fetch failed for %s: %s", url, e)
             continue

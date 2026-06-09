@@ -15,6 +15,9 @@ from tradingagents.rebalance import daily_triggers
 from tradingagents.rebalance.triggers import evaluate_drift, route_tier
 from tradingagents.rebalance.overlay import defensive_overlay, risk_on_overlay
 from tradingagents.rebalance.reassess import reassess_target
+from tradingagents.skills.mandate.category_repair import repair_category_caps
+from tradingagents.skills.mandate.risk_repair import repair_risk_cap
+from tradingagents.skills.mandate.concentration_check import CATEGORY_CAPS
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.rebalance.types import RebalanceResult
 from tradingagents.monitor.notify import send_rebalance_alert
@@ -142,6 +145,13 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
             current_weights=current,
             trigger=trig_ctx,
         )
+
+    # 세부자산(category)+위험자산 cap 강제 (대회 §2.2) — overlay/reassess 는 category 무인지.
+    # category↔risk 교대 3회 수렴. 정수 qty 반올림 후 realized 는 engine 이 재검증.
+    _cat_of = {e.ticker: e.category for e in universe.etfs}
+    for _ in range(3):
+        target = repair_category_caps(target, _cat_of, CATEGORY_CAPS)
+        target = repair_risk_cap(target, is_risk)
 
     resolved_out = (
         Path(out_dir)

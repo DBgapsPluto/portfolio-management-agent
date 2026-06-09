@@ -26,6 +26,23 @@ def _classify_regime_pct(percentile: float) -> Literal["normal", "flat", "invert
     return "flat"
 
 
+def _classify_curve_shape(
+    y3: float, y5: float, y10: float, y30: float,
+) -> Literal["steep", "flat", "inverted", "humped"]:
+    """3y/5y/10y/30y butterfly 분류. 한 tenor라도 데이터 없으면(0.0) flat."""
+    if not (y3 and y5 and y10 and y30):
+        return "flat"
+    slope_bps = (y10 - y3) * 100
+    belly_bps = (2 * y5 - y3 - y30) * 100   # butterfly: belly convexity
+    if slope_bps < 0:
+        return "inverted"
+    if belly_bps > 20:
+        return "humped"
+    if slope_bps > 50:
+        return "steep"
+    return "flat"
+
+
 def _classify_regime_abs(spread_bps: float) -> Literal["normal", "flat", "inverted"]:
     if spread_bps > FALLBACK_NORMAL_BPS:
         return "normal"
@@ -37,6 +54,7 @@ def _classify_regime_abs(spread_bps: float) -> Literal["normal", "flat", "invert
 @register_skill(name="compute_kr_yield_curve", category="risk")
 def compute_kr_yield_curve(
     treasury_3y: pd.Series, treasury_10y: pd.Series, as_of: date,
+    treasury_5y: pd.Series | None = None, treasury_30y: pd.Series | None = None,
 ) -> KRYieldCurveSnapshot:
     """한국 국고채 yield curve 진단. 미국과 별도 사이클 가능 (BOK vs Fed 정책차)."""
     if treasury_3y is None or treasury_3y.empty or treasury_10y.empty:
@@ -62,6 +80,18 @@ def compute_kr_yield_curve(
         percentile = 0.5
         regime = _classify_regime_abs(spread_bps)
 
+    def _has(s: pd.Series | None) -> bool:
+        return s is not None and not s.empty
+
+    def _last(s: pd.Series | None) -> float:
+        return float(s.iloc[-1]) if _has(s) else 0.0
+
+    y5 = _last(treasury_5y)
+    y30 = _last(treasury_30y)
+    # 입력 존재 여부로 판단 — 값 기반(y5 and y30)이면 금리가 정당하게 0일 때 오작동.
+    spread_30y_5y = (y30 - y5) * 100 if (_has(treasury_5y) and _has(treasury_30y)) else 0.0
+    curve_shape = _classify_curve_shape(y3, y5, y10, y30)
+
     return KRYieldCurveSnapshot(
         treasury_3y=y3,
         treasury_10y=y10,
@@ -69,5 +99,9 @@ def compute_kr_yield_curve(
         inverted=spread_bps < 0,
         percentile_5y=percentile,
         regime=regime,
+        curve_shape=curve_shape,
+        treasury_5y=y5,
+        treasury_30y=y30,
+        spread_30y_5y_bps=spread_30y_5y,
         source_date=as_of,
     )
