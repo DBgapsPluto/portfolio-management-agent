@@ -119,7 +119,6 @@ def select_representative_candidates(
     capital_krw: float,
     name: dict[str, str] | None = None,
     quadrant: str | None = None,
-    dominant_scenario: str | None = None,
     fx_regime: str | None = None,
     trace: dict | None = None,
 ) -> list[str]:

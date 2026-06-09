@@ -249,7 +249,7 @@ def _build_state_summary(state: dict) -> str:
         f"#### News\n{state.get('news_summary', '')}\n\n"
         "### Stage 2 — Research Decision\n"
         f"{state.get('research_debate_summary', '')}\n"
-        f"Scenario / factors: {_format_scenario_probs(rd)}\n"
+        f"Risk tilt: {_format_scenario_probs(rd)}\n"
         f"버킷 배분(14): {format_bucket_target_14(bucket)}\n\n"
         "### Stage 3 — Method choice\n"
         f"Selected: {_resolve_method(state)}\n"

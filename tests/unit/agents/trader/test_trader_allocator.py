@@ -44,8 +44,7 @@ def _universe_14(tmp_path):
 
 def _state_14(universe_path, macro=None):
     return {
-        "research_decision": ResearchThesis(conviction="medium",
-                                            dominant_scenario="neutral", thesis_md="t"),
+        "research_decision": ResearchThesis(thesis_md="t"),
         "universe_path": universe_path, "macro_report": macro,
         "macro_summary": "m", "risk_summary": "r",
         "technical_summary": "t", "news_summary": "n",

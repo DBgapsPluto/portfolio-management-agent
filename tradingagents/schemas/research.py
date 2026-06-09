@@ -10,26 +10,12 @@ C5 (2026-05-23) 에서 24-cell Cartesian product framework 완전 제거.
   (구 archive/free-text replay 호환). ResearchDecision(factor model)의 dominant_scenario
   는 별도 free str 로 유지 — agent_states/philosophy 가 legacy name 으로 참조.
 """
-from typing import Annotated, Literal, get_args
+from typing import Literal
 
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, Field
 
 
 ConvictionLevel = Literal["high", "medium", "low"]
-
-ScenarioLabel = Literal[
-    "kr_boom", "kr_stress", "global_credit", "ai_concentration", "neutral",
-]
-_VALID_SCENARIOS = frozenset(get_args(ScenarioLabel))
-
-
-def _coerce_scenario(v: object) -> object:
-    """enum 밖 값(구 라벨/free text) → neutral. replay·구 archive 호환."""
-    return v if v in _VALID_SCENARIOS else "neutral"
-
-
-# 두 모델 공용 — Annotated + BeforeValidator 로 coercion 을 타입에 부착(DRY).
-ScenarioField = Annotated[ScenarioLabel, BeforeValidator(_coerce_scenario)]
 
 
 # Forward import to avoid circular reference
@@ -92,8 +78,6 @@ class InvestmentThesis(BaseModel):
     """Research Manager(Stage 2) 출력 — bull/bear 종합. structured LLM 타깃."""
     thesis_md: str = Field(max_length=20000)
     risk_tilt: Literal["strong_offensive", "offensive", "neutral", "defensive", "strong_defensive"] = "neutral"
-    conviction: ConvictionLevel = "medium"
-    dominant_scenario: ScenarioField = "neutral"
     key_risks: list[str] = Field(default_factory=list)
 
 
@@ -105,8 +89,6 @@ class ResearchThesis(BaseModel):
     factor_scores 는 없음 → macro_conditional 의 valuation trigger graceful 비활성.
     """
     risk_tilt: Literal["strong_offensive", "offensive", "neutral", "defensive", "strong_defensive"] = "neutral"
-    conviction: ConvictionLevel = "medium"
-    dominant_scenario: ScenarioField = "neutral"
     thesis_md: str = Field(default="", max_length=20000)
     bull_view: str = Field(default="", max_length=20000)
     bear_view: str = Field(default="", max_length=20000)

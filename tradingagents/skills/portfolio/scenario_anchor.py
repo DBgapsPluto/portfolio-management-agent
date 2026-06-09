@@ -120,32 +120,6 @@ def project_to_band(
     return w
 
 
-# 직교 시나리오 → {bucket: delta}. 작고 net≈0, |delta| ≤ 0.05 (v1 시드, 튜닝 대상).
-# keys ⊆ ScenarioLabel \ {neutral} (test_scenario_anchor 가 cross-check).
-SCENARIO_MODIFIER: dict[str, dict[str, float]] = {
-    "kr_boom":          {"b1_kr_equity": 0.05, "b5_other_intl": -0.03, "b2_dm_core": -0.02},
-    "kr_stress":        {"b1_kr_equity": -0.05, "b2_dm_core": 0.03, "a1_cash": 0.02},
-    "global_credit":    {"b9_risk_credit": -0.04, "a3_us_rates": 0.04},
-    "ai_concentration": {"b3_global_tech": 0.05, "b6_defensive_equity": -0.03, "b5_other_intl": -0.02},
-    # "neutral" 없음 → no-op
-}
-
-
-def apply_scenario_modifier(
-    baseline: dict[str, float], scenario: str,
-    hard_min: dict[str, float], hard_max: dict[str, float],
-) -> dict[str, float]:
-    """quadrant baseline 에 scenario modifier 를 더해 center 이동, quadrant hard band 로 투영.
-
-    neutral / 미정의 scenario → baseline 그대로. project_to_band 재사용 → sum=1·hard band 내
-    보장, 불가 시 baseline fallback. modifier 가 hard band 를 못 벗어나는 게 구조적 모순 guard.
-    """
-    delta = SCENARIO_MODIFIER.get(scenario)
-    if not delta:
-        return dict(baseline)
-    return project_to_band(baseline, delta, hard_min, hard_max)
-
-
 # === 매크로 신호 → bucket delta (v1 시드, 튜닝 대상). net≈0, |delta| 작게. ===
 # risk_tilt 5단 → 성장버킷 합 조정폭 (regime baseline 대비 위험자산 ±).
 RISK_TILT_AMOUNT: dict[str, float] = {

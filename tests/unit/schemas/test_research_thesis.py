@@ -11,3 +11,8 @@ def test_research_thesis_accepts_risk_tilt():
 def test_investment_thesis_risk_tilt():
     it = InvestmentThesis(thesis_md="x", risk_tilt="offensive")
     assert it.risk_tilt == "offensive"
+
+def test_old_fields_removed():
+    rt = ResearchThesis(conviction="high", dominant_scenario="kr_boom")  # extra=ignore → 무시
+    assert not hasattr(rt, "conviction")
+    assert not hasattr(rt, "dominant_scenario")
