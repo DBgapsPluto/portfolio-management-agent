@@ -21,6 +21,7 @@ from tradingagents.schemas.risk import (
     KRYieldCurveSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
     KRMarketTierSnapshot, KRShortRateSnapshot, EquityBondCorrelationSnapshot,
     RealVolSnapshot, ExcessBondPremiumSnapshot,
+    REITDriverSnapshot, HYDecompressionSnapshot,
 )
 from tradingagents.schemas.technical import (
     IndicatorPanel, TrendState, ETFRanking, Cluster,
@@ -125,6 +126,9 @@ class RiskReport(_AnalystReport):
     excess_bond_premium: ExcessBondPremiumSnapshot | None = None
     # === A2 (2026-06-09) — KR short-rate funding stress ===
     kr_short_rate: KRShortRateSnapshot | None = None
+    # === B7/B9 (2026-06-09) — REIT driver + HY decompression ===
+    reit_driver: REITDriverSnapshot | None = None
+    hy_decompression: HYDecompressionSnapshot | None = None
 
 
 class TechnicalReport(_AnalystReport):

@@ -45,6 +45,8 @@ from tradingagents.skills.risk.systemic_score import score_systemic_risk
 from tradingagents.skills.risk.vix_term_structure import compute_vix_term_structure
 from tradingagents.skills.risk.volatility import fetch_volatility_index
 from tradingagents.skills.risk.vxn import compute_vxn
+from tradingagents.skills.risk.reit_driver import compute_reit_driver
+from tradingagents.skills.risk.hy_decompression import compute_hy_decompression
 
 logger = logging.getLogger(__name__)
 
@@ -412,6 +414,28 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             logger.warning("credit_quality (AAA/BBB OAS) fetch failed → sentinel: %s", e)
             credit_quality = _sentinel_credit_quality(as_of)
 
+        # B7: US REIT driver (VNQ/XLRE/SCHH + mortgage 30y + DGS10)
+        reit_driver = None
+        try:
+            vnq = fetch_equity_index_close("vnq", start_5y, as_of)
+            xlre = fetch_equity_index_close("xlre", start_5y, as_of)
+            schh = fetch_equity_index_close("schh", start_5y, as_of)
+            mortgage = fetch_fred_series_skill("us_mortgage_30y", start_5y, as_of, as_of_date=as_of)
+            dgs10 = fetch_fred_series_skill("us_10y", start_5y, as_of, as_of_date=as_of)
+            reit_driver = compute_reit_driver(vnq, xlre, schh, mortgage, dgs10, as_of=as_of)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("reit_driver failed → None: %s", e)
+            reit_driver = None
+
+        # B9: HY decompression (HY OAS − IG OAS)
+        hy_decompression = None
+        try:
+            hy_decompression = compute_hy_decompression(
+                hy.current_bps, ig.current_bps, as_of=as_of)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("hy_decompression failed → None: %s", e)
+            hy_decompression = None
+
         # Tier-3: KR yield curve (ECOS 국고채 3y/10y/5y/30y)
         try:
             kr_3y = fetch_ecos_series_skill(
@@ -611,6 +635,8 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             real_vol=real_vol,  # ★ NEW C6 (Optional, None on fail)
             excess_bond_premium=_build_excess_bond_premium(as_of),  # ★ Tier0 Task 4.2
             kr_short_rate=kr_short_rate,  # ★ A2 (2026-06-09)
+            reit_driver=reit_driver,        # ★ B7 (2026-06-09)
+            hy_decompression=hy_decompression,  # ★ B9 (2026-06-09)
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"risk_report": report, "risk_summary": summary}
