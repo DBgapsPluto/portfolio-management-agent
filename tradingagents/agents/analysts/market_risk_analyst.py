@@ -21,8 +21,9 @@ from tradingagents.schemas.reports import RiskReport
 from tradingagents.schemas.risk import (
     CreditQualitySnapshot, EquityBondCorrelationSnapshot, ExcessBondPremiumSnapshot,
     FundingStressSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
-    KRMarketTierSnapshot, KRYieldCurveSnapshot, PCASnapshot, RealYieldsSnapshot,
-    SentimentSnapshot, SkewSnapshot, VIXTermStructureSnapshot, VxnSnapshot,
+    KRMarketTierSnapshot, KRShortRateSnapshot, KRYieldCurveSnapshot, PCASnapshot,
+    RealYieldsSnapshot, SentimentSnapshot, SkewSnapshot, VIXTermStructureSnapshot,
+    VxnSnapshot,
 )
 from tradingagents.skills.macro.ecos_fetcher import fetch_ecos_series_skill
 from tradingagents.skills.macro.fred_fetcher import fetch_fred_series_skill
@@ -33,6 +34,7 @@ from tradingagents.skills.risk.credit_spread import fetch_credit_spread
 from tradingagents.skills.risk.equity_bond_corr import compute_equity_bond_corr
 from tradingagents.skills.risk.fear_greed import fetch_fear_greed_index
 from tradingagents.skills.risk.kr_corp_spread import compute_kr_corp_spread
+from tradingagents.skills.risk.kr_short_rate import compute_kr_short_rate
 from tradingagents.skills.risk.kr_margin_debt import compute_kr_margin_debt
 from tradingagents.skills.risk.kr_market_tier import compute_kr_market_tier
 from tradingagents.skills.risk.kr_yield_curve import compute_kr_yield_curve
@@ -102,6 +104,13 @@ def _sentinel_kr_corp_spread(as_of: date) -> KRCorpSpreadSnapshot:
     return KRCorpSpreadSnapshot(
         corp_yield_3y=0.0, treasury_3y=0.0, spread_bps=0.0,
         percentile_5y=0.5, regime="calm",
+        source_date=as_of, staleness_days=99,
+    )
+
+
+def _sentinel_kr_short_rate(as_of: date) -> KRShortRateSnapshot:
+    return KRShortRateSnapshot(
+        cd91=0.0, cd91_minus_treasury3y_bps=0.0, regime="calm",
         source_date=as_of, staleness_days=99,
     )
 
@@ -403,7 +412,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             logger.warning("credit_quality (AAA/BBB OAS) fetch failed → sentinel: %s", e)
             credit_quality = _sentinel_credit_quality(as_of)
 
-        # Tier-3: KR yield curve (ECOS 국고채 3y/10y)
+        # Tier-3: KR yield curve (ECOS 국고채 3y/10y/5y/30y)
         try:
             kr_3y = fetch_ecos_series_skill(
                 "kr_treasury_3y", start_5y, as_of, freq="D", as_of_date=as_of,
@@ -411,24 +420,42 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             kr_10y = fetch_ecos_series_skill(
                 "kr_treasury_10y", start_5y, as_of, freq="D", as_of_date=as_of,
             ).dropna()
-            kr_yield_curve = compute_kr_yield_curve(kr_3y, kr_10y, as_of=as_of)
+            kr_5y = fetch_ecos_series_skill(
+                "kr_treasury_5y", start_5y, as_of, freq="D", as_of_date=as_of)
+            kr_30y = fetch_ecos_series_skill(
+                "kr_treasury_30y", start_5y, as_of, freq="D", as_of_date=as_of)
+            kr_yield_curve = compute_kr_yield_curve(
+                kr_3y, kr_10y, as_of=as_of, treasury_5y=kr_5y, treasury_30y=kr_30y)
         except Exception as e:
             logger.warning("kr_yield_curve (KTB 3y/10y) fetch failed → sentinel: %s", e)
             kr_yield_curve = _sentinel_kr_yield_curve(as_of)
+            kr_3y = pd.Series(dtype=float)
+            kr_short_rate = _sentinel_kr_short_rate(as_of)
 
         # Tier-3: KR corporate spread (AA- 3y vs 국고채 3y)
         try:
             kr_corp = fetch_ecos_series_skill(
                 "kr_corp_aa_3y", start_5y, as_of, freq="D", as_of_date=as_of,
             ).dropna()
+            kr_corp_bbb = fetch_ecos_series_skill(
+                "kr_corp_bbb_3y", start_5y, as_of, freq="D", as_of_date=as_of)
             # kr_3y는 위에서 fetch했지만 sentinel일 수 있으므로 별도 fetch (or reuse)
             kr_corp_spread = compute_kr_corp_spread(
                 kr_corp, kr_3y if not kr_yield_curve.staleness_days >= 99 else pd.Series(dtype=float),
-                as_of=as_of,
+                as_of=as_of, corp_bbb_3y=kr_corp_bbb,
             )
         except Exception as e:
             logger.warning("kr_corp_spread fetch failed → sentinel: %s", e)
             kr_corp_spread = _sentinel_kr_corp_spread(as_of)
+
+        # Tier-3: KR CD91 단기 자금시장
+        try:
+            kr_cd91 = fetch_ecos_series_skill(
+                "kr_cd91", start_5y, as_of, freq="D", as_of_date=as_of)
+            kr_short_rate = compute_kr_short_rate(kr_cd91, kr_3y, as_of=as_of)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("kr_short_rate fetch failed → sentinel: %s", e)
+            kr_short_rate = _sentinel_kr_short_rate(as_of)
 
         # Tier-3: KR 신용잔고 (KRX pykrx)
         try:
@@ -583,6 +610,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             equity_bond_corr=eq_bd_corr,
             real_vol=real_vol,  # ★ NEW C6 (Optional, None on fail)
             excess_bond_premium=_build_excess_bond_premium(as_of),  # ★ Tier0 Task 4.2
+            kr_short_rate=kr_short_rate,  # ★ A2 (2026-06-09)
             narrative=narrative, summary_for_downstream=summary,
         )
         return {"risk_report": report, "risk_summary": summary}

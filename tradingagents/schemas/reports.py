@@ -18,7 +18,7 @@ from tradingagents.schemas.risk import (
     VIXTermStructureSnapshot, SkewSnapshot, VxnSnapshot,
     RealYieldsSnapshot, FundingStressSnapshot, CreditQualitySnapshot,
     KRYieldCurveSnapshot, KRCorpSpreadSnapshot, KRMarginDebtSnapshot,
-    KRMarketTierSnapshot, EquityBondCorrelationSnapshot,
+    KRMarketTierSnapshot, KRShortRateSnapshot, EquityBondCorrelationSnapshot,
     RealVolSnapshot, ExcessBondPremiumSnapshot,
 )
 from tradingagents.schemas.technical import (
@@ -118,6 +118,8 @@ class RiskReport(_AnalystReport):
     real_vol: RealVolSnapshot | None = None
     # === Tier 0 (2026-05-28) ===
     excess_bond_premium: ExcessBondPremiumSnapshot | None = None
+    # === A2 (2026-06-09) — KR short-rate funding stress ===
+    kr_short_rate: KRShortRateSnapshot | None = None
 
 
 class TechnicalReport(_AnalystReport):
