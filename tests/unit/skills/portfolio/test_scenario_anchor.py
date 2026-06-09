@@ -72,31 +72,31 @@ def test_l1_broad_recession_has_max_duration():
 
 
 def test_effective_band_brackets_baseline():
-    # confidence=0.5, conviction="medium" → half=0.7 (<1) → 밴드가 hard band 내부로 좁혀짐
-    lo, hi = effective_band(0.10, 0.04, 0.20, confidence=0.5, conviction="medium")
+    # confidence=0.5 → half=0.7 (<1) → 밴드가 hard band 내부로 좁혀짐
+    lo, hi = effective_band(0.10, 0.04, 0.20, confidence=0.5)
     assert 0.04 < lo < 0.10 < hi < 0.20          # 엄격히 내부
     assert lo == pytest.approx(0.10 - (0.10 - 0.04) * 0.7)
     assert hi == pytest.approx(0.10 + (0.20 - 0.10) * 0.7)
 
 
 def test_effective_band_confidence_floor():
-    # confidence=0.0, conviction="low" → half=0.4*0.6=0.24 (가장 좁음)
-    lo, hi = effective_band(0.10, 0.04, 0.20, confidence=0.0, conviction="low")
-    assert lo == pytest.approx(0.10 - (0.10 - 0.04) * 0.24)
-    assert hi == pytest.approx(0.10 + (0.20 - 0.10) * 0.24)
+    # confidence=0.0 → half=0.4 (가장 좁음, confidence floor)
+    lo, hi = effective_band(0.10, 0.04, 0.20, confidence=0.0)
+    assert lo == pytest.approx(0.10 - (0.10 - 0.04) * 0.4)
+    assert hi == pytest.approx(0.10 + (0.20 - 0.10) * 0.4)
 
 
-def test_low_confidence_low_conviction_narrows_toward_baseline():
+def test_low_confidence_narrows_toward_baseline():
     base, hmin, hmax = 0.10, 0.04, 0.20
-    lo_lo, hi_lo = effective_band(base, hmin, hmax, confidence=0.05, conviction="low")
-    lo_hi, hi_hi = effective_band(base, hmin, hmax, confidence=1.0, conviction="high")
-    # 저신뢰·저확신 밴드가 baseline 에 더 가깝다
+    lo_lo, hi_lo = effective_band(base, hmin, hmax, confidence=0.05)
+    lo_hi, hi_hi = effective_band(base, hmin, hmax, confidence=1.0)
+    # 저신뢰 밴드가 baseline 에 더 가깝다
     assert (base - lo_lo) < (base - lo_hi)
     assert (hi_lo - base) < (hi_hi - base)
 
 
-def test_high_confidence_high_conviction_reaches_hard_band():
-    lo, hi = effective_band(0.10, 0.04, 0.20, confidence=1.0, conviction="high")
+def test_high_confidence_reaches_hard_band():
+    lo, hi = effective_band(0.10, 0.04, 0.20, confidence=1.0)
     assert lo == pytest.approx(0.04)
     assert hi == pytest.approx(0.20)
 

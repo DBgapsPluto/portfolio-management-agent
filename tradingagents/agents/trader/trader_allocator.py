@@ -172,7 +172,7 @@ def create_trader_allocator(step_a_llm):
         hmax = {b: hard_bands[b][1] for b in hard_bands}
         # anchor: scenario modifier 로 옮겨진 center (eff_band·LLM tilt 의 기준점)
         anchor = apply_scenario_modifier(q_baseline, scenario, hmin, hmax)
-        eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence, conviction)
+        eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence)
                for b in anchor}
         tilt = state.get("cached_tilt") or invoke_structured_obj(
             structured_a,

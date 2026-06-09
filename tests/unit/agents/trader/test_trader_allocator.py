@@ -56,7 +56,7 @@ def _state_14(universe_path, macro=None):
 def test_step_a_prompt_includes_quadrant_anchor_and_signals():
     q = "growth_disinflation"
     anchor = QUADRANT_BASELINE[q]
-    eff = {b: effective_band(anchor[b], *hard_band(q, b, anchor[b]), 0.7, "high") for b in anchor}
+    eff = {b: effective_band(anchor[b], *hard_band(q, b, anchor[b]), 0.7) for b in anchor}
     state = {
         "research_decision": ResearchThesis(
             conviction="high", dominant_scenario="x", thesis_md="강세 논거",
