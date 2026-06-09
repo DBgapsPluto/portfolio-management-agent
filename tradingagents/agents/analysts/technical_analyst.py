@@ -58,6 +58,7 @@ from tradingagents.skills.technical.trend_state import detect_trend_state
 from tradingagents.skills.technical.risk_adjusted import compute_risk_adjusted
 from tradingagents.skills.technical.sector_rotation import compute_sector_rotation
 from tradingagents.skills.technical.universe_breadth import compute_universe_breadth
+from tradingagents.skills.technical.semi_momentum import compute_semi_momentum
 
 
 def _benchmark_for_category(category: str) -> str:
@@ -240,6 +241,15 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
         except Exception:
             bench_spy = None
 
+        # B3 — Semiconductor momentum (SOX/SMH vs SPY benchmark)
+        semi_momentum = None
+        try:
+            sox = fetch_equity_index_close("sox", start, as_of)
+            smh = fetch_equity_index_close("smh", start, as_of)
+            semi_momentum = compute_semi_momentum(sox, smh, bench_spy, as_of=as_of)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("semi_momentum fetch failed → None: %s", e)
+
         cat_lookup = {e.ticker: e.category for e in universe.etfs}
         trend_quant = {}
         for t in returns_full.columns:
@@ -376,6 +386,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             universe_breadth=universe_breadth,
             sector_rotation=sector_rotation,
             risk_adjusted=risk_adjusted,
+            semi_momentum=semi_momentum,
             narrative=narrative, summary_for_downstream=summary,
         )
         return {
