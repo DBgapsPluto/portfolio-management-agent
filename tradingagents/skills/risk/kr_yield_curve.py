@@ -37,6 +37,7 @@ def _classify_regime_abs(spread_bps: float) -> Literal["normal", "flat", "invert
 @register_skill(name="compute_kr_yield_curve", category="risk")
 def compute_kr_yield_curve(
     treasury_3y: pd.Series, treasury_10y: pd.Series, as_of: date,
+    treasury_5y: pd.Series | None = None, treasury_30y: pd.Series | None = None,
 ) -> KRYieldCurveSnapshot:
     """한국 국고채 yield curve 진단. 미국과 별도 사이클 가능 (BOK vs Fed 정책차)."""
     if treasury_3y is None or treasury_3y.empty or treasury_10y.empty:
@@ -62,6 +63,17 @@ def compute_kr_yield_curve(
         percentile = 0.5
         regime = _classify_regime_abs(spread_bps)
 
+    def _has(s: pd.Series | None) -> bool:
+        return s is not None and not s.empty
+
+    def _last(s: pd.Series | None) -> float:
+        return float(s.iloc[-1]) if _has(s) else 0.0
+
+    y5 = _last(treasury_5y)
+    y30 = _last(treasury_30y)
+    # 입력 존재 여부로 판단 — 값 기반(y5 and y30)이면 금리가 정당하게 0일 때 오작동.
+    spread_30y_5y = (y30 - y5) * 100 if (_has(treasury_5y) and _has(treasury_30y)) else 0.0
+
     return KRYieldCurveSnapshot(
         treasury_3y=y3,
         treasury_10y=y10,
@@ -69,5 +81,8 @@ def compute_kr_yield_curve(
         inverted=spread_bps < 0,
         percentile_5y=percentile,
         regime=regime,
+        treasury_5y=y5,
+        treasury_30y=y30,
+        spread_30y_5y_bps=spread_30y_5y,
         source_date=as_of,
     )

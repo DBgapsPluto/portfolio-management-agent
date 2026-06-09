@@ -179,6 +179,11 @@ class KRYieldCurveSnapshot(StalenessAware):
         description="percentile_5y >0.5 normal / 0.15~0.5 flat / <0.15 inverted. "
                     "데이터 부족 시 절대 임계 fallback (+50bps normal, -10~+50 flat, <-10 inverted)."
     )
+    # A2 fold-in (2026-06-09): long-end terms. default=0.0 후방호환.
+    treasury_5y: float = Field(default=0.0, description="국고채 5년 yield (%)")
+    treasury_30y: float = Field(default=0.0, description="국고채 30년 yield (%)")
+    spread_30y_5y_bps: float = Field(
+        default=0.0, description="(30y - 5y) × 100, bps. 장기 term premium")
 
 
 class KRCorpSpreadSnapshot(StalenessAware):

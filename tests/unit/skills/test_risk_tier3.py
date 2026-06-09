@@ -142,3 +142,32 @@ def test_kr_tier_empty_sentinel():
     snap = compute_kr_market_tier(pd.Series([], dtype=float), pd.Series([], dtype=float),
                                    as_of=date(2026, 5, 10))
     assert snap.staleness_days == 99
+
+
+def test_kr_yc_long_end_terms():
+    y3 = _daily([3.0] * 260)
+    y10 = _daily([3.7] * 260)
+    y5 = _daily([3.3] * 260)
+    y30 = _daily([4.0] * 260)
+    snap = compute_kr_yield_curve(y3, y10, as_of=date(2026, 5, 10),
+                                  treasury_5y=y5, treasury_30y=y30)
+    assert abs(snap.treasury_5y - 3.3) < 1e-6
+    assert abs(snap.treasury_30y - 4.0) < 1e-6
+    assert abs(snap.spread_30y_5y_bps - 70.0) < 1e-6  # (4.0-3.3)*100
+
+
+def test_kr_yc_long_end_optional():
+    # 후방호환: 5y/30y 미제공 시 0.0
+    snap = compute_kr_yield_curve(_daily([3.0]), _daily([3.7]), as_of=date(2026, 5, 10))
+    assert snap.treasury_5y == 0.0
+    assert snap.treasury_30y == 0.0
+    assert snap.spread_30y_5y_bps == 0.0
+
+
+def test_kr_yc_long_end_zero_value_not_missing():
+    # 입력이 제공되면 값이 0.0이어도 spread 계산 (값 기반 판단 버그 방어)
+    y5 = _daily([0.0] * 260)
+    y30 = _daily([4.0] * 260)
+    snap = compute_kr_yield_curve(_daily([3.0] * 260), _daily([3.7] * 260),
+                                  as_of=date(2026, 5, 10), treasury_5y=y5, treasury_30y=y30)
+    assert abs(snap.spread_30y_5y_bps - 400.0) < 1e-6  # (4.0-0.0)*100, NOT 0
