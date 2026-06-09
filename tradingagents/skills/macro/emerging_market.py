@@ -37,4 +37,5 @@ def compute_emerging_market(
     return EmergingMarketSnapshot(
         em_equity_ret_3m_pct=eem_3m, em_equity_ret_6m_pct=_ret(eem, 126),
         em_debt_ret_3m_pct=_ret(emb, 63), em_vs_dxy_rel=rel, regime=_classify(rel),
+        source_date=as_of,
     )

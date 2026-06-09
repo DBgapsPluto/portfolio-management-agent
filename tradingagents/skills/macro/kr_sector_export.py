@@ -28,4 +28,5 @@ def compute_kr_sector_export(
         semi_yoy_pct=yoy["semi"], battery_yoy_pct=yoy["battery"],
         display_yoy_pct=yoy["display"], chem_yoy_pct=yoy["chem"],
         steel_yoy_pct=yoy["steel"], leader_sector=leader, laggard_sector=laggard,
+        source_date=as_of,
     )

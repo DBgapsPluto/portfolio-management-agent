@@ -20,4 +20,5 @@ def compute_chip_cycle(chip_ppi: pd.Series, as_of: date) -> ChipCycleSnapshot:
     return ChipCycleSnapshot(
         chip_ppi=level, chip_ppi_yoy_pct=yoy, momentum_3mo_pct=mom_3,
         accelerating=(mom_3 > 0 and yoy > 0),
+        source_date=as_of,
     )
