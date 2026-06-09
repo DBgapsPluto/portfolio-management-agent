@@ -212,6 +212,12 @@ class FXSnapshot(StalenessAware):
         default=None,
         description="BIS Real Effective Exchange Rate (1994+, index). None=fetch fail.",
     )
+    # A4 fold-in (2026-06-09): 엔/원 cross. a4_safe_fx 엔 2종의 1차 driver.
+    jpy_krw: float = Field(
+        default=0.0, description="KRW per 1 JPY (= usd_krw / usd_jpy). 엔/원 cross")
+    jpy_krw_change_1m_pct: float = Field(
+        default=0.0, description="JPY/KRW 1개월 % 변화 (+ = 엔 강세 vs 원)")
+
 
 
 class RiskAppetiteSnapshot(StalenessAware):
