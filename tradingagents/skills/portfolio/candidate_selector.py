@@ -16,7 +16,6 @@ from tradingagents.skills.portfolio.within_bucket import SINGLE_CAP
 _DURATION_BUCKETS: set[str] = {"a2_kr_rates", "a3_us_rates"}
 _HEDGE_BUCKETS: set[str] = {"a3_us_rates", "a5_gold_infl"}
 _INFLATION_QUADRANTS: set[str] = {"growth_inflation", "recession_inflation"}
-_UNHEDGED_SCENARIOS: set[str] = {"kr_stress", "global_credit"}
 
 
 def duration_tier(name: str) -> int:
@@ -45,12 +44,13 @@ def is_hedged(name: str) -> bool:
 
 
 def regime_selection_prefs(
-    quadrant: str | None, scenario: str | None,
-) -> tuple[bool, bool]:
-    """(prefer_short_duration, prefer_unhedged). 인플레/USD강세 신호 → 단기·UH 선호."""
+    quadrant: str | None, fx_regime: str | None,
+) -> tuple[bool, bool, bool]:
+    """(prefer_short_duration, prefer_unhedged, prefer_hedged). fx.regime 기반."""
     prefer_short = quadrant in _INFLATION_QUADRANTS
-    prefer_unhedged = prefer_short or scenario in _UNHEDGED_SCENARIOS
-    return prefer_short, prefer_unhedged
+    prefer_unhedged = fx_regime in ("krw_weak", "usd_risk_off")
+    prefer_hedged = fx_regime == "krw_strong"
+    return prefer_short, prefer_unhedged, prefer_hedged
 
 
 # 각 버킷의 '대표(broad) 노출' sub_category (v1 시드, 튜닝 대상).
@@ -120,6 +120,7 @@ def select_representative_candidates(
     name: dict[str, str] | None = None,
     quadrant: str | None = None,
     dominant_scenario: str | None = None,
+    fx_regime: str | None = None,
     trace: dict | None = None,
 ) -> list[str]:
     """버킷 내 대표 운반체 선정 (결정론).
@@ -128,16 +129,16 @@ def select_representative_candidates(
     **N = min(n_floor, core distinct)**. 같은-버킷 broad ETF 는 상관성이 높아 adaptive
     다양화 이득이 작으므로 minimal-N 을 의도적 설계로 채택.
 
-    레짐 인자(name/quadrant/dominant_scenario)는 전부 기본값 → 미전달 시 기존 AUM 정렬과
+    레짐 인자(name/quadrant/fx_regime)는 전부 기본값 → 미전달 시 기존 AUM 정렬과
     동일(no-op). 듀레이션은 _DURATION_BUCKETS·인플레 quadrant 에서, 헤지는 _HEDGE_BUCKETS·
-    USD강세 신호에서만 페널티가 켜진다 (spec 2026-06-04). 순수 재정렬이라 풀을 비우지 않음.
+    fx.regime(환노출/헤지 선호)에서만 페널티가 켜진다. 순수 재정렬이라 풀을 비우지 않음.
 
     capital_krw 는 §6(hysteresis/adaptive-N) 예약 — v1 미사용.
     """
     if not eligible:
         return []
     name = name or {}
-    prefer_short, prefer_unhedged = regime_selection_prefs(quadrant, dominant_scenario)
+    prefer_short, prefer_unhedged, prefer_hedged = regime_selection_prefs(quadrant, fx_regime)
 
     def _dur_pen(t: str) -> int:
         if bucket_key not in _DURATION_BUCKETS or not prefer_short:
@@ -145,9 +146,14 @@ def select_representative_candidates(
         return duration_tier(name.get(t, ""))
 
     def _hedge_pen(t: str) -> int:
-        if bucket_key not in _HEDGE_BUCKETS or not prefer_unhedged:
+        if bucket_key not in _HEDGE_BUCKETS:
             return 0
-        return 1 if is_hedged(name.get(t, "")) else 0
+        h = is_hedged(name.get(t, ""))
+        if prefer_unhedged and h:      # 환노출 선호인데 헤지 → 페널티
+            return 1
+        if prefer_hedged and not h:    # 헤지 선호인데 환노출 → 페널티
+            return 1
+        return 0
 
     def _rank(ts: list[str]) -> list[str]:
         # 레짐 조건부: (듀레이션 페널티, 헤지 페널티, -AUM, ticker). 페널티 미적용 시 AUM 정렬과 동일.

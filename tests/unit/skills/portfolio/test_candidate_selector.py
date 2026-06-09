@@ -173,20 +173,37 @@ def test_is_hedged_uh_guard():
     assert is_hedged("ACE 미국30년국채(UH)") is False
 
 
+def test_prefs_usd_risk_off_prefers_unhedged():
+    short, unhedged, hedged = regime_selection_prefs("growth_disinflation", "usd_risk_off")
+    assert unhedged is True and hedged is False
+
+
+def test_prefs_krw_strong_prefers_hedged():
+    short, unhedged, hedged = regime_selection_prefs("growth_disinflation", "krw_strong")
+    assert hedged is True and unhedged is False
+
+
+def test_prefs_neutral_no_fx_pref():
+    short, unhedged, hedged = regime_selection_prefs("growth_disinflation", "neutral")
+    assert unhedged is False and hedged is False
+
+
 def test_regime_selection_prefs():
-    assert regime_selection_prefs("growth_inflation", "neutral") == (True, True)
-    assert regime_selection_prefs("recession_inflation", "neutral") == (True, True)
-    assert regime_selection_prefs("growth_disinflation", "neutral") == (False, False)
-    assert regime_selection_prefs("recession_disinflation", "neutral") == (False, False)
-    # 비인플레라도 stress/credit 시나리오면 UH 선호만 켜짐
-    assert regime_selection_prefs("growth_disinflation", "kr_stress") == (False, True)
-    assert regime_selection_prefs("growth_disinflation", "global_credit") == (False, True)
-    assert regime_selection_prefs(None, None) == (False, False)
+    # prefer_short 은 인플레 quadrant 기반(불변). prefer_unhedged/hedged 는 fx.regime 기반.
+    assert regime_selection_prefs("growth_inflation", "neutral") == (True, False, False)
+    assert regime_selection_prefs("recession_inflation", "neutral") == (True, False, False)
+    assert regime_selection_prefs("growth_disinflation", "neutral") == (False, False, False)
+    assert regime_selection_prefs("recession_disinflation", "neutral") == (False, False, False)
+    # fx.regime 기반: krw_weak/usd_risk_off → 환노출 선호, krw_strong → 헤지 선호
+    assert regime_selection_prefs("growth_disinflation", "krw_weak") == (False, True, False)
+    assert regime_selection_prefs("growth_disinflation", "usd_risk_off") == (False, True, False)
+    assert regime_selection_prefs("growth_disinflation", "krw_strong") == (False, False, True)
+    assert regime_selection_prefs(None, None) == (False, False, False)
 
 
 # === Task 2: selector 레짐 조건부 정렬 ===
 
-def _call_regime(rows, bucket_key, *, quadrant, scenario="neutral", w=0.10):
+def _call_regime(rows, bucket_key, *, quadrant, fx_regime=None, w=0.10):
     """rows: (ticker, aum, sub, idx, name). 레짐 인자 포함 호출."""
     eligible = [t for t, *_ in rows]
     aum = {t: a for t, a, _, _, _ in rows}
@@ -196,7 +213,7 @@ def _call_regime(rows, bucket_key, *, quadrant, scenario="neutral", w=0.10):
     return select_representative_candidates(
         bucket_key=bucket_key, eligible=eligible, aum=aum,
         sub_category=sub, underlying_index=idx, name=name,
-        quadrant=quadrant, dominant_scenario=scenario,
+        quadrant=quadrant, fx_regime=fx_regime,
         bucket_weight=w, capital_krw=1_000_000_000,
     )
 
@@ -210,7 +227,7 @@ _A3_ROWS = [
 
 
 def test_a3_inflation_picks_short_unhedged():
-    # growth_inflation → 단기·UH 선호 → AUM 1등 30년(H) 대신 10년(UH)
+    # growth_inflation → 단기 선호 → AUM 1등 30년(H) 대신 10년 (듀레이션만으로 결정)
     out = _call_regime(_A3_ROWS, "a3_us_rates", quadrant="growth_inflation", w=0.08)
     assert out == ["A305080"]
 
@@ -230,13 +247,26 @@ def test_a2_inflation_prefers_shorter_kr_bond():
     assert out == ["KB3"]   # 단기 선호로 AUM 9배 큰 30년을 이김
 
 
-def test_a5_inflation_prefers_unhedged_gold():
+def test_a5_unhedged_fx_regime_prefers_unhedged_gold():
+    # fx.regime=usd_risk_off → 환노출(UH) 선호 → AUM 더 작아도 UH(금현물) 우선
     rows = [
         ("GOLDH", 500.0, "gold", "골드선물", "KODEX 골드선물(H)"),
         ("GOLDP", 300.0, "gold", "금현물", "ACE KRX금현물"),
     ]
-    out = _call_regime(rows, "a5_gold_infl", quadrant="growth_inflation", w=0.10)
-    assert out == ["GOLDP"]   # AUM 더 작아도 UH(금현물) 우선
+    out = _call_regime(rows, "a5_gold_infl", quadrant="growth_inflation",
+                       fx_regime="usd_risk_off", w=0.10)
+    assert out == ["GOLDP"]
+
+
+def test_a5_krw_strong_prefers_hedged_gold():
+    # fx.regime=krw_strong → 헤지 선호 → AUM 더 작아도 (H) 골드선물 우선
+    rows = [
+        ("GOLDP", 500.0, "gold", "금현물", "ACE KRX금현물"),
+        ("GOLDH", 300.0, "gold", "골드선물", "KODEX 골드선물(H)"),
+    ]
+    out = _call_regime(rows, "a5_gold_infl", quadrant="growth_disinflation",
+                       fx_regime="krw_strong", w=0.10)
+    assert out == ["GOLDH"]
 
 
 def test_b8_oil_only_hedged_is_noop():
@@ -249,13 +279,13 @@ def test_b8_oil_only_hedged_is_noop():
     assert out == ["A261220"]
 
 
-def test_credit_scenario_prefers_unhedged_in_a3():
-    # 비인플레(growth_disinflation)지만 global_credit → prefer_unhedged 만 켜짐
+def test_unhedged_fx_regime_prefers_unhedged_in_a3():
+    # 비인플레(growth_disinflation)지만 fx.regime=usd_risk_off → prefer_unhedged 만 켜짐
     # 듀레이션 페널티 0 이라 30년끼리는 UH가 H를 이김
     rows = [
         ("A453850", 1.82e12, "us_treasury", "미국30년국채", "ACE 미국30년국채액티브(H)"),
         ("A476760", 3.171e11, "us_treasury", "미국30년국채A", "ACE 미국30년국채액티브"),
     ]
     out = _call_regime(rows, "a3_us_rates", quadrant="growth_disinflation",
-                       scenario="global_credit", w=0.08)
+                       fx_regime="usd_risk_off", w=0.08)
     assert out == ["A476760"]   # UH 30년
