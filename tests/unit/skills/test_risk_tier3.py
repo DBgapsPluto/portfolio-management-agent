@@ -171,3 +171,22 @@ def test_kr_yc_long_end_zero_value_not_missing():
     snap = compute_kr_yield_curve(_daily([3.0] * 260), _daily([3.7] * 260),
                                   as_of=date(2026, 5, 10), treasury_5y=y5, treasury_30y=y30)
     assert abs(snap.spread_30y_5y_bps - 400.0) < 1e-6  # (4.0-0.0)*100, NOT 0
+
+
+# ============ KR Corp Spread BBB- Quality ============
+
+def test_kr_corp_bbb_quality_spread():
+    corp_aa = _daily([3.5] * 100)
+    treas = _daily([3.0] * 100)
+    corp_bbb = _daily([10.3] * 100)  # BBB- 등급, 훨씬 높음
+    snap = compute_kr_corp_spread(corp_aa, treas, as_of=date(2026, 5, 10),
+                                  corp_bbb_3y=corp_bbb)
+    assert abs(snap.corp_bbb_yield_3y - 10.3) < 1e-6
+    assert abs(snap.bbb_aa_quality_spread_bps - 680.0) < 1e-6  # (10.3-3.5)*100
+
+
+def test_kr_corp_bbb_optional():
+    snap = compute_kr_corp_spread(_daily([3.5] * 100), _daily([3.0] * 100),
+                                  as_of=date(2026, 5, 10))
+    assert snap.corp_bbb_yield_3y == 0.0
+    assert snap.bbb_aa_quality_spread_bps == 0.0

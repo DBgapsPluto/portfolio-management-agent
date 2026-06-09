@@ -195,6 +195,11 @@ class KRCorpSpreadSnapshot(StalenessAware):
     regime: Literal["calm", "elevated", "stress"] = Field(
         description="percentile<0.5 calm, 0.5~0.85 elevated, >0.85 stress"
     )
+    # A2 fold-in (2026-06-09): BBB- 등급 신용 커브. default=0.0 후방호환.
+    corp_bbb_yield_3y: float = Field(default=0.0, description="회사채 BBB- 3y yield (%)")
+    bbb_aa_quality_spread_bps: float = Field(
+        default=0.0, description="(BBB- - AA-) × 100, bps. 등급 프리미엄(낮은 등급 risk)"
+    )
 
 
 class KRMarginDebtSnapshot(StalenessAware):
