@@ -30,7 +30,7 @@ from tradingagents.skills.portfolio.within_bucket import (
 )
 from tradingagents.skills.portfolio.scenario_anchor import (
     QUADRANT_BASELINE, hard_band, effective_band, project_to_band,
-    SCENARIO_MODIFIER, apply_scenario_modifier,
+    apply_macro_modifiers,
 )
 from tradingagents.skills.portfolio.vol_haircut import (
     bucket_volatility, apply_vol_haircut,
@@ -77,10 +77,20 @@ def _resolve_confidence(state) -> float:
     return float(c) if isinstance(c, (int, float)) else _DEGRADED_CONFIDENCE
 
 
+def _resolve_fx_regime(state) -> str:
+    mr = state.get("macro_report")
+    return getattr(getattr(mr, "fx", None), "regime", None) or "neutral"
+
+
+def _resolve_credit_regime(state) -> str:
+    mr = state.get("macro_report")
+    return getattr(getattr(mr, "financial_conditions", None), "regime", None) or "neutral"
+
+
 _STEP_A_SYSTEM = (
     "당신은 자산배분 트레이더다. 주어진 'regime 앵커(baseline)'에서 출발해, "
     "리서치 판단으로 버킷별 tilt(앵커 대비 가감)만 결정한다. 다음 순서로 사고하라:\n"
-    "① 리스크 예산: conviction·regime 으로 위험자산 총량 방향(앵커가 이미 ≤70% 지향).\n"
+    "① 리스크 예산: risk_tilt·regime 으로 위험자산 총량 방향(앵커가 이미 ≤70% 지향).\n"
     "② 방어(A1~A5): regime 따라 cash/듀레이션/금·인플레 가감.\n"
     "③ 성장(B1~B9): thesis·key_risks 로 버킷 tilt.\n"
     "④ 자가검증: tilt 는 허용밴드 내, 오버웨이트는 언더웨이트로 펀딩(net≈0).\n"
@@ -88,7 +98,7 @@ _STEP_A_SYSTEM = (
 )
 
 
-def _step_a_prompt(state, quadrant, scenario, confidence, conviction, anchor, eff) -> list[dict]:
+def _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime, confidence, anchor, eff) -> list[dict]:
     rd = state.get("research_decision")
     thesis = getattr(rd, "thesis_md", "") if rd else ""
     key_risks = getattr(rd, "key_risks", []) if rd else []
@@ -101,8 +111,8 @@ def _step_a_prompt(state, quadrant, scenario, confidence, conviction, anchor, ef
         for b in GAPS_BUCKET_KEYS
     )
     body = (
-        f"## Regime: {quadrant} / Scenario: {scenario} "
-        f"(confidence {confidence:.2f}), conviction {conviction}\n\n"
+        f"## Regime: {quadrant} / risk_tilt: {risk_tilt} "
+        f"(confidence {confidence:.2f}), fx: {fx_regime}, credit: {credit_regime}\n\n"
         f"## 앵커 baseline + 허용밴드 (이 안에서만 tilt)\n{anchor_lines}\n\n"
         f"## 리서치 종합\n{thesis}\n\n"
         f"## 핵심 리스크\n" + ("\n".join(f"  - {r}" for r in key_risks) or "  (없음)") + "\n\n"
@@ -159,24 +169,24 @@ def create_trader_allocator(step_a_llm):
         name_of = {e.ticker: e.name for e in uni.etfs}
         capital = float(state.get("capital_krw") or 0.0)
 
-        # --- Step A: quadrant 앵커 + scenario modifier + LLM tilt + 투영 ---
+        # --- Step A: quadrant 앵커 + macro modifiers + LLM tilt + 투영 ---
         quadrant = _resolve_quadrant(state)
         confidence = _resolve_confidence(state)
         rd = state.get("research_decision")
-        conviction = (getattr(rd, "conviction", "medium") if rd else "medium") or "medium"
-        scenario = (getattr(rd, "dominant_scenario", "neutral") if rd else "neutral") or "neutral"
+        risk_tilt = (getattr(rd, "risk_tilt", "neutral") if rd else "neutral") or "neutral"
+        fx_regime = _resolve_fx_regime(state)
+        credit_regime = _resolve_credit_regime(state)
 
         q_baseline = QUADRANT_BASELINE[quadrant]
         hard_bands = {b: hard_band(quadrant, b, q_baseline[b]) for b in q_baseline}
         hmin = {b: hard_bands[b][0] for b in hard_bands}
         hmax = {b: hard_bands[b][1] for b in hard_bands}
-        # anchor: scenario modifier 로 옮겨진 center (eff_band·LLM tilt 의 기준점)
-        anchor = apply_scenario_modifier(q_baseline, scenario, hmin, hmax)
+        anchor = apply_macro_modifiers(q_baseline, risk_tilt, credit_regime, fx_regime, hmin, hmax)
         eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence)
                for b in anchor}
         tilt = state.get("cached_tilt") or invoke_structured_obj(
             structured_a,
-            _step_a_prompt(state, quadrant, scenario, confidence, conviction, anchor, eff),
+            _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime, confidence, anchor, eff),
             BucketTilt(), "TraderStepA",
         )
         eff_lo = {b: eff[b][0] for b in eff}   # eff[b] = (eff_min, eff_max)
@@ -205,7 +215,7 @@ def create_trader_allocator(step_a_llm):
             selections[bkey] = select_representative_candidates(
                 bucket_key=bkey, eligible=eligible, aum=aum,
                 sub_category=sub_cat, underlying_index=idx_of,
-                name=name_of, quadrant=quadrant, dominant_scenario=scenario,
+                name=name_of, quadrant=quadrant, fx_regime=fx_regime,
                 bucket_weight=w, capital_krw=capital,
             )
 
@@ -257,7 +267,7 @@ def create_trader_allocator(step_a_llm):
         risk_pct = sum(w for t, w in weights.items() if _is_risk(t))
         bucket_target = BucketTarget(
             weights=realized_bucket_weights,
-            rationale=(getattr(state.get("research_decision"), "dominant_scenario", "")
+            rationale=(f"risk_tilt={risk_tilt} fx={fx_regime} credit={credit_regime}"
                        + f" / risk={risk_pct*100:.1f}%")[:500],
         )
         candidate_set = CandidateSet(
@@ -293,9 +303,10 @@ def create_trader_allocator(step_a_llm):
             "vol_haircut": {"bucket_vol": bucket_vol},
             "step_a": {
                 "quadrant": quadrant,
-                "scenario": scenario,
+                "risk_tilt": risk_tilt,
+                "fx_regime": fx_regime,
+                "credit_regime": credit_regime,
                 "confidence": confidence,
-                "conviction": conviction,
                 "tilt_rationale": tilt.rationale,
                 "tilt": dict(tilt.tilts),
                 "buckets": step_a_buckets,

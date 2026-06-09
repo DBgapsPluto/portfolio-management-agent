@@ -59,16 +59,17 @@ def test_step_a_prompt_includes_quadrant_anchor_and_signals():
     eff = {b: effective_band(anchor[b], *hard_band(q, b, anchor[b]), 0.7) for b in anchor}
     state = {
         "research_decision": ResearchThesis(
-            conviction="high", dominant_scenario="x", thesis_md="강세 논거",
+            risk_tilt="defensive", thesis_md="강세 논거",
             key_risks=["중국 둔화"]),
         "macro_summary": "MACRO_X", "risk_summary": "r",
         "technical_summary": "t", "news_summary": "n",
         "allocation_feedback": [],
     }
-    msgs = _step_a_prompt(state, q, "kr_stress", 0.7, "high", anchor, eff)
+    msgs = _step_a_prompt(state, q, "defensive", "usd_risk_off", "neutral", 0.7, anchor, eff)
     text = msgs[0]["content"] + msgs[1]["content"]
     assert q in text
-    assert "kr_stress" in text
+    assert "usd_risk_off" in text
+    assert "defensive" in text
     assert "b3_global_tech" in text
     assert "중국 둔화" in text
     assert "MACRO_X" in text
@@ -155,18 +156,22 @@ def test_resolve_quadrant_rejects_unknown_label():
     assert _resolve_quadrant(state) == "growth_disinflation"
 
 
-def test_kr_stress_modifier_shifts_kr_equity_down(tmp_path):
+def test_fx_modifier_shifts_kr_equity_down(tmp_path):
+    import types
     up = _universe_14(tmp_path)
-    macro = _FakeMacro(_FakeRegime("growth_disinflation", 0.5))
 
-    def run(scenario):
+    def run(fx_regime):
+        macro = types.SimpleNamespace(
+            regime=_FakeRegime("growth_disinflation", 0.5),
+            fx=types.SimpleNamespace(regime=fx_regime),
+            financial_conditions=types.SimpleNamespace(regime="neutral"),
+        )
         st = _state_14(up, macro)
-        st["research_decision"] = ResearchThesis(
-            conviction="medium", dominant_scenario=scenario, thesis_md="t")
+        st["research_decision"] = ResearchThesis(risk_tilt="neutral", thesis_md="t")
         node = create_trader_allocator(_FakeStep(BucketTilt()))
         return node(st)["bucket_target"].weights["b1_kr_equity"]
 
-    assert run("kr_stress") < run("neutral")   # kr_stress 가 한국주식을 낮춤
+    assert run("usd_risk_off") < run("neutral")   # usd_risk_off 가 한국주식을 낮춤
 
 
 def test_node_deterministic_selection_no_llm(tmp_path):
@@ -211,24 +216,30 @@ def test_node_a3_inflation_selects_short_unhedged(tmp_path):
 
 
 def test_attribution_records_step_a_decomposition(tmp_path):
+    import types
     up = _universe_14(tmp_path)
     step_a = _FakeStep(BucketTilt(
         tilts={"b3_global_tech": 0.04, "b2_dm_core": -0.04},
         rationale="AI 모멘텀 강화로 테크 비중 확대"))
     node = create_trader_allocator(step_a_llm=step_a)
-    st = _state_14(up)
-    st["research_decision"] = ResearchThesis(
-        conviction="high", dominant_scenario="kr_boom", thesis_md="t")
+    macro = types.SimpleNamespace(
+        regime=_FakeRegime("growth_disinflation", 0.8),
+        fx=types.SimpleNamespace(regime="usd_risk_off"),
+        financial_conditions=types.SimpleNamespace(regime="neutral"),
+    )
+    st = _state_14(up, macro)
+    st["research_decision"] = ResearchThesis(risk_tilt="neutral", thesis_md="t")
     sa = node(st)["allocation_attribution"]["step_a"]
 
-    # regime/scenario 맥락 + LLM 근거 보존 (현재는 폐기됨)
-    assert sa["quadrant"] == "growth_disinflation"  # macro_report None → fallback
-    assert sa["scenario"] == "kr_boom"
-    assert sa["conviction"] == "high"
+    # regime/macro 맥락 + LLM 근거 보존
+    assert sa["quadrant"] == "growth_disinflation"
+    assert sa["risk_tilt"] == "neutral"
+    assert sa["fx_regime"] == "usd_risk_off"
+    assert sa["credit_regime"] == "neutral"
     assert sa["tilt_rationale"] == "AI 모멘텀 강화로 테크 비중 확대"
 
-    # kr_boom 은 b1_kr_equity 를 끌어올림 (scenario_delta > 0)
-    assert sa["buckets"]["b1_kr_equity"]["scenario_delta"] > 0
+    # usd_risk_off 는 b1_kr_equity 를 끌어내림 (scenario_delta < 0)
+    assert sa["buckets"]["b1_kr_equity"]["scenario_delta"] < 0
     # LLM 이 요청한 raw tilt 가 기록됨
     assert sa["buckets"]["b3_global_tech"]["tilt_requested"] == 0.04
 
@@ -282,6 +293,31 @@ def test_node_uses_cached_tilt_skips_llm(tmp_path):
     out = node(st)   # LLM 미호출이라 raise 안 함
     assert out["weight_vector"] is not None
     assert out["allocation_attribution"]["step_a"]["tilt"] == {"b3_global_tech": 0.05}
+
+
+def test_allocator_reads_fx_and_credit_and_risk_tilt():
+    """mr.fx.regime=usd_risk_off → a4 상승, rd.risk_tilt=defensive → 성장 축소."""
+    import types
+    from tradingagents.schemas.research import ResearchThesis
+    from tradingagents.schemas.portfolio import BucketTilt
+    mr = types.SimpleNamespace(
+        regime=types.SimpleNamespace(quadrant="growth_disinflation", confidence=0.8),
+        fx=types.SimpleNamespace(regime="usd_risk_off"),
+        financial_conditions=types.SimpleNamespace(regime="neutral"),
+    )
+    state = {
+        "macro_report": mr,
+        "research_decision": ResearchThesis(risk_tilt="defensive", thesis_md="t"),
+        "universe_path": "data/universe.json",
+        "capital_krw": 100_000_000,
+        "cached_tilt": BucketTilt(),     # LLM 우회 (tilt=0)
+    }
+    node = create_trader_allocator(object())
+    out = node(state)
+    sa = out["allocation_attribution"]["step_a"]
+    assert sa["risk_tilt"] == "defensive"
+    assert sa["fx_regime"] == "usd_risk_off"
+    assert sa["credit_regime"] == "neutral"
 
 
 def test_node_portfolio_dials_override_haircut(tmp_path):
