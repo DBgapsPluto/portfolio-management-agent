@@ -5,10 +5,10 @@ C5 (2026-05-23) 에서 24-cell Cartesian product framework 완전 제거.
   cell_key, parse_cell_key, CycleQuadrant, TailState, KRDirection,
   ScenarioProbabilities alias, cycle/tail/kr 관련 marginals.
 - 유지: ConvictionLevel, ResearchDecision (factor model 만).
-- Phase 2 (2026-06-03): InvestmentThesis·ResearchThesis 의 dominant_scenario 를
-  ScenarioLabel Literal(직교 4 시나리오 + neutral)로 제약 + enum 밖 값은 neutral coerce
-  (구 archive/free-text replay 호환). ResearchDecision(factor model)의 dominant_scenario
-  는 별도 free str 로 유지 — agent_states/philosophy 가 legacy name 으로 참조.
+- Phase 3 (2026-06-09): InvestmentThesis·ResearchThesis 의 dominant_scenario·conviction 제거
+  → risk_tilt(5단) 단일화. fx/credit 정량 신호는 Stage 1 macro_report(fx.regime/
+  financial_conditions.regime)가 담당. ResearchDecision(factor model, legacy)의
+  conviction/dominant_scenario 는 비범위로 유지.
 """
 from typing import Literal
 
@@ -84,9 +84,8 @@ class InvestmentThesis(BaseModel):
 class ResearchThesis(BaseModel):
     """Stage 2 종합 state 객체 (state['research_decision']).
 
-    factor model 제거 후 ResearchDecision 을 대체. Stage 4 macro_conditional 이
-    getattr(rd, 'dominant_scenario'|'conviction') 로 읽으므로 동일 필드명 유지.
-    factor_scores 는 없음 → macro_conditional 의 valuation trigger graceful 비활성.
+    factor model 제거 후 ResearchDecision 을 대체. Stage 3 trader 가 getattr(rd, 'risk_tilt')
+    로 읽어 비중 modifier 에 반영한다(fx/credit 정량 신호는 Stage 1 macro_report 가 별도 제공).
     """
     risk_tilt: Literal["strong_offensive", "offensive", "neutral", "defensive", "strong_defensive"] = "neutral"
     thesis_md: str = Field(default="", max_length=20000)
