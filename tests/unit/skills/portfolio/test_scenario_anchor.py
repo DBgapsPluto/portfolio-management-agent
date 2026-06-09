@@ -192,3 +192,49 @@ def test_modifier_clamped_by_quadrant_hard_band():
     hmax = {b: hard_band(q, b, base[b])[1] for b in base}
     out = apply_scenario_modifier(base, "ai_concentration", hmin, hmax)
     assert out["b3_global_tech"] <= hmax["b3_global_tech"] + 1e-9
+
+
+from tradingagents.skills.portfolio.scenario_anchor import apply_macro_modifiers
+from tradingagents.skills.portfolio.gaps_buckets import GROWTH_KEYS, DEFENSIVE_KEYS
+
+def _hb(baseline):
+    from tradingagents.skills.portfolio.scenario_anchor import hard_band
+    lo = {b: hard_band("growth_disinflation", b, baseline[b])[0] for b in baseline}
+    hi = {b: hard_band("growth_disinflation", b, baseline[b])[1] for b in baseline}
+    return lo, hi
+
+def test_macro_modifiers_neutral_is_baseline():
+    base = QUADRANT_BASELINE["growth_disinflation"]
+    lo, hi = _hb(base)
+    out = apply_macro_modifiers(base, "neutral", "neutral", "neutral", lo, hi)
+    assert out == pytest.approx(base)
+
+def test_macro_modifiers_defensive_cuts_growth():
+    base = QUADRANT_BASELINE["growth_disinflation"]
+    lo, hi = _hb(base)
+    out = apply_macro_modifiers(base, "defensive", "neutral", "neutral", lo, hi)
+    g0 = sum(base[b] for b in GROWTH_KEYS)
+    g1 = sum(out[b] for b in GROWTH_KEYS)
+    assert g1 < g0
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+def test_macro_modifiers_credit_crisis_cuts_hy():
+    base = QUADRANT_BASELINE["growth_disinflation"]
+    lo, hi = _hb(base)
+    out = apply_macro_modifiers(base, "neutral", "crisis", "neutral", lo, hi)
+    assert out["b9_risk_credit"] < base["b9_risk_credit"]
+    assert out["a3_us_rates"] > base["a3_us_rates"]
+
+def test_macro_modifiers_fx_usd_riskoff_lifts_safe_fx():
+    base = QUADRANT_BASELINE["growth_disinflation"]
+    lo, hi = _hb(base)
+    out = apply_macro_modifiers(base, "neutral", "neutral", "usd_risk_off", lo, hi)
+    assert out["a4_safe_fx"] > base["a4_safe_fx"]
+    assert out["b1_kr_equity"] < base["b1_kr_equity"]
+
+def test_macro_modifiers_strong_defensive_cuts_more():
+    base = QUADRANT_BASELINE["growth_disinflation"]
+    lo, hi = _hb(base)
+    mild = apply_macro_modifiers(base, "defensive", "neutral", "neutral", lo, hi)
+    strong = apply_macro_modifiers(base, "strong_defensive", "neutral", "neutral", lo, hi)
+    assert sum(strong[b] for b in GROWTH_KEYS) < sum(mild[b] for b in GROWTH_KEYS)

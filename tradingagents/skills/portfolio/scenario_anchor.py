@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from tradingagents.skills.portfolio.gaps_buckets import GROWTH_KEYS
+from tradingagents.skills.portfolio.gaps_buckets import GROWTH_KEYS, DEFENSIVE_KEYS
 
 RegimeQuadrant = Literal[
     "growth_inflation", "growth_disinflation",
@@ -141,6 +141,64 @@ def apply_scenario_modifier(
     보장, 불가 시 baseline fallback. modifier 가 hard band 를 못 벗어나는 게 구조적 모순 guard.
     """
     delta = SCENARIO_MODIFIER.get(scenario)
+    if not delta:
+        return dict(baseline)
+    return project_to_band(baseline, delta, hard_min, hard_max)
+
+
+# === 매크로 신호 → bucket delta (v1 시드, 튜닝 대상). net≈0, |delta| 작게. ===
+# risk_tilt 5단 → 성장버킷 합 조정폭 (regime baseline 대비 위험자산 ±).
+RISK_TILT_AMOUNT: dict[str, float] = {
+    "strong_offensive": 0.05, "offensive": 0.025, "neutral": 0.0,
+    "defensive": -0.025, "strong_defensive": -0.05,
+}
+
+CREDIT_MODIFIER: dict[str, dict[str, float]] = {
+    "tight":  {"b9_risk_credit": -0.02, "a3_us_rates": 0.02},
+    "crisis": {"b9_risk_credit": -0.04, "a3_us_rates": 0.04},
+    # easy / neutral → no-op
+}
+
+FX_MODIFIER: dict[str, dict[str, float]] = {
+    "usd_risk_off": {"a4_safe_fx": 0.03, "b1_kr_equity": -0.03},
+    # krw_weak / krw_strong / neutral → 비중 no-op (종목 환헤지로만 작동)
+}
+
+
+def _risk_tilt_delta(baseline: dict[str, float], risk_tilt: str) -> dict[str, float]:
+    """regime baseline 대비 위험자산 ±. 성장버킷 합을 amt(baseline 비례) → 방어버킷 비례 역방향."""
+    amt = RISK_TILT_AMOUNT.get(risk_tilt, 0.0)
+    if amt == 0.0:
+        return {}
+    gsum = sum(baseline[b] for b in GROWTH_KEYS) or 1.0
+    dsum = sum(baseline[b] for b in DEFENSIVE_KEYS) or 1.0
+    delta: dict[str, float] = {}
+    for b in GROWTH_KEYS:
+        delta[b] = amt * baseline[b] / gsum
+    for b in DEFENSIVE_KEYS:
+        delta[b] = -amt * baseline[b] / dsum
+    return delta
+
+
+def apply_macro_modifiers(
+    baseline: dict[str, float], risk_tilt: str, credit_regime: str, fx_regime: str,
+    hard_min: dict[str, float], hard_max: dict[str, float],
+) -> dict[str, float]:
+    """risk_tilt(정성) + credit·fx(정량) 의 bucket delta 를 합산해 hard band 로 투영.
+
+    전부 neutral/normal → baseline 그대로. project_to_band 재사용으로 sum=1·hard band 보장,
+    불가 시 baseline fallback.
+    """
+    delta: dict[str, float] = {}
+
+    def _add(src: dict[str, float] | None) -> None:
+        if src:
+            for b, d in src.items():
+                delta[b] = delta.get(b, 0.0) + d
+
+    _add(_risk_tilt_delta(baseline, risk_tilt))
+    _add(CREDIT_MODIFIER.get(credit_regime))
+    _add(FX_MODIFIER.get(fx_regime))
     if not delta:
         return dict(baseline)
     return project_to_band(baseline, delta, hard_min, hard_max)
