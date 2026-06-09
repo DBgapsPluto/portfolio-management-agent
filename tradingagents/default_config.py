@@ -119,6 +119,7 @@ DEFAULT_CONFIG.update({
         # Tier-2 확장
         "us_nfci": 7,           # NFCI 주간 공표 (수요일, 직전 주 종가 기준)
         "us_anfci": 7,
+        "us_mortgage_30y": 7,
         "us_5y5y_breakeven": 1,
         "us_michigan_1y": 15,   # 매월 중순 preliminary, 말 final
         "us_1y_yield": 1,

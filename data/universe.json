@@ -2256,6 +2256,30 @@
       "listed_since": "2021-08-31",
       "delisted_at": null,
       "gaps_bucket": "a2_kr_rates"
+    },
+    {
+      "ticker": "A329200",
+      "name": "TIGER 리츠부동산인프라",
+      "aum_krw": 700000000000.0,
+      "underlying_index": "FnGuide 리츠부동산인프라 지수",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
+      "listed_since": "2019-07-19",
+      "delisted_at": null,
+      "gaps_bucket": "b7_reits"
+    },
+    {
+      "ticker": "A476800",
+      "name": "KODEX 한국부동산리츠인프라",
+      "aum_krw": 300000000000.0,
+      "underlying_index": "FnGuide 한국부동산리츠인프라 지수",
+      "bucket": "위험",
+      "category": "해외주식_섹터",
+      "sub_category": "thematic_other",
+      "listed_since": "2024-05-28",
+      "delisted_at": null,
+      "gaps_bucket": "b7_reits"
     }
   ]
 }

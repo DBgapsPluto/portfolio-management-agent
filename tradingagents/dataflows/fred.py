@@ -119,6 +119,8 @@ FRED_SERIES = {
     "ted_spread": "TEDRATE",              # TED Spread (1986-2022, discontinued)
     # Plan B fold-in (2026-06-09): chip sector PPI (B3)
     "us_chip_ppi": "PCU334413334413",   # 반도체·관련소자 PPI (월간, B3)
+    # Plan C fold-in (2026-06-09): mortgage rate (B7)
+    "us_mortgage_30y": "MORTGAGE30US",  # 30y 모기지 (weekly, B7)
 }
 
 

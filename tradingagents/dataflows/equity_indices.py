@@ -37,6 +37,12 @@ EQUITY_INDEX_TICKERS = {
     "eem": "EEM",        # iShares MSCI EM (B5)
     "emb": "EMB",        # iShares EM USD Bond (B5)
     "vwo": "VWO",        # Vanguard FTSE EM (B5 보조)
+    # Plan C fold-in (2026-06-09): US REIT + HY bond ETFs (B7/B9)
+    "vnq": "VNQ",        # Vanguard US REIT (B7)
+    "xlre": "XLRE",      # SPDR Real Estate (B7)
+    "schh": "SCHH",      # Schwab US REIT (B7)
+    "hyg": "HYG",        # iShares HY corp (B9)
+    "jnk": "JNK",        # SPDR HY bond (B9)
 }
 
 

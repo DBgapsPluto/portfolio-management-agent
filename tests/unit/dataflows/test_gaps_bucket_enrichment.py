@@ -6,7 +6,7 @@ from tradingagents.skills.portfolio.gaps_buckets import GAPS_BUCKET_KEYS
 def test_every_etf_has_valid_gaps_bucket():
     u = json.loads(Path("data/universe.json").read_text())
     etfs = u["etfs"]
-    assert len(etfs) == 188
+    assert len(etfs) == 190
     for e in etfs:
         assert "gaps_bucket" in e, f"{e['ticker']} missing gaps_bucket"
         assert e["gaps_bucket"] in GAPS_BUCKET_KEYS, \
