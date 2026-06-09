@@ -421,9 +421,9 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 "kr_treasury_10y", start_5y, as_of, freq="D", as_of_date=as_of,
             ).dropna()
             kr_5y = fetch_ecos_series_skill(
-                "kr_treasury_5y", start_5y, as_of, freq="D", as_of_date=as_of)
+                "kr_treasury_5y", start_5y, as_of, freq="D", as_of_date=as_of).dropna()
             kr_30y = fetch_ecos_series_skill(
-                "kr_treasury_30y", start_5y, as_of, freq="D", as_of_date=as_of)
+                "kr_treasury_30y", start_5y, as_of, freq="D", as_of_date=as_of).dropna()
             kr_yield_curve = compute_kr_yield_curve(
                 kr_3y, kr_10y, as_of=as_of, treasury_5y=kr_5y, treasury_30y=kr_30y)
         except Exception as e:
@@ -438,7 +438,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 "kr_corp_aa_3y", start_5y, as_of, freq="D", as_of_date=as_of,
             ).dropna()
             kr_corp_bbb = fetch_ecos_series_skill(
-                "kr_corp_bbb_3y", start_5y, as_of, freq="D", as_of_date=as_of)
+                "kr_corp_bbb_3y", start_5y, as_of, freq="D", as_of_date=as_of).dropna()
             # kr_3y는 위에서 fetch했지만 sentinel일 수 있으므로 별도 fetch (or reuse)
             kr_corp_spread = compute_kr_corp_spread(
                 kr_corp, kr_3y if not kr_yield_curve.staleness_days >= 99 else pd.Series(dtype=float),
@@ -451,7 +451,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         # Tier-3: KR CD91 단기 자금시장
         try:
             kr_cd91 = fetch_ecos_series_skill(
-                "kr_cd91", start_5y, as_of, freq="D", as_of_date=as_of)
+                "kr_cd91", start_5y, as_of, freq="D", as_of_date=as_of).dropna()
             kr_short_rate = compute_kr_short_rate(kr_cd91, kr_3y, as_of=as_of)
         except Exception as e:  # noqa: BLE001
             logger.warning("kr_short_rate fetch failed → sentinel: %s", e)
