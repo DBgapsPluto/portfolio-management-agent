@@ -45,6 +45,8 @@ _SKILL_MODULES: list[str] = [
     "tradingagents.skills.mandate.concentration_check",
     "tradingagents.skills.mandate.turnover_check",
     "tradingagents.skills.mandate.correlation_check",
+    "tradingagents.skills.risk.reit_driver",
+    "tradingagents.skills.risk.hy_decompression",
 ]
 
 

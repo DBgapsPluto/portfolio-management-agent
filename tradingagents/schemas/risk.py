@@ -282,3 +282,34 @@ class ExcessBondPremiumSnapshot(StalenessAware):
     """
     ebp: float = Field(description="Monthly EBP (1973+)")
     ebp_zscore_5y: float = Field(default=0.0, description="5-year rolling z-score")
+
+
+class REITDriverSnapshot(StalenessAware):
+    """리츠 거시 드라이버 (US REIT 모멘텀·dispersion + 모기지 스프레드).
+
+    KR REIT 가격은 universe 등재로 technical sector_rotation에 반영됨(여기선 US 거시축).
+    """
+    us_reit_ret_3m_pct: float = Field(description="VNQ 63일 수익률 %")
+    us_reit_ret_6m_pct: float = Field(description="VNQ 126일 수익률 %")
+    us_reit_dispersion: float = Field(
+        default=0.0, description="VNQ/XLRE/SCHH 63일 수익률 cross-sectional std (pp)")
+    mortgage_30y: float = Field(default=0.0, description="30y 모기지 금리 %")
+    mortgage_minus_10y_bps: float = Field(
+        default=0.0, description="(모기지 − 10Y국채) × 100, bps. 부동산 금융비용 스프레드")
+    regime: Literal["easing", "neutral", "tightening"] = Field(
+        default="neutral", description="모기지 스프레드 추세 기반(현재 neutral 고정, percentile은 후속)")
+
+
+class HYDecompressionSnapshot(StalenessAware):
+    """하이일드 − IG OAS 디컴프레션. within-credit risk 신호.
+
+    ⚠️ live-only: backtest에서 us_hy_oas·us_ig_oas가 둘 다 BAA10Y로 fallback되면
+    hy_minus_ig=0으로 붕괴(collapsed=True로 표시). 2023-06 이전 historical은 무의미.
+    """
+    hy_oas_bps: float = Field(description="US HY OAS (bps)")
+    ig_oas_bps: float = Field(description="US IG OAS (bps)")
+    hy_minus_ig_bps: float = Field(description="HY − IG (bps). 확대 = 신용 차별화/distress")
+    collapsed: bool = Field(
+        default=False, description="True면 HY==IG (backtest BAA10Y fallback) → 신호 무의미")
+    regime: Literal["calm", "widening", "stress"] = Field(
+        default="calm", description="hy_minus_ig <300 calm, 300~500 widening, >500 stress")
