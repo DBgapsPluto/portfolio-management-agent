@@ -13,15 +13,14 @@ _MANAGER_SYSTEM = (
     "당신은 자산배분 팀의 리서치 매니저다. 강세(bull) 리서처와 약세(bear) 리서처의 "
     "주장, 그리고 Stage 1 매크로/리스크/기술적/뉴스 분석을 모두 검토해 균형 잡힌 "
     "투자 판단을 종합한다. 한쪽으로 치우치지 말고 양측 논거의 강도를 평가해 결론을 "
-    "내려라. 결과는 thesis_md(한국어 종합 판단), conviction(high/medium/low), "
-    "key_risks(주요 리스크 리스트), 그리고 dominant_scenario 로 구조화하라.\n"
-    "dominant_scenario: 아래 직교 시나리오 중 현재 명백히 해당하는 것 하나, 없으면 neutral.\n"
-    "  - kr_boom: 한국만 두드러진 강세\n"
-    "  - kr_stress: 한국만 두드러진 약세(글로벌은 상대적 양호)\n"
-    "  - global_credit: 신용(회사채) 스프레드 급확대·경색\n"
-    "  - ai_concentration: AI·반도체·테크로의 쏠림\n"
-    "  - neutral: 위에 해당 없음 (대부분의 경우)\n"
-    "  ※ 성장/침체·인플레 국면 자체는 별도 macro regime 이 담당하므로 여기에 넣지 말 것."
+    "내려라. 결과는 thesis_md(한국어 종합 판단), risk_tilt, key_risks 로 구조화하라.\n"
+    "risk_tilt: regime baseline 이 정한 위험수준 '대비' 위험자산을 어느 방향·강도로 조정할지.\n"
+    "  - strong_offensive: 위험자산 대폭 확대 (강세 논거 압도)\n"
+    "  - offensive: 위험자산 소폭 확대\n"
+    "  - neutral: regime baseline 유지 (대부분의 경우)\n"
+    "  - defensive: 위험자산 소폭 축소\n"
+    "  - strong_defensive: 위험자산 대폭 축소 (약세·위험 논거 압도)\n"
+    "  ※ 환율·신용 등 정량 신호는 Stage 1 이 별도 처리하므로 여기서 판단하지 말 것."
 )
 
 
@@ -54,8 +53,7 @@ def create_research_cluster(bull_llm, bear_llm, manager_llm):
         bear_view = bear_node(state).get("bear_view", "(없음)")[:_MAX]
 
         fallback = InvestmentThesis(
-            thesis_md="(manager 종합 실패 — 중립 유지)", conviction="medium",
-            dominant_scenario="neutral", key_risks=[],
+            thesis_md="(manager 종합 실패 — 중립 유지)", risk_tilt="neutral", key_risks=[],
         )
         thesis = invoke_structured_obj(
             structured_mgr, _manager_prompt(state, bull_view, bear_view),
@@ -63,8 +61,7 @@ def create_research_cluster(bull_llm, bear_llm, manager_llm):
         )
 
         decision = ResearchThesis(
-            conviction=thesis.conviction,
-            dominant_scenario=thesis.dominant_scenario,
+            risk_tilt=thesis.risk_tilt,
             thesis_md=thesis.thesis_md,
             bull_view=bull_view,
             bear_view=bear_view,
@@ -72,7 +69,7 @@ def create_research_cluster(bull_llm, bear_llm, manager_llm):
         )
         summary = (
             f"## Research Thesis\n"
-            f"scenario: {decision.dominant_scenario} ({decision.conviction})\n"
+            f"risk_tilt: {decision.risk_tilt}\n"
             f"{decision.thesis_md[:1200]}\n"
             f"key risks: {', '.join(decision.key_risks) or '(none)'}\n"
         )[:2000]

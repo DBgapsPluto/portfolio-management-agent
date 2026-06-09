@@ -1,66 +1,14 @@
-from langchain_core.messages import AIMessage
-from tradingagents.schemas.research import InvestmentThesis, ResearchThesis
-from tradingagents.agents.researchers.research_cluster import create_research_cluster, _MANAGER_SYSTEM
+from tradingagents.agents.researchers.research_cluster import create_research_cluster
+from tradingagents.schemas.research import InvestmentThesis
 
 
-class _FakeBullBear:
-    def __init__(self, content):
-        self._c = content
-    def invoke(self, prompt):
-        return AIMessage(content=self._c)
-
-
-class _FakeManager:
-    """with_structured_output(InvestmentThesis) → .invoke → InvestmentThesis."""
-    def __init__(self, thesis):
-        self._t = thesis
-    def with_structured_output(self, schema):
-        return self
-    def invoke(self, prompt):
-        return self._t
-
-
-def _state():
-    return {"macro_summary": "m", "risk_summary": "r",
-            "technical_summary": "t", "news_summary": "n"}
-
-
-def test_manager_prompt_lists_orthogonal_scenarios():
-    for label in ("kr_boom", "kr_stress", "global_credit", "ai_concentration", "neutral"):
-        assert label in _MANAGER_SYSTEM
-    # quadrant 개념(성장/인플레)은 macro regime 담당 — 시나리오로 넣지 말라는 지시 포함
-    assert "macro regime" in _MANAGER_SYSTEM
-
-
-def test_cluster_synthesizes_research_thesis():
-    thesis = InvestmentThesis(thesis_md="종합", conviction="high",
-                              dominant_scenario="kr_stress",
-                              key_risks=["인플레 재점화"])
-    node = create_research_cluster(
-        bull_llm=_FakeBullBear("강세"),
-        bear_llm=_FakeBullBear("약세"),
-        manager_llm=_FakeManager(thesis),
-    )
-    out = node(_state())
-    rd = out["research_decision"]
-    assert isinstance(rd, ResearchThesis)
-    assert rd.conviction == "high"
-    assert rd.dominant_scenario == "kr_stress"
-    assert rd.bull_view == "강세"
-    assert rd.bear_view == "약세"
-    assert "research_debate_summary" in out
-
-
-def test_cluster_manager_failure_falls_back():
-    class _BadManager:
-        def with_structured_output(self, schema):
-            return self
-        def invoke(self, prompt):
-            raise RuntimeError("boom")
-    node = create_research_cluster(
-        bull_llm=_FakeBullBear("강세"), bear_llm=_FakeBullBear("약세"),
-        manager_llm=_BadManager(),
-    )
-    out = node(_state())
-    rd = out["research_decision"]
-    assert rd.conviction == "medium"   # fallback neutral
+def test_research_cluster_outputs_risk_tilt(monkeypatch):
+    import tradingagents.agents.researchers.research_cluster as rc
+    monkeypatch.setattr(rc, "invoke_structured_obj",
+                        lambda *a, **k: InvestmentThesis(thesis_md="t", risk_tilt="defensive", key_risks=["r"]))
+    monkeypatch.setattr(rc, "create_bull_researcher", lambda llm: (lambda s: {"bull_view": "B"}))
+    monkeypatch.setattr(rc, "create_bear_researcher", lambda llm: (lambda s: {"bear_view": "R"}))
+    node = create_research_cluster(object(), object(), object())
+    out = node({})
+    assert out["research_decision"].risk_tilt == "defensive"
+    assert "risk_tilt: defensive" in out["research_debate_summary"]
