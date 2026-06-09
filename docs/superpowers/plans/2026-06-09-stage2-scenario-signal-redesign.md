@@ -96,7 +96,7 @@ import 라인(파일 상단)에 `DEFENSIVE_KEYS` 추가:
 from tradingagents.skills.portfolio.gaps_buckets import GROWTH_KEYS, DEFENSIVE_KEYS
 ```
 
-기존 `SCENARIO_MODIFIER`(dict)와 `apply_scenario_modifier`(함수) 블록을 **삭제**하고 그 자리에 추가:
+기존 `SCENARIO_MODIFIER`/`apply_scenario_modifier` 는 **그대로 둔다**(trader_allocator 가 Task 5 전환까지 사용 — Task 7 에서 삭제). 파일 끝에 다음을 **추가**:
 ```python
 # === 매크로 신호 → bucket delta (v1 시드, 튜닝 대상). net≈0, |delta| 작게. ===
 # risk_tilt 5단 → 성장버킷 합 조정폭 (regime baseline 대비 위험자산 ±). v1 시드.
@@ -158,8 +158,8 @@ def apply_macro_modifiers(
 
 - [ ] **Step 4: 통과 확인**
 
-Run: `python -m pytest tests/unit/skills/portfolio/test_scenario_anchor.py -v`
-Expected: PASS (신규 4개 + 기존 effective_band 테스트 포함 전부)
+Run: `python -m pytest tests/unit/skills/portfolio/test_scenario_anchor.py -v && python -m pytest tests/unit -q`
+Expected: PASS (신규 5개 포함 + 전체 unit 회귀 0 — apply_scenario_modifier 유지로 trader_allocator 안 깨짐)
 
 - [ ] **Step 5: 커밋**
 
@@ -191,11 +191,6 @@ def test_research_thesis_accepts_risk_tilt():
     rt = ResearchThesis(risk_tilt="defensive", thesis_md="x", key_risks=["a"])
     assert rt.risk_tilt == "defensive"
 
-def test_dominant_scenario_and_conviction_removed():
-    rt = ResearchThesis(dominant_scenario="kr_boom", conviction="high")  # extra=ignore
-    assert not hasattr(rt, "dominant_scenario")
-    assert not hasattr(rt, "conviction")
-
 def test_investment_thesis_risk_tilt():
     it = InvestmentThesis(thesis_md="x", risk_tilt="offensive")
     assert it.risk_tilt == "offensive"
@@ -204,33 +199,30 @@ def test_investment_thesis_risk_tilt():
 - [ ] **Step 2: 실패 확인**
 
 Run: `python -m pytest tests/unit/schemas/test_research_thesis.py -v`
-Expected: FAIL — `risk_tilt` 미정의 / dominant_scenario·conviction 여전히 존재
+Expected: FAIL — `risk_tilt` 미정의
 
 - [ ] **Step 3: 구현** — `research.py` 수정
 
-상단 import를 정리(ScenarioField 제거로 Annotated/BeforeValidator/get_args orphan):
-```python
-from typing import Literal
-from pydantic import BaseModel, Field
-```
+`Literal` 은 이미 `from typing import Annotated, Literal, get_args` 로 import 되어 있다. import·`ScenarioLabel`·`ScenarioField`·`ConvictionLevel`·`_coerce_scenario` 는 **그대로 둔다**(Task 7 에서 정리).
 
-`ScenarioLabel`, `_VALID_SCENARIOS`, `_coerce_scenario`, `ScenarioField` 정의 블록 **삭제**.
-(`ConvictionLevel = Literal["high","medium","low"]` 는 ResearchDecision(legacy)이 참조하므로 **유지**.)
-
-`InvestmentThesis` 를 교체:
+`InvestmentThesis` 에 `risk_tilt` 필드만 추가 (나머지 기존 필드 유지):
 ```python
 class InvestmentThesis(BaseModel):
     """Research Manager(Stage 2) 출력 — bull/bear 종합. structured LLM 타깃."""
     thesis_md: str = Field(max_length=20000)
     risk_tilt: Literal["strong_offensive", "offensive", "neutral", "defensive", "strong_defensive"] = "neutral"
+    conviction: ConvictionLevel = "medium"
+    dominant_scenario: ScenarioField = "neutral"
     key_risks: list[str] = Field(default_factory=list)
 ```
 
-`ResearchThesis` 를 교체:
+`ResearchThesis` 에 `risk_tilt` 필드만 추가 (나머지 기존 필드 유지):
 ```python
 class ResearchThesis(BaseModel):
     """Stage 2 종합 state 객체 (state['research_decision'])."""
     risk_tilt: Literal["strong_offensive", "offensive", "neutral", "defensive", "strong_defensive"] = "neutral"
+    conviction: ConvictionLevel = "medium"
+    dominant_scenario: ScenarioField = "neutral"
     thesis_md: str = Field(default="", max_length=20000)
     bull_view: str = Field(default="", max_length=20000)
     bear_view: str = Field(default="", max_length=20000)
@@ -238,18 +230,18 @@ class ResearchThesis(BaseModel):
     model_config = {"extra": "ignore"}
 ```
 
-(`ResearchDecision` 클래스는 비범위 — 변경하지 않음. dominant_scenario:str / conviction 필드 유지.)
+(`ResearchDecision` 클래스는 비범위 — 변경하지 않음.)
 
 - [ ] **Step 4: 통과 확인**
 
 Run: `python -m pytest tests/unit/schemas/test_research_thesis.py -v`
-Expected: PASS (4개)
+Expected: PASS (3개)
 
 - [ ] **Step 5: 커밋**
 
 ```bash
 git add tradingagents/schemas/research.py tests/unit/schemas/test_research_thesis.py
-git commit -m "feat(schema): ResearchThesis dominant_scenario/conviction → risk_tilt
+git commit -m "feat(schema): ResearchThesis/InvestmentThesis risk_tilt 필드 추가
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
@@ -395,8 +387,10 @@ def regime_selection_prefs(
     return prefer_short, prefer_unhedged, prefer_hedged
 ```
 
-`select_representative_candidates` 시그니처에서 `dominant_scenario: str | None = None` 을
-`fx_regime: str | None = None` 으로 변경. 본문의 prefs 언패킹과 `_hedge_pen` 교체:
+`select_representative_candidates` 시그니처에 `fx_regime: str | None = None` 을 **추가**(기존
+`dominant_scenario: str | None = None` 파라미터는 미사용으로 **유지** — trader_allocator 가 아직
+`dominant_scenario=` 로 호출하므로 제거하면 깨짐. Task 5 에서 호출부 전환, Task 7 에서 파라미터 제거).
+본문의 prefs 언패킹과 `_hedge_pen` 교체:
 ```python
     prefer_short, prefer_unhedged, prefer_hedged = regime_selection_prefs(quadrant, fx_regime)
 
@@ -414,8 +408,9 @@ def regime_selection_prefs(
 
 - [ ] **Step 4: 통과 확인**
 
-Run: `python -m pytest tests/unit/skills/portfolio/test_candidate_selector.py -v`
-Expected: PASS (3개)
+Run: `python -m pytest tests/unit/skills/portfolio/test_candidate_selector.py -v && python -m pytest tests/unit -q`
+Expected: PASS (신규 3개 + 전체 회귀 0). dominant_scenario 파라미터 유지로 trader_allocator 호출 안 깨짐.
+기존 candidate_selector 테스트가 dominant_scenario 기반 환헤지를 검증하던 것이면 obsolete → fx_regime 으로 갱신.
 
 - [ ] **Step 5: 커밋**
 
@@ -581,8 +576,9 @@ philosophy 표가 이 키를 읽는다. Task 6에서 라벨만 갱신.)
 
 - [ ] **Step 4: 통과 확인**
 
-Run: `python -m pytest tests/unit/agents/trader/test_trader_allocator.py -v`
-Expected: PASS (신규 + 기존)
+Run: `python -m pytest tests/unit/agents/trader/test_trader_allocator.py -v && python -m pytest tests/unit -q`
+Expected: PASS (신규 + 기존 + 전체 unit 회귀 0). 기존 테스트가 conviction/scenario 참조로 깨지면 risk_tilt/fx/credit 로 갱신.
+(integration eval 테스트는 OpenAI API key 미설정으로 실패하는 환경 문제 — unit 기준으로 판단.)
 
 - [ ] **Step 5: 커밋**
 
@@ -674,6 +670,11 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 Run: `grep -rn "dominant_scenario\|apply_scenario_modifier\|SCENARIO_MODIFIER\|\.conviction\|_UNHEDGED_SCENARIOS\|ScenarioLabel\|ScenarioField" tradingagents/ --include="*.py" | grep -v "ResearchDecision\|bl_views"`
 Expected: 결과 없음(legacy ResearchDecision/bl_views 제외). 남으면 해당 파일 수정.
+
+이 Task 에서 삭제할 것 (각각 grep 으로 다른 사용처 0 확인 후):
+- `scenario_anchor.py`: `SCENARIO_MODIFIER`/`apply_scenario_modifier` 정의 (Task 5 전환 후 미사용)
+- `research.py`: `InvestmentThesis`/`ResearchThesis` 의 `conviction`·`dominant_scenario` 필드, `ScenarioLabel`/`_VALID_SCENARIOS`/`_coerce_scenario`/`ScenarioField` 정의, orphan 된 import(`Annotated`/`BeforeValidator`/`get_args`). 단 `ConvictionLevel` 은 `ResearchDecision`(legacy)이 참조하면 유지.
+- `tests/unit/schemas/test_research_thesis.py` 에 제거 검증 추가: `rt = ResearchThesis(conviction="high", dominant_scenario="kr_boom")` 후 `assert not hasattr(rt, "conviction") and not hasattr(rt, "dominant_scenario")`.
 
 - [ ] **Step 2: 전체 unit 회귀**
 
