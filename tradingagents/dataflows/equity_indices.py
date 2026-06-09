@@ -31,6 +31,12 @@ EQUITY_INDEX_TICKERS = {
     # Tier-2 dual_momentum 벤치마크
     "kospi200": "069500.KS",  # KODEX 200 ETF (KOSPI200 prox; ^KS200 도 가능)
     "spy": "SPY",
+    # Plan B fold-in (2026-06-09): sector equity ETFs (B3/B5)
+    "sox": "^SOX",       # PHLX Semiconductor Index (B3)
+    "smh": "SMH",        # VanEck Semiconductor ETF (B3, 글로벌)
+    "eem": "EEM",        # iShares MSCI EM (B5)
+    "emb": "EMB",        # iShares EM USD Bond (B5)
+    "vwo": "VWO",        # Vanguard FTSE EM (B5 보조)
 }
 
 

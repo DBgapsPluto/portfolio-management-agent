@@ -117,6 +117,8 @@ FRED_SERIES = {
     "kr_reer": "RBKRBIS",                 # BIS Real Effective Exchange Rate KR (1994+, monthly)
     # F10 SOFR-TED stitching (pre-2018 proxy)
     "ted_spread": "TEDRATE",              # TED Spread (1986-2022, discontinued)
+    # Plan B fold-in (2026-06-09): chip sector PPI (B3)
+    "us_chip_ppi": "PCU334413334413",   # 반도체·관련소자 PPI (월간, B3)
 }
 
 

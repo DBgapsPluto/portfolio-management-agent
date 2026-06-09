@@ -156,6 +156,13 @@ DEFAULT_CONFIG.update({
         "us_acm_term_premium_10y": 5,   # NY Fed weekly update
         "kr_reer": 17,                  # BIS monthly
         "ted_spread": 1,                # daily
+        # Plan B fold-in (2026-06-09)
+        "us_chip_ppi": 30,              # Semiconductor PPI (monthly)
+        "kr_export_semi": 30,           # Semiconductor exports (monthly)
+        "kr_export_battery": 30,        # Battery exports (monthly)
+        "kr_export_display": 30,        # Display exports (monthly)
+        "kr_export_chem": 30,           # Chemical exports (monthly)
+        "kr_export_steel": 30,          # Steel exports (monthly)
     },
     # Tracing / observability
     "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",
