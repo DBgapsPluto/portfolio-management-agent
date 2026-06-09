@@ -69,9 +69,9 @@ regime 제약(특히 침체 성장버킷 상단 +0.05)을 넘지 못한다.
 LLM 숫자 캘리브레이션(제거된 conviction의 死인) 회피 위해 연속 confidence 대신 순서 라벨 5단으로
 강도를 표현한다. 실측에서 한 라벨로 수렴하는지 모니터링한다.
 
-**credit_stress**:
+**credit_stress** (v1 시드 — 신용 채널 특화; 위험자산 총량 축소는 risk_tilt 가 담당해 중복 회피):
 - `tight`: b9_risk_credit −0.02, a3_us_rates +0.02
-- `crisis`: b9_risk_credit −0.04, a3_us_rates +0.03, a1_cash +0.03, 성장버킷 소폭 −0.02 (비례)
+- `crisis`: b9_risk_credit −0.04, a3_us_rates +0.02, a1_cash +0.02 (flight-to-cash)
 - `easy` / `neutral`: 0
 
 **fx_pressure** (비중은 작게, 주로 종목으로):

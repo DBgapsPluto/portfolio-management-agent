@@ -1,7 +1,7 @@
 """Stage 3 trader Step A — quadrant 앵커 (baseline + hard band + 동적 밴드 + 투영).
 
 앵커 key = macro_report.regime.quadrant (4개, 결정론). LLM 은 baseline 대비 tilt 만
-하고, 코드가 confidence·conviction 로 좁힌 밴드 안으로 박스제약 투영.
+하고, 코드가 confidence 로 좁힌 밴드 안으로 박스제약 투영.
 
 baseline 수치는 v1 시드 (레짐→자산군 로직 + mandate ≤70% 지향 + 옛 BL 부호).
 risk≤70% 하드 보장은 Stage 5 validator 담당 — 본 모듈은 강제하지 않는다.
@@ -129,7 +129,7 @@ RISK_TILT_AMOUNT: dict[str, float] = {
 
 CREDIT_MODIFIER: dict[str, dict[str, float]] = {
     "tight":  {"b9_risk_credit": -0.02, "a3_us_rates": 0.02},
-    "crisis": {"b9_risk_credit": -0.04, "a3_us_rates": 0.04},
+    "crisis": {"b9_risk_credit": -0.04, "a3_us_rates": 0.02, "a1_cash": 0.02},
     # easy / neutral → no-op
 }
 
