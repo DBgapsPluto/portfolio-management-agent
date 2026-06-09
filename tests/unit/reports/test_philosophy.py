@@ -5,7 +5,10 @@ from tradingagents.reports.philosophy import (
     generate_philosophy,
     write_philosophy,
     _build_state_summary,
+    format_step_a_decomposition,
+    _format_scenario_probs,
 )
+from tradingagents.schemas.research import ResearchThesis
 
 
 def _make_state():
@@ -63,3 +66,20 @@ def test_build_state_summary_fx_absent_graceful():
     summary = _build_state_summary(_make_state())   # fx_exposure 없음
     assert "FX(환) 노출" in summary
     assert "(미산출)" in summary
+
+
+def test_step_a_decomp_shows_risk_tilt():
+    attribution = {"step_a": {
+        "quadrant": "growth_disinflation", "risk_tilt": "defensive",
+        "fx_regime": "usd_risk_off", "credit_regime": "tight", "confidence": 0.8,
+        "tilt_rationale": "r",
+        "buckets": {"a1_cash": {"baseline": 0.08, "scenario_delta": 0.0,
+                                "tilt_applied": 0.0, "final": 0.08}},
+    }}
+    out = format_step_a_decomposition(attribution)
+    assert "risk_tilt defensive" in out
+    assert "fx usd_risk_off" in out
+
+
+def test_format_scenario_probs_risk_tilt():
+    assert "risk_tilt=offensive" in _format_scenario_probs(ResearchThesis(risk_tilt="offensive"))

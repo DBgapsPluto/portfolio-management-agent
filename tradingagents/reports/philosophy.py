@@ -101,20 +101,13 @@ def _strip_markdown_asterisks(text: str) -> str:
 
 
 def _format_scenario_probs(rd) -> str:
-    """ResearchDecision factor scores → 정렬된 한 줄 요약."""
+    """Stage 2 risk_tilt 한 줄 요약."""
     if rd is None:
         return "(none)"
-    factor_scores = getattr(rd, "factor_scores", None) or {}
-    if isinstance(rd, dict):
-        factor_scores = rd.get("factor_scores") or {}
-    dominant = getattr(rd, "dominant_scenario", None) or (
-        rd.get("dominant_scenario") if isinstance(rd, dict) else None
-    ) or "?"
-    if not factor_scores:
-        return f"dominant={dominant} (no factor scores)"
-    sorted_z = sorted(factor_scores.items(), key=lambda kv: -abs(kv[1]))[:5]
-    z_str = ", ".join(f"{name} {z:+.2f}" for name, z in sorted_z)
-    return f"dominant={dominant}; top factors: {z_str}"
+    rt = getattr(rd, "risk_tilt", None) or (
+        rd.get("risk_tilt") if isinstance(rd, dict) else None
+    ) or "neutral"
+    return f"risk_tilt={rt}"
 
 
 def _format_validation(report) -> str:
@@ -184,9 +177,9 @@ def format_step_a_decomposition(attribution) -> str:
     if not buckets:
         return "(미산출)"
     lines = [
-        f"Regime {sa.get('quadrant', '?')} / Scenario {sa.get('scenario', '?')} "
+        f"Regime {sa.get('quadrant', '?')} / risk_tilt {sa.get('risk_tilt', '?')} "
         f"(conf {float(sa.get('confidence', 0)) * 100:.0f}%, "
-        f"conviction {sa.get('conviction', '?')})",
+        f"fx {sa.get('fx_regime', '?')} / credit {sa.get('credit_regime', '?')})",
         "| 버킷 | 앵커 | 시나리오 | 판단(tilt) | 최종 |",
         "|------|------|----------|-----------|------|",
     ]
