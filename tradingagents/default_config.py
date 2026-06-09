@@ -145,6 +145,10 @@ DEFAULT_CONFIG.update({
         "kr_treasury_3y": 1,
         "kr_treasury_10y": 1,
         "kr_corp_aa_3y": 1,
+        "kr_treasury_5y": 1,
+        "kr_treasury_30y": 1,
+        "kr_corp_bbb_3y": 1,
+        "kr_cd91": 1,
         # Tier 0 additions (2026-05-28)
         "us_indpro": 17,                # IP released ~17th of month for prior month
         "us_real_pce": 30,              # BEA quarterly + 1 month lag
