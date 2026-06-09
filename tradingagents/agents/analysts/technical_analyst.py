@@ -374,6 +374,7 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
             f"{breadth_summary}"
             f"{sr_summary}"
             f"{ra_summary}"
+            f"{f'반도체: SOX 3m {semi_momentum.sox_ret_3m_pct:+.1f}%, SOX-SMH 디버전스 {semi_momentum.sox_minus_smh_div_3m:+.1f}%p, SMH-SPY {semi_momentum.smh_vs_spy_rel_3m:+.1f}%p' if semi_momentum else ''}\n"
         )[:2000]
 
         report = TechnicalReport(

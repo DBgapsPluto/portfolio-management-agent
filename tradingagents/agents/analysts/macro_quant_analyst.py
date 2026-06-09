@@ -877,7 +877,7 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             f"Inflexp: 5Y5Y={inflation_exp.breakeven_5y5y:.2f}%, "
             f"Mich1y={inflation_exp.michigan_1y:.2f}% ({'anchored' if inflation_exp.anchored else inflation_exp.unanchored_direction})\n"
             f"Fed path: {fed_path.path_bps:+.0f}bps → {fed_path.market_view}\n"
-            f"FX: USD/KRW {fx.usd_krw:.0f} ({fx.krw_change_1m_pct:+.1f}%/1m, {fx.regime})\n"
+            f"FX: USD/KRW {fx.usd_krw:.0f} ({fx.krw_change_1m_pct:+.1f}%/1m, {fx.regime}), JPY/KRW {fx.jpy_krw:.2f}\n"
             f"Cu/Au: {risk_appetite.signal} (5y pct {risk_appetite.ratio_percentile_5y:.0%})\n"
             f"China CLI: {china_leading.cli_value:.1f} ({china_leading.phase}) "
             f"| USDCNH {china_leading.usdcnh:.3f} ({china_leading.usdcnh_change_1m_pct:+.1f}%/1m), "
@@ -885,6 +885,9 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
             f"→ realtime {china_leading.realtime_signal}\n"
             f"Foreign 20d: {foreign_flow.net_20d_krw/1e8:+.0f}억 ({foreign_flow.signal})\n"
             f"Tail risk: VVIX={tail_risk.vvix:.0f}, MOVE={tail_risk.move:.0f} ({tail_risk.signal})\n"
+            f"{f'반도체 PPI: {chip_cycle_snap.chip_ppi_yoy_pct:+.1f}%YoY ' if chip_cycle_snap else ''}"
+            f"{f'| EM {emerging_market_snap.regime}(EEM vs USD {emerging_market_snap.em_vs_dxy_rel:+.0f}) ' if emerging_market_snap else ''}"
+            f"{f'| 섹터수출 top {kr_sector_export_snap.leader_sector}(반도체 {kr_sector_export_snap.semi_yoy_pct:+.0f}%YoY)' if kr_sector_export_snap else ''}\n"
             f"Drivers: {', '.join(regime.drivers[:3])}\n"
         )[:2000]
 

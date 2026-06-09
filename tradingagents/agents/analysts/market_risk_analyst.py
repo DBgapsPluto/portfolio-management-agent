@@ -614,12 +614,17 @@ def create_market_risk_analyst(quick_llm, deep_llm):
             f"TIPS 10y: {real_yields.tips_10y:.2f}% ({real_yields.regime})\n"
             f"Funding: SOFR-Tbill {funding_stress.spread_bps:+.0f}bps ({funding_stress.regime})\n"
             f"Credit quality: BBB-AAA {credit_quality.quality_spread_bps:.0f}bps ({credit_quality.regime})\n"
-            f"KR yield curve: 10y-3y {kr_yield_curve.spread_10y_3y_bps:+.0f}bps "
-            f"(5y pct {kr_yield_curve.percentile_5y:.0%}, {kr_yield_curve.regime})\n"
-            f"KR corp spread: {kr_corp_spread.spread_bps:+.0f}bps ({kr_corp_spread.regime})\n"
+            f"KR yield curve: 10y-3y {kr_yield_curve.spread_10y_3y_bps:+.0f}bps, "
+            f"30y-5y {kr_yield_curve.spread_30y_5y_bps:+.0f}bps "
+            f"(5y pct {kr_yield_curve.percentile_5y:.0%}, {kr_yield_curve.regime}/{kr_yield_curve.curve_shape})\n"
+            f"KR corp spread: AA- {kr_corp_spread.spread_bps:+.0f}bps, "
+            f"BBB-AA {kr_corp_spread.bbb_aa_quality_spread_bps:+.0f}bps ({kr_corp_spread.regime})\n"
             f"KR margin: 20d {kr_margin.change_20d_pct:+.1f}% ({kr_margin.signal})\n"
             f"KR tier: KOSDAQ-KOSPI {kr_market_tier.relative_perf_pct:+.1f}% ({kr_market_tier.signal})\n"
             f"Equity-bond corr 120d: {eq_bd_corr.correlation_120d:+.2f} ({eq_bd_corr.regime})\n"
+            f"KR CD91: {kr_short_rate.cd91:.2f}% (vs 국고채3y {kr_short_rate.cd91_minus_treasury3y_bps:+.0f}bps, {kr_short_rate.regime})\n"
+            f"{f'REIT: VNQ 3m {reit_driver.us_reit_ret_3m_pct:+.1f}%, mortgage {reit_driver.mortgage_30y:.1f}%(vs10y {reit_driver.mortgage_minus_10y_bps:+.0f}bps) ' if reit_driver else ''}"
+            f"{f'| HY-IG decompr {hy_decompression.hy_minus_ig_bps:+.0f}bps ({hy_decompression.regime})' if hy_decompression else ''}\n"
         )[:2000]
 
         report = RiskReport(
