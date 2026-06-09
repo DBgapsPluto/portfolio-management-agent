@@ -91,6 +91,7 @@ class ResearchDecision(BaseModel):
 class InvestmentThesis(BaseModel):
     """Research Manager(Stage 2) 출력 — bull/bear 종합. structured LLM 타깃."""
     thesis_md: str = Field(max_length=20000)
+    risk_tilt: Literal["strong_offensive", "offensive", "neutral", "defensive", "strong_defensive"] = "neutral"
     conviction: ConvictionLevel = "medium"
     dominant_scenario: ScenarioField = "neutral"
     key_risks: list[str] = Field(default_factory=list)
@@ -103,6 +104,7 @@ class ResearchThesis(BaseModel):
     getattr(rd, 'dominant_scenario'|'conviction') 로 읽으므로 동일 필드명 유지.
     factor_scores 는 없음 → macro_conditional 의 valuation trigger graceful 비활성.
     """
+    risk_tilt: Literal["strong_offensive", "offensive", "neutral", "defensive", "strong_defensive"] = "neutral"
     conviction: ConvictionLevel = "medium"
     dominant_scenario: ScenarioField = "neutral"
     thesis_md: str = Field(default="", max_length=20000)
