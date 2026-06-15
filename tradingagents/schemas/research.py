@@ -31,9 +31,9 @@ class ResearchDecision(BaseModel):
 
     `dominant_scenario` 는 legacy scenario name string (goldilocks / overheating
     / broad_recession / stagflation / global_credit / kr_boom / kr_stress) —
-    downstream method_picker / candidate_selector 의 log_boost 가 이 string 으로
-    BOOST_BY_CYCLE/TAIL/KR table lookup. factor model 의 derive_dominant_scenario
-    가 *명시적으로* set (이전 @property 가 marginal 로 derive 하던 path 제거).
+    downstream candidate_selector 의 log_boost 가 이 string 으로
+    BOOST_BY_CYCLE/TAIL/KR table lookup. (method_picker 는 2026-06-03 제거 —
+    legacy compat 필드.)
     """
     bucket_target: BucketTarget
     conviction: ConvictionLevel = Field(
@@ -43,7 +43,7 @@ class ResearchDecision(BaseModel):
         default="goldilocks",
         description=(
             "Legacy compat — factor model 의 derive_dominant_scenario 가 derive. "
-            "downstream method_picker / candidate_selector 의 log_boost 호출에 사용."
+            "downstream candidate_selector 의 log_boost 호출에 사용."
         ),
     )
 

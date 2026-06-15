@@ -271,7 +271,7 @@ CALENDAR_LOOKAHEAD_DAYS: int = 90       # CB calendar horizon
 # CFNAI=0 등)으로 잘못된 regime 결정하는 것 방지.
 SENTINEL_RATIO_SKIP_LLM: float = 0.5    # 50% 이상 sentinel → LLM skip
 DEGRADED_REGIME_DEFAULT: str = "growth_disinflation"  # neutral default (다른 분기로 silent 이동 방지)
-DEGRADED_REGIME_CONFIDENCE: float = 0.1   # 매우 낮은 confidence — method_picker 가 보수적 결정 유도
+DEGRADED_REGIME_CONFIDENCE: float = 0.1   # 매우 낮은 confidence — 다운스트림 tilt band 를 baseline 쪽으로 좁혀 보수적 결정 유도
 
 
 NARRATIVE_PROMPT = """\

@@ -1,8 +1,10 @@
 """
 Phase 4a: Robust covariance estimation.
 
-Ledoit-Wolf linear shrinkage covariance — replaces sample_cov / returns.cov()
-across allocator, optimizers, NCO, overlay.
+Ledoit-Wolf linear shrinkage covariance — replaces sample_cov / returns.cov().
+Live consumer: the Stage-5 validator fallback (min-variance re-optimization in
+graph/conditional_logic.py). (The former NCO/optimizer consumers were removed
+2026-06-03; the live allocator is deterministic AUM-weighted.)
 
 Why shrinkage: sample covariance is unbiased but high-variance in small-sample
 regimes. Ledoit-Wolf 2004 shrinks toward identity target with closed-form δ.

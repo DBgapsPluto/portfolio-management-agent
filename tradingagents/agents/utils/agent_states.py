@@ -93,7 +93,9 @@ class AgentState(MessagesState):
     # === Phase 3a A/B testing ===
     force_method: Annotated[
         Optional[str],
-        "Force optimizer method (Phase 3a A/B testing). None = auto-select via method_picker.",
+        "Force optimizer method (legacy A/B-test seam). Currently INERT — the live "
+        "allocator emits AUM_WEIGHTED; per-method selection (method_picker) was "
+        "removed 2026-06-03. Retained as a no-op for backward compatibility.",
     ]
 
     # === Tuning harness ===

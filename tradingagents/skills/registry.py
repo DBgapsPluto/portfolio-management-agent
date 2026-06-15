@@ -5,7 +5,7 @@ _REGISTRY: dict[str, dict[str, Any]] = {}
 # Permanent record of every skill registered this process. Survives
 # clear_registry() so _reregister_all_skills() can restore the original
 # function objects WITHOUT importlib.reload — reloading a skill module would
-# replace the classes it defines (e.g. method_picker.MethodChoice), breaking
+# replace the classes a skill module defines (dataclasses/enums), breaking
 # isinstance() in any test that imported those classes at collection time.
 _REGISTRY_BACKUP: dict[str, dict[str, Any]] = {}
 _SKILL_MODULES: list[str] = [
