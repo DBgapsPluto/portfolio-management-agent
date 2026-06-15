@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from difflib import SequenceMatcher
 
 from tradingagents.schemas.news import NewsItem, ImpactAssessment, RankedNews
@@ -37,10 +37,13 @@ def dedupe_rank_news(
     items: list[NewsItem],
     impacts: dict[str, ImpactAssessment],
     top_n: int = 10,
+    as_of: date | None = None,
 ) -> list[RankedNews]:
     """Dedupe by direction-aware similarity, then rank by severity * recency.
 
     impacts: dict keyed by headline. Items without an impact are skipped.
+    as_of: B7 fix — anchor the recency score to as_of (end-of-day) so ranking is
+    point-in-time reproducible across re-runs. None → wall clock (live default).
     """
     paired: list[tuple[NewsItem, ImpactAssessment]] = [
         (item, impacts[item.headline])
@@ -57,7 +60,8 @@ def dedupe_rank_news(
         if not is_dup:
             deduped.append((item, impact))
 
-    now = datetime.utcnow()
+    now = (datetime.combine(as_of, datetime.max.time())
+           if as_of is not None else datetime.utcnow())
     ranked: list[RankedNews] = []
     for item, impact in deduped:
         recency = max(0.0, 1.0 - (now - item.published_at).total_seconds() / (7 * 86400))
