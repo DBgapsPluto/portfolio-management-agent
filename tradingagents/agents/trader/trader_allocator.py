@@ -318,6 +318,11 @@ def create_trader_allocator(step_a_llm):
             "weight_vector": weight_vector,
             "method_choice": {"method": "aum_weighted"},
             "allocation_attribution": attribution,
+            # B1 fix: count each allocator run so validation_router can route to
+            # fallback after MAX_ALLOCATION_ATTEMPTS. Without this the retry→fallback
+            # cycle never terminates (attempts stuck at 0) and a persistently
+            # failing validation aborts the run with GraphRecursionError.
+            "allocation_attempts": state.get("allocation_attempts", 0) + 1,
         }
 
     return node
