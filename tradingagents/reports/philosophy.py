@@ -210,6 +210,78 @@ def _resolve_method(state: dict) -> str:
     return str(state.get("method") or "unknown")
 
 
+def _build_facts_block(state: dict) -> str:
+    """B8: deterministic, checkable mandate facts. The philosophy doc is scored at
+    70% (투자철학) and the LLM is told to cite numbers only from the inputs; this
+    block is the authoritative source for the headline mandate-compliance figures
+    (risk %, single/cluster caps, validation) so the doc cannot fabricate them."""
+    # Exclude CASH — it is not an ETF, so neither the single-ETF cap nor the
+    # holding count counts it (mirrors concentration_check's CASH exemption).
+    weights = {t: w for t, w in _resolve_weights(state).items() if t != "CASH"}
+    lines: list[str] = [f"- 보유 종목 수: {len(weights)}"]
+    if weights:
+        top_t, top_w = max(weights.items(), key=lambda kv: kv[1])
+        lines.append(
+            f"- 최대 단일 비중: {top_t} = {top_w * 100:.1f}% "
+            f"(단일 cap 20% 대비 여유 {max(0.0, 0.20 - top_w) * 100:.1f}%p)"
+        )
+    attr = state.get("allocation_attribution") or {}
+    rp = attr.get("realized_risk_pct")
+    if isinstance(rp, (int, float)) and not isinstance(rp, bool):
+        lines.append(f"- 위험자산 비중: {rp * 100:.1f}% (mandate cap 70%)")
+    clusters = state.get("correlation_clusters") or []
+    if clusters and weights:
+        def _members(c):
+            m = getattr(c, "members", None)
+            if m is None and isinstance(c, dict):
+                m = c.get("members")
+            return m or []
+        sums = [sum(weights.get(m, 0.0) for m in _members(c)) for c in clusters]
+        if sums:
+            lines.append(
+                f"- 최대 상관클러스터 비중 합: {max(sums) * 100:.1f}% (cluster cap 25%)"
+            )
+    val = state.get("validation_report")
+    if val is not None:
+        viol = getattr(val, "violations", []) or []
+        hard = sum(1 for v in viol if getattr(v, "severity", None) == "hard")
+        lines.append(
+            f"- 의무사항 검증: {'통과' if getattr(val, 'passed', False) else '실패'} "
+            f"(hard 위반 {hard}건, 총 {len(viol)}건)"
+        )
+    return "\n".join(lines)
+
+
+_NUM_RE = re.compile(r"\d+\.?\d*")
+
+
+def _extract_numbers(text: str) -> set[float]:
+    out: set[float] = set()
+    for tok in _NUM_RE.findall(text or ""):
+        try:
+            out.add(round(float(tok), 1))
+        except ValueError:
+            pass
+    return out
+
+
+def _audit_philosophy_numbers(text: str, state_summary: str) -> list[float]:
+    """B8: flag numbers in the philosophy doc that do not appear (within rounding)
+    in the inputs — i.e. potential fabrications. Heuristic + LOG-ONLY (never
+    rejects): small integers and years are ignored to limit false positives."""
+    allowed = _extract_numbers(state_summary)
+    unverified: list[float] = []
+    for n in _extract_numbers(text):
+        if n in allowed:
+            continue
+        if float(n).is_integer() and (n <= 31 or 1900 <= n <= 2100):
+            continue  # days / months / small counts / years — 2-digit %s (e.g. 45) ARE checked
+        if any(abs(n - a) <= max(0.1, abs(a) * 0.02) for a in allowed):
+            continue  # rounding / reformat tolerance
+        unverified.append(n)
+    return sorted(unverified)
+
+
 def _build_state_summary(state: dict) -> str:
     """philosophy prompt에 들어가는 풍부한 state 요약."""
     wv = state.get("weight_vector")
@@ -242,6 +314,8 @@ def _build_state_summary(state: dict) -> str:
 
     return (
         f"as_of_date: {state.get('as_of_date', 'unknown')}\n\n"
+        "### 검증된 의무사항 수치 (Mandate Facts — 비중·cap 관련 수치는 반드시 여기서 인용)\n"
+        f"{_build_facts_block(state)}\n\n"
         "### Stage 1 — Analyst Summaries\n"
         f"#### Macro\n{state.get('macro_summary', '')}\n\n"
         f"#### Risk\n{state.get('risk_summary', '')}\n\n"
@@ -288,6 +362,16 @@ def generate_philosophy(state: dict, deep_llm) -> str:
         logger.warning(
             "philosophy.md only %d chars after retry — manual review required",
             len(text),
+        )
+    # B8: surface numbers in the doc that are not present in the inputs (possible
+    # fabrication). Log-only — never blocks generation (heuristic, false positives
+    # possible), but gives the operator an audit trail for the 70%-scored doc.
+    unverified = _audit_philosophy_numbers(text, state_summary)
+    if unverified:
+        logger.warning(
+            "philosophy.md: %d number(s) not found in inputs (possible fabrication, "
+            "review): %s", len(unverified),
+            ", ".join(f"{u:g}" for u in unverified[:15]),
         )
     return text
 

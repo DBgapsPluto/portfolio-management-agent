@@ -5,6 +5,7 @@ from tradingagents.reports.philosophy import (
     generate_philosophy,
     write_philosophy,
     _build_state_summary,
+    _audit_philosophy_numbers,
     format_step_a_decomposition,
     _format_scenario_probs,
 )
@@ -83,3 +84,91 @@ def test_step_a_decomp_shows_risk_tilt():
 
 def test_format_scenario_probs_risk_tilt():
     assert "risk_tilt=offensive" in _format_scenario_probs(ResearchThesis(risk_tilt="offensive"))
+
+
+# ---- B8: mandate facts block + number grounding audit ----
+
+
+def test_facts_block_in_state_summary():
+    state = dict(_make_state())
+    state["allocation_attribution"] = {"realized_risk_pct": 0.62}
+    val = MagicMock()
+    val.passed = True
+    val.violations = []
+    state["validation_report"] = val
+    summary = _build_state_summary(state)
+    assert "Mandate Facts" in summary
+    assert "보유 종목 수: 3" in summary
+    assert "위험자산 비중: 62.0% (mandate cap 70%)" in summary
+    assert "최대 단일 비중: A069500 = 50.0%" in summary
+    assert "의무사항 검증: 통과" in summary
+
+
+def test_audit_flags_fabricated_number():
+    inputs = "위험자산 비중: 62.0%, VIX 25.0, regime recession"
+    doc = "포트폴리오 위험자산은 62.0%이며 VIX 25.0. 그러나 88.5% 수익을 기대한다."
+    flagged = _audit_philosophy_numbers(doc, inputs)
+    assert 88.5 in flagged          # fabricated — not in inputs
+    assert 62.0 not in flagged      # present in inputs
+    assert 25.0 not in flagged      # present in inputs
+
+
+def test_audit_ignores_years_and_small_ints():
+    inputs = "위험자산 62.0%"
+    doc = "2026년 6월, 14개 종목 보유, 위험자산 62.0%."
+    flagged = _audit_philosophy_numbers(doc, inputs)
+    assert flagged == []            # 2026=year, 6/14=small ints, 62.0 in input
+
+
+def test_audit_flags_bare_integer_percentage():
+    # B8 (adversarial-audit fix): a fabricated 2-digit percentage written without
+    # a decimal (Korean prose '45%') must still be flagged, not exempted as a
+    # 'small int'. Days/months/counts (<=31) and years stay exempt.
+    inputs = "위험자산 62.0%, 보유 14개 종목"
+    doc = "예상 수익률 45%를 자신합니다. 위험자산 62.0%, 14개 종목."
+    flagged = _audit_philosophy_numbers(doc, inputs)
+    assert 45 in flagged            # fabricated 2-digit % — now caught
+    assert 62.0 not in flagged      # in inputs
+    assert 14 not in flagged        # <=31 count, and in inputs
+
+
+def test_facts_block_excludes_cash_from_single_cap():
+    # B8 (adversarial-audit fix): CASH is not an ETF; it must not be the
+    # '최대 단일 비중' nor counted as a holding (mirrors concentration_check).
+    wv = MagicMock()
+    wv.method = MagicMock(value="aum_weighted")
+    wv.weights = {"A069500": 0.18, "CASH": 0.30}
+    wv.rationale = "r"
+    summary = _build_state_summary({"weight_vector": wv})
+    facts = summary.split("Stage 1")[0]
+    assert "최대 단일 비중: A069500 = 18.0%" in facts
+    assert "보유 종목 수: 1" in facts
+    assert "CASH" not in facts
+
+
+def test_facts_block_cluster_dual_mode():
+    wv = MagicMock()
+    wv.method = MagicMock(value="x")
+    wv.weights = {"A": 0.4, "B": 0.3, "C": 0.3}
+    wv.rationale = "r"
+    # list-of-dict clusters
+    s1 = _build_state_summary({"weight_vector": wv, "correlation_clusters": [{"members": ["A", "B"]}]})
+    assert "최대 상관클러스터 비중 합: 70.0%" in s1
+    # object-with-.members clusters (pydantic Cluster shape)
+    c = MagicMock()
+    c.members = ["A", "C"]
+    s2 = _build_state_summary({"weight_vector": wv, "correlation_clusters": [c]})
+    assert "최대 상관클러스터 비중 합: 70.0%" in s2
+
+
+def test_generate_philosophy_warns_on_fabricated_number(caplog):
+    import logging
+    deep_llm = MagicMock()
+    # LLM fabricates 137.7% — not present anywhere in the inputs.
+    deep_llm.invoke.return_value.content = (
+        "전략 보고서. 위험자산 비중은 적정합니다. " + "상세 분석 " * 800
+        + " 우리는 137.7% 초과수익을 확신합니다."
+    )
+    with caplog.at_level(logging.WARNING):
+        generate_philosophy(_make_state(), deep_llm)
+    assert any("not found in inputs" in r.message for r in caplog.records)
