@@ -45,10 +45,18 @@ def run(as_of: str | None = None,
 
     regime_changed = False
     if previous_path:
-        prev = json.loads(Path(previous_path).read_text(encoding="utf-8"))
-        prev_regime = prev.get("bucket_target", {}).get("rationale", "")
-        if macro_result["macro_report"].regime.quadrant not in prev_regime:
-            regime_changed = True
+        # B3 fix: callers pass `previous_path` as a directory (the seed artifact
+        # dir, mirroring holdings._load_prev), but this read expects portfolio.json.
+        # Resolve dir→portfolio.json and guard non-existence so the reassess tier
+        # cannot crash with IsADirectoryError when it actually fires.
+        p = Path(previous_path)
+        if p.is_dir():
+            p = p / "portfolio.json"
+        if p.exists():
+            prev = json.loads(p.read_text(encoding="utf-8"))
+            prev_regime = prev.get("bucket_target", {}).get("rationale", "")
+            if macro_result["macro_report"].regime.quadrant not in prev_regime:
+                regime_changed = True
 
     tilt: dict[str, float] = {}
     if regime_changed:

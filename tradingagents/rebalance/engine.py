@@ -72,6 +72,19 @@ def compute_deltas(
     """
     band = dials["no_trade_band"]
     cur_risk = risk_total(current, is_risk)
+    target_risk = risk_total(target, is_risk)
+
+    # B2 fix: when the target intends LESS risk than current (e.g. a defensive
+    # overlay capping risk at defensive_target=0.55), enforce THAT target through
+    # the no-trade band — not only the 0.70 hard mandate cap. Previously the band
+    # exception keyed solely on HARD_RISK_ASSET_CAP (0.70), so in the 0.55–0.70
+    # zone every per-ticker de-risking delta was sub-band and skipped: the
+    # defensive overlay fired but executed 0 trades and risk could drift up to
+    # 0.70 unchecked (observed live 2026-06-14, risk≈0.559). Now risk-reducing
+    # deltas are allowed through whenever current risk exceeds the level the
+    # target is trying to enforce.
+    risk_ceiling = (min(HARD_RISK_ASSET_CAP, target_risk)
+                    if target_risk < cur_risk else HARD_RISK_ASSET_CAP)
 
     tickers = (set(current) | set(target)) - {CASH_KEY}
     delta: dict[str, float] = {}
@@ -84,7 +97,7 @@ def compute_deltas(
         over_single = (current.get(t, 0.0) > HARD_SINGLE_CAP
                        and d < 0
                        and current.get(t, 0.0) + d <= HARD_SINGLE_CAP + FLOAT_TOLERANCE)
-        over_risk = (cur_risk > HARD_RISK_ASSET_CAP and is_risk(t) and d < 0)
+        over_risk = (cur_risk > risk_ceiling + FLOAT_TOLERANCE and is_risk(t) and d < 0)
         if over_single or over_risk:
             delta[t] = d
         elif d != 0.0:

@@ -25,12 +25,17 @@ from tradingagents.schemas.technical import Cluster
 
 logger = logging.getLogger(__name__)
 
+# B4: state files a daily run may read its prev_target / clusters from. The full
+# pipeline writes portfolio.json; a daily run writes the slim daily_state.json so
+# a chain of daily-only days does not degrade prev_target/clusters to empty.
+_STATE_FILES: tuple[str, ...] = ("portfolio.json", "daily_state.json")
+
 
 def _load_clusters(previous_path: str | None, artifacts_dir: str | None = None) -> list[Cluster]:
-    """Return most-recent persisted Cluster list from portfolio.json artifacts.
+    """Return most-recent persisted Cluster list from artifact state files.
 
-    Priority: scan artifacts/<date>/portfolio.json newest-first for a non-empty
-    correlation_clusters list; deserialize each dict → Cluster(**d).
+    Priority: scan artifacts/<date>/{portfolio.json,daily_state.json} newest-first
+    for a non-empty correlation_clusters list; deserialize each dict → Cluster(**d).
     Falls back to [] with a warning when nothing is found.
     """
     search_dirs: list[Path] = []
@@ -48,18 +53,19 @@ def _load_clusters(previous_path: str | None, artifacts_dir: str | None = None) 
             search_dirs.insert(0, prev)
 
     for d in search_dirs:
-        pj = d / "portfolio.json"
-        if not pj.exists():
-            continue
-        try:
-            raw = json.loads(pj.read_text(encoding="utf-8"))
-            cc = raw.get("correlation_clusters", [])
-            if cc:
-                clusters = [Cluster(**item) for item in cc]
-                logger.debug("daily: clusters 재사용 ← %s (%d개)", pj, len(clusters))
-                return clusters
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("daily: portfolio.json 읽기 실패(%s) — 건너뜀: %s", pj, exc)
+        for fname in _STATE_FILES:
+            pj = d / fname
+            if not pj.exists():
+                continue
+            try:
+                raw = json.loads(pj.read_text(encoding="utf-8"))
+                cc = raw.get("correlation_clusters", [])
+                if cc:
+                    clusters = [Cluster(**item) for item in cc]
+                    logger.debug("daily: clusters 재사용 ← %s (%d개)", pj, len(clusters))
+                    return clusters
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("daily: %s 읽기 실패(%s) — 건너뜀: %s", fname, pj, exc)
 
     logger.warning("daily: clusters 확보 실패 — correlation 검증 생략")
     return []
@@ -68,16 +74,38 @@ def _load_clusters(previous_path: str | None, artifacts_dir: str | None = None) 
 def _load_prev(previous_path: str | None) -> tuple[dict, int, dict]:
     """Return (prev_qty, prev_cash, prev_target_weights).
 
-    prev_target is read from portfolio.json 'weights' key written by a prior run.
+    prev_target is read from the prior run's state file 'weights' key —
+    portfolio.json (full pipeline) or daily_state.json (a prior daily run, B4).
     """
     if not previous_path:
         return {}, 0, {}
     prev_qty, prev_cash = load_prev_holdings(Path(previous_path))
     prev_target: dict[str, float] = {}
-    pj = Path(previous_path) / "portfolio.json"
-    if pj.exists():
-        prev_target = json.loads(pj.read_text(encoding="utf-8")).get("weights", {})
+    for fname in _STATE_FILES:
+        pj = Path(previous_path) / fname
+        if pj.exists():
+            prev_target = json.loads(pj.read_text(encoding="utf-8")).get("weights", {})
+            if prev_target:
+                break
     return prev_qty, prev_cash, prev_target
+
+
+def _persist_daily_state(out_dir: Path, res, clusters) -> None:
+    """B4: persist realized weights + reused clusters so the NEXT daily run has a
+    non-empty prev_target (drift evaluation, defensive-overlay anchor) and the
+    correlation clusters. Without this, a chain of daily-only days degrades
+    prev_target/clusters to {}/[] (the daily path never wrote portfolio.json).
+    """
+    try:
+        state = {
+            "weights": getattr(res, "realized_weights", None) or {},
+            "correlation_clusters": [c.model_dump() for c in (clusters or [])],
+        }
+        (out_dir / "daily_state.json").write_text(
+            json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("daily: daily_state.json 기록 실패 — 건너뜀: %s", exc)
 
 
 def _eval_triggers(
@@ -171,6 +199,7 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
         deep_llm=None,
     )
     res.trigger = trig_ctx
+    _persist_daily_state(resolved_out, res, clusters)
     if res.plan:
         top = [f"{tl.ticker} {tl.action} {tl.delta_qty}"
                for tl in res.plan if tl.action != "HOLD"][:10]
