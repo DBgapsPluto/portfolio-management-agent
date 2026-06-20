@@ -196,6 +196,47 @@ def format_step_a_decomposition(attribution) -> str:
     return "\n".join(lines)
 
 
+def format_heterogeneous_selection(attribution) -> str:
+    """이종 버킷 테마뷰(sub_category_views) + 결정론 ETF 선정(heterogeneous_selection)을
+    한 줄씩 사람이 읽을 수 있게 렌더. "왜 이 이종 버킷이 (예) 반도체를 골랐는가" 역추적용.
+
+    attribution = state['allocation_attribution']. 데이터는 attribution['step_a'] 의
+    'sub_category_views'(버킷→{sub_cat: pref})·'heterogeneous_selection'(버킷→trace)
+    에서만 읽는다(날조 금지). het 뷰/선정이 전혀 없으면 '해당 없음'.
+    """
+    sa = attribution.get("step_a") if isinstance(attribution, dict) else None
+    sa = sa or {}
+    views = sa.get("sub_category_views") or {}
+    selection = sa.get("heterogeneous_selection") or {}
+    buckets = sorted(set(views) | set(selection))
+    if not buckets:
+        return "해당 없음"
+
+    def _fmt_view(v: dict) -> str:
+        # pref 큰 순(절대값 desc, 동률은 부호 +가 먼저)으로 'sub_cat ±0.8' 나열.
+        items = sorted(
+            (v or {}).items(), key=lambda kv: (-abs(kv[1]), -kv[1], kv[0])
+        )
+        return ", ".join(f"{sc} {pref:+.1f}" for sc, pref in items)
+
+    lines: list[str] = []
+    for bkey in buckets:
+        view_str = _fmt_view(views.get(bkey) or {})
+        sel = selection.get(bkey) or {}
+        revert = sel.get("revert")
+        picks = sel.get("selected") or []
+        head = f"- {bkey}: 테마뷰 {view_str or '(없음)'}"
+        if revert == "core_aum":
+            # 테마 풀이 비어 core-AUM 으로 폴백 — 정직하게 명시(선정 티커는 없음).
+            lines.append(f"{head} → 테마풀 공백, core-AUM 폴백")
+        elif picks:
+            note = " (floor 완화)" if revert == "floor_relaxed" else " (모멘텀 top-K)"
+            lines.append(f"{head} → 선정 [{', '.join(picks)}]{note}")
+        else:
+            lines.append(f"{head} → 선정 (없음)")
+    return "\n".join(lines)
+
+
 def _resolve_weights(state: dict) -> dict[str, float]:
     wv = state.get("weight_vector")
     if wv is not None:
@@ -330,6 +371,8 @@ def _build_state_summary(state: dict) -> str:
         f"Reasoning: {method_reasoning}\n"
         "버킷 tilt 분해(Step A — 앵커→시나리오→판단→최종):\n"
         f"{format_step_a_decomposition(state.get('allocation_attribution'))}\n\n"
+        "이종 버킷 테마뷰 + ETF 선정(왜 이 sub_category 를 골랐는가):\n"
+        f"{format_heterogeneous_selection(state.get('allocation_attribution'))}\n\n"
         "### Stage 5 — Mandate Validation\n"
         f"{_format_validation(validation)}\n"
         f"Rebalance mode: {rebalance_mode}\n\n"

@@ -1,6 +1,7 @@
 from tradingagents.schemas.portfolio import BucketTarget
 from tradingagents.reports.philosophy import (
     format_bucket_target_14, format_step_a_decomposition,
+    format_heterogeneous_selection,
 )
 
 
@@ -51,3 +52,84 @@ def test_format_step_a_decomposition_renders_buckets_and_rationale():
 def test_format_step_a_decomposition_handles_missing():
     assert format_step_a_decomposition(None) == "(미산출)"
     assert format_step_a_decomposition({}) == "(미산출)"
+
+
+# ---- heterogeneous theme view + ETF selection traceability ----
+
+
+def test_format_heterogeneous_selection_renders_view_and_picks():
+    attr = {
+        "step_a": {
+            "sub_category_views": {
+                "b3_global_tech": {"semiconductor": 0.8, "battery_ev": -0.5},
+            },
+            "heterogeneous_selection": {
+                "b3_global_tech": {
+                    "bucket": "b3_global_tech",
+                    "selected": ["TIGER반도체", "KODEX반도체"],
+                    "revert": None,
+                    "n_floor": 1,
+                },
+            },
+        }
+    }
+    out = format_heterogeneous_selection(attr)
+    # 버킷 + 테마뷰 sub_category 라벨/부호 + 선정 티커가 모두 노출
+    assert "b3_global_tech" in out
+    assert "semiconductor" in out
+    assert "battery_ev" in out
+    assert "TIGER반도체" in out
+    assert "KODEX반도체" in out
+
+
+def test_format_heterogeneous_selection_empty_is_graceful():
+    # het view/selection 이 없을 때 크래시 없이 '해당 없음'
+    assert format_heterogeneous_selection(None) == "해당 없음"
+    assert format_heterogeneous_selection({}) == "해당 없음"
+    assert format_heterogeneous_selection(
+        {"step_a": {"sub_category_views": {}, "heterogeneous_selection": {}}}
+    ) == "해당 없음"
+
+
+def test_format_heterogeneous_selection_reports_core_aum_revert():
+    # 테마 풀이 비어 core-AUM 으로 폴백한 경우 정직하게 명시 (selected 없음).
+    attr = {
+        "step_a": {
+            "sub_category_views": {"b3_global_tech": {"semiconductor": 0.8}},
+            "heterogeneous_selection": {
+                "b3_global_tech": {"bucket": "b3_global_tech", "revert": "core_aum"},
+            },
+        }
+    }
+    out = format_heterogeneous_selection(attr)
+    assert "b3_global_tech" in out
+    assert "core" in out.lower() or "코어" in out or "AUM" in out
+
+
+def test_heterogeneous_selection_in_state_summary():
+    from tradingagents.reports.philosophy import _build_state_summary
+    from unittest.mock import MagicMock
+    wv = MagicMock()
+    wv.method = MagicMock(value="aum_weighted")
+    wv.weights = {"TIGER반도체": 0.5, "KODEX반도체": 0.5}
+    wv.rationale = "r"
+    state = {
+        "weight_vector": wv,
+        "allocation_attribution": {
+            "step_a": {
+                "sub_category_views": {
+                    "b3_global_tech": {"semiconductor": 0.8, "battery_ev": -0.5},
+                },
+                "heterogeneous_selection": {
+                    "b3_global_tech": {
+                        "bucket": "b3_global_tech",
+                        "selected": ["TIGER반도체", "KODEX반도체"],
+                        "revert": None,
+                    },
+                },
+            }
+        },
+    }
+    summary = _build_state_summary(state)
+    assert "semiconductor" in summary
+    assert "TIGER반도체" in summary
