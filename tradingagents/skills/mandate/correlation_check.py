@@ -5,8 +5,8 @@ from tradingagents.skills.registry import register_skill
 
 
 # Stage 5 audit (2026-05-26, Task 1): named const.
-# DB GAPS 룰북 + Stage 4 책임 분리 (Stage 4 concentration_lens 가 더 strict cap 추가).
-DEFAULT_CLUSTER_CAP: float = 0.25
+# self-imposed (DB GAPS 규칙엔 cluster cap 없음; A2 35% 완화) — validator/repair 동기화.
+DEFAULT_CLUSTER_CAP: float = 0.35
 FLOAT_TOLERANCE: float = 1e-6
 
 

@@ -156,7 +156,7 @@ def test_mandate_named_const_present():
     assert cc.HARD_RISK_ASSET_CAP == 0.70
     assert cc.FLOAT_TOLERANCE == 1e-6
 
-    assert corc.DEFAULT_CLUSTER_CAP == 0.25
+    assert corc.DEFAULT_CLUSTER_CAP == 0.35
     assert corc.FLOAT_TOLERANCE == 1e-6
 
     assert tc.TURNOVER_TOLERANCE == 1e-9
