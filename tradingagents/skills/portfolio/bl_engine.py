@@ -121,7 +121,7 @@ def _max_quad_utility(mu, Sigma, delta, growth_keys, mandate_risk_keys,
 
 def bl_bucket_weights(Sigma, w_baseline, ranking, *, delta=2.5, base_spread=0.04,
                       growth_keys=None, mandate_risk_keys=None, extra_views=None,
-                      growth_cap=0.70, mandate_cap=0.70):
+                      growth_cap=0.70, mandate_cap=0.70, turnover_cap=TURNOVER_CAP):
     """전체 BL: Π 역산 → 상대view(+extra) → μ_BL → MQU(prior Σ). 실패 시 w_baseline.
 
     growth_cap/mandate_cap 은 GROUP 제약(GROWTH_KEYS 합·mandate risk 합 ≤ cap)으로
@@ -142,7 +142,7 @@ def bl_bucket_weights(Sigma, w_baseline, ranking, *, delta=2.5, base_spread=0.04
     mu = _posterior_mu(Sigma, pi, P, Q, conf, delta)
     w = _max_quad_utility(mu, Sigma, delta, growth_keys or set(), mandate_risk_keys or set(),
                           growth_cap=growth_cap, mandate_cap=mandate_cap,
-                          w_baseline=w_baseline)
+                          w_baseline=w_baseline, turnover_cap=turnover_cap)
     if w is None or w.isna().any():
         return w_baseline.copy()
     return w
@@ -192,7 +192,7 @@ def soft_clip(w, *, growth_keys, growth_cap=0.30, defensive_cap=0.50):
 
 def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spread=0.04,
                 growth_keys=None, mandate_risk_keys=None, extra_views=None,
-                growth_cap=0.30, defensive_cap=0.50):
+                growth_cap=0.30, defensive_cap=0.50, turnover_cap=TURNOVER_CAP):
     """BL 배분 오케스트레이터: 부분실패 버킷핀 + (14−k) BL + soft-clip + attribution meta.
 
     반환 {weights: pd.Series(14), meta: {bucket: {status,...}, __global__: {...}}}.
@@ -235,7 +235,8 @@ def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spre
 
     w_bl = bl_bucket_weights(Sigma_bl, base_bl, rk, delta=delta, base_spread=base_spread,
                              growth_keys=gk, mandate_risk_keys=mk, extra_views=extra_views,
-                             growth_cap=g_cap_sub, mandate_cap=m_cap_sub)
+                             growth_cap=g_cap_sub, mandate_cap=m_cap_sub,
+                             turnover_cap=turnover_cap)
     # 1) MQU 해의 합이 solver tolerance 로 1 에서 미세이탈할 수 있으므로 먼저 budget 으로
     #    재정규화한다(서브벡터를 정확히 budget 합으로 맞춤, 핀 버킷은 baseline 고정 유지).
     # 2) 그 다음 soft-clip 으로 천장을 최종 스케일된 벡터에 강제한다. soft_clip 이

@@ -59,3 +59,25 @@ def test_no_view_recovery_with_defensive_pin(quadrant, pin):
     assert w[pin] == pytest.approx(base[pin], abs=1e-9)           # pin exact
     # no-view ⇒ non-pinned buckets recover their baseline (renormalized to budget, then back)
     assert np.abs(w - base).sum() < 1e-6, f"{quadrant} pin={pin} L1={np.abs(w-base).sum()}"
+
+
+def test_turnover_cap_threaded_and_binds():
+    from tradingagents.skills.portfolio.scenario_anchor import QUADRANT_BASELINE
+    from tradingagents.skills.portfolio.gaps_buckets import GROWTH_KEYS
+    keys = list(QUADRANT_BASELINE["growth_disinflation"].keys())
+    rng = np.random.default_rng(5)
+    vols = rng.uniform(0.05, 0.30, len(keys)); C = rng.uniform(0.1, 0.6, (len(keys), len(keys)))
+    C = (C + C.T) / 2; np.fill_diagonal(C, 1.0); S = np.outer(vols, vols) * C
+    S = S @ S.T / len(keys) + np.eye(len(keys)) * 1e-4
+    Sigma = pd.DataFrame(S, index=keys, columns=keys)
+    base = pd.Series(QUADRANT_BASELINE["growth_disinflation"])
+    mandate = {"a5_gold_infl"} | set(GROWTH_KEYS)
+    ranking = {"b3_global_tech": ("strong_OW", 0.95), "a3_us_rates": ("strong_UW", 0.95)}
+    # tight cap → smaller L1 than loose cap (proves it's actually plumbed through bl_allocate)
+    tight = be.bl_allocate(Sigma, base, ranking, delta=2.5, growth_keys=set(GROWTH_KEYS),
+                           mandate_risk_keys=mandate, turnover_cap=0.10)["weights"]
+    loose = be.bl_allocate(Sigma, base, ranking, delta=2.5, growth_keys=set(GROWTH_KEYS),
+                           mandate_risk_keys=mandate, turnover_cap=0.50)["weights"]
+    l1_tight = float(np.abs(tight - base).sum()); l1_loose = float(np.abs(loose - base).sum())
+    assert l1_tight < l1_loose                 # tighter cap → less movement (threaded & binds)
+    assert l1_tight <= 0.10 + 0.05             # roughly respects the tight cap (soft_clip/renorm slack)
