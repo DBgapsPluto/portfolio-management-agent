@@ -72,10 +72,16 @@ def _posterior_mu(Sigma, pi, P, Q, conf, delta):
 
 
 def _max_quad_utility(mu, Sigma, delta, growth_keys, mandate_risk_keys,
-                      growth_cap=0.70, mandate_cap=0.68):
+                      growth_cap=0.70, mandate_cap=0.70):
     """max_quadratic_utility(mu, **prior Σ**, δ) + 그룹제약. 실패 시 None.
 
     MATH-1 불변식: 최적화 공분산은 호출자가 넘긴 prior Σ (절대 bl.bl_cov() 아님).
+
+    mandate_cap = 0.70 = concentration_check.HARD_RISK_ASSET_CAP (대회 §2.2 위험자산 합 cap).
+    예전 0.68 은 soft drift-trigger 값이라 틀렸음: growth_inflation baseline 의 risk-proxy(0.69)가
+    0.68 에서 infeasible → no-view 에서 baseline 을 정확복원하지 못하고 0.049 off 로 밀렸음(MATH-1 위반).
+    위험자산 cap 은 quadrant 무관하게 균일한 0.70 (recession 전용 lower cap 없음).
+    growth_cap 도 0.70 유지: GROWTH_KEYS 합 ≤ 0.70 이 맞고 baseline 들의 growth 합은 ≤0.63.
     """
     try:
         import cvxpy as cp
