@@ -791,3 +791,33 @@ def test_select_by_enb_greedy_stops_at_delta_threshold(monkeypatch):
     )
     assert len(chosen) == 2  # n_min 충족 후 ΔENB(0.01) < 0.15 → stop
     assert trace["stop_reason"] == "delta_below_threshold"
+
+
+# ---------- ETF-selection hybrid Task 2: risk_adjusted_momentum ----------
+
+
+from tradingagents.skills.portfolio.factor_scorer import risk_adjusted_momentum
+
+
+def _panel(m3, m6, m12, vol):
+    return FactorPanel(skip1m_mom_3m=m3, skip1m_mom_6m=m6, skip1m_mom_12m=m12,
+                       realized_vol_60d=vol, sharpe_60d=None, log_aum=1.0)
+
+
+def test_risk_adj_momentum_higher_mom_ranks_higher():
+    panels = {"A": _panel(0.30,0.30,0.30, 0.20), "B": _panel(0.05,0.05,0.05, 0.20)}
+    s = risk_adjusted_momentum(panels, w_vol=0.4)
+    assert s["A"] > s["B"]
+
+
+def test_risk_adj_momentum_penalizes_high_vol():
+    panels = {"A": _panel(0.20,0.20,0.20, 0.60), "B": _panel(0.20,0.20,0.20, 0.10)}
+    s = risk_adjusted_momentum(panels, w_vol=0.4)
+    assert s["B"] > s["A"]
+
+
+def test_risk_adj_momentum_all_none_is_neg_inf():
+    panels = {"A": _panel(None,None,None, None), "B": _panel(0.10,0.10,0.10, 0.20)}
+    s = risk_adjusted_momentum(panels, w_vol=0.4)
+    assert s["A"] == float("-inf")
+    assert s["B"] > float("-inf")
