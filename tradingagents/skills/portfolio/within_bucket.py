@@ -64,6 +64,35 @@ def aum_weighted_allocation(
     return final
 
 
+def _softmax(scores: dict[str, float], temperature: float) -> dict[str, float]:
+    """비-음수 softmax weight. -inf -> 0. 전부 -inf -> 균등."""
+    finite = [s for s in scores.values() if s != float("-inf")]
+    if not finite:
+        return {t: 1.0 for t in scores}            # all -inf → uniform (aum_weighted distributes)
+    mx = max(finite)
+    exps = {t: (math.exp((s - mx) / temperature) if s != float("-inf") else 0.0)
+            for t, s in scores.items()}
+    return exps
+
+
+def momentum_weighted_allocation(
+    bucket_weights: dict[str, float],
+    selections: dict[str, list[str]],
+    score: dict[str, float],
+    temperature: float = 1.0,
+) -> dict[str, float]:
+    """버킷 비중을 선정 종목에 softmax(score/T) 비례 배분 + 단일 20% cap.
+
+    score(위험조정 모멘텀)는 z라 음수 가능 → softmax로 비-음수 변환 후
+    aum_weighted_allocation 의 cap water-fill 을 그대로 재사용.
+    """
+    weight_proxy: dict[str, float] = {}
+    for tickers in selections.values():
+        weight_proxy.update(_softmax({t: score.get(t, float("-inf")) for t in tickers},
+                                     temperature))
+    return aum_weighted_allocation(bucket_weights, selections, weight_proxy)
+
+
 def realized_risk_weight(
     weights: dict[str, float],
     risk_flag: dict[str, str],

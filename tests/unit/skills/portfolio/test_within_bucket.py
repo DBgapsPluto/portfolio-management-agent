@@ -148,3 +148,25 @@ def test_infeasible_when_bucket_has_no_stocks():
         aum_weighted_allocation(
             {"b1_kr_equity": 0.10}, {"b1_kr_equity": []}, {},
         )
+
+
+import math
+from tradingagents.skills.portfolio.within_bucket import momentum_weighted_allocation
+
+
+def test_momentum_weight_higher_score_gets_more():
+    bw = {"b3_global_tech": 0.12}
+    sel = {"b3_global_tech": ["A", "B"]}
+    score = {"A": 2.0, "B": 0.0}
+    out = momentum_weighted_allocation(bw, sel, score, temperature=1.0)
+    assert out["A"] > out["B"]
+    assert abs(sum(out.values()) - 0.12) < 1e-9
+    assert all(w <= 0.20 + 1e-9 for w in out.values())
+
+
+def test_momentum_weight_neg_inf_score_gets_zero_share():
+    bw = {"b3_global_tech": 0.10}
+    sel = {"b3_global_tech": ["A", "B"]}
+    score = {"A": 1.0, "B": float("-inf")}
+    out = momentum_weighted_allocation(bw, sel, score)
+    assert out.get("B", 0.0) < 1e-9 and abs(out["A"] - 0.10) < 1e-9
