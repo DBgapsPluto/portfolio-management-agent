@@ -54,9 +54,11 @@ NEGLIGIBLE_FLOOR: float = 0.01
 
 # category/risk/cluster repair 교대 반복 횟수. cluster_repair 의 water-fill 이
 # category-capped 종목에 mass 를 흘려 cap 을 재위반할 수 있어, cluster 도 루프
-# '안'에서 교대시켜 매 패스마다 category/risk 가 재정리하도록 한다. 3회로는 잔차가
-# validator FLOAT_TOLERANCE(1e-6) 를 살짝 넘을 수 있어(기하급수 수렴) 6회로 둔다.
-_REPAIR_ITERS: int = 6
+# '안'에서 교대시켜 매 패스마다 category/risk 가 재정리하도록 한다. 잔차는 기하급수로
+# 줄지만 다중 클러스터+다중 category 가 동시에 binding 인 feasible 케이스는 6회로도
+# validator FLOAT_TOLERANCE(1e-6) 를 넘을 수 있어(적대감사 확인) 12회로 둔다 — water-fill
+# 은 싸므로 비용 무시 가능, 미수렴 잔차는 Stage 5 validator 가 동일 임계로 최종 차단.
+_REPAIR_ITERS: int = 12
 
 
 def _repair_all_weights(w, cat_of, category_caps, is_risk, clusters):
