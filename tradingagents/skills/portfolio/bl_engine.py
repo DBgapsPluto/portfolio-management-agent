@@ -159,3 +159,55 @@ def soft_clip(w, *, growth_keys, growth_cap=0.30, defensive_cap=0.50):
         w = w + add
         excess -= float(add.sum())     # carry head-clamp 잔여 forward
     return w
+
+
+def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spread=0.04,
+                growth_keys=None, mandate_risk_keys=None, extra_views=None,
+                growth_cap=0.30, defensive_cap=0.50):
+    """BL 배분 오케스트레이터: 부분실패 버킷핀 + (14−k) BL + soft-clip + attribution meta.
+
+    반환 {weights: pd.Series(14), meta: {bucket: {status,...}, __global__: {...}}}.
+    status: bl | baseline_pinned | full_fallback.
+
+    핀 버킷은 정확히 w_baseline[b] 로 고정, 나머지는 잔여예산(1−Σpinned)에서 BL.
+    BL 서브벡터에만 soft-clip → budget 스케일 → budget 으로 재정규화(핀은 그대로).
+    Σ 비거나 핀이 절반 이상이면 전체 baseline 폴백.
+    """
+    import pandas as pd
+    pinned = set(pinned or [])
+    all_buckets = list(w_baseline.index)
+    meta: dict = {}
+
+    if Sigma is None or Sigma.empty or len(pinned) >= (len(all_buckets) + 1) // 2:
+        meta["__global__"] = {"status": "full_fallback", "reason": "empty_sigma_or_majority_pinned"}
+        return {"weights": w_baseline.copy(), "meta": meta}
+
+    bl_buckets = [b for b in all_buckets if b not in pinned]
+    pin_weight = float(w_baseline[list(pinned)].sum()) if pinned else 0.0
+    budget = 1.0 - pin_weight
+
+    Sigma_bl = Sigma.reindex(index=bl_buckets, columns=bl_buckets)
+    base_bl = w_baseline[bl_buckets]
+    base_bl = base_bl / base_bl.sum() if base_bl.sum() > 0 else base_bl
+
+    gk = {b for b in (growth_keys or set()) if b in bl_buckets}
+    mk = {b for b in (mandate_risk_keys or set()) if b in bl_buckets}
+    rk = {k: v for k, v in ranking.items() if k in bl_buckets}
+
+    w_bl = bl_bucket_weights(Sigma_bl, base_bl, rk, delta=delta, base_spread=base_spread,
+                             growth_keys=gk, mandate_risk_keys=mk, extra_views=extra_views)
+    w_bl = soft_clip(w_bl, growth_keys=gk, growth_cap=growth_cap, defensive_cap=defensive_cap)
+    # BL 서브벡터를 정확히 budget 으로 재정규화(soft-clip 후 합이 1에서 미세이탈 가능),
+    # 핀 버킷은 정확히 baseline 으로 유지 → 전역 재정규화로 핀이 흔들리지 않게 함.
+    bl_sum = float(w_bl.sum())
+    w_bl = (w_bl / bl_sum * budget) if bl_sum > 0 else w_bl
+
+    out = pd.Series(0.0, index=all_buckets)
+    for b in bl_buckets:
+        out[b] = float(w_bl.get(b, 0.0))
+        meta[b] = {"status": "bl"}
+    for b in pinned:
+        out[b] = float(w_baseline[b])
+        meta[b] = {"status": "baseline_pinned"}
+    meta["__global__"] = {"status": "bl", "n_pinned": len(pinned)}
+    return {"weights": out, "meta": meta}
