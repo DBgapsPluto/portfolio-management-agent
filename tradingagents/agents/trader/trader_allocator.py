@@ -135,6 +135,44 @@ _STEP_A_SYSTEM = (
 )
 
 
+_STEP_A_SYSTEM_BL = (
+    "당신은 자산배분 트레이더다. 14개 버킷을 매력도 tier 로 상대순위 매겨라:\n"
+    "각 버킷에 tier ∈ {strong_OW, OW, neutral, UW, strong_UW} 와 conviction(0~0.95) 부여.\n"
+    "절대 수익률을 예측하지 말고 버킷 간 '상대 매력도 순서'만 판단하라.\n"
+    "확신 없는 버킷은 neutral. 모두 같은 tier(일색)는 금지 — 상대순위가 의미 없어진다.\n"
+    "이종 버킷(b2_dm_core·b3_global_tech·b5_other_intl)은 sub_category_views 도 함께 출력하라."
+)
+
+
+def _ranking_from_tilt(bt) -> dict:
+    """BucketTilt.bucket_ranking → bl_engine 포맷 {bucket: (tier, conviction)}."""
+    return {k: (v.tier, float(v.conviction))
+            for k, v in (getattr(bt, "bucket_ranking", None) or {}).items()}
+
+
+def _step_a_prompt_bl(state, quadrant, fx_regime, credit_regime, het_candidates=None):
+    """BL 상대순위 Step A 프롬프트 — tilt(밴드) 대신 bucket_ranking(tier+conviction)."""
+    rd = state.get("research_decision")
+    thesis = getattr(rd, "thesis_md", "") if rd else ""
+    key_risks = getattr(rd, "key_risks", []) if rd else []
+    bucket_list = "\n".join(f"  {b} ({BUCKET_KR_NAME[b]})" for b in GAPS_BUCKET_KEYS)
+    het_block = ""
+    if het_candidates:
+        het_block = "\n## 이종 버킷 sub_category 후보\n" + _render_het_candidates(het_candidates) + "\n"
+    body = (
+        f"## Regime: {quadrant}, fx: {fx_regime}, credit: {credit_regime}\n\n"
+        f"## 14 버킷 (각각 tier+conviction 상대순위 부여)\n{bucket_list}\n"
+        f"{het_block}\n"
+        f"## 리서치 종합\n{thesis}\n\n"
+        f"## 핵심 리스크\n" + ("\n".join(f"  - {r}" for r in key_risks) or "  (없음)") + "\n\n"
+        f"## Stage1 요약\n매크로: {state.get('macro_summary','(없음)')}\n"
+        f"리스크: {state.get('risk_summary','(없음)')}\n뉴스: {state.get('news_summary','(없음)')}\n\n"
+        "각 버킷의 tier+conviction 을 bucket_ranking 으로, 이종 버킷 선호를 sub_category_views 로 출력하라."
+    )
+    return [{"role": "system", "content": _STEP_A_SYSTEM_BL},
+            {"role": "user", "content": body}]
+
+
 def _heterogeneous_subcat_candidates(pool, sub_cat, aum, momentum) -> dict[str, list[dict]]:
     """이종 버킷별 sub_category 요약 — LLM 이 sub_category_views 를 낼 근거.
 
@@ -333,13 +371,26 @@ def create_trader_allocator(step_a_llm):
         # so the BL branch provides inert defaults for them.
         use_bl = bool(_dials.get("use_bl", False))
         bl_meta: dict = {}
+        # 이종 버킷 sub_category 후보(모멘텀/AUM 힌트) — BL/비-BL 두 Step A 프롬프트가 공유.
+        het_candidates = _heterogeneous_subcat_candidates(pool, sub_cat, aum, momentum)
         if use_bl:
+            # Phase C: bl_fixed_ranking(gate-2/test override)가 없으면 LLM 이 상대순위
+            # (BucketTilt.bucket_ranking)를 낸다. sub_category_views 도 LLM tilt 에 실려
+            # 비-BL 경로와 동일하게 Step B 이종 선정으로 흐른다.
             q_baseline = QUADRANT_BASELINE[quadrant]
             anchor = dict(q_baseline)
-            tilt = BucketTilt()
             bucket_vol = {}
             as_of_bl = date.fromisoformat(state["as_of_date"])
-            ranking = state.get("bl_fixed_ranking") or {}   # Phase C replaces with LLM ranking
+            if state.get("bl_fixed_ranking") is not None:
+                ranking = state["bl_fixed_ranking"]            # gate-2 / tests override
+                tilt = BucketTilt()                            # downstream attribution inert
+            else:
+                tilt = state.get("cached_tilt") or invoke_structured_obj(
+                    structured_a,
+                    _step_a_prompt_bl(state, quadrant, fx_regime, credit_regime, het_candidates),
+                    BucketTilt(), "TraderStepA",
+                )
+                ranking = _ranking_from_tilt(tilt)
             bucket_weights, bl_meta = build_bl_bucket_weights(
                 as_of_bl, quadrant, ranking, fx_regime=fx_regime, credit_regime=credit_regime,
                 delta=float(_dials.get("bl_delta", 2.5)),
@@ -355,7 +406,6 @@ def create_trader_allocator(step_a_llm):
             anchor = apply_macro_modifiers(q_baseline, risk_tilt, credit_regime, fx_regime, hmin, hmax)
             eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence)
                    for b in anchor}
-            het_candidates = _heterogeneous_subcat_candidates(pool, sub_cat, aum, momentum)
             tilt = state.get("cached_tilt") or invoke_structured_obj(
                 structured_a,
                 _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime,
