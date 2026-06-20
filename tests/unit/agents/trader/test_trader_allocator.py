@@ -448,3 +448,167 @@ def test_het_bucket_selects_high_momentum_semi(tmp_path):
     # 무결성: 합=1, 단일 cap
     assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
     assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())
+
+
+# ---------------------------------------------------------------------------
+# Regression: cluster_repair must run INSIDE the category/risk loop, not once
+# after it. The old order (3× category+risk, THEN cluster once, THEN renorm)
+# let cluster_repair water-fill freed cluster mass onto a category-capped ETF,
+# re-violating that category cap with no later category pass to clean it.
+# Proven scenario (reviewer): a feasible sum=1 input yields 해외주식_섹터=0.1083
+# (>0.10) under the old order; the interleaved order converges to 0.10.
+# ---------------------------------------------------------------------------
+
+def _cap_interaction_scenario():
+    """Feasible (sum=1) weights where freed cluster mass lands on a .10 category.
+
+    cluster {CL1,CL2}=0.40 sits in a slack category (국내채권_종합, cap .50) so only
+    the 0.35 cluster cap binds; the 해외주식_섹터 pair {SEC1,SEC2}=0.10 is exactly
+    at its 0.10 category cap; the remaining 0.50 is slack recipients with ample
+    category + single-cap headroom (so the problem is genuinely feasible).
+    """
+    from tradingagents.schemas.technical import Cluster
+    from tradingagents.skills.mandate.concentration_check import CATEGORY_CAPS
+    weights = {
+        "CL1": 0.20, "CL2": 0.20,                       # 국내채권_종합 (.50 cap) — cluster .40>.35
+        "SEC1": 0.05, "SEC2": 0.05,                     # 해외주식_섹터 (.10 cap) — exactly at cap
+        "B1": 0.075, "B2": 0.075, "B3": 0.075, "B4": 0.075,  # 해외채권_종합 (.50 cap)
+        "C1": 0.10, "C2": 0.10,                         # 국내채권_회사채 (.30 cap)
+    }
+    cat = {
+        "CL1": "국내채권_종합", "CL2": "국내채권_종합",
+        "SEC1": "해외주식_섹터", "SEC2": "해외주식_섹터",
+        "B1": "해외채권_종합", "B2": "해외채권_종합",
+        "B3": "해외채권_종합", "B4": "해외채권_종합",
+        "C1": "국내채권_회사채", "C2": "국내채권_회사채",
+    }
+    clusters = [Cluster(
+        cluster_id="cl", members=["CL1", "CL2"],
+        avg_internal_correlation=0.9, category_label="dup")]
+    return weights, cat, CATEGORY_CAPS, clusters
+
+
+def _cat_sums(weights, cat):
+    sums: dict[str, float] = {}
+    for t, w in weights.items():
+        c = cat.get(t)
+        if c is not None:
+            sums[c] = sums.get(c, 0.0) + w
+    return sums
+
+
+def test_old_cluster_after_loop_order_violates_category_cap():
+    """Pin the BUG: cluster_repair ONCE after the category/risk loop overflows a
+    category cap. This replicates the *broken* ordering to prove it is wrong —
+    the production code must NOT use it (see the interleaved helper test below).
+    """
+    from tradingagents.skills.mandate.category_repair import repair_category_caps
+    from tradingagents.skills.mandate.risk_repair import repair_risk_cap
+    from tradingagents.skills.mandate.cluster_repair import repair_cluster_cap
+    weights, cat, caps, clusters = _cap_interaction_scenario()
+    assert sum(weights.values()) == pytest.approx(1.0, abs=1e-9)
+
+    def is_risk(_t):
+        return False
+
+    # The pre-fix ordering: 3× (category, risk), THEN cluster once, THEN renorm.
+    w = dict(weights)
+    for _ in range(3):
+        w = repair_category_caps(w, cat, caps)
+        w = repair_risk_cap(w, is_risk)
+    w = repair_cluster_cap(w, clusters, cap=0.35)
+    s = sum(w.values())
+    w = {t: x / s for t, x in w.items()} if s > 0 else w
+
+    sec = _cat_sums(w, cat)["해외주식_섹터"]
+    # BUG manifests: the .10-capped category is pushed strictly over 0.10.
+    assert sec > 0.10 + 1e-6, (
+        f"expected old order to violate 해외주식_섹터 cap, got {sec}")
+
+
+def test_repair_all_weights_satisfies_all_caps_on_cluster_interaction():
+    """The shipped helper interleaves cluster_repair INSIDE the loop and must
+    satisfy ALL caps (category, risk, single, cluster) with sum==1 on the exact
+    scenario that breaks the old order. This FAILS on pre-fix code, PASSES now.
+    """
+    from tradingagents.agents.trader.trader_allocator import _repair_all_weights
+    weights, cat, caps, clusters = _cap_interaction_scenario()
+
+    def is_risk(_t):
+        return False
+
+    out = _repair_all_weights(dict(weights), cat, caps, is_risk, clusters)
+
+    # sum preserved
+    assert sum(out.values()) == pytest.approx(1.0, abs=1e-6)
+    # single-ETF cap
+    assert all(w <= 0.20 + 1e-6 for w in out.values()), out
+    # risk cap (no risk assets here, but assert the path)
+    assert sum(w for t, w in out.items() if is_risk(t)) <= 0.70 + 1e-6
+    # cluster cap
+    cluster_sum = out["CL1"] + out["CL2"]
+    assert cluster_sum <= 0.35 + 1e-6, f"cluster {cluster_sum} > 0.35"
+    # EVERY category cap holds — the bug's exact failure point.
+    sums = _cat_sums(out, cat)
+    for c, cap in caps.items():
+        assert sums.get(c, 0.0) <= cap + 1e-6, (
+            f"category {c} = {sums.get(c, 0.0)} > {cap}")
+    # And the specific reviewer assertion: SEC is at 0.10, NOT 0.108.
+    assert sums["해외주식_섹터"] == pytest.approx(0.10, abs=1e-6)
+
+
+def test_node_respects_all_caps_with_correlation_clusters(tmp_path):
+    """End-to-end: drive the real node with state['correlation_clusters'] and a
+    category-distinct universe; the final weight_vector must satisfy every cap
+    family (single, risk, category via real CATEGORY_CAPS + e.category, cluster,
+    sum=1). Guards that the helper is wired into the node, not just unit-pure.
+    """
+    import types
+    from tradingagents.schemas.technical import Cluster
+    from tradingagents.skills.mandate.concentration_check import (
+        CATEGORY_CAPS, RISK_BUCKET_NAMES,
+    )
+    from tradingagents.skills.portfolio.sub_category import bucket_for_etf
+
+    up = _universe_het_b3(tmp_path)
+    step_a = _FakeStep(BucketTilt(
+        tilts={"b3_global_tech": 0.06, "b2_dm_core": -0.06},
+        sub_category_views={"b3_global_tech": {"semiconductor": 0.8, "battery_ev": -0.5}},
+        rationale="반도체 집중 → cluster cap 강제"))
+    macro = types.SimpleNamespace(
+        regime=_FakeRegime("growth_disinflation", 0.8),
+        fx=types.SimpleNamespace(regime="neutral"),
+        financial_conditions=types.SimpleNamespace(regime="neutral"),
+    )
+    st = _state_14(up, macro)
+    st["research_decision"] = ResearchThesis(risk_tilt="neutral", thesis_md="t")
+    st["technical_report"] = SimpleNamespace(factor_panel=_het_factor_panel(up))
+    st["correlation_clusters"] = [Cluster(
+        cluster_id="semi", members=["A_SEMI_1", "A_SEMI_2"],
+        avg_internal_correlation=0.95, category_label="반도체")]
+
+    out = create_trader_allocator(step_a_llm=step_a)(st)
+    wv = out["weight_vector"]
+    uni = json.loads(__import__("pathlib").Path(up).read_text())
+    cat_of = {e["ticker"]: e.get("category") for e in uni["etfs"]}
+
+    # sum + single cap
+    assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
+    assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())
+    # cluster cap
+    assert wv.weights.get("A_SEMI_1", 0.0) + wv.weights.get("A_SEMI_2", 0.0) \
+        <= 0.35 + 1e-6
+    # category caps (real CATEGORY_CAPS + e.category)
+    cat_sums: dict[str, float] = {}
+    for t, w in wv.weights.items():
+        c = cat_of.get(t)
+        if c is not None:
+            cat_sums[c] = cat_sums.get(c, 0.0) + w
+    for c, cap in CATEGORY_CAPS.items():
+        assert cat_sums.get(c, 0.0) <= cap + 1e-6, f"category {c} over cap"
+    # risk cap (validator's definition)
+    from tradingagents.dataflows.universe import Universe
+    universe = Universe(**uni)
+    bl = {e.ticker: bucket_for_etf(e) for e in universe.etfs}
+    risk = sum(w for t, w in wv.weights.items() if bl.get(t) in RISK_BUCKET_NAMES)
+    assert risk <= 0.70 + 1e-6, f"risk {risk} > 0.70"

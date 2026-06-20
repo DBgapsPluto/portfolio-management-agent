@@ -52,6 +52,29 @@ logger = logging.getLogger(__name__)
 # portfolio_dials["min_holding_weight"] 로 런타임 조정 가능.
 NEGLIGIBLE_FLOOR: float = 0.01
 
+# category/risk/cluster repair 교대 반복 횟수. cluster_repair 의 water-fill 이
+# category-capped 종목에 mass 를 흘려 cap 을 재위반할 수 있어, cluster 도 루프
+# '안'에서 교대시켜 매 패스마다 category/risk 가 재정리하도록 한다. 3회로는 잔차가
+# validator FLOAT_TOLERANCE(1e-6) 를 살짝 넘을 수 있어(기하급수 수렴) 6회로 둔다.
+_REPAIR_ITERS: int = 6
+
+
+def _repair_all_weights(w, cat_of, category_caps, is_risk, clusters):
+    """category·risk·cluster cap 을 동시 만족하도록 결정론 repair 후 renormalize.
+
+    세 repair 는 서로 직교하지 않는다 — cluster_repair 가 freed mass 를 비-군집
+    종목에 water-fill 하면 그 종목의 category 합이 cap 을 넘을 수 있다. 그래서
+    cluster_repair 를 루프 '밖'에서 한 번만 돌리면(category 가 그 뒤를 못 닦아)
+    category cap 이 재위반된다. 세 repair 를 교대 반복하면 상호작용이 수렴한다
+    (잔차 기하급수 감소). 최종 hard 판정은 Stage 5 validator 가 동일 임계로 수행.
+    """
+    for _ in range(_REPAIR_ITERS):
+        w = repair_category_caps(w, cat_of, category_caps)
+        w = repair_risk_cap(w, is_risk)
+        w = repair_cluster_cap(w, clusters, cap=0.35)
+    s = sum(w.values())
+    return {t: x / s for t, x in w.items()} if s > 0 else w
+
 
 def _load_universe(path: str) -> Universe:
     return Universe(**json.loads(Path(path).read_text()))
@@ -327,9 +350,10 @@ def create_trader_allocator(step_a_llm):
         if s > 0:
             weights = {t: w / s for t, w in weights.items()}
 
-        # 위험자산 70% + 세부자산(category) cap deterministic repair (spec §7, 대회 §2.2) —
-        # validator 정의(bucket_for_etf / e.category)로 측정해 realized 가 모든 cap 이내 보장.
-        # category↔risk 교대 3회로 상호작용 수렴. Stage 5 가 하드 검증.
+        # 위험자산 70% + 세부자산(category) + 상관군집(35%) cap deterministic repair
+        # (spec §7, 대회 §2.2) — validator 정의(bucket_for_etf / e.category)로 측정해
+        # realized 가 모든 cap 이내 보장. category↔risk↔cluster 교대 반복으로 상호작용
+        # 수렴(_repair_all_weights). Stage 5 가 하드 검증.
         _meta = {e.ticker: e for e in uni.etfs}
         _cat_of = {e.ticker: e.category for e in uni.etfs}
         # 상관군집 cap(35%, self-imposed) — Stage 1 technical 의 correlation_clusters.
@@ -339,12 +363,7 @@ def create_trader_allocator(step_a_llm):
             e = _meta.get(t)
             return bool(e) and bucket_for_etf(e) in RISK_BUCKET_NAMES
         def _repair_all(w):
-            for _ in range(3):
-                w = repair_category_caps(w, _cat_of, CATEGORY_CAPS)
-                w = repair_risk_cap(w, _is_risk)
-            w = repair_cluster_cap(w, _clusters, cap=0.35)
-            s = sum(w.values())
-            return {t: x / s for t, x in w.items()} if s > 0 else w
+            return _repair_all_weights(w, _cat_of, CATEGORY_CAPS, _is_risk, _clusters)
         weights = _repair_all(weights)
 
         # 실행상 무의미한 극소액 잔여 정리 (분산 소액 2~5%는 보존) → 재분배가 cap
