@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+from datetime import date
 from pathlib import Path
 
 from tradingagents.dataflows.universe import Universe
@@ -25,8 +26,11 @@ from tradingagents.skills.portfolio.candidate_selector import (
 )
 from tradingagents.skills.portfolio.factor_scorer import risk_adjusted_momentum
 from tradingagents.skills.portfolio.gaps_buckets import (
-    GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
+    GAPS_BUCKET_KEYS, BUCKET_KR_NAME, GROWTH_KEYS,
 )
+from tradingagents.backtest.bucket_proxies import fetch_bucket_proxy_returns
+from tradingagents.skills.portfolio.bucket_cov import bucket_covariance
+from tradingagents.skills.portfolio import bl_engine
 from tradingagents.skills.portfolio.within_bucket import (
     aggregate_weights_to_buckets, aum_weighted_allocation,
     momentum_weighted_allocation,
@@ -242,6 +246,57 @@ def _clamp_to_pool_capacity(
     return {k: v for k, v in clamped.items() if v > 1e-9}
 
 
+# 프로덕션 위험자산 proxy (RISK_PROXY = a5 + 성장버킷) — scenario_anchor 테스트 정의와 동일.
+# (주의: b1..b8+a5+a4 가 아니라 a5 ∪ GROWTH_KEYS 여야 no-view 복원이 성립한다.)
+_MANDATE_RISK_BUCKETS = {"a5_gold_infl"} | set(GROWTH_KEYS)
+_FX_CREDIT_SPREAD = 0.02
+
+
+def _fx_credit_extra_views(buckets, fx_regime, credit_regime, base_spread=_FX_CREDIT_SPREAD):
+    """fx/credit 결정론 상대 view → (P,Q,conf). over/under 쌍을 zero-sum row 로."""
+    import numpy as np
+    rows = []
+    if credit_regime == "crisis":
+        rows.append(("a3_us_rates", "b9_risk_credit"))
+    if fx_regime == "usd_risk_off":
+        rows.append(("a4_safe_fx", "b1_kr_equity"))
+    n = len(buckets)
+    if not rows:
+        return np.zeros((0, n)), np.zeros(0), np.zeros(0)
+    P = np.zeros((len(rows), n)); Q = np.zeros(len(rows)); conf = np.zeros(len(rows))
+    for r, (ov, un) in enumerate(rows):
+        if ov in buckets and un in buckets:
+            P[r, buckets.index(ov)] = 0.5; P[r, buckets.index(un)] = -0.5
+            P[r, :] -= P[r, :].mean()   # zero-sum
+            Q[r] = base_spread; conf[r] = 0.9
+    return P, Q, conf
+
+
+def build_bl_bucket_weights(as_of, quadrant, ranking, *, fx_regime="neutral",
+                            credit_regime="neutral", delta=2.5, base_spread=0.04,
+                            turnover_cap=0.35, window_days=730):
+    """BL 버킷 비중 (dict) + attribution meta. Σ fetch(as_of) → bl_allocate. 실패 시 baseline."""
+    import pandas as pd
+    base = pd.Series(QUADRANT_BASELINE[quadrant])
+    try:
+        rets = fetch_bucket_proxy_returns(as_of, window_days=window_days)
+        Sigma, cov_meta = bucket_covariance(rets, min_obs=252)
+        pinned = cov_meta.get("pinned", []) if not Sigma.empty else list(base.index)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("BL Σ fetch failed (%s) → baseline", e)
+        return ({k: float(v) for k, v in base.items()},
+                {"__global__": {"status": "baseline_no_sigma", "reason": str(e)[:80]}})
+    buckets = list(base.index)
+    extra = _fx_credit_extra_views(buckets, fx_regime, credit_regime)
+    res = bl_engine.bl_allocate(
+        Sigma if not Sigma.empty else None, base, ranking,
+        pinned=pinned, delta=delta, base_spread=base_spread, turnover_cap=turnover_cap,
+        growth_keys=set(GROWTH_KEYS), mandate_risk_keys=_MANDATE_RISK_BUCKETS,
+        extra_views=extra,
+    )
+    return ({k: float(v) for k, v in res["weights"].items() if v > 1e-9}, res["meta"])
+
+
 def create_trader_allocator(step_a_llm):
     structured_a = bind_structured(step_a_llm, BucketTilt, "TraderStepA")
 
@@ -271,34 +326,56 @@ def create_trader_allocator(step_a_llm):
         fx_regime = _resolve_fx_regime(state)
         credit_regime = _resolve_credit_regime(state)
 
-        q_baseline = QUADRANT_BASELINE[quadrant]
-        hard_bands = {b: hard_band(quadrant, b, q_baseline[b]) for b in q_baseline}
-        hmin = {b: hard_bands[b][0] for b in hard_bands}
-        hmax = {b: hard_bands[b][1] for b in hard_bands}
-        anchor = apply_macro_modifiers(q_baseline, risk_tilt, credit_regime, fx_regime, hmin, hmax)
-        eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence)
-               for b in anchor}
-        het_candidates = _heterogeneous_subcat_candidates(pool, sub_cat, aum, momentum)
-        tilt = state.get("cached_tilt") or invoke_structured_obj(
-            structured_a,
-            _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime,
-                           confidence, anchor, eff, het_candidates),
-            BucketTilt(), "TraderStepA",
-        )
-        eff_lo = {b: eff[b][0] for b in eff}   # eff[b] = (eff_min, eff_max)
-        eff_hi = {b: eff[b][1] for b in eff}
-        bucket_weights = project_to_band(anchor, tilt.tilts, eff_lo, eff_hi)
-        # 변동성 haircut: 고변동 버킷 축소 → 저변동 재배분 (technical_report 없으면 no-op)
-        vol_of = {t: getattr(fp.get(t), "realized_vol_60d", None) for t in aum}
-        pool_tickers = {b: [e.ticker for e in pool.get(b, [])] for b in bucket_weights}
-        bucket_vol = bucket_volatility(pool_tickers, vol_of, aum)
-        _hc = {}
-        if "vol_haircut_floor" in _dials:
-            _hc["floor"] = _dials["vol_haircut_floor"]
-        if "vol_haircut_margin" in _dials:
-            _hc["margin"] = _dials["vol_haircut_margin"]
-        bucket_weights = apply_vol_haircut(bucket_weights, bucket_vol, **_hc)
-        bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
+        # B6: opt-in Black-Litterman bucket weights (flag portfolio_dials["use_bl"]).
+        # Default False → the entire old project_to_band path runs byte-unchanged.
+        # Phase B uses a FIXED ranking (state["bl_fixed_ranking"]); LLM ranking is Phase C.
+        # q_baseline/anchor/tilt/bucket_vol are referenced downstream (attribution/step_a),
+        # so the BL branch provides inert defaults for them.
+        use_bl = bool(_dials.get("use_bl", False))
+        bl_meta: dict = {}
+        if use_bl:
+            q_baseline = QUADRANT_BASELINE[quadrant]
+            anchor = dict(q_baseline)
+            tilt = BucketTilt()
+            bucket_vol = {}
+            as_of_bl = date.fromisoformat(state["as_of_date"])
+            ranking = state.get("bl_fixed_ranking") or {}   # Phase C replaces with LLM ranking
+            bucket_weights, bl_meta = build_bl_bucket_weights(
+                as_of_bl, quadrant, ranking, fx_regime=fx_regime, credit_regime=credit_regime,
+                delta=float(_dials.get("bl_delta", 2.5)),
+                base_spread=float(_dials.get("bl_base_spread", 0.04)),
+                turnover_cap=float(_dials.get("bl_turnover_cap", 0.35)),
+            )
+            bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
+        else:
+            q_baseline = QUADRANT_BASELINE[quadrant]
+            hard_bands = {b: hard_band(quadrant, b, q_baseline[b]) for b in q_baseline}
+            hmin = {b: hard_bands[b][0] for b in hard_bands}
+            hmax = {b: hard_bands[b][1] for b in hard_bands}
+            anchor = apply_macro_modifiers(q_baseline, risk_tilt, credit_regime, fx_regime, hmin, hmax)
+            eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence)
+                   for b in anchor}
+            het_candidates = _heterogeneous_subcat_candidates(pool, sub_cat, aum, momentum)
+            tilt = state.get("cached_tilt") or invoke_structured_obj(
+                structured_a,
+                _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime,
+                               confidence, anchor, eff, het_candidates),
+                BucketTilt(), "TraderStepA",
+            )
+            eff_lo = {b: eff[b][0] for b in eff}   # eff[b] = (eff_min, eff_max)
+            eff_hi = {b: eff[b][1] for b in eff}
+            bucket_weights = project_to_band(anchor, tilt.tilts, eff_lo, eff_hi)
+            # 변동성 haircut: 고변동 버킷 축소 → 저변동 재배분 (technical_report 없으면 no-op)
+            vol_of = {t: getattr(fp.get(t), "realized_vol_60d", None) for t in aum}
+            pool_tickers = {b: [e.ticker for e in pool.get(b, [])] for b in bucket_weights}
+            bucket_vol = bucket_volatility(pool_tickers, vol_of, aum)
+            _hc = {}
+            if "vol_haircut_floor" in _dials:
+                _hc["floor"] = _dials["vol_haircut_floor"]
+            if "vol_haircut_margin" in _dials:
+                _hc["margin"] = _dials["vol_haircut_margin"]
+            bucket_weights = apply_vol_haircut(bucket_weights, bucket_vol, **_hc)
+            bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
 
         selections: dict[str, list[str]] = {}
         het_traces: dict[str, dict] = {}
@@ -431,6 +508,8 @@ def create_trader_allocator(step_a_llm):
                 "heterogeneous_selection": het_traces,
             },
         }
+        if use_bl:
+            attribution["bl"] = bl_meta   # BL branch attribution (Σ status, per-bucket BL/pinned)
         return {
             "bucket_target": bucket_target,
             "candidate_set": candidate_set,
