@@ -106,8 +106,14 @@ def _max_quad_utility(mu, Sigma, delta, growth_keys, mandate_risk_keys,
 
 
 def bl_bucket_weights(Sigma, w_baseline, ranking, *, delta=2.5, base_spread=0.04,
-                      growth_keys=None, mandate_risk_keys=None, extra_views=None):
-    """전체 BL: Π 역산 → 상대view(+extra) → μ_BL → MQU(prior Σ). 실패 시 w_baseline."""
+                      growth_keys=None, mandate_risk_keys=None, extra_views=None,
+                      growth_cap=0.70, mandate_cap=0.70):
+    """전체 BL: Π 역산 → 상대view(+extra) → μ_BL → MQU(prior Σ). 실패 시 w_baseline.
+
+    growth_cap/mandate_cap 은 GROUP 제약(GROWTH_KEYS 합·mandate risk 합 ≤ cap)으로
+    _max_quad_utility 에 그대로 전달된다. 부분핀 서브문제에서는 호출자(bl_allocate)가
+    예산-인지(budget-aware) 캡을 계산해 넘긴다(전체 0.70 mandate 를 서브벡터로 환산).
+    """
     import pandas as pd
     buckets = list(Sigma.index)
     w_baseline = w_baseline.reindex(buckets)
@@ -120,7 +126,8 @@ def bl_bucket_weights(Sigma, w_baseline, ranking, *, delta=2.5, base_spread=0.04
             Q = np.concatenate([Q, Qe]) if Q.shape[0] else Qe
             conf = np.concatenate([conf, ce]) if conf.shape[0] else ce
     mu = _posterior_mu(Sigma, pi, P, Q, conf, delta)
-    w = _max_quad_utility(mu, Sigma, delta, growth_keys or set(), mandate_risk_keys or set())
+    w = _max_quad_utility(mu, Sigma, delta, growth_keys or set(), mandate_risk_keys or set(),
+                          growth_cap=growth_cap, mandate_cap=mandate_cap)
     if w is None or w.isna().any():
         return w_baseline.copy()
     return w
@@ -194,8 +201,19 @@ def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spre
     mk = {b for b in (mandate_risk_keys or set()) if b in bl_buckets}
     rk = {k: v for k, v in ranking.items() if k in bl_buckets}
 
+    # 예산-인지(budget-aware) GROUP 캡: mandate 는 TOTAL(post-budget) 비중에 걸린다.
+    # total_growth = sub_growth×budget + pinned_growth ≤ HARD_RISK ⇒
+    #   g_cap_sub = (HARD_RISK − pinned_growth) / budget (mandate 동일).
+    # 핀이 없으면 budget=1, pinned_*=0 → caps=0.70 = full-vector 거동과 동일(gate-2 불변).
+    HARD_RISK = 0.70  # = concentration_check.HARD_RISK_ASSET_CAP
+    pinned_growth = sum(float(w_baseline[b]) for b in pinned if b in (growth_keys or set()))
+    pinned_mandate = sum(float(w_baseline[b]) for b in pinned if b in (mandate_risk_keys or set()))
+    g_cap_sub = min(1.0, (HARD_RISK - pinned_growth) / budget) if budget > 1e-9 else 1.0
+    m_cap_sub = min(1.0, (HARD_RISK - pinned_mandate) / budget) if budget > 1e-9 else 1.0
+
     w_bl = bl_bucket_weights(Sigma_bl, base_bl, rk, delta=delta, base_spread=base_spread,
-                             growth_keys=gk, mandate_risk_keys=mk, extra_views=extra_views)
+                             growth_keys=gk, mandate_risk_keys=mk, extra_views=extra_views,
+                             growth_cap=g_cap_sub, mandate_cap=m_cap_sub)
     w_bl = soft_clip(w_bl, growth_keys=gk, growth_cap=growth_cap, defensive_cap=defensive_cap)
     # BL 서브벡터를 정확히 budget 으로 재정규화(soft-clip 후 합이 1에서 미세이탈 가능),
     # 핀 버킷은 정확히 baseline 으로 유지 → 전역 재정규화로 핀이 흔들리지 않게 함.
@@ -209,5 +227,11 @@ def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spre
     for b in pinned:
         out[b] = float(w_baseline[b])
         meta[b] = {"status": "baseline_pinned"}
-    meta["__global__"] = {"status": "bl", "n_pinned": len(pinned)}
+    glob = {"status": "bl", "n_pinned": len(pinned)}
+    if pinned:
+        # 핀이 있으면 예산·서브캡을 기록 → attribution 투명성(서브문제가 어떤 캡으로 풀렸는지).
+        glob.update({"budget": round(budget, 6),
+                     "growth_cap_sub": round(g_cap_sub, 6),
+                     "mandate_cap_sub": round(m_cap_sub, 6)})
+    meta["__global__"] = glob
     return {"weights": out, "meta": meta}
