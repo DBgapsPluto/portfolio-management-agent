@@ -1,32 +1,47 @@
-"""Sanity backtest: ETF-selection by risk-adjusted momentum vs. by AUM.
+"""Sanity backtest: ETF-selection by risk-adjusted momentum vs. by size (PIT).
 
 Lightweight GO/NO-GO check for the "ETF-selection hybrid" change. Heterogeneous
 GAPS buckets (b2_dm_core, b3_global_tech, b5_other_intl) hold many ETFs tracking
 *different* underlyings, so the within-bucket pick matters. The hybrid now picks
 top-K by `risk_adjusted_momentum` (skip-1m 3/6/12m momentum rank, penalized by
-realized-vol rank) instead of by AUM. Does that beat picking by AUM, net of a
+realized-vol rank) instead of by size. Does that beat picking by size, net of a
 10bps turnover cost, over recent history?
 
 This is a SANITY CHECK, not a production component. It reuses the live tools:
-- `fetch_returns_matrix` (pykrx daily returns) for prices.
+- pykrx OHLCV (via `fetch_etf_ohlcv_batch`) for both prices and traded volume.
 - `compute_factor_panel` + `risk_adjusted_momentum` for the momentum signal.
+
+Strategy B is a POINT-IN-TIME size/liquidity benchmark. We do NOT use the static
+present-day `aum_krw` from universe.json — that is 2026 AUM applied to every month
+back to 2019, which hands B hindsight winners (the biggest 2026 ETFs were tiny or
+unlisted in 2019-2021, and AUM growth correlates with realized momentum). Instead
+B ranks by the trailing ~60-trading-day average of daily DOLLAR VOLUME
+(`close * volume`) measured strictly as of each rebalance — a standard PIT
+liquidity/size proxy. This is the honest "pick the big, liquid ones" benchmark.
 
 Method (point-in-time, monthly rebalance):
   For each month-end `as_of` (after a 273-trading-day warm-up for skip-1m 12m
   momentum, requiring >= 24 months of usable history):
+    - Eligibility (PIT): ETF must be listed (`listed_since <= as_of`) AND have
+      >= 273 trading days of price history ending <= as_of.
     - Build factor panels using ONLY returns with date <= as_of.
     - Strategy A (momentum): within each bucket pick top-K by risk_adjusted_momentum.
-    - Strategy B (AUM):      within each bucket pick top-K by AUM (static).
+    - Strategy B (size, PIT): within each bucket pick top-K by trailing-60d mean
+      dollar-volume measured strictly <= as_of.
     - Hold equal-weight for the next month; record next-month return per strategy.
     - Charge turnover * 10bps when the pick set changes month-to-month.
+    - A month only counts toward the headline A-vs-B series when at least
+      top_k + 1 ETFs are eligible (so A and B can actually diverge); thinner
+      months are reported in the coverage block but excluded from the verdict.
   Aggregate over months -> cumulative return, annualized Sharpe, max drawdown.
 
-GO  = momentum (A) beats AUM (B) on cumulative return AND Sharpe, AND is not
+GO  = momentum (A) beats size (B) on cumulative return AND Sharpe, AND is not
       materially worse on max drawdown (MDD_A <= MDD_B + 2pp tolerance).
 NO-GO otherwise.
 
-PIT correctness: returns AFTER as_of are never used to form the as_of panel; the
-next-month realized return is computed strictly from the (as_of, next_as_of] window.
+PIT correctness: returns AND dollar-volume AFTER as_of are never used to form the
+as_of pick; the next-month realized return is computed strictly from the
+(as_of, next_as_of] window.
 
 Usage:
     PYTHONUTF8=1 PYTHONIOENCODING=utf-8 ./.venv/Scripts/python.exe \
@@ -56,12 +71,13 @@ try:
 except ImportError:
     pass
 
+from tradingagents.dataflows.pykrx_data import (  # noqa: E402
+    ParquetCache,
+    fetch_etf_ohlcv_batch,
+)
 from tradingagents.skills.portfolio.factor_scorer import (  # noqa: E402
     compute_factor_panel,
     risk_adjusted_momentum,
-)
-from tradingagents.skills.portfolio.returns_matrix import (  # noqa: E402
-    fetch_returns_matrix,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s — %(message)s")
@@ -80,14 +96,35 @@ TURNOVER_COST_BPS = 10.0  # one-way turnover cost in basis points
 TRADING_DAYS_PER_YEAR = 252
 MDD_TOLERANCE_PP = 0.02  # A may be up to 2pp worse on MDD and still "not material"
 
+# Strategy B (PIT size proxy): trailing window of daily dollar-volume averaged
+# strictly as of each rebalance. ~60 trading days ~= 3 calendar months — a
+# standard liquidity/size lookback that is point-in-time by construction.
+DOLLAR_VOLUME_WINDOW = 60
+
 CACHE_PATH = PROJECT_ROOT / "data" / "cache" / "backtest_etf_selection_prices.parquet"
 
 
 # ---------------------------------------------------------------------------
 # universe
 # ---------------------------------------------------------------------------
+def _parse_listed_since(raw: "str | None") -> "pd.Timestamp | None":
+    """Parse universe.json `listed_since` (YYYY-MM-DD) -> Timestamp, or None."""
+    if not raw:
+        return None
+    try:
+        return pd.Timestamp(raw)
+    except (ValueError, TypeError):
+        return None
+
+
 def load_heterogeneous_universe() -> dict[str, list[dict]]:
-    """bucket -> list of {ticker, name, aum_krw, sub_category} for b2/b3/b5."""
+    """bucket -> list of {ticker, name, aum_krw, listed_since, sub_category}.
+
+    `listed_since` is a Timestamp (or None when absent/unparseable). It gates
+    PIT eligibility: an ETF is only selectable on/after its listing date. The
+    static `aum_krw` is retained for reference/logging only — Strategy B ranks
+    by point-in-time dollar-volume, NOT by this present-day AUM (look-ahead).
+    """
     raw = json.loads(
         (PROJECT_ROOT / "data" / "universe.json").read_text(encoding="utf-8")
     )
@@ -100,10 +137,39 @@ def load_heterogeneous_universe() -> dict[str, list[dict]]:
                     "ticker": e["ticker"],
                     "name": e.get("name", e["ticker"]),
                     "aum_krw": float(e.get("aum_krw", 0.0)),
+                    "listed_since": _parse_listed_since(e.get("listed_since")),
                     "sub_category": e.get("sub_category", ""),
                 }
             )
     return by_bucket
+
+
+# ---------------------------------------------------------------------------
+# price + dollar-volume fetch
+# ---------------------------------------------------------------------------
+def fetch_returns_and_dollar_volume(
+    tickers: list[str], start: date, end: date, cache_path: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Fetch OHLCV once and build (daily_returns, daily_dollar_volume) matrices.
+
+    Both are date x ticker frames sharing the same OHLCV pull (cached parquet),
+    so close-prices and volume stay aligned. Dollar volume = close * volume in
+    KRW — the raw input to Strategy B's trailing-mean PIT size proxy.
+
+    Returns (empty, empty) on a total data miss so callers degrade gracefully.
+    """
+    cache = ParquetCache(cache_path)
+    raw = fetch_etf_ohlcv_batch(tickers, start, end, cache=cache)
+    if raw.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    close = raw.pivot(index="date", columns="ticker", values="close")
+    returns = close.pct_change().dropna(how="all")
+
+    vol = raw.pivot(index="date", columns="ticker", values="volume")
+    # Dollar volume in KRW: close price * shares traded. NaN where either is NaN.
+    dollar_volume = (close * vol).reindex(returns.index)
+    return returns, dollar_volume
 
 
 # ---------------------------------------------------------------------------
@@ -200,13 +266,40 @@ def _pick_top_k_momentum(
     return picks
 
 
-def _pick_top_k_aum(
-    eligible_tickers: list[str], aum: dict[str, float], k: int
+def _pit_dollar_volume(
+    dollar_volume: pd.DataFrame,
+    as_of: pd.Timestamp,
+    tickers: list[str],
+    window: int = DOLLAR_VOLUME_WINDOW,
+) -> dict[str, float]:
+    """Trailing-`window` mean daily dollar-volume per ticker, strictly <= as_of.
+
+    PIT guard: slices to rows with index <= as_of, takes the last `window`
+    observations, and averages. Tickers with no traded-volume history in the
+    window get 0.0 (they sort last in Strategy B). This is the point-in-time
+    size/liquidity proxy that replaces static present-day AUM.
+    """
+    hist = dollar_volume.loc[:as_of]
+    out: dict[str, float] = {}
+    for t in tickers:
+        if t not in hist.columns:
+            out[t] = 0.0
+            continue
+        series = hist[t].dropna()
+        if series.empty:
+            out[t] = 0.0
+            continue
+        out[t] = float(series.iloc[-window:].mean())
+    return out
+
+
+def _pick_top_k_dollar_volume(
+    eligible_tickers: list[str], dvol: dict[str, float], k: int
 ) -> list[str]:
-    """Top-K eligible tickers by static AUM."""
+    """Top-K eligible tickers by trailing PIT dollar-volume (higher = bigger/liquider)."""
     ranked = sorted(
         eligible_tickers,
-        key=lambda t: (aum.get(t, 0.0), t),
+        key=lambda t: (dvol.get(t, 0.0), t),
         reverse=True,
     )
     return ranked[:k]
@@ -255,40 +348,66 @@ def run_bucket_backtest(
     bucket: str,
     members: list[dict],
     returns: pd.DataFrame,
+    dollar_volume: pd.DataFrame,
     rebal_dates: list[pd.Timestamp],
     top_k: int,
     w_vol: float,
 ) -> dict:
-    """Run A (momentum) vs B (AUM) for a single bucket.
+    """Run A (momentum) vs B (PIT dollar-volume size proxy) for a single bucket.
+
+    Eligibility per month is point-in-time: an ETF must be listed
+    (`listed_since <= as_of`) AND have >= WARMUP_TRADING_DAYS of price history
+    ending <= as_of. A month only counts toward the headline A-vs-B series when
+    at least `top_k + 1` ETFs are eligible (so the two strategies can actually
+    pick different sets); thinner months are tracked separately.
 
     Returns per-month net returns for both strategies plus coverage counts.
     """
     tickers = [m["ticker"] for m in members]
     aum = {m["ticker"]: m["aum_krw"] for m in members}
+    listed_since = {m["ticker"]: m["listed_since"] for m in members}
 
     a_returns: list[float] = []
     b_returns: list[float] = []
     months: list[pd.Timestamp] = []
-    coverage: list[int] = []
+    coverage: list[int] = []  # eligible count at every rebalance (full honesty)
+    thin_months = 0          # months with 2..top_k eligible (excluded from verdict)
 
     prev_a: list[str] = []
     prev_b: list[str] = []
     cost = TURNOVER_COST_BPS / 10_000.0
+    min_eligible = top_k + 1
 
     for i in range(len(rebal_dates) - 1):
         as_of = rebal_dates[i]
         nxt = rebal_dates[i + 1]
 
         panels = _panels_as_of(returns, as_of, tickers, aum)
-        eligible = [t for t, p in panels.items() if p is not None]
+        # PIT eligibility: listed on/before as_of AND has enough price history.
+        eligible = []
+        for t, p in panels.items():
+            if p is None:
+                continue
+            ls = listed_since.get(t)
+            if ls is not None and ls > as_of:
+                continue  # not yet listed at this rebalance
+            eligible.append(t)
         coverage.append(len(eligible))
-        if len(eligible) < 2:
-            # Not enough ETFs to differentiate A vs B this month — skip but keep
-            # prev picks (no forced turnover on a data gap).
+
+        if len(eligible) < min_eligible:
+            # Fewer than top_k + 1 eligible — A and B are forced to overlap, so
+            # the month carries no A-vs-B signal. Track it for the coverage
+            # block but EXCLUDE it from the headline series. Keep prev picks
+            # (no forced turnover on a thin/data-gap month).
+            if len(eligible) >= 2:
+                thin_months += 1
             continue
 
-        picks_a = _pick_top_k_momentum(panels, w_vol, top_k)
-        picks_b = _pick_top_k_aum(eligible, aum, top_k)
+        picks_a = _pick_top_k_momentum(
+            {t: panels[t] for t in eligible}, w_vol, top_k
+        )
+        dvol = _pit_dollar_volume(dollar_volume, as_of, eligible)
+        picks_b = _pick_top_k_dollar_volume(eligible, dvol, top_k)
 
         ret_a = _next_month_return(returns, picks_a, as_of, nxt)
         ret_b = _next_month_return(returns, picks_b, as_of, nxt)
@@ -311,6 +430,7 @@ def run_bucket_backtest(
         "a_series": a_series,
         "b_series": b_series,
         "n_months": len(a_series),
+        "thin_months": thin_months,
         "coverage": coverage,
         "min_coverage": min(coverage) if coverage else 0,
         "max_coverage": max(coverage) if coverage else 0,
@@ -362,7 +482,10 @@ def print_table(rows: list[dict]) -> None:
         f"{'mddA':>9} {'mddB':>9}  verdict"
     )
     print("\n" + "=" * len(header))
-    print("ETF-SELECTION SANITY BACKTEST  —  A=risk-adj-momentum   B=AUM   (net of 10bps)")
+    print(
+        "ETF-SELECTION SANITY BACKTEST  —  A=risk-adj-momentum   "
+        "B=PIT-dollar-volume(size)   (net of 10bps)"
+    )
     print("=" * len(header))
     print(header)
     print("-" * len(header))
@@ -404,19 +527,19 @@ def main() -> int:
         len(all_tickers), ", ".join(universe.keys()),
     )
 
-    logger.info("Fetching daily returns via pykrx (cached) ...")
+    logger.info("Fetching daily OHLCV (close + volume) via pykrx (cached) ...")
     try:
-        returns = fetch_returns_matrix(
+        returns, dollar_volume = fetch_returns_and_dollar_volume(
             all_tickers, args.start, args.end, cache_path=str(CACHE_PATH)
         )
     except Exception as e:  # noqa: BLE001
-        logger.error("Returns fetch raised %s: %s", type(e).__name__, e)
-        returns = pd.DataFrame()
+        logger.error("OHLCV fetch raised %s: %s", type(e).__name__, e)
+        returns, dollar_volume = pd.DataFrame(), pd.DataFrame()
 
     if returns is None or returns.empty:
         print(
             "\nDATA UNAVAILABLE — cannot run live backtest.\n"
-            "  fetch_returns_matrix returned no data (no network / pykrx blocked / "
+            "  fetch_etf_ohlcv_batch returned no data (no network / pykrx blocked / "
             "empty frames).\n"
             "  The script is correct and committed; re-run where pykrx has "
             "connectivity.\n"
@@ -425,6 +548,8 @@ def main() -> int:
 
     returns.index = pd.DatetimeIndex(returns.index)
     returns = returns.sort_index()
+    dollar_volume.index = pd.DatetimeIndex(dollar_volume.index)
+    dollar_volume = dollar_volume.sort_index()
     logger.info(
         "Got returns: %d trading days x %d tickers (%s -> %s)",
         returns.shape[0], returns.shape[1],
@@ -466,14 +591,16 @@ def main() -> int:
         if not members:
             continue
         res = run_bucket_backtest(
-            bucket, members, returns, rebal_dates, args.top_k, args.w_vol
+            bucket, members, returns, dollar_volume, rebal_dates,
+            args.top_k, args.w_vol,
         )
         bucket_results.append(res)
         a_frames[bucket] = res["a_series"]
         b_frames[bucket] = res["b_series"]
         logger.info(
-            "  %-16s members=%2d  months=%2d  coverage[min/med/max]=%d/%d/%d",
-            bucket, res["n_members"], res["n_months"],
+            "  %-16s members=%2d  counted_months=%2d  thin_excluded=%2d  "
+            "coverage[min/med/max]=%d/%d/%d",
+            bucket, res["n_members"], res["n_months"], res["thin_months"],
             res["min_coverage"], res["median_coverage"], res["max_coverage"],
         )
 
@@ -493,22 +620,34 @@ def main() -> int:
 
     print_table(rows)
 
-    # Coverage honesty block.
-    print("\nCOVERAGE (ETFs with full skip-1m 12m history at each rebalance):")
+    # Coverage honesty block. `counted_months` are the months that clear the
+    # >= top_k+1 eligibility bar and feed the verdict; `thin_excluded` are
+    # months with 2..top_k eligible (A and B forced to overlap) reported here
+    # but kept OUT of the headline series.
+    print(
+        "\nCOVERAGE (PIT-eligible ETFs = listed & full skip-1m 12m history "
+        "at each rebalance):"
+    )
     for res in bucket_results:
         print(
             f"  {res['bucket']:<16} members={res['n_members']:>2}  "
-            f"usable_months={res['n_months']:>2}  "
-            f"coverage min/median/max = "
+            f"counted_months={res['n_months']:>2}  "
+            f"thin_excluded={res['thin_months']:>2}  "
+            f"eligible min/median/max = "
             f"{res['min_coverage']}/{res['median_coverage']}/{res['max_coverage']}"
         )
+    total_thin = sum(r["thin_months"] for r in bucket_results)
+    print(
+        f"  Thin months (2..{args.top_k} eligible, A/B forced to overlap) are "
+        f"EXCLUDED from the verdict: {total_thin} total across buckets."
+    )
     thin = [r for r in bucket_results if r["min_coverage"] < args.top_k + 1]
     if thin:
         print(
-            "  NOTE: thin coverage in "
+            "  NOTE: some rebalances were thin in "
             + ", ".join(r["bucket"] for r in thin)
-            + f" (min eligible < top_k+1={args.top_k + 1}) — "
-            "A vs B picks overlap heavily there, so the signal is weak."
+            + f" (eligible < top_k+1={args.top_k + 1}) — those months are not in "
+            "the A-vs-B series above."
         )
 
     print(
@@ -516,13 +655,17 @@ def main() -> int:
         f"(aggregate, K={args.top_k}, w_vol={args.w_vol}, net of {TURNOVER_COST_BPS:.0f}bps)"
     )
     print(
-        "  GO criterion = momentum(A) beats AUM(B) on cumulative return AND Sharpe, "
-        f"AND MDD_A <= MDD_B + {MDD_TOLERANCE_PP * 100:.0f}pp."
+        "  GO criterion = momentum(A) beats PIT-size(B) on cumulative return AND "
+        f"Sharpe, AND MDD_A <= MDD_B + {MDD_TOLERANCE_PP * 100:.0f}pp."
+    )
+    print(
+        "  B = trailing-60d mean dollar-volume (point-in-time), NOT static "
+        "present-day AUM (look-ahead removed)."
     )
     if agg_row["go"]:
         print(
-            "  -> Risk-adjusted-momentum selection beat AUM selection out-of-sample. "
-            "Sanity check supports the hybrid."
+            "  -> Risk-adjusted-momentum selection beat the PIT size/liquidity "
+            "benchmark out-of-sample. Sanity check supports the hybrid."
         )
     else:
         why = []
