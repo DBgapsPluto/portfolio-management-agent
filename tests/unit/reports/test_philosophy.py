@@ -212,6 +212,47 @@ def test_philosophy_facts_correlation_appears_with_sigma():
     assert "b1_kr_equity" in summary and "b3_global_tech" in summary
 
 
+def test_philosophy_facts_correlation_from_persisted_bl_meta():
+    # PHIL-4: the BL covariance is gone by report time, but the allocator persists
+    # a COMPACT correlation summary into attribution['bl']['__global__']['correlation']
+    # (nested dict). The philosophy facts builder must reconstruct it and render the
+    # top-pair + cluster-weight-sum block from it (NO recompute of correlation_from_cov).
+    keys = ["b1_kr_equity", "b3_global_tech", "a1_cash"]
+    # b1~b3 highly correlated (0.88); both ~uncorrelated with cash.
+    corr = {
+        "b1_kr_equity": {"b1_kr_equity": 1.0, "b3_global_tech": 0.88, "a1_cash": 0.05},
+        "b3_global_tech": {"b1_kr_equity": 0.88, "b3_global_tech": 1.0, "a1_cash": 0.02},
+        "a1_cash": {"b1_kr_equity": 0.05, "b3_global_tech": 0.02, "a1_cash": 1.0},
+    }
+    bt = MagicMock()
+    bt.weights = {"b1_kr_equity": 0.22, "b3_global_tech": 0.19, "a1_cash": 0.10}
+    state = dict(_make_state())
+    state["allocation_attribution"] = {
+        "step_a": {"quadrant": "growth_inflation"},
+        "bl": {"__global__": {"status": "bl", "correlation": corr}},
+    }
+    state["bucket_target"] = bt
+    summary = _build_state_summary(state)
+    assert "최고 상관쌍" in summary
+    # top pair is b1~b3 with corr 0.88
+    assert "b1_kr_equity" in summary and "b3_global_tech" in summary and "0.88" in summary
+    # cluster weight sum line: 0.22 + 0.19 = 0.41
+    assert "클러스터 비중합" in summary and "0.41" in summary
+
+
+def test_philosophy_facts_persisted_corr_graceful_without_corr_key():
+    # BL meta present but no 'correlation' key (Σ was empty) → prior fact only,
+    # correlation block gracefully skipped, no crash.
+    state = dict(_make_state())
+    state["allocation_attribution"] = {
+        "step_a": {"quadrant": "growth_disinflation"},
+        "bl": {"__global__": {"status": "baseline_no_sigma"}},
+    }
+    summary = _build_state_summary(state)
+    assert "Prior(baseline) growth_disinflation" in summary
+    assert "최고 상관쌍" not in summary
+
+
 def test_philosophy_facts_absent_quadrant_graceful():
     # No quadrant anywhere → facts block is '(미산출)', no crash.
     summary = _build_state_summary(_make_state())

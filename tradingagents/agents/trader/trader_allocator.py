@@ -332,6 +332,20 @@ def build_bl_bucket_weights(as_of, quadrant, ranking, *, fx_regime="neutral",
         growth_keys=set(GROWTH_KEYS), mandate_risk_keys=_MANDATE_RISK_BUCKETS,
         extra_views=extra,
     )
+    # PHIL-4: Σ is gone by report time, so persist a COMPACT correlation summary
+    # (nested dict, 4dp) into meta so the philosophy report can render the
+    # 단일리스크통제 / AI 쏠림 통제 fact (top correlated pair + cluster weight sum).
+    # Only when Σ is non-empty; round to keep it serializable/compact.
+    if not Sigma.empty:
+        try:
+            from tradingagents.skills.portfolio.bl_facts import correlation_from_cov
+            Corr = correlation_from_cov(Sigma)
+            res["meta"].setdefault("__global__", {})["correlation"] = {
+                a: {b: round(float(Corr.loc[a, b]), 4) for b in Corr.columns}
+                for a in Corr.index
+            }
+        except Exception as e:  # noqa: BLE001 — correlation summary is auxiliary
+            logger.warning("BL correlation summary skipped (%s)", e)
     return ({k: float(v) for k, v in res["weights"].items() if v > 1e-9}, res["meta"])
 
 

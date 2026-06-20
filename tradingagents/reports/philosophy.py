@@ -321,6 +321,39 @@ def _resolve_bl_cov(state: dict):
     return None
 
 
+def _resolve_bl_correlation(state: dict):
+    """PHIL-4: BL 시점에 영속화된 COMPACT 상관행렬(중첩 dict)을 pd.DataFrame 으로 복원.
+
+    Σ 는 리포트 시점엔 사라지므로 allocator 가 build_bl_bucket_weights 에서
+    attribution['bl']['__global__']['correlation'] 에 {a:{b:corr}} 형태로 저장한다.
+    여기서 읽은 값은 '이미 상관행렬'이므로 correlation_from_cov 를 다시 호출하면 안 된다.
+    버킷 순서가 행/열에서 동일하도록 reindex 해 square·symmetric 프레임을 보장한다.
+    없으면 None (graceful no-op)."""
+    attr = state.get("allocation_attribution") or {}
+    if not isinstance(attr, dict):
+        return None
+    bl = attr.get("bl")
+    if not isinstance(bl, dict):
+        return None
+    glob = bl.get("__global__")
+    if not isinstance(glob, dict):
+        return None
+    corr = glob.get("correlation")
+    if not isinstance(corr, dict) or not corr:
+        return None
+    try:
+        import pandas as pd
+        # pd.DataFrame(nested_dict) orients COLUMNS by outer keys → reindex both
+        # axes to a single consistent bucket order so the frame is square & symmetric.
+        order = list(corr.keys())
+        df = pd.DataFrame(corr).reindex(index=order, columns=order)
+        if df.empty:
+            return None
+        return df
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _build_philosophy_facts(state: dict) -> str:
     """PHIL-4: '단일 리스크 통제 / AI 쏠림 통제' 판단기준을 충족시키는 결정론 facts.
     (1) prior(baseline) 정당화 — 현 regime 의 QUADRANT_BASELINE 상위 비중,
@@ -335,10 +368,19 @@ def _build_philosophy_facts(state: dict) -> str:
         prior = prior_justification_facts(quadrant)
         if prior:
             blocks.append(prior)
-    cov = _resolve_bl_cov(state)
-    if cov is not None:
+    # 상관행렬 우선순위: (1) BL 시점에 영속화된 상관행렬(이미 상관, recompute 금지),
+    # (2) 폴백으로 리포트 시점에 Σ 가 남아 있으면 Σ→상관 계산.
+    corr = _resolve_bl_correlation(state)
+    if corr is None:
+        cov = _resolve_bl_cov(state)
+        if cov is not None:
+            try:
+                corr = correlation_from_cov(cov)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("philosophy Σ→correlation skipped (%s)", e)
+                corr = None
+    if corr is not None:
         try:
-            corr = correlation_from_cov(cov)
             corr_block = bl_correlation_facts(
                 corr, weights=_resolve_bucket_weights(state)
             )
