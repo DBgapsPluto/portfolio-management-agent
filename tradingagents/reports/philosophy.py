@@ -176,6 +176,30 @@ def format_step_a_decomposition(attribution) -> str:
     buckets = (sa or {}).get("buckets") or {}
     if not buckets:
         return "(미산출)"
+    # BL-native step_a (commit 9d458b9) has a different bucket schema
+    # ({baseline, view_shift, final, realized, intent_vs_realized, status}) — no
+    # scenario_delta/tilt_applied. Branch on method so the old anchor path is intact.
+    if sa.get("method") == "bl":
+        g = sa.get("global") or {}
+        lines = [
+            f"BL-native (status {g.get('status', '?')}, "
+            f"pinned {g.get('n_pinned', '?')})",
+            "| 버킷 | prior | view기여 | 의도 | 실현 | status |",
+            "|------|-------|---------|------|------|--------|",
+        ]
+        for k in GAPS_BUCKET_KEYS:
+            d = buckets.get(k)
+            if not d:
+                continue
+            ivr = float(d.get("intent_vs_realized", 0.0) or 0.0)
+            # surface repair clawback (의도→실현 gap) only when material
+            clawback = f" (실현격차 {ivr * 100:+.1f}%)" if abs(ivr) >= 0.005 else ""
+            lines.append(
+                f"| {BUCKET_KR_NAME[k]} | {d['baseline'] * 100:.1f}% "
+                f"| {d['view_shift'] * 100:+.1f}% | {d['final'] * 100:.1f}% "
+                f"| {d['realized'] * 100:.1f}% | {d.get('status', 'bl')}{clawback} |"
+            )
+        return "\n".join(lines)
     lines = [
         f"Regime {sa.get('quadrant', '?')} / risk_tilt {sa.get('risk_tilt', '?')} "
         f"(conf {float(sa.get('confidence', 0)) * 100:.0f}%, "

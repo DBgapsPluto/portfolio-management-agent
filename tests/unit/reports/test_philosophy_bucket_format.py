@@ -54,6 +54,40 @@ def test_format_step_a_decomposition_handles_missing():
     assert format_step_a_decomposition({}) == "(미산출)"
 
 
+def test_philosophy_renders_bl_native_step_a_without_crash():
+    # a BL-native step_a (method='bl', view_shift/realized keys, NO scenario_delta)
+    # must render, not KeyError (C3 review: renderer hard-coded old anchor schema).
+    attr = {
+        "step_a": {
+            "method": "bl",
+            "buckets": {
+                "b3_global_tech": {"baseline": 0.14, "view_shift": 0.06, "final": 0.20,
+                                   "realized": 0.18, "intent_vs_realized": -0.02,
+                                   "status": "bl"},
+                "a3_us_rates": {"baseline": 0.12, "view_shift": -0.02, "final": 0.10,
+                                "realized": 0.10, "intent_vs_realized": 0.0,
+                                "status": "baseline_pinned"},
+            },
+            "global": {"status": "bl", "n_pinned": 1},
+        }
+    }
+    out = format_step_a_decomposition(attr)
+    assert "글로벌 테크" in out          # bucket KR name rendered
+    assert "0.20" in out or "20.0" in out  # final/intent rendered
+    assert "baseline_pinned" in out       # per-bucket status surfaced
+
+
+def test_philosophy_old_anchor_step_a_still_renders():
+    attr = {"step_a": {"buckets": {
+        "b1_kr_equity": {"baseline": 0.11, "scenario_delta": 0.0,
+                         "tilt_requested": 0.02, "tilt_applied": 0.02, "final": 0.13},
+    }}}
+    out = format_step_a_decomposition(attr)
+    assert "한국주식" in out
+    assert "11.0%" in out
+    assert "13.0%" in out
+
+
 # ---- heterogeneous theme view + ETF selection traceability ----
 
 
