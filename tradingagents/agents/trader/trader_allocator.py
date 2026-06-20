@@ -20,12 +20,16 @@ from tradingagents.schemas.portfolio import (
     BucketTarget, CandidateSet,
     WeightVector, OptimizationMethod, BucketTilt,
 )
-from tradingagents.skills.portfolio.candidate_selector import select_representative_candidates
+from tradingagents.skills.portfolio.candidate_selector import (
+    select_representative_candidates, HETEROGENEOUS_BUCKETS,
+)
+from tradingagents.skills.portfolio.factor_scorer import risk_adjusted_momentum
 from tradingagents.skills.portfolio.gaps_buckets import (
     GAPS_BUCKET_KEYS, BUCKET_KR_NAME,
 )
 from tradingagents.skills.portfolio.within_bucket import (
     aggregate_weights_to_buckets, aum_weighted_allocation,
+    momentum_weighted_allocation,
     drop_negligible_holdings, InfeasibleBucket, SINGLE_CAP,
 )
 from tradingagents.skills.portfolio.scenario_anchor import (
@@ -37,6 +41,7 @@ from tradingagents.skills.portfolio.vol_haircut import (
 )
 from tradingagents.skills.mandate.risk_repair import repair_risk_cap
 from tradingagents.skills.mandate.category_repair import repair_category_caps
+from tradingagents.skills.mandate.cluster_repair import repair_cluster_cap
 from tradingagents.skills.mandate.concentration_check import RISK_BUCKET_NAMES, CATEGORY_CAPS
 from tradingagents.skills.portfolio.sub_category import bucket_for_etf
 
@@ -93,12 +98,63 @@ _STEP_A_SYSTEM = (
     "① 리스크 예산: risk_tilt·regime 으로 위험자산 총량 방향(앵커가 이미 ≤70% 지향).\n"
     "② 방어(A1~A5): regime 따라 cash/듀레이션/금·인플레 가감.\n"
     "③ 성장(B1~B9): thesis·key_risks 로 버킷 tilt.\n"
+    "   이종(heterogeneous) 버킷(b2_dm_core·b3_global_tech·b5_other_intl)은 추가로 "
+    "sub_category 선호도(sub_category_views)를 value/momentum/news 테마 신호로 출력하라 "
+    "— +선호 / −배제 / 0중립, 범위 [-1,+1]. 그 외 버킷은 sub_category_views 를 비워둔다.\n"
     "④ 자가검증: tilt 는 허용밴드 내, 오버웨이트는 언더웨이트로 펀딩(net≈0).\n"
     "벗어나지 않을 버킷은 tilt 를 생략(=0)하라."
 )
 
 
-def _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime, confidence, anchor, eff) -> list[dict]:
+def _heterogeneous_subcat_candidates(pool, sub_cat, aum, momentum) -> dict[str, list[dict]]:
+    """이종 버킷별 sub_category 요약 — LLM 이 sub_category_views 를 낼 근거.
+
+    버킷 → [{sub_cat, n, aum_krw(합), momentum(평균)}] (모멘텀 desc). momentum 이 -inf
+    (패널 없음)인 경우 None 으로 노출. 동질 버킷은 제외.
+    """
+    out: dict[str, list[dict]] = {}
+    for bkey in HETEROGENEOUS_BUCKETS:
+        groups: dict[str, list[str]] = {}
+        for e in pool.get(bkey, []):
+            sc = sub_cat.get(e.ticker) or "(unlabeled)"
+            groups.setdefault(sc, []).append(e.ticker)
+        if not groups:
+            continue
+        rows = []
+        for sc, tickers in groups.items():
+            moms = [momentum.get(t) for t in tickers
+                    if momentum.get(t) not in (None, float("-inf"))]
+            rows.append({
+                "sub_category": sc,
+                "n": len(tickers),
+                "aum_krw": sum(aum.get(t, 0.0) for t in tickers),
+                "momentum": (sum(moms) / len(moms)) if moms else None,
+            })
+        rows.sort(key=lambda r: (r["momentum"] if r["momentum"] is not None else float("-inf")),
+                  reverse=True)
+        out[bkey] = rows
+    return out
+
+
+def _render_het_candidates(het_candidates) -> str:
+    """이종 버킷 sub_category 후보를 프롬프트용 짧은 텍스트로 — 버킷별 1~N 줄."""
+    if not het_candidates:
+        return ""
+    lines = []
+    for bkey, rows in het_candidates.items():
+        kr = BUCKET_KR_NAME.get(bkey, bkey)
+        lines.append(f"  {bkey} ({kr}):")
+        for r in rows:
+            mom = f"{r['momentum']:+.2f}" if r["momentum"] is not None else "n/a"
+            lines.append(
+                f"    - {r['sub_category']}: n={r['n']}, "
+                f"AUM {r['aum_krw']/1e8:.0f}억, mom {mom}"
+            )
+    return "\n".join(lines)
+
+
+def _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime, confidence,
+                   anchor, eff, het_candidates=None) -> list[dict]:
     rd = state.get("research_decision")
     thesis = getattr(rd, "thesis_md", "") if rd else ""
     key_risks = getattr(rd, "key_risks", []) if rd else []
@@ -110,11 +166,13 @@ def _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime, confide
         f"허용[{eff[b][0]:.2f}, {eff[b][1]:.2f}]"
         for b in GAPS_BUCKET_KEYS
     )
+    het_txt = _render_het_candidates(het_candidates)
     body = (
         f"## Regime: {quadrant} / risk_tilt: {risk_tilt} "
         f"(confidence {confidence:.2f}), fx: {fx_regime}, credit: {credit_regime}\n\n"
         f"## 앵커 baseline + 허용밴드 (이 안에서만 tilt)\n{anchor_lines}\n\n"
-        f"## 리서치 종합\n{thesis}\n\n"
+        + (f"## 이종 버킷 sub_category 후보 (선호/배제 view 대상)\n{het_txt}\n\n" if het_txt else "")
+        + f"## 리서치 종합\n{thesis}\n\n"
         f"## 핵심 리스크\n" + ("\n".join(f"  - {r}" for r in key_risks) or "  (없음)") + "\n\n"
         f"## Stage1 요약\n"
         f"매크로: {state.get('macro_summary','(없음)')}\n"
@@ -122,7 +180,9 @@ def _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime, confide
         f"기술적: {state.get('technical_summary','(없음)')}\n"
         f"뉴스: {state.get('news_summary','(없음)')}\n\n"
         + (f"## 직전 위반 피드백 (반영 필수)\n{fb_txt}\n\n" if fb_txt else "")
-        + "각 버킷의 tilt(앵커 대비 가감)를 출력하라. 0 인 버킷은 생략."
+        + "각 버킷의 tilt(앵커 대비 가감)를 출력하라. 0 인 버킷은 생략.\n"
+        + "이종 버킷(b2/b3/b5)은 위 sub_category 후보에 대해 sub_category_views "
+        "(+선호/−배제/0중립, [-1,+1])도 함께 출력하라."
     )
     return [
         {"role": "system", "content": _STEP_A_SYSTEM},
@@ -168,6 +228,15 @@ def create_trader_allocator(step_a_llm):
         idx_of = {e.ticker: e.underlying_index for e in uni.etfs}
         name_of = {e.ticker: e.name for e in uni.etfs}
         capital = float(state.get("capital_krw") or 0.0)
+        _dials = state.get("portfolio_dials") or {}
+
+        # technical_report.factor_panel — vol haircut + risk-adj momentum 둘 다 사용.
+        # LLM(Step A) 가 이종 버킷 sub_category 후보(모멘텀/AUM 힌트)를 보고 view 를
+        # 내도록, 프롬프트 구성 전에 미리 산출한다 (없으면 빈 패널 → no-op).
+        tr = state.get("technical_report")
+        fp = getattr(tr, "factor_panel", None) or {}
+        w_vol = _dials.get("w_vol", 0.4)
+        momentum = risk_adjusted_momentum({t: fp.get(t) for t in aum}, w_vol=w_vol)
 
         # --- Step A: quadrant 앵커 + macro modifiers + LLM tilt + 투영 ---
         quadrant = _resolve_quadrant(state)
@@ -184,21 +253,20 @@ def create_trader_allocator(step_a_llm):
         anchor = apply_macro_modifiers(q_baseline, risk_tilt, credit_regime, fx_regime, hmin, hmax)
         eff = {b: effective_band(anchor[b], hmin[b], hmax[b], confidence)
                for b in anchor}
+        het_candidates = _heterogeneous_subcat_candidates(pool, sub_cat, aum, momentum)
         tilt = state.get("cached_tilt") or invoke_structured_obj(
             structured_a,
-            _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime, confidence, anchor, eff),
+            _step_a_prompt(state, quadrant, risk_tilt, fx_regime, credit_regime,
+                           confidence, anchor, eff, het_candidates),
             BucketTilt(), "TraderStepA",
         )
         eff_lo = {b: eff[b][0] for b in eff}   # eff[b] = (eff_min, eff_max)
         eff_hi = {b: eff[b][1] for b in eff}
         bucket_weights = project_to_band(anchor, tilt.tilts, eff_lo, eff_hi)
         # 변동성 haircut: 고변동 버킷 축소 → 저변동 재배분 (technical_report 없으면 no-op)
-        tr = state.get("technical_report")
-        fp = getattr(tr, "factor_panel", None) or {}
         vol_of = {t: getattr(fp.get(t), "realized_vol_60d", None) for t in aum}
         pool_tickers = {b: [e.ticker for e in pool.get(b, [])] for b in bucket_weights}
         bucket_vol = bucket_volatility(pool_tickers, vol_of, aum)
-        _dials = state.get("portfolio_dials") or {}
         _hc = {}
         if "vol_haircut_floor" in _dials:
             _hc["floor"] = _dials["vol_haircut_floor"]
@@ -208,19 +276,42 @@ def create_trader_allocator(step_a_llm):
         bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
 
         selections: dict[str, list[str]] = {}
+        het_traces: dict[str, dict] = {}
+        temperature = _dials.get("softmax_temperature", 1.0)
         for bkey, w in bucket_weights.items():
             if w <= 0:
                 continue
             eligible = [e.ticker for e in pool[bkey]]
+            is_het = bkey in HETEROGENEOUS_BUCKETS
+            _trace: dict | None = {} if is_het else None
             selections[bkey] = select_representative_candidates(
                 bucket_key=bkey, eligible=eligible, aum=aum,
                 sub_category=sub_cat, underlying_index=idx_of,
                 name=name_of, quadrant=quadrant, fx_regime=fx_regime,
                 bucket_weight=w, capital_krw=capital,
+                sub_category_views=(tilt.sub_category_views.get(bkey) if is_het else None),
+                momentum=momentum,
+                min_etf_aum_krw=_dials.get("min_etf_aum_krw", 10e9),
+                top_k=_dials.get("top_k_heterogeneous", 3),
+                trace=_trace,
             )
+            if is_het and _trace:
+                het_traces[bkey] = _trace
+
+        # 동질 버킷은 AUM 가중, 이종 버킷은 risk-adj 모멘텀 softmax 가중.
+        # 버킷별로 partition 해 각각 배분 후 merge — 동질 동작은 정확히 보존.
+        def _allocate(bw, sel):
+            het_bw = {b: w for b, w in bw.items() if b in HETEROGENEOUS_BUCKETS}
+            hom_bw = {b: w for b, w in bw.items() if b not in HETEROGENEOUS_BUCKETS}
+            out = aum_weighted_allocation(hom_bw, sel, aum)
+            if het_bw:
+                for t, wt in momentum_weighted_allocation(
+                        het_bw, sel, momentum, temperature=temperature).items():
+                    out[t] = out.get(t, 0.0) + wt
+            return out
 
         try:
-            weights = aum_weighted_allocation(bucket_weights, selections, aum)
+            weights = _allocate(bucket_weights, selections)
         except InfeasibleBucket as exc:
             logger.warning("within-bucket infeasible (%s) — AUM top-N 으로 강제 보충", exc)
             for bkey, w in bucket_weights.items():
@@ -230,7 +321,7 @@ def create_trader_allocator(step_a_llm):
                 selections[bkey] = [
                     e.ticker for e in sorted(pool[bkey], key=lambda e: -e.aum_krw)
                 ][:max(need, len(selections.get(bkey, [])))]
-            weights = aum_weighted_allocation(bucket_weights, selections, aum)
+            weights = _allocate(bucket_weights, selections)
 
         s = sum(weights.values())
         if s > 0:
@@ -241,6 +332,9 @@ def create_trader_allocator(step_a_llm):
         # category↔risk 교대 3회로 상호작용 수렴. Stage 5 가 하드 검증.
         _meta = {e.ticker: e for e in uni.etfs}
         _cat_of = {e.ticker: e.category for e in uni.etfs}
+        # 상관군집 cap(35%, self-imposed) — Stage 1 technical 의 correlation_clusters.
+        # 이 노드에 없으면 [] → repair_cluster_cap 은 no-op (안전).
+        _clusters = state.get("correlation_clusters") or []
         def _is_risk(t):
             e = _meta.get(t)
             return bool(e) and bucket_for_etf(e) in RISK_BUCKET_NAMES
@@ -248,6 +342,7 @@ def create_trader_allocator(step_a_llm):
             for _ in range(3):
                 w = repair_category_caps(w, _cat_of, CATEGORY_CAPS)
                 w = repair_risk_cap(w, _is_risk)
+            w = repair_cluster_cap(w, _clusters, cap=0.35)
             s = sum(w.values())
             return {t: x / s for t, x in w.items()} if s > 0 else w
         weights = _repair_all(weights)
@@ -310,6 +405,9 @@ def create_trader_allocator(step_a_llm):
                 "tilt_rationale": tilt.rationale,
                 "tilt": dict(tilt.tilts),
                 "buckets": step_a_buckets,
+                # 이종 버킷 LLM 테마 view + 결정론 선정/폴백 trace — philosophy 역추적용.
+                "sub_category_views": {b: dict(v) for b, v in tilt.sub_category_views.items()},
+                "heterogeneous_selection": het_traces,
             },
         }
         return {

@@ -337,3 +337,114 @@ def test_node_portfolio_dials_override_haircut(tmp_path):
 
     # floor 낮을수록 haircut 더 큼 → b8 더 작아짐
     assert run(0.5) < run(0.9)
+
+
+def _universe_het_b3(tmp_path):
+    """14버킷 + b3_global_tech 를 이종(semiconductor/battery_ev) 종목으로 확장.
+
+    각 버킷 2 ETF (anchor 가 풀 부족으로 cash 쏠리지 않게) — b3 만 4 ETF:
+    semiconductor 2 (고AUM·고모멘텀), battery_ev 2 (저AUM·저모멘텀).
+    """
+    etfs = []
+    for k in GAPS_BUCKET_KEYS:
+        if k == "b3_global_tech":
+            continue
+        risk = "안전" if k[0] == "a" else "위험"
+        for i in (1, 2):
+            etfs.append({
+                "ticker": f"T_{k}_{i}", "name": f"{k}{i}", "aum_krw": 100.0 * i,
+                "underlying_index": f"idx_{k}_{i}", "bucket": risk,
+                "category": "c", "gaps_bucket": k,
+            })
+    # b3 이종 종목: 충분히 큰 AUM (min_etf_aum_krw=10e9 floor 통과)
+    etfs += [
+        {"ticker": "A_SEMI_1", "name": "반도체1", "aum_krw": 5.0e11,
+         "underlying_index": "idx_semi_1", "bucket": "위험", "category": "c",
+         "gaps_bucket": "b3_global_tech", "sub_category": "semiconductor"},
+        {"ticker": "A_SEMI_2", "name": "반도체2", "aum_krw": 4.0e11,
+         "underlying_index": "idx_semi_2", "bucket": "위험", "category": "c",
+         "gaps_bucket": "b3_global_tech", "sub_category": "semiconductor"},
+        {"ticker": "A_BATT_1", "name": "이차전지1", "aum_krw": 3.0e11,
+         "underlying_index": "idx_batt_1", "bucket": "위험", "category": "c",
+         "gaps_bucket": "b3_global_tech", "sub_category": "battery_ev"},
+        {"ticker": "A_BATT_2", "name": "이차전지2", "aum_krw": 2.0e11,
+         "underlying_index": "idx_batt_2", "bucket": "위험", "category": "c",
+         "gaps_bucket": "b3_global_tech", "sub_category": "battery_ev"},
+    ]
+    p = tmp_path / "u_het.json"
+    p.write_text(json.dumps({"version": "t", "etfs": etfs}, ensure_ascii=False))
+    return str(p)
+
+
+def _het_factor_panel(up):
+    """semiconductor 고모멘텀 / battery_ev 저모멘텀 factor_panel (+ 다른 버킷 저vol)."""
+    import math
+    panel = {}
+    for k in GAPS_BUCKET_KEYS:
+        if k == "b3_global_tech":
+            continue
+        for i in (1, 2):
+            panel[f"T_{k}_{i}"] = SimpleNamespace(
+                skip1m_mom_3m=0.0, skip1m_mom_6m=0.0, skip1m_mom_12m=0.0,
+                realized_vol_60d=0.12, log_aum=math.log(100.0 * i),
+            )
+    # 반도체: 강한 양 모멘텀 / 이차전지: 강한 음 모멘텀
+    panel["A_SEMI_1"] = SimpleNamespace(
+        skip1m_mom_3m=0.30, skip1m_mom_6m=0.45, skip1m_mom_12m=0.60,
+        realized_vol_60d=0.15, log_aum=math.log(5.0e11))
+    panel["A_SEMI_2"] = SimpleNamespace(
+        skip1m_mom_3m=0.25, skip1m_mom_6m=0.40, skip1m_mom_12m=0.55,
+        realized_vol_60d=0.15, log_aum=math.log(4.0e11))
+    panel["A_BATT_1"] = SimpleNamespace(
+        skip1m_mom_3m=-0.30, skip1m_mom_6m=-0.40, skip1m_mom_12m=-0.50,
+        realized_vol_60d=0.40, log_aum=math.log(3.0e11))
+    panel["A_BATT_2"] = SimpleNamespace(
+        skip1m_mom_3m=-0.25, skip1m_mom_6m=-0.35, skip1m_mom_12m=-0.45,
+        realized_vol_60d=0.40, log_aum=math.log(2.0e11))
+    return panel
+
+
+def test_het_bucket_selects_high_momentum_semi(tmp_path):
+    """이종 b3: sub_category_views(semiconductor 선호) + 반도체 고모멘텀 →
+    결과 weight_vector 에 반도체 ETF 포함, 이차전지 배제, attribution 에 view 기록.
+    correlation cluster(반도체 2종) 합 ≤ 0.35."""
+    import types
+    up = _universe_het_b3(tmp_path)
+    step_a = _FakeStep(BucketTilt(
+        tilts={"b3_global_tech": 0.06, "b2_dm_core": -0.06},
+        sub_category_views={"b3_global_tech": {"semiconductor": 0.8, "battery_ev": -0.5}},
+        rationale="AI 반도체 사이클 강세"))
+    macro = types.SimpleNamespace(
+        regime=_FakeRegime("growth_disinflation", 0.8),
+        fx=types.SimpleNamespace(regime="neutral"),
+        financial_conditions=types.SimpleNamespace(regime="neutral"),
+    )
+    st = _state_14(up, macro)
+    st["research_decision"] = ResearchThesis(risk_tilt="neutral", thesis_md="t")
+    st["technical_report"] = SimpleNamespace(factor_panel=_het_factor_panel(up))
+    # 반도체 2종을 한 상관군집으로 — cluster cap(0.35) 가 강제되는지 확인
+    from tradingagents.schemas.technical import Cluster
+    st["correlation_clusters"] = [Cluster(
+        cluster_id="semi", members=["A_SEMI_1", "A_SEMI_2"],
+        avg_internal_correlation=0.9, category_label="반도체")]
+
+    out = create_trader_allocator(step_a_llm=step_a)(st)
+    wv = out["weight_vector"]
+
+    # (1) 반도체 선택 (favored + 고모멘텀), 이차전지 배제
+    semi_held = [t for t in wv.weights if t.startswith("A_SEMI")]
+    assert semi_held, f"반도체 ETF 가 선택돼야 함: {list(wv.weights)}"
+    assert not any(t.startswith("A_BATT") for t in wv.weights), \
+        f"비선호+저모멘텀 이차전지는 배제돼야 함: {list(wv.weights)}"
+
+    # (2) attribution 에 sub_category_views 기록
+    sa = out["allocation_attribution"]["step_a"]
+    assert sa.get("sub_category_views", {}).get("b3_global_tech", {}).get("semiconductor") == 0.8
+
+    # (3) 상관군집(반도체) 합 ≤ 0.35
+    cluster_sum = sum(wv.weights.get(t, 0.0) for t in ("A_SEMI_1", "A_SEMI_2"))
+    assert cluster_sum <= 0.35 + 1e-6, f"cluster sum {cluster_sum} > 0.35"
+
+    # 무결성: 합=1, 단일 cap
+    assert sum(wv.weights.values()) == pytest.approx(1.0, abs=1e-3)
+    assert all(w <= 0.20 + 1e-6 for w in wv.weights.values())

@@ -66,6 +66,8 @@ def aum_weighted_allocation(
 
 def _softmax(scores: dict[str, float], temperature: float) -> dict[str, float]:
     """비-음수 softmax weight. -inf -> 0. 전부 -inf -> 균등."""
+    if temperature <= 0:   # 방어: 0/음수 T 는 div-by-zero/부호반전 → 중립 T=1 로
+        temperature = 1.0
     finite = [s for s in scores.values() if s != float("-inf")]
     if not finite:
         return {t: 1.0 for t in scores}            # all -inf → uniform (aum_weighted distributes)

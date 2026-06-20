@@ -57,6 +57,11 @@ DEFAULT_CONFIG = {
         "single_etf_rel_band": 0.05,
         "defensive_target": 0.55,
         "reassess_tilt_step": 0.05,
+        # ETF-selection hybrid (Stage 3 Step B) — heterogeneous bucket dials.
+        "min_etf_aum_krw": 10_000_000_000,   # 유동성 바닥(이종 버킷 후보 필터)
+        "top_k_heterogeneous": 3,            # 이종 버킷 모멘텀 top-K
+        "w_vol": 0.4,                        # risk-adj momentum 의 vol 페널티 가중
+        "softmax_temperature": 1.0,          # momentum_weighted_allocation softmax T
     },
 }
 
