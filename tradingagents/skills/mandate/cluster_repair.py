@@ -43,19 +43,35 @@ def repair_cluster_cap(
                 share = (out[t] / base) if sum(eligible.values()) > 1e-12 else (1.0 / len(eligible))
                 out[t] = min(SINGLE_CAP, out[t] + give * share)
             freed -= give
-    # Renormalize to sum=1 by scaling ONLY non-cluster positions, so a saturated
-    # water-fill (recipients all at SINGLE_CAP) cannot re-inflate the capped cluster
-    # above `cap`. If non-cluster mass is degenerate (≈0), fall back to a full
-    # renormalize — that case is structurally infeasible {cluster≤cap, 단일≤cap, 합=1}.
+    # Restore sum=1 by water-filling the leftover deficit into non-cluster positions
+    # UNDER SINGLE_CAP (same loop pattern as the cluster water-fill above), so a
+    # saturated water-fill cannot re-inflate the capped cluster AND cannot emit a single
+    # non-cluster ETF above SINGLE_CAP. Only when the deficit exceeds total non-cluster
+    # headroom — structurally infeasible {cluster≤cap, 단일≤cap, 합=1} — fall back to a
+    # full renormalize (matches repair_risk_cap's documented degenerate fallback; the
+    # cluster may re-inflate slightly, acceptable only in that genuinely infeasible case).
     s = sum(out.values())
     if abs(s - 1.0) > FLOAT_TOLERANCE and s > 0:
         non_cluster = [t for t in out if t not in all_cluster_members]
-        nc_sum = sum(out[t] for t in non_cluster)
-        target_nc = nc_sum + (1.0 - s)
-        if nc_sum > 1e-12 and target_nc > 0:
-            f = target_nc / nc_sum
-            for t in non_cluster:
-                out[t] *= f
-        else:
-            return {t: w / s for t, w in out.items()}
+        deficit = 1.0 - s                      # > 0 when recipients saturated during cluster water-fill
+        nc_room = sum(SINGLE_CAP - out[t] for t in non_cluster if out[t] < SINGLE_CAP)
+        if deficit > 1e-12 and nc_room > 1e-12 and deficit <= nc_room + 1e-12:
+            for _ in range(_MAX_ITERS):
+                if deficit <= 1e-12:
+                    break
+                eligible = {t: out[t] for t in non_cluster if out[t] < SINGLE_CAP - 1e-12}
+                if not eligible:
+                    break
+                tot = sum(eligible.values())
+                give = min(deficit, sum(SINGLE_CAP - v for v in eligible.values()))
+                placed = 0.0
+                for t in eligible:
+                    share = (out[t] / tot) if tot > 1e-12 else (1.0 / len(eligible))
+                    before = out[t]
+                    out[t] = min(SINGLE_CAP, out[t] + give * share)
+                    placed += out[t] - before   # only count mass that fit under SINGLE_CAP
+                deficit -= placed
+            return dict(out)
+        # truly infeasible {cluster≤cap, 단일≤cap, 합=1}: full renormalize
+        return {t: w / s for t, w in out.items()}
     return dict(out)
