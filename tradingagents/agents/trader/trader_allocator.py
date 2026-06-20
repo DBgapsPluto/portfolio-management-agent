@@ -335,6 +335,26 @@ def build_bl_bucket_weights(as_of, quadrant, ranking, *, fx_regime="neutral",
     return ({k: float(v) for k, v in res["weights"].items() if v > 1e-9}, res["meta"])
 
 
+def _bl_step_a_attribution(baseline, final, realized, bl_meta):
+    """BL 경로 attribution: prior→final(의도)→realized + 버킷 status. (philosophy 역추적용)."""
+    buckets = {}
+    for b in set(baseline) | set(final) | set(realized):
+        base_r = round(float(baseline.get(b, 0.0)), 6)
+        fin_r = round(float(final.get(b, 0.0)), 6)
+        real_r = round(float(realized.get(b, 0.0)), 6)
+        if abs(base_r) < 1e-9 and abs(fin_r) < 1e-9 and abs(real_r) < 1e-9:
+            continue
+        buckets[b] = {
+            "baseline": base_r,
+            "view_shift": round(fin_r - base_r, 6),       # prior→의도 (BL view 기여)
+            "final": fin_r,
+            "realized": real_r,
+            "intent_vs_realized": round(real_r - fin_r, 6),
+            "status": (bl_meta.get(b) or {}).get("status", "bl"),
+        }
+    return {"method": "bl", "buckets": buckets, "global": bl_meta.get("__global__", {})}
+
+
 def create_trader_allocator(step_a_llm):
     structured_a = bind_structured(step_a_llm, BucketTilt, "TraderStepA")
 
@@ -398,6 +418,9 @@ def create_trader_allocator(step_a_llm):
                 turnover_cap=float(_dials.get("bl_turnover_cap", 0.35)),
             )
             bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
+            # Step-A '의도'(BL intent) 스냅샷 — Step B/repair/cutoff 가 bucket_weights 를
+            # 변형하기 전. BL-native attribution(prior→view_shift→final→realized)에 쓴다.
+            bl_intent_buckets = dict(bucket_weights)
         else:
             q_baseline = QUADRANT_BASELINE[quadrant]
             hard_bands = {b: hard_band(quadrant, b, q_baseline[b]) for b in q_baseline}
@@ -559,6 +582,19 @@ def create_trader_allocator(step_a_llm):
             },
         }
         if use_bl:
+            # BL 경로는 tilt/scenario_delta 가 없다 — 버킷 분해를 BL-native
+            # (prior baseline → view_shift(의도) → final → realized + 버킷 Σ status)로 교체.
+            # LLM sub_category_views / 이종 선정 trace 는 BL 경로에서도 Step B 를
+            # 구동하므로 philosophy 역추적용으로 보존한다.
+            bl_step_a = _bl_step_a_attribution(
+                QUADRANT_BASELINE[quadrant], bl_intent_buckets,
+                realized_bucket_weights, bl_meta,
+            )
+            bl_step_a["sub_category_views"] = {
+                b: dict(v) for b, v in tilt.sub_category_views.items()
+            }
+            bl_step_a["heterogeneous_selection"] = het_traces
+            attribution["step_a"] = bl_step_a
             attribution["bl"] = bl_meta   # BL branch attribution (Σ status, per-bucket BL/pinned)
         return {
             "bucket_target": bucket_target,
