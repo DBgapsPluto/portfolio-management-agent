@@ -98,4 +98,8 @@ class BucketTilt(BaseModel):
         default_factory=dict,
         description="bucket key → 앵커 대비 가감(+/-). 오버웨이트는 언더웨이트로 펀딩(net≈0).",
     )
+    sub_category_views: dict[str, dict[str, float]] = Field(
+        default_factory=dict,
+        description="이질 버킷 한정 — bucket key → {sub_category: 선호 ∈ [-1,+1]}. +선호/-배제/0중립.",
+    )
     rationale: str = Field(default="", max_length=500)
