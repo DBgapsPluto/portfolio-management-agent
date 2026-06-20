@@ -268,6 +268,87 @@ def _resolve_weights(state: dict) -> dict[str, float]:
     return dict(state.get("weights") or {})
 
 
+def _resolve_quadrant(state: dict) -> str:
+    """현재 regime quadrant. step_a attribution(앵커·BL 공통 입력) 우선,
+    없으면 macro_report.regime.quadrant. 미상이면 빈 문자열."""
+    attr = state.get("allocation_attribution") or {}
+    sa = attr.get("step_a") if isinstance(attr, dict) else None
+    if isinstance(sa, dict):
+        q = sa.get("quadrant")
+        if q:
+            return str(q)
+    mr = state.get("macro_report")
+    q = getattr(getattr(mr, "regime", None), "quadrant", None)
+    return str(q) if q else ""
+
+
+def _resolve_bucket_weights(state: dict) -> dict[str, float]:
+    """실현된 14-버킷 비중 (상관 클러스터 비중합 계산용). 없으면 빈 dict."""
+    bt = state.get("bucket_target")
+    w = getattr(bt, "weights", None)
+    if w:
+        return {k: float(v) for k, v in w.items()}
+    attr = state.get("allocation_attribution") or {}
+    sa = attr.get("step_a") if isinstance(attr, dict) else None
+    buckets = (sa or {}).get("buckets") if isinstance(sa, dict) else None
+    if isinstance(buckets, dict):
+        return {k: float(d.get("realized", d.get("final", 0.0)) or 0.0)
+                for k, d in buckets.items()}
+    return {}
+
+
+def _resolve_bl_cov(state: dict):
+    """BL 공분산 Σ (pandas.DataFrame) — 리포트 시점에 있으면 상관분석 facts 생성.
+    state['bl_cov'] / allocation_attribution['bl_cov'] / ['bl']['cov'] 순으로 탐색.
+    없으면 None (상관 fact 는 graceful no-op)."""
+    cov = state.get("bl_cov")
+    if cov is None:
+        attr = state.get("allocation_attribution") or {}
+        if isinstance(attr, dict):
+            cov = attr.get("bl_cov")
+            if cov is None:
+                bl = attr.get("bl")
+                if isinstance(bl, dict):
+                    cov = bl.get("cov") or bl.get("Sigma")
+    if cov is None:
+        return None
+    try:
+        import pandas as pd
+        if isinstance(cov, pd.DataFrame) and not cov.empty:
+            return cov
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _build_philosophy_facts(state: dict) -> str:
+    """PHIL-4: '단일 리스크 통제 / AI 쏠림 통제' 판단기준을 충족시키는 결정론 facts.
+    (1) prior(baseline) 정당화 — 현 regime 의 QUADRANT_BASELINE 상위 비중,
+    (2) 내부 상관분석 — BL Σ→상관행렬 최고 상관쌍 + 그 클러스터 비중합.
+    Σ 가 리포트 시점에 없으면 prior fact 만 surface (상관 fact graceful skip)."""
+    from tradingagents.skills.portfolio.bl_facts import (
+        prior_justification_facts, correlation_from_cov, bl_correlation_facts,
+    )
+    blocks: list[str] = []
+    quadrant = _resolve_quadrant(state)
+    if quadrant:
+        prior = prior_justification_facts(quadrant)
+        if prior:
+            blocks.append(prior)
+    cov = _resolve_bl_cov(state)
+    if cov is not None:
+        try:
+            corr = correlation_from_cov(cov)
+            corr_block = bl_correlation_facts(
+                corr, weights=_resolve_bucket_weights(state)
+            )
+            if corr_block:
+                blocks.append(corr_block)
+        except Exception as e:  # noqa: BLE001 — 상관 fact 는 부가정보, 실패해도 리포트 진행
+            logger.warning("philosophy correlation facts skipped (%s)", e)
+    return "\n\n".join(blocks)
+
+
 def _resolve_method(state: dict) -> str:
     wv = state.get("weight_vector")
     if wv is not None:
@@ -397,6 +478,8 @@ def _build_state_summary(state: dict) -> str:
         f"{format_step_a_decomposition(state.get('allocation_attribution'))}\n\n"
         "이종 버킷 테마뷰 + ETF 선정(왜 이 sub_category 를 골랐는가):\n"
         f"{format_heterogeneous_selection(state.get('allocation_attribution'))}\n\n"
+        "### 철학 근거 facts (PHIL-4 — 단일 리스크/쏠림 통제 서술 시 반드시 여기서 인용)\n"
+        f"{_build_philosophy_facts(state) or '(미산출)'}\n\n"
         "### Stage 5 — Mandate Validation\n"
         f"{_format_validation(validation)}\n"
         f"Rebalance mode: {rebalance_mode}\n\n"

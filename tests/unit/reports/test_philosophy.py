@@ -161,6 +161,64 @@ def test_facts_block_cluster_dual_mode():
     assert "최대 상관클러스터 비중 합: 70.0%" in s2
 
 
+# ---- PHIL-4: philosophy deterministic facts (prior + correlation) ----
+
+
+def test_philosophy_facts_prior_appears_when_quadrant_known():
+    # quadrant from step_a attribution → prior(baseline) facts surface in the summary.
+    state = dict(_make_state())
+    state["allocation_attribution"] = {"step_a": {"quadrant": "recession_inflation"}}
+    summary = _build_state_summary(state)
+    assert "PHIL-4" in summary
+    assert "Prior(baseline) recession_inflation" in summary
+    assert "a5_gold_infl" in summary   # recession_inflation 최상위(0.17)
+
+
+def test_philosophy_facts_quadrant_from_macro_report_fallback():
+    from unittest.mock import MagicMock as MM
+    state = dict(_make_state())
+    mr = MM()
+    mr.regime = MM()
+    mr.regime.quadrant = "growth_inflation"
+    state["macro_report"] = mr
+    summary = _build_state_summary(state)
+    assert "Prior(baseline) growth_inflation" in summary
+
+
+def test_philosophy_facts_correlation_graceful_without_sigma():
+    # No Σ available → prior fact only, correlation skipped, no crash.
+    state = dict(_make_state())
+    state["allocation_attribution"] = {"step_a": {"quadrant": "growth_disinflation"}}
+    summary = _build_state_summary(state)
+    assert "Prior(baseline) growth_disinflation" in summary
+    assert "최고 상관쌍" not in summary   # gracefully skipped without Σ
+
+
+def test_philosophy_facts_correlation_appears_with_sigma():
+    import pandas as pd
+    keys = ["b1_kr_equity", "b3_global_tech", "a1_cash"]
+    cov = pd.DataFrame(
+        [[0.04, 0.018, 0.001], [0.018, 0.05, 0.0005], [0.001, 0.0005, 0.0001]],
+        index=keys, columns=keys,
+    )
+    bt = MagicMock()
+    bt.weights = {"b1_kr_equity": 0.2, "b3_global_tech": 0.18, "a1_cash": 0.1}
+    state = dict(_make_state())
+    state["allocation_attribution"] = {"step_a": {"quadrant": "growth_inflation"}}
+    state["bl_cov"] = cov
+    state["bucket_target"] = bt
+    summary = _build_state_summary(state)
+    assert "최고 상관쌍" in summary
+    assert "b1_kr_equity" in summary and "b3_global_tech" in summary
+
+
+def test_philosophy_facts_absent_quadrant_graceful():
+    # No quadrant anywhere → facts block is '(미산출)', no crash.
+    summary = _build_state_summary(_make_state())
+    assert "PHIL-4" in summary
+    assert "(미산출)" in summary
+
+
 def test_generate_philosophy_warns_on_fabricated_number(caplog):
     import logging
     deep_llm = MagicMock()
