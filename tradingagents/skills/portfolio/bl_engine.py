@@ -134,40 +134,28 @@ def _bl_weights_split_delta(Sigma, w_baseline, delta_inv, delta_opt):
 
 
 def soft_clip(w, *, growth_keys, growth_cap=0.30, defensive_cap=0.50):
-    """camp별 단일 버킷 천장 soft-clip + 잔여 level water-fill (baseline 폴백 아님).
+    """camp별 단일 버킷 천장 soft-clip + 잔여 water-fill (baseline 폴백 아님).
 
-    성장 버킷 ≤ growth_cap, 방어 버킷 ≤ defensive_cap. 천장 초과분을 비-clip 버킷에
-    level-based water-fill 로 재분배: 가장 낮은 버킷부터 공통 수위로 끌어올린다
-    (각 버킷 cap 한도). 이미 높이 배분된 방어 버킷(예: 침체 a3_us_rates OW 0.40)은
-    수위가 거기에 닿기 전엔 그대로 보존 → 방어 OW false-trip 없음. _clamp_to_pool_capacity
-    의 water-fill 변형 (head-비례 대신 level-fill 이라 보존된 OW 를 더 밀어올리지 않음).
-    합은 cap 용량이 충분하면 보존된다.
+    성장 버킷 ≤ growth_cap, 방어 버킷 ≤ defensive_cap. 초과분을 비-clip 버킷에
+    **현재 비중 비례**로 재분배(상대구조 보존), 각 수령자는 천장 head 로 clamp.
     """
     import pandas as pd
-    import numpy as np
     w = w.copy().astype(float)
     cap = pd.Series({b: (growth_cap if b in growth_keys else defensive_cap) for b in w.index})
+    # 천장 초과분을 한 번에 회수하고, 비례배분→head clamp 의 잔여를 loop 로 재순환.
     excess = float((w - cap).clip(lower=0.0).sum())
-    if excess < 1e-12:
-        return w
     w = w.clip(upper=cap)
     for _ in range(200):
         if excess < 1e-12:
             break
-        head = (cap - w).clip(lower=0.0)
-        recip = head.index[head > 1e-12]
-        if len(recip) == 0:
-            break  # 용량 소진 — 잔여 미배분 (합<원합 가능)
-        lvl = float(w[recip].min())
-        at_floor = recip[np.isclose(w[recip].values, lvl, atol=1e-12)]
-        higher = w[recip][w[recip] > lvl + 1e-12]
-        next_lvl = float(higher.min()) if len(higher) else np.inf
-        rise = min(next_lvl, float(cap[at_floor].min())) - lvl
-        capacity = rise * len(at_floor)
-        if not np.isfinite(capacity) or capacity >= excess - 1e-15:
-            w.loc[at_floor] += excess / len(at_floor)
-            excess = 0.0
-        else:
-            w.loc[at_floor] += rise
-            excess -= capacity
+        room = (cap - w).clip(lower=0.0)
+        elig = room > 1e-12
+        base = float(w[elig].sum())
+        if not bool(elig.any()) or base < 1e-12:
+            break                      # no proportional recipients (all 0 or capped)
+        add = (excess * (w.where(elig, 0.0) / base)).clip(upper=room)
+        if float(add.sum()) < 1e-15:
+            break
+        w = w + add
+        excess -= float(add.sum())     # carry head-clamp 잔여 forward
     return w
