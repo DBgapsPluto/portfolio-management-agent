@@ -303,8 +303,8 @@ def _rescale_risk_to(weights: dict, target_risk: float, risk_keys: set) -> dict:
     return out
 
 
-# 위험-proxy = {a5_gold_infl} ∪ GROWTH_KEYS (mandate RISK_PROXY와 동일). 위험 0.50 중립.
-_RISK_PROXY_KEYS = {"a5_gold_infl"} | set(GROWTH_KEYS)
+# 위험-proxy = mandate RISK_PROXY와 동일 집합 — 단일 정의 재사용(drift 방지). 위험 0.50 중립.
+_RISK_PROXY_KEYS = _MANDATE_RISK_BUCKETS
 _RAW_NEUTRAL = {
     b: sum(QUADRANT_BASELINE[q][b] for q in QUADRANT_BASELINE) / len(QUADRANT_BASELINE)
     for b in next(iter(QUADRANT_BASELINE.values()))
