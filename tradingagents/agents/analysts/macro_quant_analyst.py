@@ -57,6 +57,7 @@ from tradingagents.skills.macro.kr_exports import compute_kr_export_trend
 from tradingagents.skills.macro.kr_leading import compute_kr_leading_index
 from tradingagents.skills.macro.policy_uncertainty import compute_policy_uncertainty
 from tradingagents.skills.macro.regime_classifier import classify_regime
+from tradingagents.skills.macro.regime_confidence import compute_regime_confidence
 from tradingagents.skills.macro.risk_appetite import compute_risk_appetite
 from tradingagents.skills.macro.tail_risk import compute_tail_risk
 from tradingagents.skills.macro.us_leading import compute_us_leading_index
@@ -272,6 +273,20 @@ CALENDAR_LOOKAHEAD_DAYS: int = 90       # CB calendar horizon
 SENTINEL_RATIO_SKIP_LLM: float = 0.5    # 50% 이상 sentinel → LLM skip
 DEGRADED_REGIME_DEFAULT: str = "growth_disinflation"  # neutral default (다른 분기로 silent 이동 방지)
 DEGRADED_REGIME_CONFIDENCE: float = 0.1   # 매우 낮은 confidence — 다운스트림 tilt band 를 baseline 쪽으로 좁혀 보수적 결정 유도
+
+
+# regime_confidence skill의 dict 키 (skill 계약). 로컬 스냅샷을 이 키로 매핑해 넘긴다.
+_REGIME_SNAP_KEYS = (
+    "us_leading", "kr_leading", "kr_export", "kr_bsi", "employment",
+    "risk_appetite", "yield_curve", "china_leading", "gdp_nowcast",
+    "inflation", "inflation_exp", "commodity_momentum", "chip_cycle",
+)
+
+
+def _fold_in_signal_confidence(regime, snaps: dict):
+    """결정론 신호-일치도 c를 RegimeClassification에 주입(LLM값 덮어씀). D7 model_copy 패턴."""
+    c = compute_regime_confidence(snaps, regime.quadrant)
+    return regime.model_copy(update={"signal_confidence": c})
 
 
 NARRATIVE_PROMPT = """\
@@ -767,6 +782,9 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
                 source_date=as_of,
                 staleness_days=99,
             )
+            # degraded(sentinel≥50%): §4 신호가 stale함을 보장 못하고 quadrant가 placeholder라
+            # spurious c 대신 0.0 강제 → BL prior 강제 중립. spec 2026-06-23 §3/§5.
+            regime = regime.model_copy(update={"signal_confidence": 0.0})
         else:
             regime: RegimeClassification = classify_regime(
                 quick_llm, deep_llm,
@@ -821,6 +839,15 @@ def create_macro_quant_analyst(quick_llm, deep_llm):
                 move=tail_risk.move,
                 tail_risk_signal=tail_risk.signal,
             )
+            # 결정론 신호-일치도 c 주입 (LLM 자가보고 confidence와 별개). spec 2026-06-23.
+            _regime_snaps = {
+                "us_leading": us_leading, "kr_leading": kr_leading, "kr_export": kr_export,
+                "kr_bsi": kr_bsi, "employment": emp, "risk_appetite": risk_appetite,
+                "yield_curve": yc, "china_leading": china_leading, "gdp_nowcast": gdp_nowcast,
+                "inflation": infl, "inflation_exp": inflation_exp,
+                "commodity_momentum": commodity_momentum_snapshot, "chip_cycle": chip_cycle_snap,
+            }
+            regime = _fold_in_signal_confidence(regime, _regime_snaps)
 
         narrative_prompt = NARRATIVE_PROMPT.format(
             regime_quadrant=regime.quadrant, confidence=regime.confidence,
