@@ -290,6 +290,35 @@ _MANDATE_RISK_BUCKETS = {"a5_gold_infl"} | set(GROWTH_KEYS)
 _FX_CREDIT_SPREAD = 0.02
 
 
+def _rescale_risk_to(weights: dict, target_risk: float, risk_keys: set) -> dict:
+    """위험-proxy 합을 target_risk로 재정규화(위험·방어 각 비례 스케일). 합=1 유지."""
+    risk_sum = sum(w for b, w in weights.items() if b in risk_keys)
+    def_sum = 1.0 - risk_sum
+    out = {}
+    for b, w in weights.items():
+        if b in risk_keys:
+            out[b] = w * (target_risk / risk_sum) if risk_sum > 1e-12 else w
+        else:
+            out[b] = w * ((1.0 - target_risk) / def_sum) if def_sum > 1e-12 else w
+    return out
+
+
+# 위험-proxy = {a5_gold_infl} ∪ GROWTH_KEYS (mandate RISK_PROXY와 동일). 위험 0.50 중립.
+_RISK_PROXY_KEYS = {"a5_gold_infl"} | set(GROWTH_KEYS)
+_RAW_NEUTRAL = {
+    b: sum(QUADRANT_BASELINE[q][b] for q in QUADRANT_BASELINE) / len(QUADRANT_BASELINE)
+    for b in next(iter(QUADRANT_BASELINE.values()))
+}
+W_NEUTRAL = _rescale_risk_to(_RAW_NEUTRAL, target_risk=0.50, risk_keys=_RISK_PROXY_KEYS)
+
+
+def _interpolate_prior(quadrant: str, c: float) -> dict:
+    """prior_w = (1−c)·W_NEUTRAL + c·QUADRANT_BASELINE[quadrant]. convex → 합=1."""
+    c = max(0.0, min(1.0, float(c)))
+    base_q = QUADRANT_BASELINE[quadrant]
+    return {b: (1.0 - c) * W_NEUTRAL[b] + c * base_q[b] for b in base_q}
+
+
 def _fx_credit_extra_views(buckets, fx_regime, credit_regime, base_spread=_FX_CREDIT_SPREAD):
     """fx/credit 결정론 상대 view → (P,Q,conf). over/under 쌍을 zero-sum row 로."""
     import numpy as np
@@ -312,10 +341,14 @@ def _fx_credit_extra_views(buckets, fx_regime, credit_regime, base_spread=_FX_CR
 
 def build_bl_bucket_weights(as_of, quadrant, ranking, *, fx_regime="neutral",
                             credit_regime="neutral", delta=2.5, base_spread=0.04,
-                            turnover_cap=0.35, window_days=730):
-    """BL 버킷 비중 (dict) + attribution meta. Σ fetch(as_of) → bl_allocate. 실패 시 baseline."""
+                            turnover_cap=0.35, signal_confidence=1.0, window_days=730):
+    """BL 버킷 비중 (dict) + attribution meta. Σ fetch(as_of) → bl_allocate. 실패 시 baseline.
+
+    prior 는 signal_confidence c 로 W_NEUTRAL(위험 0.50 중립)↔QUADRANT_BASELINE 사이를
+    convex 보간한다 (c=1 → baseline = 기존 동작, c=0 → 중립). _interpolate_prior 참조.
+    """
     import pandas as pd
-    base = pd.Series(QUADRANT_BASELINE[quadrant])
+    base = pd.Series(_interpolate_prior(quadrant, signal_confidence))
     try:
         rets = fetch_bucket_proxy_returns(as_of, window_days=window_days)
         Sigma, cov_meta = bucket_covariance(rets, min_obs=252)
@@ -425,11 +458,16 @@ def create_trader_allocator(step_a_llm):
                     BucketTilt(), "TraderStepA",
                 )
                 ranking = _ranking_from_tilt(tilt)
+            # confidence-scaled prior: 결정론 signal_confidence c (signal-agreement)로
+            # prior 를 W_NEUTRAL↔baseline 보간. None(미설정) → 1.0 = 기존 baseline prior.
+            _sig_conf = getattr(getattr(state.get("macro_report"), "regime", None),
+                                "signal_confidence", 1.0)
             bucket_weights, bl_meta = build_bl_bucket_weights(
                 as_of_bl, quadrant, ranking, fx_regime=fx_regime, credit_regime=credit_regime,
                 delta=float(_dials.get("bl_delta", 2.5)),
                 base_spread=float(_dials.get("bl_base_spread", 0.04)),
                 turnover_cap=float(_dials.get("bl_turnover_cap", 0.50)),
+                signal_confidence=(1.0 if _sig_conf is None else float(_sig_conf)),
             )
             bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
             # Step-A '의도'(BL intent) 스냅샷 — Step B/repair/cutoff 가 bucket_weights 를
