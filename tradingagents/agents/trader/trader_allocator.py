@@ -557,7 +557,15 @@ def create_trader_allocator(step_a_llm):
         )
         weight_vector = WeightVector(
             method=OptimizationMethod.AUM_WEIGHTED,
-            weights={t: round(w, 6) for t, w in weights.items() if w > 1e-6},
+            # 9dp (not 6dp): _repair_all_weights drives risk/category/cluster sums
+            # to EXACTLY their caps. Rounding ~20 holdings to 6dp accumulates
+            # ~N×5e-7 of drift, which can push a realized bucket sum over the
+            # Stage-5 validator tolerance (FLOAT_TOLERANCE=1e-6 in
+            # concentration_check) by a parts-per-million rounding artifact —
+            # causing spurious BL→min-variance fallback. 9dp bounds drift to
+            # ~N×5e-10 ≪ 1e-6 while staying well inside WeightVector._normalize's
+            # 1e-3 sum tolerance.
+            weights={t: round(w, 9) for t, w in weights.items() if w > 1e-6},
             rationale=f"quadrant-anchor tilt + AUM within-bucket. risk={risk_pct*100:.1f}%",
         )
         # Step A 비중 분해(앵커→시나리오→판단→최종) — "왜 이 비중인지" 역추적용.

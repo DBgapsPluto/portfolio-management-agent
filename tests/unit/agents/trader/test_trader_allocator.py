@@ -612,3 +612,110 @@ def test_node_respects_all_caps_with_correlation_clusters(tmp_path):
     bl = {e.ticker: bucket_for_etf(e) for e in universe.etfs}
     risk = sum(w for t, w in wv.weights.items() if bl.get(t) in RISK_BUCKET_NAMES)
     assert risk <= 0.70 + 1e-6, f"risk {risk} > 0.70"
+
+
+# ---------------------------------------------------------------------------
+# Regression: final WeightVector weights must be rounded to 9dp, not 6dp.
+# _repair_all_weights drives a category/risk/cluster sum to EXACTLY its cap
+# (e.g. 해외주식_섹터 == 0.10000000). Rounding each of the ~6+ holdings in that
+# bucket to 6dp accumulates ~N×5e-7 of drift, pushing the realized bucket sum
+# to e.g. 0.100002 — OVER the Stage-5 validator's FLOAT_TOLERANCE (1e-6 in
+# concentration_check). Validation then fails on a parts-per-million rounding
+# artifact; because BL output is deterministic, the retry→fallback loop
+# re-derives the same over-cap vector and spuriously abandons the BL portfolio
+# for the min-variance fallback. 9dp bounds drift to ~N×5e-10 ≪ 1e-6.
+# The chain under test: repair-at-cap → round → REAL validate_concentration.
+# ---------------------------------------------------------------------------
+
+def _at_cap_portfolio():
+    """Feasible (sum=1) weights with 해외주식_섹터 EXACTLY at its 0.10 cap.
+
+    The capped category is split across 6 holdings (each 0.10/6 — the kind of
+    non-terminating share repair-at-cap produces); the remaining 0.90 sits in
+    two slack categories (.50 cap each) well under both their category cap and
+    the 0.20 single-ETF cap, so 해외주식_섹터's 0.10 boundary is the ONLY binding
+    constraint. Returns (full_precision_weights, universe).
+    """
+    from tradingagents.dataflows.universe import Universe
+    sector = {f"SEC{i}": 0.10 / 6 for i in range(6)}   # full-precision Σ == 0.10
+    krb = {f"KRB{i}": 0.45 / 3 for i in range(3)}      # 0.15 each, 국내채권_종합 (.50)
+    glb = {f"GLB{i}": 0.45 / 3 for i in range(3)}      # 0.15 each, 해외채권_종합 (.50)
+    full = {**sector, **krb, **glb}
+    etfs = []
+    for t in sector:
+        etfs.append({"ticker": t, "name": t, "aum_krw": 1e11, "underlying_index": t,
+                     "bucket": "위험", "category": "해외주식_섹터",
+                     "gaps_bucket": "b4_global_sector", "sub_category": "global_sector"})
+    for t in krb:
+        etfs.append({"ticker": t, "name": t, "aum_krw": 1e11, "underlying_index": t,
+                     "bucket": "안전", "category": "국내채권_종합", "gaps_bucket": "a4_kr_bond"})
+    for t in glb:
+        etfs.append({"ticker": t, "name": t, "aum_krw": 1e11, "underlying_index": t,
+                     "bucket": "안전", "category": "해외채권_종합", "gaps_bucket": "a5_global_bond"})
+    return full, Universe(version="t", etfs=etfs)
+
+
+def _validate_at_precision(ndigits):
+    """Apply round(., ndigits) to the at-cap portfolio (mirroring the node's
+    final WeightVector build) and run the REAL Stage-5 validator. Returns the
+    (realized_sector_sum, ValidationReport)."""
+    from tradingagents.schemas.portfolio import WeightVector, OptimizationMethod
+    from tradingagents.skills.mandate.concentration_check import validate_concentration
+    full, uni = _at_cap_portfolio()
+    rounded = {t: round(w, ndigits) for t, w in full.items() if w > 1e-6}
+    sec = sum(w for t, w in rounded.items() if t.startswith("SEC"))
+    wv = WeightVector(method=OptimizationMethod.AUM_WEIGHTED, weights=rounded, rationale="r")
+    return sec, validate_concentration(wv, uni)
+
+
+def test_six_dp_rounding_overflows_validator_but_nine_dp_survives():
+    """The fix in one assertion: the SAME repair-at-cap portfolio, rounded with
+    the node's old 6dp precision, trips the Stage-5 category_cap validator (its
+    realized sum drifts >1e-6 over the 0.10 cap), while the shipped 9dp precision
+    keeps it inside the 1e-6 tolerance and PASSES. This is the parts-per-million
+    rounding artifact that spuriously abandons the BL portfolio for fallback.
+    """
+    full, _ = _at_cap_portfolio()
+    assert sum(full.values()) == pytest.approx(1.0, abs=1e-12)
+    assert sum(w for t, w in full.items() if t.startswith("SEC")) == 0.10  # exact at cap
+
+    # round(6): drifts strictly over the validator's tolerance → hard violation.
+    sec6, rpt6 = _validate_at_precision(6)
+    assert sec6 - 0.10 > 1e-6, f"expected 6dp to overflow cap, got {sec6}"
+    assert not rpt6.passed
+    assert any(v.rule == "category_cap" for v in rpt6.violations), (
+        f"6dp must trip category_cap, got {[v.rule for v in rpt6.violations]}")
+
+    # round(9): stays within tolerance → validator passes (and sum still ~1.0).
+    sec9, rpt9 = _validate_at_precision(9)
+    assert sec9 - 0.10 <= 1e-6, f"9dp must stay within 1e-6 of cap, got {sec9}"
+    assert rpt9.passed, (
+        f"9dp must pass the validator, violations={[v.description for v in rpt9.violations]}")
+
+
+def test_node_weight_vector_build_rounds_to_at_least_nine_dp():
+    """Guard the EXACT production line: the final WeightVector that the
+    retry/fallback router measures must be rounded to ≥9 decimals, not 6.
+
+    Driving the node organically to a cap boundary is fragile (bucket
+    aggregation requires the weights to come from real selections), so this
+    pins the precision at its source: the build expression must use
+    round(w, 9) (or finer). A revert to round(w, 6) reintroduces the
+    parts-per-million cap overflow proven by
+    test_six_dp_rounding_overflows_validator_but_nine_dp_survives, and this
+    test fails immediately.
+    """
+    import re
+    import inspect
+    from tradingagents.agents.trader import trader_allocator as alloc_mod
+
+    src = inspect.getsource(alloc_mod)
+    # Locate the WeightVector(...) build and the weights={...round(w, N)...} expr.
+    m = re.search(r"WeightVector\(.*?weights=\{[^}]*?round\(\s*w\s*,\s*(\d+)\s*\)",
+                  src, re.DOTALL)
+    assert m, "could not locate the WeightVector weights round(w, N) build expression"
+    ndigits = int(m.group(1))
+    assert ndigits >= 9, (
+        f"final WeightVector weights rounded to {ndigits}dp — must be ≥9dp so "
+        f"repair-at-cap survives the validator's 1e-6 tolerance (see "
+        f"test_six_dp_rounding_overflows_validator_but_nine_dp_survives)")
