@@ -133,6 +133,14 @@ class TradingAgentsGraph:
             previous_portfolio=previous_portfolio,
             force_method=force_method,
         )
+        # Funnel the live config dials into state so the allocator node receives
+        # them. This is the ONLY place use_bl=True reaches a run — bare-state
+        # callers (unit/integration tests) never set portfolio_dials, so they fall
+        # back to the node default use_bl=False (deterministic old path, no network).
+        # Live runs get BL + the calibrated dials (turnover_cap=0.50, etc.) here.
+        rebalance_dials = self.config.get("rebalance")
+        if rebalance_dials:
+            state["portfolio_dials"] = dict(rebalance_dials)
         try:
             archive_metadata(as_of_date, {
                 "preset": self.preset_name,

@@ -429,7 +429,7 @@ def create_trader_allocator(step_a_llm):
                 as_of_bl, quadrant, ranking, fx_regime=fx_regime, credit_regime=credit_regime,
                 delta=float(_dials.get("bl_delta", 2.5)),
                 base_spread=float(_dials.get("bl_base_spread", 0.04)),
-                turnover_cap=float(_dials.get("bl_turnover_cap", 0.35)),
+                turnover_cap=float(_dials.get("bl_turnover_cap", 0.50)),
             )
             bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
             # Step-A '의도'(BL intent) 스냅샷 — Step B/repair/cutoff 가 bucket_weights 를

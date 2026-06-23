@@ -62,6 +62,19 @@ DEFAULT_CONFIG = {
         "top_k_heterogeneous": 3,            # 이종 버킷 모멘텀 top-K
         "w_vol": 0.4,                        # risk-adj momentum 의 vol 페널티 가중
         "softmax_temperature": 1.0,          # momentum_weighted_allocation softmax T
+        # Black-Litterman bucket allocator (Stage 3 Step A) — LIVE DEFAULT path.
+        # use_bl=True routes the live allocator through BL relative-ranking views;
+        # the old quadrant+tilt (project_to_band) path is retained as a reversible
+        # fallback reachable via use_bl=False. Dials below are the calibrated values
+        # from the backtest sweep (turnover_cap raised 0.35→0.50).
+        # NOTE: bare-state callers (unit/integration tests) leave portfolio_dials
+        # unset → the allocator node's use_bl fallback is False → old path. Only the
+        # live pipeline funnels this dict into state["portfolio_dials"], so only live
+        # gets use_bl=True. (See TradingAgentsGraph.run.)
+        "use_bl": True,
+        "bl_turnover_cap": 0.50,
+        "bl_delta": 2.5,
+        "bl_base_spread": 0.04,
     },
 }
 

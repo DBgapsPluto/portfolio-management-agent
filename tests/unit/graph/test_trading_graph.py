@@ -42,3 +42,36 @@ def test_trading_graph_init_smoke(tmp_path, monkeypatch):
         tg = TradingAgentsGraph(preset_name="test_preset", config=test_config)
         assert tg.preset.name == "test_preset"
         assert tg.graph is not None
+
+
+def test_run_funnels_live_dials_into_state(tmp_path):
+    """LIVE wiring: TradingAgentsGraph.run() copies config['rebalance'] dials
+    (incl. use_bl=True) into state['portfolio_dials'] so the allocator runs BL.
+
+    This is the ONLY place a run receives use_bl=True — bare-state callers (unit
+    tests) never set portfolio_dials and stay on the node-default old path.
+    """
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
+
+    # Build a bare instance without running __init__ (avoids LLM/preset wiring).
+    tg = TradingAgentsGraph.__new__(TradingAgentsGraph)
+    tg.config = dict(DEFAULT_CONFIG)
+    tg.config["universe_path"] = "data/universe.json"
+    tg.preset_name = "db_gaps"
+
+    captured = {}
+
+    class _FakeGraph:
+        def invoke(self, state, config=None):
+            captured["state"] = state
+            return state
+
+    tg.graph = _FakeGraph()
+
+    # archive_metadata may touch disk — patch it to a no-op.
+    with patch("tradingagents.graph.trading_graph.archive_metadata", lambda *a, **k: None):
+        tg.run(as_of_date="2026-05-25", capital_krw=1_000_000_000)
+
+    dials = captured["state"]["portfolio_dials"]
+    assert dials["use_bl"] is True
+    assert dials["bl_turnover_cap"] == 0.50

@@ -26,3 +26,16 @@ def test_publication_lag_days_has_critical_series():
     assert lag["us_cpi"] == 15  # CPI ~mid-month next month
     assert lag["kr_base_rate"] == 0  # MPC same-day
     assert lag["us_10y"] == 1  # daily series, T-1 default
+
+
+def test_live_rebalance_dials_default_to_bl():
+    """LIVE default is the Black-Litterman allocator path with calibrated dials.
+
+    The old quadrant+tilt (project_to_band) path is retained as a reversible
+    fallback reachable via use_bl=False; only the live config flips use_bl=True.
+    """
+    dials = DEFAULT_CONFIG["rebalance"]
+    assert dials["use_bl"] is True
+    assert dials["bl_turnover_cap"] == 0.50  # calibrated (was 0.35)
+    assert dials["bl_delta"] == 2.5
+    assert dials["bl_base_spread"] == 0.04
