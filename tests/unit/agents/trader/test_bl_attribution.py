@@ -2,6 +2,7 @@ import json
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from tradingagents.agents.trader import trader_allocator as ta
 from tradingagents.agents.trader.trader_allocator import create_trader_allocator
@@ -14,30 +15,50 @@ from tradingagents.skills.portfolio.gaps_buckets import GAPS_BUCKET_KEYS
 # Pure helper: _bl_step_a_attribution
 # ---------------------------------------------------------------------------
 def test_bl_step_a_attribution_decomposition():
-    base = {"b3_global_tech": 0.14, "a3_us_rates": 0.12}
-    final = {"b3_global_tech": 0.20, "a3_us_rates": 0.10}
-    realized = {"b3_global_tech": 0.18, "a3_us_rates": 0.10}
+    regime_baseline = {"b3_global_tech": 0.20, "a3_us_rates": 0.12, "a2_kr_bond": 0.10}
+    prior           = {"b3_global_tech": 0.14, "a3_us_rates": 0.12, "a2_kr_bond": 0.14}  # c<1 pulled b3 down, a2 up
+    final           = {"b3_global_tech": 0.20, "a3_us_rates": 0.10, "a2_kr_bond": 0.13}  # BL views
+    realized        = {"b3_global_tech": 0.18, "a3_us_rates": 0.10, "a2_kr_bond": 0.13}
     bl_meta = {"b3_global_tech": {"status": "bl"}, "a3_us_rates": {"status": "baseline_pinned"},
                "__global__": {"status": "bl", "n_pinned": 1}}
-    attr = ta._bl_step_a_attribution(base, final, realized, bl_meta)
+    attr = ta._bl_step_a_attribution(regime_baseline, prior, final, realized, bl_meta, signal_confidence=0.4)
     assert attr["method"] == "bl"
     b3 = attr["buckets"]["b3_global_tech"]
-    assert b3["baseline"] == 0.14 and b3["final"] == 0.20 and b3["realized"] == 0.18
-    assert b3["view_shift"] == 0.06
-    assert b3["intent_vs_realized"] == -0.02
+    assert b3["regime_baseline"] == 0.20 and b3["prior"] == 0.14
+    assert b3["confidence_shift"] == pytest.approx(-0.06)      # prior − regime_baseline
+    assert b3["view_shift"] == pytest.approx(0.06)             # final − prior
+    assert b3["final"] == 0.20 and b3["realized"] == 0.18
+    assert b3["intent_vs_realized"] == pytest.approx(-0.02)
+    # honest identities hold per bucket:
+    for d in attr["buckets"].values():
+        assert d["regime_baseline"] + d["confidence_shift"] == pytest.approx(d["prior"])
+        assert d["prior"] + d["view_shift"] == pytest.approx(d["final"])
     assert attr["buckets"]["a3_us_rates"]["status"] == "baseline_pinned"
     assert attr["global"]["n_pinned"] == 1
+    assert attr["global"]["signal_confidence"] == pytest.approx(0.4)
+
+
+def test_c_equals_one_prior_equals_regime_baseline():
+    # c=1: prior == regime_baseline ⇒ confidence_shift == 0 everywhere (report unchanged vs pre-feature)
+    rb = {"b1_kr_equity": 0.16, "a2_kr_bond": 0.12}
+    attr = ta._bl_step_a_attribution(rb, dict(rb), {"b1_kr_equity": 0.18, "a2_kr_bond": 0.10},
+                                     {"b1_kr_equity": 0.18, "a2_kr_bond": 0.10}, {}, signal_confidence=1.0)
+    for d in attr["buckets"].values():
+        assert d["confidence_shift"] == 0.0
+        assert d["regime_baseline"] == d["prior"]
 
 
 def test_bl_step_a_attribution_skips_all_zero():
-    attr = ta._bl_step_a_attribution({"x": 0.0}, {"x": 0.0}, {"x": 0.0}, {})
+    attr = ta._bl_step_a_attribution({"x": 0.0}, {"x": 0.0}, {"x": 0.0}, {"x": 0.0}, {},
+                                     signal_confidence=1.0)
     assert "x" not in attr["buckets"]
 
 
 def test_bl_step_a_attribution_default_status_bl():
     # bl_meta missing the bucket → status falls back to "bl"
-    attr = ta._bl_step_a_attribution({"b1_kr_equity": 0.1}, {"b1_kr_equity": 0.12},
-                                     {"b1_kr_equity": 0.12}, {})
+    attr = ta._bl_step_a_attribution({"b1_kr_equity": 0.1}, {"b1_kr_equity": 0.1},
+                                     {"b1_kr_equity": 0.12}, {"b1_kr_equity": 0.12}, {},
+                                     signal_confidence=1.0)
     assert attr["buckets"]["b1_kr_equity"]["status"] == "bl"
 
 
@@ -106,9 +127,9 @@ def test_bl_node_step_a_is_bl_native(tmp_path, monkeypatch):
     assert sa["method"] == "bl"
     assert sa["buckets"], "BL step_a must decompose at least one bucket"
     for b, row in sa["buckets"].items():
-        assert "view_shift" in row and "realized" in row
-        assert "baseline" in row and "final" in row
-        assert "intent_vs_realized" in row and "status" in row
+        for key in ("regime_baseline", "confidence_shift", "prior", "view_shift",
+                    "final", "realized", "intent_vs_realized", "status"):
+            assert key in row
     # BL meta still attached (B6)
     assert out["allocation_attribution"]["bl"]
 

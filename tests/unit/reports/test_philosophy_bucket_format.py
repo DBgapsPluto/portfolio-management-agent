@@ -61,20 +61,26 @@ def test_philosophy_renders_bl_native_step_a_without_crash():
         "step_a": {
             "method": "bl",
             "buckets": {
-                "b3_global_tech": {"baseline": 0.14, "view_shift": 0.06, "final": 0.20,
+                "b3_global_tech": {"regime_baseline": 0.20, "confidence_shift": -0.06,
+                                   "prior": 0.14, "view_shift": 0.06, "final": 0.20,
                                    "realized": 0.18, "intent_vs_realized": -0.02,
                                    "status": "bl"},
-                "a3_us_rates": {"baseline": 0.12, "view_shift": -0.02, "final": 0.10,
+                "a3_us_rates": {"regime_baseline": 0.12, "confidence_shift": 0.0,
+                                "prior": 0.12, "view_shift": -0.02, "final": 0.10,
                                 "realized": 0.10, "intent_vs_realized": 0.0,
                                 "status": "baseline_pinned"},
             },
-            "global": {"status": "bl", "n_pinned": 1},
+            "global": {"status": "bl", "n_pinned": 1, "signal_confidence": 0.4},
         }
     }
     out = format_step_a_decomposition(attr)
     assert "글로벌 테크" in out          # bucket KR name rendered
     assert "0.20" in out or "20.0" in out  # final/intent rendered
     assert "baseline_pinned" in out       # per-bucket status surfaced
+    # honest decomposition surfaced: regime baseline, c보간 shift, and 신호일치도 c
+    assert "20.0%" in out                 # b3 regime_baseline cell (regime기준 컬럼)
+    assert "-6.0%" in out                 # b3 confidence_shift (c보간 pull-to-neutral)
+    assert "40%" in out                   # signal_confidence c = 0.4 → 40%
 
 
 def test_philosophy_old_anchor_step_a_still_renders():

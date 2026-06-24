@@ -382,24 +382,34 @@ def build_bl_bucket_weights(as_of, quadrant, ranking, *, fx_regime="neutral",
     return ({k: float(v) for k, v in res["weights"].items() if v > 1e-9}, res["meta"])
 
 
-def _bl_step_a_attribution(baseline, final, realized, bl_meta):
-    """BL 경로 attribution: prior→final(의도)→realized + 버킷 status. (philosophy 역추적용)."""
+def _bl_step_a_attribution(regime_baseline, prior, final, realized, bl_meta, *, signal_confidence):
+    """BL attribution: regime_baseline →(c 보간, confidence_shift)→ prior →(view_shift)→ 의도(final) → 실현.
+
+    confidence_shift = prior − regime_baseline  (신호일치도 c 로 중립(W_NEUTRAL) 당김; c=1 → 0).
+    view_shift       = final − prior            (순수 BL view 기여, 보간 효과 분리).
+    두 항등식(regime_baseline+confidence_shift=prior, prior+view_shift=final)이 리포트에서 성립.
+    """
     buckets = {}
-    for b in set(baseline) | set(final) | set(realized):
-        base_r = round(float(baseline.get(b, 0.0)), 6)
-        fin_r = round(float(final.get(b, 0.0)), 6)
-        real_r = round(float(realized.get(b, 0.0)), 6)
-        if abs(base_r) < 1e-9 and abs(fin_r) < 1e-9 and abs(real_r) < 1e-9:
+    for b in set(regime_baseline) | set(prior) | set(final) | set(realized):
+        rb = round(float(regime_baseline.get(b, 0.0)), 6)
+        pr = round(float(prior.get(b, 0.0)), 6)
+        fin = round(float(final.get(b, 0.0)), 6)
+        real = round(float(realized.get(b, 0.0)), 6)
+        if abs(rb) < 1e-9 and abs(pr) < 1e-9 and abs(fin) < 1e-9 and abs(real) < 1e-9:
             continue
         buckets[b] = {
-            "baseline": base_r,
-            "view_shift": round(fin_r - base_r, 6),       # prior→의도 (BL view 기여)
-            "final": fin_r,
-            "realized": real_r,
-            "intent_vs_realized": round(real_r - fin_r, 6),
+            "regime_baseline": rb,
+            "confidence_shift": round(pr - rb, 6),
+            "prior": pr,
+            "view_shift": round(fin - pr, 6),
+            "final": fin,
+            "realized": real,
+            "intent_vs_realized": round(real - fin, 6),
             "status": (bl_meta.get(b) or {}).get("status", "bl"),
         }
-    return {"method": "bl", "buckets": buckets, "global": bl_meta.get("__global__", {})}
+    g = dict(bl_meta.get("__global__", {}))
+    g["signal_confidence"] = round(float(signal_confidence), 6)
+    return {"method": "bl", "buckets": buckets, "global": g}
 
 
 def create_trader_allocator(step_a_llm):
@@ -462,12 +472,13 @@ def create_trader_allocator(step_a_llm):
             # prior 를 W_NEUTRAL↔baseline 보간. None(미설정) → 1.0 = 기존 baseline prior.
             _sig_conf = getattr(getattr(state.get("macro_report"), "regime", None),
                                 "signal_confidence", 1.0)
+            _c = 1.0 if _sig_conf is None else float(_sig_conf)
             bucket_weights, bl_meta = build_bl_bucket_weights(
                 as_of_bl, quadrant, ranking, fx_regime=fx_regime, credit_regime=credit_regime,
                 delta=float(_dials.get("bl_delta", 2.5)),
                 base_spread=float(_dials.get("bl_base_spread", 0.04)),
                 turnover_cap=float(_dials.get("bl_turnover_cap", 0.50)),
-                signal_confidence=(1.0 if _sig_conf is None else float(_sig_conf)),
+                signal_confidence=_c,
             )
             bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
             # Step-A '의도'(BL intent) 스냅샷 — Step B/repair/cutoff 가 bucket_weights 를
@@ -647,8 +658,10 @@ def create_trader_allocator(step_a_llm):
             # LLM sub_category_views / 이종 선정 trace 는 BL 경로에서도 Step B 를
             # 구동하므로 philosophy 역추적용으로 보존한다.
             bl_step_a = _bl_step_a_attribution(
-                QUADRANT_BASELINE[quadrant], bl_intent_buckets,
-                realized_bucket_weights, bl_meta,
+                QUADRANT_BASELINE[quadrant],                 # regime_baseline (보간 전)
+                _interpolate_prior(quadrant, _c),            # prior (보간 후, 엔진이 실제 사용)
+                bl_intent_buckets, realized_bucket_weights, bl_meta,
+                signal_confidence=_c,
             )
             bl_step_a["sub_category_views"] = {
                 b: dict(v) for b, v in tilt.sub_category_views.items()

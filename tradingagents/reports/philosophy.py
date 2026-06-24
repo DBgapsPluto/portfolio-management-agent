@@ -181,11 +181,13 @@ def format_step_a_decomposition(attribution) -> str:
     # scenario_delta/tilt_applied. Branch on method so the old anchor path is intact.
     if sa.get("method") == "bl":
         g = sa.get("global") or {}
+        _c = g.get("signal_confidence")
+        c_str = f"{float(_c) * 100:.0f}%" if _c is not None else "?"
         lines = [
             f"BL-native (status {g.get('status', '?')}, "
-            f"pinned {g.get('n_pinned', '?')})",
-            "| 버킷 | prior | view기여 | 의도 | 실현 | status |",
-            "|------|-------|---------|------|------|--------|",
+            f"pinned {g.get('n_pinned', '?')}, 신호일치도 c {c_str})",
+            "| 버킷 | regime기준 | c보간 | prior | view기여 | 의도 | 실현 | status |",
+            "|------|-----------|-------|-------|---------|------|------|--------|",
         ]
         for k in GAPS_BUCKET_KEYS:
             d = buckets.get(k)
@@ -195,7 +197,8 @@ def format_step_a_decomposition(attribution) -> str:
             # surface repair clawback (의도→실현 gap) only when material
             clawback = f" (실현격차 {ivr * 100:+.1f}%)" if abs(ivr) >= 0.005 else ""
             lines.append(
-                f"| {BUCKET_KR_NAME[k]} | {d['baseline'] * 100:.1f}% "
+                f"| {BUCKET_KR_NAME[k]} | {d['regime_baseline'] * 100:.1f}% "
+                f"| {d['confidence_shift'] * 100:+.1f}% | {d['prior'] * 100:.1f}% "
                 f"| {d['view_shift'] * 100:+.1f}% | {d['final'] * 100:.1f}% "
                 f"| {d['realized'] * 100:.1f}% | {d.get('status', 'bl')}{clawback} |"
             )

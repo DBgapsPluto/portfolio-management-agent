@@ -13,7 +13,8 @@ def prior_justification_facts(quadrant: str) -> str:
         return ""
     top = sorted(base.items(), key=lambda kv: -kv[1])[:5]
     lines = [f"- {k}: {v:.2f}" for k, v in top]
-    return f"[Prior(baseline) {quadrant} 상위 5]\n" + "\n".join(lines)
+    return (f"[Regime baseline {quadrant} 상위 5 — 실제 prior 는 신호일치도 c 로 중립 보간]\n"
+            + "\n".join(lines))
 
 
 def correlation_from_cov(Sigma: "pd.DataFrame") -> "pd.DataFrame":

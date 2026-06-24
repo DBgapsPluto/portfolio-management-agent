@@ -170,7 +170,7 @@ def test_philosophy_facts_prior_appears_when_quadrant_known():
     state["allocation_attribution"] = {"step_a": {"quadrant": "recession_inflation"}}
     summary = _build_state_summary(state)
     assert "PHIL-4" in summary
-    assert "Prior(baseline) recession_inflation" in summary
+    assert "Regime baseline recession_inflation" in summary
     assert "a5_gold_infl" in summary   # recession_inflation 최상위(0.17)
 
 
@@ -182,7 +182,7 @@ def test_philosophy_facts_quadrant_from_macro_report_fallback():
     mr.regime.quadrant = "growth_inflation"
     state["macro_report"] = mr
     summary = _build_state_summary(state)
-    assert "Prior(baseline) growth_inflation" in summary
+    assert "Regime baseline growth_inflation" in summary
 
 
 def test_philosophy_facts_correlation_graceful_without_sigma():
@@ -190,7 +190,7 @@ def test_philosophy_facts_correlation_graceful_without_sigma():
     state = dict(_make_state())
     state["allocation_attribution"] = {"step_a": {"quadrant": "growth_disinflation"}}
     summary = _build_state_summary(state)
-    assert "Prior(baseline) growth_disinflation" in summary
+    assert "Regime baseline growth_disinflation" in summary
     assert "최고 상관쌍" not in summary   # gracefully skipped without Σ
 
 
@@ -249,7 +249,7 @@ def test_philosophy_facts_persisted_corr_graceful_without_corr_key():
         "bl": {"__global__": {"status": "baseline_no_sigma"}},
     }
     summary = _build_state_summary(state)
-    assert "Prior(baseline) growth_disinflation" in summary
+    assert "Regime baseline growth_disinflation" in summary
     assert "최고 상관쌍" not in summary
 
 
