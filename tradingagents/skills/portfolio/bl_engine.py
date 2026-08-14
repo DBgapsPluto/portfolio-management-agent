@@ -135,7 +135,11 @@ def bl_bucket_weights(Sigma, w_baseline, ranking, *, delta=2.5, base_spread=0.04
     P, Q, conf = build_relative_views(buckets, ranking, base_spread)
     if extra_views is not None:
         Pe, Qe, ce = extra_views
-        if Pe.shape[0] > 0:
+        if Pe.shape[0] > 0 and Pe.shape[1] != len(buckets):
+            # 폭 불일치 extra 를 vstack 하면 ValueError → 명시적 skip (silent pypfopt 실패 방지).
+            logger.warning("extra_views width %d != %d buckets → skipped",
+                           Pe.shape[1], len(buckets))
+        elif Pe.shape[0] > 0:
             P = np.vstack([P, Pe]) if P.shape[0] else Pe
             Q = np.concatenate([Q, Qe]) if Q.shape[0] else Qe
             conf = np.concatenate([conf, ce]) if conf.shape[0] else ce
@@ -190,6 +194,40 @@ def soft_clip(w, *, growth_keys, growth_cap=0.30, defensive_cap=0.50):
     return w
 
 
+def _remap_extra_views(extra_views, all_buckets, bl_buckets):
+    """extra view (P,Q,conf)를 핀 이후 bl_buckets 서브공간으로 재사상. → (remapped|None, dropped).
+
+    P 열은 all_buckets(=w_baseline.index) 순서 전제. 핀 버킷에 |loading|>1e-12 인 row 는
+    서브공간에서 표현 불가 → drop 하고 사유 기록(dropped: 직렬화 가능한 str/int dict 리스트).
+    유지 row 는 핀 열 loading 이 전부 0 이므로 열 slice 가 zero-sum·Q·conf 를 정확 보존한다.
+    핀 없음(len 동일) → 원본 tuple 그대로 반환(no-pin 경로 byte-identical).
+    """
+    if extra_views is None:
+        return None, []
+    Pe, Qe, ce = extra_views
+    if Pe.shape[0] == 0:
+        return extra_views, []
+    if Pe.shape[1] != len(all_buckets):
+        return None, [{"reason": "column_mismatch",
+                       "expected": len(all_buckets), "got": int(Pe.shape[1])}]
+    if len(bl_buckets) == len(all_buckets):
+        return extra_views, []
+    pin_idx = [i for i, b in enumerate(all_buckets) if b not in bl_buckets]
+    col_idx = [all_buckets.index(b) for b in bl_buckets]
+    keep, dropped = [], []
+    for r in range(Pe.shape[0]):
+        touched = [all_buckets[i] for i in pin_idx if abs(Pe[r, i]) > 1e-12]
+        if touched:
+            dropped.append({"reason": "touches_pinned", "pinned": touched,
+                            "view_buckets": [all_buckets[i] for i in range(len(all_buckets))
+                                             if abs(Pe[r, i]) > 1e-12]})
+        else:
+            keep.append(r)
+    if not keep:
+        return None, dropped
+    return (Pe[np.ix_(keep, col_idx)], Qe[keep], ce[keep]), dropped
+
+
 def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spread=0.04,
                 growth_keys=None, mandate_risk_keys=None, extra_views=None,
                 growth_cap=0.30, defensive_cap=0.50, turnover_cap=TURNOVER_CAP):
@@ -222,6 +260,11 @@ def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spre
     gk = {b for b in (growth_keys or set()) if b in bl_buckets}
     mk = {b for b in (mandate_risk_keys or set()) if b in bl_buckets}
     rk = {k: v for k, v in ranking.items() if k in bl_buckets}
+    # extra view 는 전체 버킷 열 기준으로 만들어지므로 핀 서브공간으로 재사상해야 한다
+    # (그대로 forward 하면 vstack 폭 불일치 → crash 또는 silent 전량 drop).
+    extra_bl, dropped_views = _remap_extra_views(extra_views, all_buckets, bl_buckets)
+    if dropped_views:
+        logger.warning("BL extra views dropped under pinning: %s", dropped_views)
 
     # 예산-인지(budget-aware) GROUP 캡: mandate 는 TOTAL(post-budget) 비중에 걸린다.
     # total_growth = sub_growth×budget + pinned_growth ≤ HARD_RISK ⇒
@@ -234,7 +277,7 @@ def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spre
     m_cap_sub = min(1.0, (HARD_RISK - pinned_mandate) / budget) if budget > 1e-9 else 1.0
 
     w_bl = bl_bucket_weights(Sigma_bl, base_bl, rk, delta=delta, base_spread=base_spread,
-                             growth_keys=gk, mandate_risk_keys=mk, extra_views=extra_views,
+                             growth_keys=gk, mandate_risk_keys=mk, extra_views=extra_bl,
                              growth_cap=g_cap_sub, mandate_cap=m_cap_sub,
                              turnover_cap=turnover_cap)
     # 1) MQU 해의 합이 solver tolerance 로 1 에서 미세이탈할 수 있으므로 먼저 budget 으로
@@ -254,6 +297,8 @@ def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spre
         out[b] = float(w_baseline[b])
         meta[b] = {"status": "baseline_pinned"}
     glob = {"status": "bl", "n_pinned": len(pinned)}
+    if dropped_views:
+        glob["dropped_views"] = dropped_views
     if pinned:
         # 핀이 있으면 예산·서브캡을 기록 → attribution 투명성(서브문제가 어떤 캡으로 풀렸는지).
         glob.update({"budget": round(budget, 6),

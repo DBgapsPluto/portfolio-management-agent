@@ -61,6 +61,77 @@ def test_no_view_recovery_with_defensive_pin(quadrant, pin):
     assert np.abs(w - base).sum() < 1e-6, f"{quadrant} pin={pin} L1={np.abs(w-base).sum()}"
 
 
+from tradingagents.agents.trader.trader_allocator import _fx_credit_extra_views
+
+
+def _extra(fx="neutral", credit="neutral"):
+    base = _baseline14()
+    return _fx_credit_extra_views(list(base.index), fx, credit)
+
+
+_COMMON = dict(delta=2.5, growth_keys=set(GROWTH_KEYS), mandate_risk_keys=_MANDATE)
+
+
+def test_pin_crisis_active_ranking_returns_valid_weights():
+    # C1 scenario (a): pin + crisis/usd_risk_off + active ranking must not crash (14-col Pe vs 13-col P)
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    extra = _extra("usd_risk_off", "crisis")
+    res = be.bl_allocate(Sigma, base, {"b3_global_tech": ("strong_OW", 0.9)},
+                         pinned=["b4_china"], extra_views=extra, **_COMMON)
+    w = res["weights"]
+    assert abs(w.sum() - 1.0) < 1e-6
+    assert not w.isna().any()
+    assert w["b4_china"] == pytest.approx(base["b4_china"], abs=1e-9)
+    assert res["meta"]["__global__"]["status"] == "bl"
+
+
+def test_pin_not_touching_view_buckets_view_shifts_weights():
+    # C1 goal (2): extra view over un-pinned buckets survives remap into the sub-space
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    res_with = be.bl_allocate(Sigma, base, {}, pinned=["b4_china"],
+                              extra_views=_extra(credit="crisis"), **_COMMON)
+    res_none = be.bl_allocate(Sigma, base, {}, pinned=["b4_china"],
+                              extra_views=None, **_COMMON)
+    l1 = float((res_with["weights"] - res_none["weights"]).abs().sum())
+    assert l1 > 1e-4, f"extra view silently dropped (L1={l1})"
+    assert abs(res_with["weights"].sum() - 1.0) < 1e-6
+    assert abs(res_none["weights"].sum() - 1.0) < 1e-6
+    assert not res_with["meta"]["__global__"].get("dropped_views")
+
+
+def test_view_touching_pinned_bucket_dropped_and_recorded():
+    # C1 goal (3): crisis row's over-bucket pinned → row dropped + recorded; fx row still applied
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    res = be.bl_allocate(Sigma, base, {}, pinned=["a3_us_rates"],
+                         extra_views=_extra("usd_risk_off", "crisis"), **_COMMON)
+    res_none = be.bl_allocate(Sigma, base, {}, pinned=["a3_us_rates"],
+                              extra_views=None, **_COMMON)
+    dropped = res["meta"]["__global__"]["dropped_views"]
+    assert len(dropped) == 1
+    assert "a3_us_rates" in dropped[0]["pinned"]
+    l1 = float((res["weights"] - res_none["weights"]).abs().sum())
+    assert l1 > 1e-4, f"surviving fx view not applied (L1={l1})"
+    assert res["weights"]["a3_us_rates"] == pytest.approx(base["a3_us_rates"], abs=1e-9)
+    assert abs(res["weights"].sum() - 1.0) < 1e-6
+
+
+def test_empty_ranking_pin_crisis_applies_crisis_view():
+    # C1 goal (4): empty ranking + pin + crisis must APPLY the crisis view (no silent total drop)
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    res = be.bl_allocate(Sigma, base, {}, pinned=["b4_china"],
+                         extra_views=_extra(credit="crisis"), **_COMMON)
+    res_none = be.bl_allocate(Sigma, base, {}, pinned=["b4_china"],
+                              extra_views=None, **_COMMON)
+    l1 = float((res["weights"] - res_none["weights"]).abs().sum())
+    assert l1 > 1e-4, f"crisis view silently dropped (L1={l1})"
+    assert abs(res["weights"].sum() - 1.0) < 1e-6
+    assert not res["weights"].isna().any()
+
+
 def test_turnover_cap_threaded_and_binds():
     from tradingagents.skills.portfolio.scenario_anchor import QUADRANT_BASELINE
     from tradingagents.skills.portfolio.gaps_buckets import GROWTH_KEYS
