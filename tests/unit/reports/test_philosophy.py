@@ -161,6 +161,33 @@ def test_facts_block_cluster_dual_mode():
     assert "최대 상관클러스터 비중 합: 70.0%" in s2
 
 
+def test_facts_block_cluster_cap_reflects_enforcement():
+    # C1: the facts block hardcoded a stale "cluster cap 25%" while the enforced
+    # cap (correlation_check.DEFAULT_CLUSTER_CAP) is 0.35 — must render the live value.
+    from tradingagents.skills.mandate.correlation_check import DEFAULT_CLUSTER_CAP
+    wv = MagicMock()
+    wv.method = MagicMock(value="x")
+    wv.weights = {"A": 0.4, "B": 0.3, "C": 0.3}
+    wv.rationale = "r"
+    summary = _build_state_summary(
+        {"weight_vector": wv, "correlation_clusters": [{"members": ["A", "B"]}]}
+    )
+    assert f"cluster cap {DEFAULT_CLUSTER_CAP*100:.0f}%" in summary
+    assert "cluster cap 25%" not in summary
+
+
+def test_generate_philosophy_prompt_uses_dynamic_cluster_cap():
+    # C1: the PHILOSOPHY_PROMPT template itself must cite the live cap, not the
+    # stale literal 0.25.
+    from tradingagents.skills.mandate.correlation_check import DEFAULT_CLUSTER_CAP
+    deep_llm = MagicMock()
+    deep_llm.invoke.return_value.content = "x" * 4500
+    generate_philosophy(_make_state(), deep_llm)
+    prompt = deep_llm.invoke.call_args_list[0].args[0]
+    assert f"cluster cap {DEFAULT_CLUSTER_CAP}" in prompt
+    assert "cluster cap 0.25" not in prompt
+
+
 # ---- PHIL-4: philosophy deterministic facts (prior + correlation) ----
 
 

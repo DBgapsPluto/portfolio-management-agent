@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 from datetime import date
 import json
+import logging
 from pathlib import Path
 
 from tradingagents.agents.analysts.macro_quant_analyst import (
@@ -12,6 +13,8 @@ from tradingagents.agents.analysts.market_risk_analyst import (
 )
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -54,9 +57,25 @@ def run(as_of: str | None = None,
             p = p / "portfolio.json"
         if p.exists():
             prev = json.loads(p.read_text(encoding="utf-8"))
-            prev_regime = prev.get("bucket_target", {}).get("rationale", "")
-            if macro_result["macro_report"].regime.quadrant not in prev_regime:
-                regime_changed = True
+            new_quadrant = macro_result["macro_report"].regime.quadrant
+            # C3: prefer the structured quadrant persisted at
+            # allocation_attribution.step_a.quadrant (both BL and non-BL branches
+            # set it) — the BL bucket_target.rationale never contains the quadrant
+            # string, so the substring heuristic below always false-positived on
+            # BL artifacts. Fall back to the substring check for pre-C3 artifacts.
+            prev_quadrant = (
+                (prev.get("allocation_attribution") or {}).get("step_a") or {}
+            ).get("quadrant")
+            if prev_quadrant:
+                regime_changed = prev_quadrant != new_quadrant
+            else:
+                logger.warning(
+                    "weekly_tilt: %s has no structured quadrant (pre-C3 artifact) "
+                    "— falling back to substring heuristic", p,
+                )
+                prev_regime = prev.get("bucket_target", {}).get("rationale", "")
+                if new_quadrant not in prev_regime:
+                    regime_changed = True
 
     tilt: dict[str, float] = {}
     if regime_changed:

@@ -155,6 +155,8 @@ def _step_a_prompt_bl(state, quadrant, fx_regime, credit_regime, het_candidates=
     rd = state.get("research_decision")
     thesis = getattr(rd, "thesis_md", "") if rd else ""
     key_risks = getattr(rd, "key_risks", []) if rd else []
+    fb = state.get("allocation_feedback") or []
+    fb_txt = "\n".join(f"  - {getattr(v, 'message', str(v))}" for v in fb)
     bucket_list = "\n".join(f"  {b} ({BUCKET_KR_NAME[b]})" for b in GAPS_BUCKET_KEYS)
     het_block = ""
     if het_candidates:
@@ -167,7 +169,8 @@ def _step_a_prompt_bl(state, quadrant, fx_regime, credit_regime, het_candidates=
         f"## 핵심 리스크\n" + ("\n".join(f"  - {r}" for r in key_risks) or "  (없음)") + "\n\n"
         f"## Stage1 요약\n매크로: {state.get('macro_summary','(없음)')}\n"
         f"리스크: {state.get('risk_summary','(없음)')}\n뉴스: {state.get('news_summary','(없음)')}\n\n"
-        "각 버킷의 tier+conviction 을 bucket_ranking 으로, 이종 버킷 선호를 sub_category_views 로 출력하라."
+        + (f"## 직전 위반 피드백 (반영 필수)\n{fb_txt}\n\n" if fb_txt else "")
+        + "각 버킷의 tier+conviction 을 bucket_ranking 으로, 이종 버킷 선호를 sub_category_views 로 출력하라."
     )
     return [{"role": "system", "content": _STEP_A_SYSTEM_BL},
             {"role": "user", "content": body}]
@@ -663,6 +666,7 @@ def create_trader_allocator(step_a_llm):
                 bl_intent_buckets, realized_bucket_weights, bl_meta,
                 signal_confidence=_c,
             )
+            bl_step_a["quadrant"] = quadrant
             bl_step_a["sub_category_views"] = {
                 b: dict(v) for b, v in tilt.sub_category_views.items()
             }

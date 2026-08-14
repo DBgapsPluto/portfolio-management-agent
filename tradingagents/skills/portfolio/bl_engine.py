@@ -56,19 +56,25 @@ def implied_prior_returns(Sigma, w_baseline, delta):
 
 
 def _posterior_mu(Sigma, pi, P, Q, conf, delta):
-    """μ_BL via pypfopt Idzorek. view 없으면(P 빈) prior pi 반환(정확복원 보장)."""
+    """μ_BL via pypfopt Idzorek. view 없으면(P 빈) prior pi 반환(정확복원 보장).
+
+    Returns (mu, status): status distinguishes the correct no-view early-return
+    ("bl") from a genuine solver exception ("bl_combine_fallback") — both fall
+    back to prior μ numerically, but only the latter is a failure worth
+    surfacing to attribution (C5).
+    """
     import pandas as pd
     if P.shape[0] == 0:
-        return pi.copy()
+        return pi.copy(), "bl"
     try:
         from pypfopt.black_litterman import BlackLittermanModel
         bl = BlackLittermanModel(Sigma, pi=pi, P=P, Q=Q, omega="idzorek",
                                  view_confidences=conf, tau=TAU, risk_aversion=delta)
         # bl_returns() returns a pandas Series indexed by Sigma's columns.
-        return pd.Series(np.asarray(bl.bl_returns()).ravel(), index=Sigma.index)
+        return pd.Series(np.asarray(bl.bl_returns()).ravel(), index=Sigma.index), "bl"
     except Exception as e:  # noqa: BLE001
         logger.warning("BL combine failed (%s) → prior μ", e)
-        return pi.copy()
+        return pi.copy(), "bl_combine_fallback"
 
 
 TURNOVER_CAP = 0.35  # ||w − w_baseline||₁ 상한: 단일 view 가 정책 baseline 을 통째로
@@ -143,12 +149,15 @@ def bl_bucket_weights(Sigma, w_baseline, ranking, *, delta=2.5, base_spread=0.04
             P = np.vstack([P, Pe]) if P.shape[0] else Pe
             Q = np.concatenate([Q, Qe]) if Q.shape[0] else Qe
             conf = np.concatenate([conf, ce]) if conf.shape[0] else ce
-    mu = _posterior_mu(Sigma, pi, P, Q, conf, delta)
+    mu, mu_status = _posterior_mu(Sigma, pi, P, Q, conf, delta)
     w = _max_quad_utility(mu, Sigma, delta, growth_keys or set(), mandate_risk_keys or set(),
                           growth_cap=growth_cap, mandate_cap=mandate_cap,
                           w_baseline=w_baseline, turnover_cap=turnover_cap)
     if w is None or w.isna().any():
-        return w_baseline.copy()
+        w = w_baseline.copy()
+        w.attrs["status"] = "mqu_fallback"
+        return w
+    w.attrs["status"] = mu_status
     return w
 
 
@@ -280,6 +289,9 @@ def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spre
                              growth_keys=gk, mandate_risk_keys=mk, extra_views=extra_bl,
                              growth_cap=g_cap_sub, mandate_cap=m_cap_sub,
                              turnover_cap=turnover_cap)
+    # C5: capture BEFORE the renorm/soft_clip arithmetic below — .attrs propagation
+    # through Series division/soft_clip is not guaranteed, so belt-and-braces.
+    combine_status = w_bl.attrs.get("status", "bl")
     # 1) MQU 해의 합이 solver tolerance 로 1 에서 미세이탈할 수 있으므로 먼저 budget 으로
     #    재정규화한다(서브벡터를 정확히 budget 합으로 맞춤, 핀 버킷은 baseline 고정 유지).
     # 2) 그 다음 soft-clip 으로 천장을 최종 스케일된 벡터에 강제한다. soft_clip 이
@@ -296,7 +308,7 @@ def bl_allocate(Sigma, w_baseline, ranking, *, pinned=None, delta=2.5, base_spre
     for b in pinned:
         out[b] = float(w_baseline[b])
         meta[b] = {"status": "baseline_pinned"}
-    glob = {"status": "bl", "n_pinned": len(pinned)}
+    glob = {"status": combine_status, "n_pinned": len(pinned)}
     if dropped_views:
         glob["dropped_views"] = dropped_views
     if pinned:

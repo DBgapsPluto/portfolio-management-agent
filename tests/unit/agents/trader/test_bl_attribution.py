@@ -134,6 +134,19 @@ def test_bl_node_step_a_is_bl_native(tmp_path, monkeypatch):
     assert out["allocation_attribution"]["bl"]
 
 
+def test_bl_node_step_a_carries_structured_quadrant(tmp_path, monkeypatch):
+    # C3: the non-BL step_a dict has always carried "quadrant" (for weekly_tilt's
+    # structured regime-change compare); the BL-native step_a dict silently lacked
+    # it. macro_report=None here → _resolve_quadrant falls back to the default.
+    monkeypatch.setattr(ta, "fetch_bucket_proxy_returns", _fake_proxies)
+    up = _universe_14(tmp_path)
+    node = create_trader_allocator(_FakeStep(BucketTilt(bucket_ranking={
+        "b3_global_tech": BucketRanking(tier="strong_OW", conviction=0.9, rationale="x"),
+    })))
+    out = node(_state_bl(up))
+    assert out["allocation_attribution"]["step_a"]["quadrant"] == "growth_disinflation"
+
+
 def test_non_bl_node_step_a_unchanged(tmp_path, monkeypatch):
     monkeypatch.setattr(ta, "fetch_bucket_proxy_returns", _fake_proxies)
     up = _universe_14(tmp_path)

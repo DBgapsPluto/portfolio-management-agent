@@ -8,6 +8,8 @@ import logging
 import re
 from pathlib import Path
 
+from tradingagents.skills.mandate.correlation_check import DEFAULT_CLUSTER_CAP
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +53,7 @@ Use this document structure (fill every section; Korean only):
 (≥600 chars — Stage 2 scenario/factor view + 5-bucket target rationale + FX(환) 노출 포지션과 그 의도(원화 약세 수혜 / 위기 시 달러 강세 방어) 설명)
 
 ## 4. 단일 리스크 통제 전략
-(≥600 chars — Stage 5 concentration check + cluster cap 0.25)
+(≥600 chars — Stage 5 concentration check + cluster cap {cluster_cap})
 
 ## 5. 시장 충격 시나리오
 (≥600 chars — conservative scenarios + Stage 1 conditional stress signals)
@@ -430,7 +432,8 @@ def _build_facts_block(state: dict) -> str:
         sums = [sum(weights.get(m, 0.0) for m in _members(c)) for c in clusters]
         if sums:
             lines.append(
-                f"- 최대 상관클러스터 비중 합: {max(sums) * 100:.1f}% (cluster cap 25%)"
+                f"- 최대 상관클러스터 비중 합: {max(sums) * 100:.1f}% "
+                f"(cluster cap {DEFAULT_CLUSTER_CAP*100:.0f}%)"
             )
     val = state.get("validation_report")
     if val is not None:
@@ -545,6 +548,7 @@ def generate_philosophy(state: dict, deep_llm) -> str:
         PHILOSOPHY_PROMPT.format(
             state_summary=state_summary,
             as_of_date=as_of_date,
+            cluster_cap=DEFAULT_CLUSTER_CAP,
         )
     )
     text = _strip_markdown_asterisks(response.content)

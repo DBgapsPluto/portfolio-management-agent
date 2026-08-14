@@ -44,6 +44,10 @@ CAPITAL_KRW = 1_000_000_000
 
 def _capture_tilt(graph, d: str) -> BucketTilt:
     state, _ = restore_state(d, STAGE, UNIVERSE_PATH, CAPITAL_KRW)
+    # C4 (replay.py now funnels DEFAULT_CONFIG["rebalance"], incl. use_bl=True):
+    # this sweep tool is old-path-only (reads step_a["tilt"], a project_to_band-only
+    # key) — pin to the non-BL branch wholesale, mirroring _combo_weights below.
+    state["portfolio_dials"] = {}
     tr = state.get("technical_report")
     fp = getattr(tr, "factor_panel", None) or {}
     assert fp, f"{d}: technical_report.factor_panel 비어있음 — sweep 무의미"

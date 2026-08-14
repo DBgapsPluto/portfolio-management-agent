@@ -77,6 +77,50 @@ def test_growth_inflation_recovers_at_cap_070():
     assert np.abs(w - w_base).sum() < 1e-6
 
 
+# --- C5: solver-fallback status surfaced in meta (not unconditionally "bl") ---
+
+
+def _boom(*a, **k):
+    raise RuntimeError("bl boom")
+
+
+def test_posterior_mu_genuine_exception_returns_bl_combine_fallback_status(monkeypatch):
+    # A genuine pypfopt exception (not the no-view early-return) must be tagged
+    # distinctly from the no-view exact-recovery path — both fall back to prior
+    # μ numerically, but only one is a solver failure worth surfacing to attribution.
+    Sigma, w_base = _toy()
+    P, Q, conf = be.build_relative_views(list(Sigma.index), {"b0": ("strong_OW", 0.9)})
+    pi = be.implied_prior_returns(Sigma, w_base, delta=2.5)
+    monkeypatch.setattr("pypfopt.black_litterman.BlackLittermanModel", _boom)
+    mu, status = be._posterior_mu(Sigma, pi, P, Q, conf, delta=2.5)
+    assert status == "bl_combine_fallback"
+    assert np.allclose(mu.values, pi.values)
+
+
+def test_bl_bucket_weights_genuine_combine_failure_tags_fallback_status(monkeypatch):
+    Sigma, w_base = _toy()
+    monkeypatch.setattr("pypfopt.black_litterman.BlackLittermanModel", _boom)
+    w = be.bl_bucket_weights(Sigma, w_base, {"b0": ("strong_OW", 0.9)}, delta=2.5,
+                             base_spread=0.04, growth_keys=set(), mandate_risk_keys=set())
+    assert w.attrs["status"] == "bl_combine_fallback"
+
+
+def test_bl_bucket_weights_normal_path_status_bl():
+    Sigma, w_base = _toy()
+    w = be.bl_bucket_weights(Sigma, w_base, {"b0": ("strong_OW", 0.9)}, delta=2.5,
+                             base_spread=0.04, growth_keys=set(), mandate_risk_keys=set())
+    assert w.attrs.get("status") == "bl"
+
+
+def test_bl_bucket_weights_mqu_failure_tags_fallback_status(monkeypatch):
+    Sigma, w_base = _toy()
+    monkeypatch.setattr(be, "_max_quad_utility", lambda *a, **k: None)
+    w = be.bl_bucket_weights(Sigma, w_base, {"b0": ("strong_OW", 0.9)}, delta=2.5,
+                             base_spread=0.04, growth_keys=set(), mandate_risk_keys=set())
+    assert w.attrs["status"] == "mqu_fallback"
+    assert np.allclose(w.values, w_base.values)
+
+
 def test_growth_ow_view_still_clamps_to_070():
     # An aggressive all-growth-OW view must still respect the hard mandate caps:
     # Σ(growth) ≤ 0.70 and Σ(risk proxy) ≤ 0.70 (constraints must remain binding).

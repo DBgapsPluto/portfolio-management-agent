@@ -132,6 +132,31 @@ def test_empty_ranking_pin_crisis_applies_crisis_view():
     assert not res["weights"].isna().any()
 
 
+# --- C5: solver-fallback status surfaces through bl_allocate's __global__ ---
+
+
+def _boom(*a, **k):
+    raise RuntimeError("bl boom")
+
+
+def test_bl_allocate_surfaces_bl_combine_fallback_in_global_status(monkeypatch):
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    monkeypatch.setattr("pypfopt.black_litterman.BlackLittermanModel", _boom)
+    res = be.bl_allocate(Sigma, base, {"b3_global_tech": ("strong_OW", 0.9)},
+                         delta=2.5, growth_keys=set(GROWTH_KEYS), mandate_risk_keys=_MANDATE)
+    assert res["meta"]["__global__"]["status"] == "bl_combine_fallback"
+
+
+def test_bl_allocate_surfaces_mqu_fallback_in_global_status(monkeypatch):
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    monkeypatch.setattr(be, "_max_quad_utility", lambda *a, **k: None)
+    res = be.bl_allocate(Sigma, base, {"b3_global_tech": ("strong_OW", 0.9)},
+                         delta=2.5, growth_keys=set(GROWTH_KEYS), mandate_risk_keys=_MANDATE)
+    assert res["meta"]["__global__"]["status"] == "mqu_fallback"
+
+
 def test_turnover_cap_threaded_and_binds():
     from tradingagents.skills.portfolio.scenario_anchor import QUADRANT_BASELINE
     from tradingagents.skills.portfolio.gaps_buckets import GROWTH_KEYS

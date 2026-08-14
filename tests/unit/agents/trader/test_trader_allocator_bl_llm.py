@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 from tradingagents.agents.trader import trader_allocator as ta
 from tradingagents.agents.trader.trader_allocator import create_trader_allocator
+from tradingagents.schemas.mandate import Violation
 from tradingagents.schemas.portfolio import BucketTilt, BucketRanking
 from tradingagents.schemas.research import ResearchThesis
 from tradingagents.skills.portfolio.gaps_buckets import GAPS_BUCKET_KEYS
@@ -33,6 +34,23 @@ def test_step_a_prompt_bl_asks_for_ranking():
     body = msgs[1]["content"]
     assert "tier" in sys and "상대순위" in sys
     assert "bucket_ranking" in body
+
+
+def test_step_a_prompt_bl_includes_feedback_when_present():
+    # C2: _step_a_prompt_bl silently dropped allocation_feedback (the retry-loop
+    # violation feedback) — _step_a_prompt already threads it, BL branch must too.
+    v = Violation(rule="risk_asset_cap", description="위험자산 72% > 70%",
+                  severity="hard", suggested_fix="reduce b3")
+    state = {"as_of_date": "2026-05-10", "allocation_feedback": [v]}
+    body = ta._step_a_prompt_bl(state, "growth_disinflation", "neutral", "neutral")[1]["content"]
+    assert "직전 위반 피드백 (반영 필수)" in body
+    assert "위험자산 72%" in body
+
+
+def test_step_a_prompt_bl_omits_feedback_block_when_absent():
+    state = {"as_of_date": "2026-05-10"}
+    body = ta._step_a_prompt_bl(state, "growth_disinflation", "neutral", "neutral")[1]["content"]
+    assert "직전 위반 피드백" not in body
 
 
 # ---------------------------------------------------------------------------
