@@ -29,6 +29,14 @@ def compute_unemployment_trend(
     LFPR이 빠르게 오르고 있으면 UR 상승은 노동공급 증가로 흡수 가능 — false alert.
     labor_participation 미제공 시 기존 Sahm rule만 (downstream LLM이 해석).
     """
+    # 빈 unemployment_rate → 아래 unconditional .iloc[-1] 이 IndexError. fetch
+    # 실패를 sentinel 로 전환 (staleness_days=99).
+    if unemployment_rate is None or unemployment_rate.empty:
+        return EmploymentSnapshot(
+            unemployment_rate=0.0, rate_change_3mo=0.0, sahm_rule_triggered=False,
+            non_farm_payrolls_3mo_avg=0.0, source_date=as_of, staleness_days=99,
+        )
+
     if len(unemployment_rate) < 12:
         sahm = False
     else:

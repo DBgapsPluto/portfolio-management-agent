@@ -1,6 +1,13 @@
+from datetime import date
 from types import SimpleNamespace as NS
+
+import pandas as pd
 import pytest
+
 from tradingagents.skills.macro import regime_confidence as rc
+from tradingagents.skills.macro.inflation import compute_inflation_trend
+from tradingagents.skills.macro.employment import compute_unemployment_trend
+from tradingagents.skills.macro.yield_curve import compute_yield_curve
 
 
 def test_laplace_agreement_n1():
@@ -60,3 +67,19 @@ def test_compute_confidence_none_snapshot_no_crash():
 def test_compute_confidence_output_bounded_and_bad_quadrant():
     assert rc.compute_regime_confidence({}, "growth_inflation") == 0.0
     assert rc.compute_regime_confidence({}, "nonsense") == 0.0
+
+
+def test_infl_yc_emp_sentinels_abstain_from_regime_confidence():
+    empty = pd.Series([], dtype=float)
+    infl = compute_inflation_trend(empty, empty, as_of=date(2026, 8, 14))
+    emp = compute_unemployment_trend(empty, empty, as_of=date(2026, 8, 14))
+    yc = compute_yield_curve(empty, empty, empty, as_of=date(2026, 8, 14))
+    snaps = {
+        "inflation": infl, "employment": emp, "yield_curve": yc,
+        "us_leading": NS(recession_signal=False, cfnai_ma3=0.5, staleness_days=0),
+        "risk_appetite": NS(signal="risk_on", staleness_days=0),
+        "commodity_momentum": NS(wti_3m_pct=5.0, staleness_days=0),
+    }
+    c = rc.compute_regime_confidence(snaps, "growth_inflation")
+    assert c == pytest.approx(0.5)
+    assert infl.staleness_days == 99 and emp.staleness_days == 99 and yc.staleness_days == 99
