@@ -28,6 +28,7 @@ from tradingagents.skills.portfolio.factor_scorer import risk_adjusted_momentum
 from tradingagents.skills.portfolio.gaps_buckets import (
     GAPS_BUCKET_KEYS, BUCKET_KR_NAME, GROWTH_KEYS,
 )
+from tradingagents.skills.portfolio.panic_thresholds import VIX_PANIC, VKOSPI_PANIC
 from tradingagents.backtest.bucket_proxies import fetch_bucket_proxy_returns
 from tradingagents.skills.portfolio.bucket_cov import bucket_covariance
 from tradingagents.skills.portfolio import bl_engine
@@ -516,14 +517,47 @@ def create_trader_allocator(step_a_llm):
             bucket_weights = apply_vol_haircut(bucket_weights, bucket_vol, **_hc)
             bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)
 
+        # F6 모멘텀 크래시 방어 (Daniel-Moskowitz 2016; Barroso-Santa-Clara 2015).
+        # 선정 자체를 후퇴시킨다 — momentum=None 은 core-subcategory 1~2종 집중을 유발하므로
+        # (candidate_selector.py:167→175 _select_core_by_aum, 감사 MF-3) 전용 헬퍼 사용.
+        _prev_q = ((state.get("previous_portfolio") or {}).get("allocation_attribution", {})
+                   .get("step_a", {}).get("quadrant"))
+        _rr = state.get("risk_report")
+        _vkospi = getattr(getattr(_rr, "vkospi", None), "current_value", None)
+        _vix = getattr(getattr(_rr, "vix", None), "current_value", None)
+        if _prev_q and _prev_q != quadrant:
+            momentum_damped = "quadrant_transition"
+        elif (_vkospi is not None and _vkospi > VKOSPI_PANIC) or (_vix is not None and _vix > VIX_PANIC):
+            momentum_damped = "panic"
+        else:
+            momentum_damped = None
+
+        def _aum_top_k(bucket_key: str, eligible: list[str], k: int) -> list[str]:
+            """감쇠 모드 het 선정: AUM 내림차순, underlying_index 중복 제거, top-k.
+            het 정상 경로와 동일한 폭(k=top_k)을 유지 — 집중을 늘리지 않는다."""
+            seen_idx, out = set(), []
+            for t in sorted(eligible, key=lambda t: -aum.get(t, 0.0)):
+                ix = idx_of.get(t)
+                if ix and ix in seen_idx:
+                    continue
+                seen_idx.add(ix); out.append(t)
+                if len(out) >= k:
+                    break
+            return out
+
         selections: dict[str, list[str]] = {}
         het_traces: dict[str, dict] = {}
         temperature = _dials.get("softmax_temperature", 1.0)
+        _top_k_het = _dials.get("top_k_heterogeneous", 3)
         for bkey, w in bucket_weights.items():
             if w <= 0:
                 continue
             eligible = [e.ticker for e in pool[bkey]]
             is_het = bkey in HETEROGENEOUS_BUCKETS
+            if is_het and momentum_damped:
+                # 감쇠 모드: sub_category/모멘텀 랭킹 선정을 건너뛰고 AUM top-K 로 후퇴.
+                selections[bkey] = _aum_top_k(bkey, eligible, _top_k_het)
+                continue
             _trace: dict | None = {} if is_het else None
             selections[bkey] = select_representative_candidates(
                 bucket_key=bkey, eligible=eligible, aum=aum,
@@ -533,7 +567,7 @@ def create_trader_allocator(step_a_llm):
                 sub_category_views=(tilt.sub_category_views.get(bkey) if is_het else None),
                 momentum=momentum,
                 min_etf_aum_krw=_dials.get("min_etf_aum_krw", 10e9),
-                top_k=_dials.get("top_k_heterogeneous", 3),
+                top_k=_top_k_het,
                 trace=_trace,
             )
             if is_het and _trace:
@@ -542,8 +576,14 @@ def create_trader_allocator(step_a_llm):
         # 동질 버킷은 AUM 가중, 이종 버킷은 risk-adj 모멘텀 softmax 가중.
         # 버킷별로 partition 해 각각 배분 후 merge — 동질 동작은 정확히 보존.
         def _allocate(bw, sel):
-            het_bw = {b: w for b, w in bw.items() if b in HETEROGENEOUS_BUCKETS}
-            hom_bw = {b: w for b, w in bw.items() if b not in HETEROGENEOUS_BUCKETS}
+            # 감쇠 시 het 버킷도 hom 쪽(AUM 가중)으로 병합 — InfeasibleBucket 재시도를
+            # 포함한 모든 _allocate 호출에서 모멘텀 가중이 복귀하지 않는다 (momentum_damped
+            # 는 외부 스코프 변수라 재호출 시에도 동일하게 평가됨).
+            if momentum_damped:
+                het_bw, hom_bw = {}, dict(bw)
+            else:
+                het_bw = {b: w for b, w in bw.items() if b in HETEROGENEOUS_BUCKETS}
+                hom_bw = {b: w for b, w in bw.items() if b not in HETEROGENEOUS_BUCKETS}
             out = aum_weighted_allocation(hom_bw, sel, aum)
             if het_bw:
                 for t, wt in momentum_weighted_allocation(
@@ -654,6 +694,8 @@ def create_trader_allocator(step_a_llm):
                 "sub_category_views": {b: dict(v) for b, v in tilt.sub_category_views.items()},
                 "heterogeneous_selection": het_traces,
             },
+            # F6: step_a 만 BL 브랜치에서 교체되므로 step_b 는 sibling 키로 안전하게 보존.
+            "step_b": {"momentum_damped": momentum_damped},
         }
         if use_bl:
             # BL 경로는 tilt/scenario_delta 가 없다 — 버킷 분해를 BL-native

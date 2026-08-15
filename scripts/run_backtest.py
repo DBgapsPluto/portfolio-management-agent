@@ -178,7 +178,13 @@ def format_table(rows: list[dict]) -> str:
 
 
 def _load_prev_portfolio(as_of: str) -> dict | None:
-    """artifacts/<as_of>/portfolio.json 에서 weights 추출. 없으면 None."""
+    """artifacts/<as_of>/portfolio.json 에서 weights 추출. 없으면 None.
+
+    weights 만 반환하고 allocation_attribution 은 체이닝하지 않는다 — 따라서
+    trader_allocator 의 F6 quadrant-transition 모멘텀 감쇠(step_a.quadrant 비교)는
+    previous_portfolio.allocation_attribution 을 못 찾아 백테스트에서 항상 비활성이다
+    (panic 감쇠는 risk_report 경유라 영향 없음). 감사 MF-2 관련 — F-4 보고서에 명시.
+    """
     p = Path(f"artifacts/{as_of}/portfolio.json")
     if not p.exists():
         return None
