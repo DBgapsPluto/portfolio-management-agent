@@ -15,6 +15,7 @@ from tradingagents.rebalance import daily_triggers
 from tradingagents.rebalance.triggers import evaluate_drift, route_tier
 from tradingagents.rebalance.overlay import defensive_overlay, risk_on_overlay
 from tradingagents.rebalance.reassess import reassess_target
+from tradingagents.rebalance import crisis_policy
 from tradingagents.skills.mandate.category_repair import repair_category_caps
 from tradingagents.skills.mandate.risk_repair import repair_risk_cap
 from tradingagents.skills.mandate.concentration_check import CATEGORY_CAPS
@@ -144,6 +145,10 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
         )
     universe = load_universe(Path(DEFAULT_CONFIG.get("universe_path", "./data/universe.json")))
     is_risk = make_is_risk(universe)
+    # F1: 위기 전용 sell/dest 적격성(crisis_policy) — is_risk(공식 8-bucket) 는 불변, 이 안에서만
+    # 개별 티커의 매도/목적지 적격성을 좁힌다. overlay·reassess·수선 루프가 공유.
+    sell_ok = crisis_policy.make_sell_ok(universe)
+    dest_ok = crisis_policy.make_dest_ok(universe)
     current = reprice_holdings(prev_qty, prev_cash, prices)
 
     tier, trig_ctx, reassess_fired = _eval_triggers(
@@ -157,13 +162,14 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
     target: dict | None = None
 
     if tier in ("event:emergency_defensive", "drift:defensive"):
-        target = defensive_overlay(prev_target or current, is_risk, defensive_target)
+        target = defensive_overlay(prev_target or current, is_risk, defensive_target,
+                                   sell_ok=sell_ok, dest_ok=dest_ok)
     elif tier == "event:risk_on":
         target = risk_on_overlay(prev_target or current, is_risk, step)
     elif tier == "drift:rebalance":
         target = prev_target or current     # restore previous target
     elif tier == "reassess":
-        target = reassess_target(current, is_risk, as_of, previous_path)
+        target = reassess_target(current, is_risk, as_of, previous_path, sell_ok=sell_ok)
 
     # Monitoring-only tiers or no actionable target
     if tier in ("none", "alert") or target is None:
