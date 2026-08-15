@@ -1,6 +1,13 @@
 from datetime import date
 import pandas as pd
+import pytest
 from tradingagents.backtest import bucket_proxies as bp
+
+@pytest.fixture(autouse=True)
+def _all_hedged(monkeypatch):
+    # KRW 합성(F2)이 universe 디스크 IO를 유발 — 구조 테스트는 전-헤지(local 유지)로 절연.
+    monkeypatch.setattr(bp, "_hedged_share_by_bucket",
+                        lambda etfs: {k: 1.0 for k in bp.BUCKET_PROXY})
 
 def test_proxy_map_covers_14_buckets():
     from tradingagents.skills.portfolio.gaps_buckets import GAPS_BUCKET_KEYS
