@@ -18,7 +18,7 @@ from tradingagents.rebalance.reassess import reassess_target
 from tradingagents.rebalance import crisis_policy
 from tradingagents.skills.mandate.category_repair import repair_category_caps
 from tradingagents.skills.mandate.risk_repair import repair_risk_cap
-from tradingagents.skills.mandate.concentration_check import CATEGORY_CAPS
+from tradingagents.skills.mandate.concentration_check import CATEGORY_CAPS, FLOAT_TOLERANCE
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.rebalance.types import RebalanceResult
 from tradingagents.monitor.notify import send_rebalance_alert
@@ -183,9 +183,26 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
     # 세부자산(category)+위험자산 cap 강제 (대회 §2.2) — overlay/reassess 는 category 무인지.
     # category↔risk 교대 3회 수렴. 정수 qty 반올림 후 realized 는 engine 이 재검증.
     _cat_of = {e.ticker: e.category for e in universe.etfs}
+    _is_defensive_tier = tier in ("event:emergency_defensive", "drift:defensive")
+    # F1/B4(다운스트림 수선 간섭 방어, MF-8): defensive 경로에서 category 수선의 물채움을
+    # (안전자산 ∩ 정책 목적지)로 한정한다. 제한 없이 두면 category 수선이 위험자산의
+    # single-cap 헤드룸에도 자유롭게 물을 채워(risk-blind) defensive_overlay 가 방금 확보한
+    # defensive_target 을 되돌린다(실측: overlay 직후 risk=0.30 → 수선 후 risk=0.375).
+    _recipient_ok = (lambda t: not is_risk(t) and dest_ok(t)) if _is_defensive_tier else None
     for _ in range(3):
-        target = repair_category_caps(target, _cat_of, CATEGORY_CAPS)
+        target = repair_category_caps(target, _cat_of, CATEGORY_CAPS, recipient_ok=_recipient_ok)
         target = repair_risk_cap(target, is_risk)
+
+    if _is_defensive_tier:
+        risk_after_repair = sum(w for t, w in target.items() if is_risk(t))
+        if risk_after_repair > defensive_target + FLOAT_TOLERANCE:
+            # 수렴 가드(overlay 재적용 상한 1회, 총 2회): recipient_ok 로도 못 막은 잔여
+            # 초과(예: 정책 목적지 자체가 포화)를 overlay 로 한 번 더 정리한다.
+            target = defensive_overlay(target, is_risk, defensive_target,
+                                       sell_ok=sell_ok, dest_ok=dest_ok)
+            target = repair_category_caps(target, _cat_of, CATEGORY_CAPS,
+                                          recipient_ok=_recipient_ok)
+            target = repair_risk_cap(target, is_risk)
 
     resolved_out = (
         Path(out_dir)

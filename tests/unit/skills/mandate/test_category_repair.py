@@ -60,3 +60,24 @@ def test_empty_returns_empty():
 def test_deterministic():
     w = {"F1": 0.14, "F2": 0.13, "B1": 0.18, "B2": 0.18, "B3": 0.17, "CASH": 0.20}
     assert repair_category_caps(w, CATMAP, CAPS) == repair_category_caps(w, CATMAP, CAPS)
+
+
+def test_recipient_ok_restricts_water_fill():
+    # F1 (통합 레벨, MF-8): recipient_ok 지정 시 헤드룸이 있어도 predicate 를 만족하지 않는
+    # 종목은 물채움을 받지 않고 원 비중을 유지한다(risk-blind 물채움 방지).
+    w = {"F1": 0.14, "F2": 0.13, "B1": 0.18, "B2": 0.18, "B3": 0.17, "S1": 0.15, "CASH": 0.05}
+    out = repair_category_caps(w, CATMAP, CAPS, recipient_ok=lambda t: t == "CASH")
+    assert out["B1"] == pytest.approx(0.18, abs=1e-9)    # 비허용 목적지 — 원 비중 유지
+    assert out["B2"] == pytest.approx(0.18, abs=1e-9)
+    assert out["B3"] == pytest.approx(0.17, abs=1e-9)
+    assert out["CASH"] > 0.05 + 1e-9                      # 허용 목적지만 물채움 수혜
+    cs = _cat_sums(out, CATMAP)
+    assert cs["fx"] == pytest.approx(0.20, abs=1e-6)
+    assert sum(out.values()) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_recipient_ok_default_none_is_unrestricted():
+    # recipient_ok 미지정(기본 None) → 기존 동작과 동치(하위 호환).
+    w = {"F1": 0.14, "F2": 0.13, "B1": 0.18, "B2": 0.18, "B3": 0.17, "CASH": 0.20}
+    assert repair_category_caps(w, CATMAP, CAPS) == repair_category_caps(
+        w, CATMAP, CAPS, recipient_ok=None)

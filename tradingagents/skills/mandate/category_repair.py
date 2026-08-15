@@ -8,6 +8,8 @@ freed 를 headroom(단일캡 ∩ category캡) 있는 종목에 water-fill. 순�
 """
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from tradingagents.skills.mandate.concentration_check import FLOAT_TOLERANCE
 from tradingagents.skills.portfolio.within_bucket import SINGLE_CAP
 
@@ -19,6 +21,7 @@ def repair_category_caps(
     weights: dict[str, float],
     ticker_to_category: dict[str, str | None],
     category_caps: dict[str, float],
+    recipient_ok: Callable[[str], bool] | None = None,
 ) -> dict[str, float]:
     """category 합 ≤ cap 보장(best-effort). 모든 category 이내면 무변경.
 
@@ -26,7 +29,13 @@ def repair_category_caps(
     CASH/미분류는 category 제약 없음(단일캡만). water-fill 시 headroom 을 실시간 재계산해
     같은 category 종목들의 분배 합이 cap 을 넘지 않게 한다. 분배처 부족(degenerate
     infeasible)이면 best-effort renormalize 반환 — 최종 hard 판정은 validator.
+
+    recipient_ok (F1/MF-8, 기본 None=제약 없음 — 현행 동작): 헤드룸이 있어도 이 predicate
+    를 만족하지 않는 종목은 물채움에서 제외한다. defensive 경로에서 (not is_risk) and
+    dest_ok 로 좁혀, category 수선의 risk-blind 물채움이 defensive_target 을 되돌리지
+    못하게 한다(daily_full.py).
     """
+    _recipient_ok = recipient_ok or (lambda t: True)
     if not weights:
         return {}
 
@@ -50,7 +59,9 @@ def repair_category_caps(
                 if cat_sum(out, c) > cap + FLOAT_TOLERANCE}
         if not over:
             break
-        # 1) 초과 category 비례 축소 (상대비 보존)
+        # 1) 초과 category 비례 축소 (상대비 보존). 위기 보호(sell_ok=False) 티커의 category
+        # 가 초과되는 경우는 CATEGORY_CAPS["FX 및 원자재"]=0.20 이 선행 제한해 라이브 도달이
+        # 희박함(F1/B4 가드 노트) — 별도 보호-우선순위 컷 순서는 두지 않고 비례 컷을 유지한다.
         freed = 0.0
         for c, cap in over.items():
             cs = cat_sum(out, c)
@@ -63,7 +74,7 @@ def repair_category_caps(
         for _ in range(_MAX_ITERS):
             if freed <= 1e-12:
                 break
-            elig = [t for t in out if headroom(out, t) > 1e-12]
+            elig = [t for t in out if headroom(out, t) > 1e-12 and _recipient_ok(t)]
             room = sum(headroom(out, t) for t in elig)
             if room <= 1e-12:
                 break  # 분배처 없음 → best-effort
