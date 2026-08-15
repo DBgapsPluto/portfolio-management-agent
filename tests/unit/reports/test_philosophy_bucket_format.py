@@ -146,6 +146,25 @@ def test_format_heterogeneous_selection_reports_core_aum_revert():
     assert "core" in out.lower() or "코어" in out or "AUM" in out
 
 
+def test_format_heterogeneous_selection_reports_momentum_damped_revert():
+    # F6 패닉/전환 감쇠: 선정은 됐음(AUM top-K) — revert 라벨로 정직하게 표시해야
+    # 한다. 구버그: 트레이더의 damped 분기가 trace 를 아예 안 남겨 revert=None 경로로
+    # 떨어져 '(모멘텀 top-K)'(거짓) 또는 selected 미기록 시 '(없음)'(거짓)으로 렌더됐다.
+    attr = {
+        "step_a": {
+            "sub_category_views": {},
+            "heterogeneous_selection": {
+                "b3_global_tech": {"bucket": "b3_global_tech",
+                                    "selected": ["B3_A1", "B3_A2", "B3_A3"],
+                                    "revert": "momentum_damped"},
+            },
+        }
+    }
+    out = format_heterogeneous_selection(attr)
+    assert "B3_A1" in out and "B3_A2" in out and "B3_A3" in out
+    assert "감쇠" in out
+
+
 def test_heterogeneous_selection_in_state_summary():
     from tradingagents.reports.philosophy import _build_state_summary
     from unittest.mock import MagicMock

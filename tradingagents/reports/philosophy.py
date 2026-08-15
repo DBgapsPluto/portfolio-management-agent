@@ -258,6 +258,14 @@ def format_heterogeneous_selection(attribution) -> str:
         if revert == "core_aum":
             # 테마 풀이 비어 core-AUM 으로 폴백 — 정직하게 명시(선정 티커는 없음).
             lines.append(f"{head} → 테마풀 공백, core-AUM 폴백")
+        elif revert == "momentum_damped":
+            # F6 패닉/전환 감쇠 — 모멘텀 랭킹이 아니라 AUM top-K 로 선정됐음을 명시
+            # (일반 '(모멘텀 top-K)' 라벨을 그대로 쓰면 거짓 — 모멘텀은 이 경로에서
+            # 아예 안 쓰인다).
+            if picks:
+                lines.append(f"{head} → 선정 [{', '.join(picks)}] (패닉/전환 모멘텀 감쇠 — AUM top-K)")
+            else:
+                lines.append(f"{head} → 선정 (없음, 패닉/전환 모멘텀 감쇠)")
         elif picks:
             note = " (floor 완화)" if revert == "floor_relaxed" else " (모멘텀 top-K)"
             lines.append(f"{head} → 선정 [{', '.join(picks)}]{note}")

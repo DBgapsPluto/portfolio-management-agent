@@ -22,7 +22,7 @@ from tradingagents.schemas.portfolio import (
     WeightVector, OptimizationMethod, BucketTilt,
 )
 from tradingagents.skills.portfolio.candidate_selector import (
-    select_representative_candidates, HETEROGENEOUS_BUCKETS,
+    select_representative_candidates, HETEROGENEOUS_BUCKETS, _dedup_by_index,
 )
 from tradingagents.skills.portfolio.factor_scorer import risk_adjusted_momentum
 from tradingagents.skills.portfolio.gaps_buckets import (
@@ -533,17 +533,18 @@ def create_trader_allocator(step_a_llm):
             momentum_damped = None
 
         def _aum_top_k(bucket_key: str, eligible: list[str], k: int) -> list[str]:
-            """감쇠 모드 het 선정: AUM 내림차순, underlying_index 중복 제거, top-k.
-            het 정상 경로와 동일한 폭(k=top_k)을 유지 — 집중을 늘리지 않는다."""
-            seen_idx, out = set(), []
-            for t in sorted(eligible, key=lambda t: -aum.get(t, 0.0)):
-                ix = idx_of.get(t)
-                if ix and ix in seen_idx:
-                    continue
-                seen_idx.add(ix); out.append(t)
-                if len(out) >= k:
-                    break
-            return out
+            """감쇠 모드 het 선정: AUM 내림차순 정렬 후 _dedup_by_index(정상 het 경로와
+            동일한 _normalize_index 정규화 키)로 dedup, top-k. het 정상 경로와 동일한
+            폭(k=top_k)을 유지 — 집중을 늘리지 않는다.
+
+            원문 underlying_index 문자열 비교는 쓰지 않는다 — 'S&P 500' vs
+            'S&P 500 Total Return Index', '코스피 200 정보기술' vs '...TR' 같은
+            TR/지수 변종을 별개 노출로 오인해 같은 실노출을 top-K 에 중복 편입시킨다
+            (data/universe.json b2_dm_core/b3_global_tech 실측 — 감쇠가 되레 집중을
+            늘리는 결과).
+            """
+            ranked = sorted(eligible, key=lambda t: -aum.get(t, 0.0))
+            return _dedup_by_index(ranked, idx_of, set())[:k]
 
         selections: dict[str, list[str]] = {}
         het_traces: dict[str, dict] = {}
@@ -556,7 +557,12 @@ def create_trader_allocator(step_a_llm):
             is_het = bkey in HETEROGENEOUS_BUCKETS
             if is_het and momentum_damped:
                 # 감쇠 모드: sub_category/모멘텀 랭킹 선정을 건너뛰고 AUM top-K 로 후퇴.
-                selections[bkey] = _aum_top_k(bkey, eligible, _top_k_het)
+                # philosophy 역추적용 trace 도 정상 경로와 동일하게 남긴다 — 안 남기면
+                # het_traces 가 비어 philosophy 가 "선정 (없음)"으로 오표기한다(구버그:
+                # 실제로는 아래 sel 이 선정됐음에도 리포트가 이를 감춤).
+                sel = _aum_top_k(bkey, eligible, _top_k_het)
+                selections[bkey] = sel
+                het_traces[bkey] = {"bucket": bkey, "selected": sel, "revert": "momentum_damped"}
                 continue
             _trace: dict | None = {} if is_het else None
             selections[bkey] = select_representative_candidates(
