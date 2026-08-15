@@ -354,7 +354,7 @@ def build_bl_bucket_weights(as_of, quadrant, ranking, *, fx_regime="neutral",
     base = pd.Series(_interpolate_prior(quadrant, signal_confidence))
     try:
         rets = fetch_bucket_proxy_returns(as_of, window_days=window_days)
-        Sigma, cov_meta = bucket_covariance(rets, min_obs=252)
+        Sigma, cov_meta = bucket_covariance(rets)
         pinned = cov_meta.get("pinned", []) if not Sigma.empty else list(base.index)
     except Exception as e:  # noqa: BLE001
         logger.warning("BL Σ fetch failed (%s) → baseline", e)

@@ -120,6 +120,12 @@ Stage 1/2: regime.quadrant(결정론) + 매크로/뉴스 + state['as_of_date']
   3. inner-join 후 *전체* 유효관측 < 252 또는 ≥절반 버킷 핀 → 그때만 **전체 baseline 폴백**.
 - **cond(Σ) 점검:** krw_realized 등 고공선성 시 LW 수축강도와 함께 `cond(Σ) ≤ 천장(예 200)` 단언.
 
+> **개정 2026-08-15 (F2/F4):** KRW numeraire — 언헤지-우세 버킷의 USD-소스 수익은
+> `(1+r_usd)(1+r_fx)-1` 합성(이름 규약 헤지 지분, a4=USDKRW), 일별이 아닌 **W-FRI 주간
+> 복리 리샘플**(`min_count=1`) 후 추정 — 창 104주, 핀 기준 `WEEKLY_MIN_OBS=52`(주간),
+> ×52 연환산, `min_obs` 레거시 kwarg 무시. 위 일별·252 서술은 이 개정으로 대체됨
+> (plans/2026-08-15-fix-tier-remediation.md WP-A).
+
 ---
 
 ## 5. BL 수학 계약 (`bl_engine.py`, lib = PyPortfolioOpt 또는 NumPy 직접)

@@ -17,7 +17,8 @@ The six sanity checks (ⓐ-ⓕ), all on `bl_allocate` with default dials
 Pure functions take Σ / baseline directly so they are unit-testable without
 network. `__main__` fetches REAL Σ via bucket_proxies + bucket_covariance and
 runs the live gate over all 4 QUADRANT_BASELINE quadrants. If Σ is unavailable
-it prints "DATA UNAVAILABLE" and exits 0 (does NOT fabricate data).
+it prints "DATA UNAVAILABLE" and exits 1 (does NOT fabricate data; a skipped
+gate must not look like a PASS).
 
 Usage:
     python scripts/backtest_bl_gate2.py --as-of 2026-05-10
@@ -256,9 +257,10 @@ def main(argv=None) -> int:
     as_of = date.fromisoformat(args.as_of)
     Sigma, cov_meta = _fetch_sigma(as_of)
     if Sigma is None:
+        # exit 1 (not 0): a silently-skipped gate must not read as PASS (plan F-2).
         print(f"\nDATA UNAVAILABLE — {cov_meta}")
         print("(gate-2 can still be evaluated on synthetic Σ via the unit tests)")
-        return 0
+        return 1
 
     pinned = (cov_meta or {}).get("pinned") if isinstance(cov_meta, dict) else None
     n_obs = (cov_meta or {}).get("n_obs") if isinstance(cov_meta, dict) else None

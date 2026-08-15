@@ -204,7 +204,7 @@ def _run_strategy(returns: pd.DataFrame, rebals: list[pd.Timestamp], baseline: p
         t, t1 = rebals[i], rebals[i + 1]
         # Σ from data <= t only (PIT)
         panel = returns.loc[returns.index <= t].tail(COV_TAIL)
-        Sigma, _meta = bucket_covariance(panel, min_obs=252)
+        Sigma, _meta = bucket_covariance(panel)
         ranking = ranking_fn(t)
         if Sigma is None or Sigma.empty:
             w = baseline.copy()  # degraded → hold baseline
@@ -304,7 +304,7 @@ def main(argv=None) -> int:
 
     # spot-check Σ obs count at last rebalance for transparency
     last_panel = returns.loc[returns.index <= rebals[-2]].tail(COV_TAIL)
-    _Sig, _cm = bucket_covariance(last_panel, min_obs=252)
+    _Sig, _cm = bucket_covariance(last_panel)
     print(f"Σ@last n_obs={_cm.get('n_obs')}  pinned={_cm.get('pinned')}")
 
     # ── baseline (no-view) strategy ──────────────────────────────────────────
