@@ -27,11 +27,18 @@ def _water_fill(base: dict[str, float], freed: float, single_cap: float) -> dict
             freed = 0.0
             break
         give = min(freed, sum(single_cap - v for v in eligible.values()))
+        dist = 0.0
         for t, v in eligible.items():
             delta = give * v / base_sum
             room = single_cap - out[t]
-            out[t] += min(delta, room)
-        freed -= give
+            add = min(delta, room)
+            out[t] += add
+            dist += add
+        # give 는 상한(의도)일 뿐 — 헤드룸이 비중에 비례하지 않으면 delta 가 개별 room 을 넘겨
+        # 클리핑된다. 실제로 분배된 dist 만큼만 차감해야 잘린 잔여가 다음 반복(포화 티커 제외된
+        # 새 eligible)으로 넘어가거나 최종적으로 overflow→CASH 에 도달한다. give 로 차감하면
+        # 클리핑 손실이 freed·overflow 어디에도 반영되지 않고 조용히 사라진다(리뷰 회귀).
+        freed -= dist
     overflow += freed
     # CASH 키는 필요할 때만(오버플로 발생, 또는 base 에 이미 존재) 부여 — 무-오버플로 호출부에
     # 스퓨리어스 0.0 CASH 를 주입하지 않는다.
