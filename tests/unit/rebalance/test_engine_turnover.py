@@ -1,6 +1,13 @@
-"""F3 회전율 측정 충실화 — 체결 기반 메트릭 + CASH phantom 배제 (C1, MF-5/MF-6)."""
+"""F3 회전율 측정 충실화 — 체결 기반 메트릭 + CASH phantom 배제 (C1, MF-5/MF-6).
+C2: buy_krw/sell_krw/begin_value/end_value 필드 영속화 + 월누적(MTD) 집계."""
+import json
+
 from tradingagents.dataflows.universe import Universe, ETFEntry
 from tradingagents.rebalance.engine import build_rebalance_plan, validate_rebalance
+from tradingagents.rebalance.types import RebalanceResult
+from tradingagents.reports.rebalance_plan import (
+    write_rebalance_json, compute_turnover_month_to_date,
+)
 
 
 def _uni():
@@ -58,3 +65,82 @@ def test_cash_phantom_excluded_in_validate_rebalance():
                                 previous={"A": 0.5}, floor=0.10)
     assert not any(x.rule == "turnover_floor" and "phantom" not in x.description
                    for x in v.violations if x.severity == "hard")
+
+
+# ---------- C2: 월누적(MTD) 추적 — 필드 영속화 (MF-7) ----------
+
+
+def test_build_plan_returns_trade_notional_and_values():
+    current = {"A": 0.5, "B": 0.5}
+    target = {"A": 0.1, "B": 0.1, "C": 0.2, "D": 0.2, "E": 0.2, "F": 0.2}
+    prices = {t: 10000.0 for t in "ABCDEF"}
+    dials = dict(no_trade_band=0.005)
+    res = build_rebalance_plan(current, target, prev_qty={"A": 50, "B": 50},
+                               current_value=1_000_000, prices=prices,
+                               is_risk=lambda t: False, dials=dials)
+    assert res["buy_krw"] > 0
+    assert res["sell_krw"] > 0
+    assert res["begin_value"] == 1_000_000
+    # MF-6: end_value(=invested+cash_residual) == begin_value 항등.
+    assert res["end_value"] == res["begin_value"]
+
+
+def test_json_persists_trade_notional_fields(tmp_path):
+    r = RebalanceResult(as_of="2026-06-07", tier="monthly")
+    r.buy_krw = 50_000
+    r.sell_krw = 20_000
+    r.begin_value = 1_000_000
+    r.end_value = 1_000_000
+    out = tmp_path / "2026-06-07(rebalancing).json"
+    write_rebalance_json(r, out, previous_path="artifacts/2026-06-05")
+    d = json.loads(out.read_text(encoding="utf-8"))
+    assert d["buy_krw"] == 50_000
+    assert d["sell_krw"] == 20_000
+    assert d["begin_value"] == 1_000_000
+    assert d["end_value"] == 1_000_000
+
+
+def _write_plan(base, as_of, *, buy_krw, sell_krw, begin_value, legacy=False):
+    day_dir = base / as_of
+    day_dir.mkdir(parents=True, exist_ok=True)
+    payload = {"as_of_date": as_of, "turnover": (buy_krw + sell_krw) / begin_value}
+    if not legacy:
+        payload.update(buy_krw=buy_krw, sell_krw=sell_krw,
+                       begin_value=begin_value, end_value=begin_value)
+    (day_dir / f"{as_of}(rebalancing).json").write_text(
+        json.dumps(payload), encoding="utf-8")
+
+
+def test_turnover_mtd_aggregates_persisted_plans(tmp_path):
+    _write_plan(tmp_path, "2026-06-01", buy_krw=40_000, sell_krw=10_000, begin_value=1_000_000)
+    _write_plan(tmp_path, "2026-06-15", buy_krw=20_000, sell_krw=5_000, begin_value=1_010_000)
+    # 다른 달 — 집계 제외
+    _write_plan(tmp_path, "2026-07-01", buy_krw=999_999, sell_krw=999_999, begin_value=2_000_000)
+    result = compute_turnover_month_to_date("2026-06-20", floor_pct=0.10,
+                                            artifacts_dir=str(tmp_path))
+    expected = (40_000 + 10_000 + 20_000 + 5_000) / ((1_000_000 + 1_010_000) / 2)
+    assert abs(result["turnover_month_to_date"] - expected) < 1e-9
+    assert result["n_observed"] == 2
+
+
+def test_turnover_mtd_excludes_pre_persistence_artifacts(tmp_path):
+    # 필드 영속화 이전 아티팩트(buy_krw 등 없음) — 소급 집계 불가, 자연 제외.
+    _write_plan(tmp_path, "2026-06-02", buy_krw=0, sell_krw=0, begin_value=1_000_000, legacy=True)
+    _write_plan(tmp_path, "2026-06-03", buy_krw=5_000, sell_krw=5_000, begin_value=1_000_000)
+    result = compute_turnover_month_to_date("2026-06-20", floor_pct=0.10,
+                                            artifacts_dir=str(tmp_path))
+    assert result["n_observed"] == 1
+
+
+def test_turnover_mtd_flags_projected_shortfall(tmp_path):
+    _write_plan(tmp_path, "2026-06-01", buy_krw=1_000, sell_krw=0, begin_value=1_000_000)
+    result = compute_turnover_month_to_date("2026-06-20", floor_pct=0.10,
+                                            artifacts_dir=str(tmp_path))
+    assert result["projected_shortfall"] is True
+
+
+def test_turnover_mtd_no_observations_is_shortfall(tmp_path):
+    result = compute_turnover_month_to_date("2026-06-20", floor_pct=0.10,
+                                            artifacts_dir=str(tmp_path))
+    assert result["n_observed"] == 0
+    assert result["projected_shortfall"] is True

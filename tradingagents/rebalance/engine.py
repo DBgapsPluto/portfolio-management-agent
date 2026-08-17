@@ -156,6 +156,13 @@ def build_rebalance_plan(
         "cash_residual_krw": int(cash_residual),
         "realized_weights": realized,
         "turnover": turnover,
+        # F3/C2: 월누적(MTD) 집계용 체결 명목 + 평가액. denom(=end_value)이
+        # current_value(=begin_value)와 항등임은 감사 MF-6로 증명됨 — per-plan
+        # 분모 개선 효과는 없고 여러 plan에 걸친 MTD 집계에서만 의미가 있다.
+        "buy_krw": buy_krw,
+        "sell_krw": sell_krw,
+        "begin_value": current_value,
+        "end_value": denom,
     }
 
 
@@ -229,6 +236,8 @@ def run_rebalance(
         current_weights=current, target_weights=target_weights,
         realized_weights=plan_out["realized_weights"], plan=plan_out["plan"],
         turnover=plan_out["turnover"], cash_residual_krw=plan_out["cash_residual_krw"],
+        buy_krw=plan_out["buy_krw"], sell_krw=plan_out["sell_krw"],
+        begin_value=plan_out["begin_value"], end_value=plan_out["end_value"],
         cash_weight=plan_out["realized_weights"].get(CASH_KEY, 0.0),
         skipped_no_trade=plan_out["skipped_no_trade"],
         trigger={"tier": tier}, validation=validation,
