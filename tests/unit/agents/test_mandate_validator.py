@@ -143,6 +143,52 @@ def test_mandate_validator_attribution_records_hard_violations():
     assert "single_etf_cap" in rules
 
 
+# ---------- F3 (C1): 그래프 validator 월간 turnover soft 강등 ----------
+
+
+def _run_graph_validator(mode, prev_weights, weights):
+    universe_json = _shared_universe_json()
+    wv = WeightVector(method=OptimizationMethod.HRP, weights=weights, rationale="x")
+    state = {
+        "weight_vector": wv,
+        "universe_path": str(universe_json),
+        "capital_krw": 1_000_000_000,
+        "correlation_clusters": [],
+        "previous_portfolio": {"weights": prev_weights} if prev_weights is not None else None,
+        "rebalance_mode": mode,
+    }
+    node = create_mandate_validator()
+    return node(state)["validation_report"]
+
+
+_UNIVERSE_JSON_CACHE: Path | None = None
+
+
+def _shared_universe_json() -> Path:
+    global _UNIVERSE_JSON_CACHE
+    if _UNIVERSE_JSON_CACHE is None:
+        import tempfile
+        d = Path(tempfile.mkdtemp())
+        p = d / "universe.json"
+        sync_from_xlsx(Path("tests/fixtures/universe_test.xlsx"), p)
+        _UNIVERSE_JSON_CACHE = p
+    return _UNIVERSE_JSON_CACHE
+
+
+_TICKERS5 = ["A069500", "A360750", "A411060", "A114260", "A459580"]
+PREV = {t: 0.20 for t in _TICKERS5}
+W_SAME = {t: 0.20 for t in _TICKERS5}
+
+
+def test_graph_validator_monthly_turnover_is_advisory():
+    # 그래프 validator의 월간 회전율 검사는 informational(soft)로 강등 (MF-5:
+    # 엔진이 체결 명목을 보는 유일한 곳 — 컷오프 지표의 권위는 한 곳이어야 함)
+    report = _run_graph_validator(mode="monthly", prev_weights=PREV, weights=W_SAME)
+    tv = [v for v in report.violations if v.rule == "turnover_floor"]
+    assert all(v.severity == "soft" for v in tv)
+    assert report.passed                       # soft는 통과를 막지 않음
+
+
 def test_mandate_named_const_present():
     """Stage 5 audit Task 1: 4 check + validator 의 named const 존재 검증."""
     from tradingagents.skills.mandate import (

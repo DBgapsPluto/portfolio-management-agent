@@ -161,11 +161,15 @@ def build_rebalance_plan(
 
 def validate_rebalance(
     realized: dict[str, float], universe, clusters, previous_weights,
-    current_value: int, floor_pct: float,
+    current_value: int, floor_pct: float, trade_turnover: float | None = None,
 ) -> ValidationReport:
     """realized(현금 포함, 합≈1) 비중에 전체 mandate 재검증.
     현금은 분모에만 기여(위험/단일 cap 분자 제외) → 재정규화하지 않음.
-    universe_check 만 현금 제외 종목셋으로 수행(CASH 는 실제 ticker 아님)."""
+    universe_check 만 현금 제외 종목셋으로 수행(CASH 는 실제 ticker 아님).
+
+    trade_turnover: 엔진이 계산한 체결 명목 기반 turnover(plan_out["turnover"]).
+    제공되면 월간 floor 검사의 유일한 권위 — weight-delta 재유도 없음(F3 감사
+    MF-5/MF-6, turnover_check.validate_turnover_feasibility 참조)."""
     if not realized or sum(realized.values()) <= 0:
         return ValidationReport(passed=False, violations=[Violation(
             rule="weight_validity", description="no realized weight", severity="hard",
@@ -188,7 +192,8 @@ def validate_rebalance(
     violations += validate_concentration(full_wv, universe).violations
     violations += validate_correlation_concentration(full_wv, clusters).violations
     violations += validate_turnover_feasibility(
-        full_wv, previous_weights, current_value, floor_pct=floor_pct).violations
+        full_wv, previous_weights, current_value, floor_pct=floor_pct,
+        trade_turnover=trade_turnover).violations
     return ValidationReport(
         passed=not any(v.severity == "hard" for v in violations),
         violations=violations,
@@ -216,7 +221,8 @@ def run_rebalance(
     floor = dials.get("turnover_floor_monthly", 0.0) if tier == "monthly" else 0.0
     validation = validate_rebalance(
         plan_out["realized_weights"], universe=universe, clusters=clusters,
-        previous_weights=previous_weights, current_value=current_value, floor_pct=floor)
+        previous_weights=previous_weights, current_value=current_value, floor_pct=floor,
+        trade_turnover=plan_out["turnover"])
 
     res = RebalanceResult(
         as_of=as_of, tier=tier,

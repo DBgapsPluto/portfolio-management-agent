@@ -218,10 +218,24 @@ def create_mandate_validator():
             weights, prev_weights, state["capital_krw"],
             floor_pct=floor_pct,
         )
-        all_violations.extend(turnover_result.violations)
+        turnover_violations = turnover_result.violations
+        if mode == "monthly":
+            # F3 감사 MF-5: rebalance engine 이 체결 명목(trade notional)을 보는
+            # 유일한 지점 — 컷오프 판정의 권위는 그곳 하나로 단일화한다. 이 그래프
+            # 단계(체결 전)의 weight-delta 근사는 advisory 로 강등해 hard 컷을
+            # 만들지 않는다 (initial 모드는 all-buys 라 체결 기반과 동치 → hard 유지).
+            turnover_violations = [
+                v.model_copy(update={
+                    "severity": "soft",
+                    "description": v.description
+                    + " — advisory: 권위는 rebalance engine 체결 기반 검사(F3)",
+                }) if v.rule == "turnover_floor" else v
+                for v in turnover_violations
+            ]
+        all_violations.extend(turnover_violations)
         check_counts["turnover"] = {
-            "hard": sum(1 for v in turnover_result.violations if v.severity == "hard"),
-            "soft": sum(1 for v in turnover_result.violations if v.severity != "hard"),
+            "hard": sum(1 for v in turnover_violations if v.severity == "hard"),
+            "soft": sum(1 for v in turnover_violations if v.severity != "hard"),
         }
 
         report = ValidationReport(
