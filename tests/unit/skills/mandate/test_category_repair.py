@@ -81,3 +81,20 @@ def test_recipient_ok_default_none_is_unrestricted():
     w = {"F1": 0.14, "F2": 0.13, "B1": 0.18, "B2": 0.18, "B3": 0.17, "CASH": 0.20}
     assert repair_category_caps(w, CATMAP, CAPS) == repair_category_caps(
         w, CATMAP, CAPS, recipient_ok=None)
+
+
+def test_recipient_ok_saturated_residual_lands_in_cash():
+    # F1/B4 리뷰 회귀: recipient_ok 가 water-fill 루프는 막지만(허용 목적지 R1 만 물채움)
+    # 헤드룸 0.15 로 freed 0.40 을 다 못 받으면, 예전 코드는 남은 0.25 를 터미널
+    # renormalize(`s = sum(out.values()); {t: w/s}`) 에 맡겨 recipient_ok=False 인 X1
+    # (정책 배제 목적지)에까지 비례로 되돌려줬다 — overlay._water_fill 이 이미 고친
+    # (33ba11d) 오버플로 유실과 동형의 누수. 물채움 루프가 막은 대상은 renormalize 도
+    # 건드리면 안 된다 — 잔여는 CASH 로.
+    w = {"F1": 0.30, "F2": 0.30, "R1": 0.05, "X1": 0.35}
+    out = repair_category_caps(w, CATMAP, CAPS, recipient_ok=lambda t: t == "R1")
+    assert out["X1"] == pytest.approx(0.35, abs=1e-9)     # 비허용 목적지 — 누수로 인한 증가 없음
+    assert out["R1"] <= 0.20 + 1e-9                        # single-cap 포화
+    assert out.get("CASH", 0.0) > 1e-9                     # 미분배 잔여는 CASH 로
+    cs = _cat_sums(out, CATMAP)
+    assert cs["fx"] <= 0.20 + 1e-6
+    assert sum(out.values()) == pytest.approx(1.0, abs=1e-9)

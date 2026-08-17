@@ -33,7 +33,10 @@ def repair_category_caps(
     recipient_ok (F1/MF-8, 기본 None=제약 없음 — 현행 동작): 헤드룸이 있어도 이 predicate
     를 만족하지 않는 종목은 물채움에서 제외한다. defensive 경로에서 (not is_risk) and
     dest_ok 로 좁혀, category 수선의 risk-blind 물채움이 defensive_target 을 되돌리지
-    못하게 한다(daily_full.py).
+    못하게 한다(daily_full.py). recipient_ok 지정 시, 허용 풀이 포화돼 분배 못한 잔여는
+    (recipient_ok=None 때와 달리) 터미널 renormalize 로 비허용 종목에 새지 않고 CASH 로
+    적립한다 — renormalize 는 recipient_ok 를 모르므로 그대로 두면 비허용 종목까지
+    비례로 되돌려받는다(리뷰 회귀, must_fix #3).
     """
     _recipient_ok = recipient_ok or (lambda t: True)
     if not weights:
@@ -54,6 +57,9 @@ def repair_category_caps(
         return max(0.0, min(single_room, cat_room))
 
     out = dict(weights)
+    # recipient_ok 가 지정된 경우에만 추적 — 미지정(None) 이면 기존 renormalize-back
+    # 동작을 그대로 보존한다(하위 호환, test_recipient_ok_default_none_is_unrestricted).
+    undistributed = 0.0
     for _ in range(_MAX_ITERS):
         over = {c: cap for c, cap in category_caps.items()
                 if cat_sum(out, c) > cap + FLOAT_TOLERANCE}
@@ -88,6 +94,17 @@ def repair_category_caps(
             if actual <= 1e-15:
                 break
             freed -= actual
+        # recipient_ok 가 물채움 풀을 좁혀 놓고(위 water-fill) 잔여 freed 를 터미널
+        # renormalize 로 넘기면, renormalize 는 recipient_ok 를 모르는 채 전체(비허용
+        # 목적지 포함)에 비례로 되돌려준다 — B4/MF-8 이 category 물채움에서 고친 것과
+        # 같은 누수를 renormalize 경로로 재도입하게 된다. 정책이 물채움을 막은 자산은
+        # 정규화도 건드리면 안 되므로, CASH 로 파킹한다(overlay._water_fill 의
+        # overflow→CASH 미러).
+        if recipient_ok is not None:
+            undistributed += freed
+
+    if undistributed > 1e-12:
+        out[_CASH] = out.get(_CASH, 0.0) + undistributed
 
     s = sum(out.values())
     return {t: w / s for t, w in out.items()} if s > 0 else dict(weights)
