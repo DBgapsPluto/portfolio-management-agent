@@ -203,6 +203,16 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
             target = repair_category_caps(target, _cat_of, CATEGORY_CAPS,
                                           recipient_ok=_recipient_ok)
             target = repair_risk_cap(target, is_risk)
+            risk_after_guard = sum(w for t, w in target.items() if is_risk(t))
+            if risk_after_guard > defensive_target + FLOAT_TOLERANCE:
+                # 재적용도 못 흡수한 잔여 — engine validation 은 이걸 category cap 위반으로만
+                # 잡을 수 있어(defensive_target 자체는 mandate 제약이 아님) 원인 귀속 없이
+                # 조용히 지나간다. house style: overlay.py:87-91 과 동일하게 경고로 귀속.
+                logger.warning(
+                    "daily_full: defensive 수렴 가드 재적용 후에도 위험자산 %.4f > "
+                    "defensive_target %.4f — 잔여 초과 (as_of=%s)",
+                    risk_after_guard, defensive_target, as_of,
+                )
 
     resolved_out = (
         Path(out_dir)
