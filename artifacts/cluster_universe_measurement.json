@@ -1,0 +1,828 @@
+{
+  "note": "WP-D D0-1 measurement gate — F5 decision inputs (no code change)",
+  "generated_at": "2026-08-18T13:14:45",
+  "as_of": "2026-08-18",
+  "window_days": 252,
+  "min_history_days": 126,
+  "cluster_cap": 0.35,
+  "universe_size": 190,
+  "n_priced": 190,
+  "n_eligible": 190,
+  "excluded_insufficient_history": [],
+  "portfolio_dates": [
+    "2026-06-08",
+    "2026-06-05"
+  ],
+  "variants": {
+    "average@0.7": {
+      "n_clusters": 23,
+      "max_cluster_size": 32,
+      "n_tickers_clustered": 150,
+      "pct_universe_clustered": 0.7895,
+      "cluster_sizes_desc": [
+        32,
+        18,
+        17,
+        10,
+        7,
+        6,
+        6,
+        6,
+        6,
+        5,
+        4,
+        4,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        2,
+        2,
+        2,
+        2
+      ],
+      "largest_cluster": {
+        "size": 32,
+        "avg_internal_correlation": 0.873,
+        "bucket_histogram": {
+          "b1_kr_equity": 23,
+          "b3_global_tech": 8,
+          "b5_other_intl": 1
+        },
+        "members": [
+          {
+            "ticker": "A069500",
+            "name": "KODEX 200"
+          },
+          {
+            "ticker": "A091160",
+            "name": "KODEX 반도체"
+          },
+          {
+            "ticker": "A102110",
+            "name": "TIGER 200"
+          },
+          {
+            "ticker": "A102780",
+            "name": "KODEX 삼성그룹"
+          },
+          {
+            "ticker": "A139220",
+            "name": "TIGER 200 건설"
+          },
+          {
+            "ticker": "A139260",
+            "name": "TIGER 200 IT"
+          },
+          {
+            "ticker": "A147970",
+            "name": "TIGER 모멘텀"
+          },
+          {
+            "ticker": "A148020",
+            "name": "RISE 200"
+          },
+          {
+            "ticker": "A152100",
+            "name": "PLUS 200"
+          },
+          {
+            "ticker": "A156080",
+            "name": "KODEX MSCI Korea"
+          },
+          {
+            "ticker": "A195980",
+            "name": "PLUS 신흥국MSCI(합성 H)"
+          },
+          {
+            "ticker": "A226490",
+            "name": "KODEX 코스피"
+          },
+          {
+            "ticker": "A229200",
+            "name": "KODEX 코스닥150"
+          },
+          {
+            "ticker": "A232080",
+            "name": "TIGER 코스닥150"
+          },
+          {
+            "ticker": "A277630",
+            "name": "TIGER 코스피"
+          },
+          {
+            "ticker": "A278530",
+            "name": "KODEX 200TR"
+          },
+          {
+            "ticker": "A278540",
+            "name": "KODEX MSCI Korea TR"
+          },
+          {
+            "ticker": "A294400",
+            "name": "KIWOOM 200TR"
+          },
+          {
+            "ticker": "A295040",
+            "name": "SOL 200TR"
+          },
+          {
+            "ticker": "A302450",
+            "name": "RISE 코스피"
+          },
+          {
+            "ticker": "A310970",
+            "name": "TIGER MSCI Korea TR"
+          },
+          {
+            "ticker": "A315930",
+            "name": "KODEX Top5PlusTR"
+          },
+          {
+            "ticker": "A325010",
+            "name": "KODEX 성장주"
+          },
+          {
+            "ticker": "A328370",
+            "name": "PLUS 코스피TR"
+          },
+          {
+            "ticker": "A361580",
+            "name": "RISE 200TR"
+          },
+          {
+            "ticker": "A363580",
+            "name": "KODEX 200IT TR"
+          },
+          {
+            "ticker": "A395160",
+            "name": "KODEX AI반도체"
+          },
+          {
+            "ticker": "A395270",
+            "name": "HANARO Fn K-반도체"
+          },
+          {
+            "ticker": "A434730",
+            "name": "HANARO 원자력iSelect"
+          },
+          {
+            "ticker": "A446770",
+            "name": "ACE 글로벌반도체TOP4 Plus"
+          },
+          {
+            "ticker": "A455850",
+            "name": "SOL AI반도체소부장"
+          },
+          {
+            "ticker": "A487240",
+            "name": "KODEX AI전력핵심설비"
+          }
+        ]
+      },
+      "portfolios": {
+        "2026-06-08": {
+          "max_held_cluster_weight": 0.202507,
+          "cap_violated": false,
+          "n_violating_clusters": 0,
+          "held_weight_in_clusters": 0.771615,
+          "top_held_clusters": [
+            {
+              "cluster_size": 10,
+              "avg_corr": 0.8924,
+              "held_weight": 0.202507,
+              "violates_cap": false,
+              "held_members": {
+                "A305080 TIGER 미국채10년선물": 0.086523,
+                "A261240 KODEX 미국달러선물": 0.076722,
+                "A468380 KODEX iShares미국하이일드액티브": 0.039262
+              }
+            },
+            {
+              "cluster_size": 18,
+              "avg_corr": 0.8079,
+              "held_weight": 0.202265,
+              "violates_cap": false,
+              "held_members": {
+                "A360750 TIGER 미국S&P500": 0.134754,
+                "A381170 TIGER 미국테크TOP10 INDXX": 0.067511
+              }
+            },
+            {
+              "cluster_size": 17,
+              "avg_corr": 0.8545,
+              "held_weight": 0.095279,
+              "violates_cap": false,
+              "held_members": {
+                "A114260 KODEX 국고채3년": 0.095279
+              }
+            },
+            {
+              "cluster_size": 3,
+              "avg_corr": 0.8243,
+              "held_weight": 0.087548,
+              "violates_cap": false,
+              "held_members": {
+                "A411060 ACE KRX금현물": 0.087548
+              }
+            },
+            {
+              "cluster_size": 6,
+              "avg_corr": 0.8478,
+              "held_weight": 0.047019,
+              "violates_cap": false,
+              "held_members": {
+                "A161510 PLUS 고배당주": 0.047019
+              }
+            }
+          ]
+        },
+        "2026-06-05": {
+          "max_held_cluster_weight": 0.24851,
+          "cap_violated": false,
+          "n_violating_clusters": 0,
+          "held_weight_in_clusters": 0.800681,
+          "top_held_clusters": [
+            {
+              "cluster_size": 18,
+              "avg_corr": 0.8079,
+              "held_weight": 0.24851,
+              "violates_cap": false,
+              "held_members": {
+                "A381170 TIGER 미국테크TOP10 INDXX": 0.135471,
+                "A360750 TIGER 미국S&P500": 0.113039
+              }
+            },
+            {
+              "cluster_size": 10,
+              "avg_corr": 0.8924,
+              "held_weight": 0.183736,
+              "violates_cap": false,
+              "held_members": {
+                "A261240 KODEX 미국달러선물": 0.09182,
+                "A305080 TIGER 미국채10년선물": 0.067884,
+                "A468380 KODEX iShares미국하이일드액티브": 0.024032
+              }
+            },
+            {
+              "cluster_size": 3,
+              "avg_corr": 0.8243,
+              "held_weight": 0.124549,
+              "violates_cap": false,
+              "held_members": {
+                "A411060 ACE KRX금현물": 0.124549
+              }
+            },
+            {
+              "cluster_size": 17,
+              "avg_corr": 0.8545,
+              "held_weight": 0.087684,
+              "violates_cap": false,
+              "held_members": {
+                "A114260 KODEX 국고채3년": 0.087684
+              }
+            },
+            {
+              "cluster_size": 32,
+              "avg_corr": 0.873,
+              "held_weight": 0.049662,
+              "violates_cap": false,
+              "held_members": {
+                "A069500 KODEX 200": 0.049662
+              }
+            }
+          ]
+        }
+      }
+    },
+    "average@0.8": {
+      "n_clusters": 25,
+      "max_cluster_size": 26,
+      "n_tickers_clustered": 128,
+      "pct_universe_clustered": 0.6737,
+      "cluster_sizes_desc": [
+        26,
+        16,
+        11,
+        10,
+        7,
+        6,
+        4,
+        4,
+        4,
+        4,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "largest_cluster": {
+        "size": 26,
+        "avg_internal_correlation": 0.9455,
+        "bucket_histogram": {
+          "b1_kr_equity": 19,
+          "b3_global_tech": 6,
+          "b5_other_intl": 1
+        },
+        "members": [
+          {
+            "ticker": "A069500",
+            "name": "KODEX 200"
+          },
+          {
+            "ticker": "A091160",
+            "name": "KODEX 반도체"
+          },
+          {
+            "ticker": "A102110",
+            "name": "TIGER 200"
+          },
+          {
+            "ticker": "A102780",
+            "name": "KODEX 삼성그룹"
+          },
+          {
+            "ticker": "A139260",
+            "name": "TIGER 200 IT"
+          },
+          {
+            "ticker": "A147970",
+            "name": "TIGER 모멘텀"
+          },
+          {
+            "ticker": "A148020",
+            "name": "RISE 200"
+          },
+          {
+            "ticker": "A152100",
+            "name": "PLUS 200"
+          },
+          {
+            "ticker": "A156080",
+            "name": "KODEX MSCI Korea"
+          },
+          {
+            "ticker": "A195980",
+            "name": "PLUS 신흥국MSCI(합성 H)"
+          },
+          {
+            "ticker": "A226490",
+            "name": "KODEX 코스피"
+          },
+          {
+            "ticker": "A277630",
+            "name": "TIGER 코스피"
+          },
+          {
+            "ticker": "A278530",
+            "name": "KODEX 200TR"
+          },
+          {
+            "ticker": "A278540",
+            "name": "KODEX MSCI Korea TR"
+          },
+          {
+            "ticker": "A294400",
+            "name": "KIWOOM 200TR"
+          },
+          {
+            "ticker": "A295040",
+            "name": "SOL 200TR"
+          },
+          {
+            "ticker": "A302450",
+            "name": "RISE 코스피"
+          },
+          {
+            "ticker": "A310970",
+            "name": "TIGER MSCI Korea TR"
+          },
+          {
+            "ticker": "A315930",
+            "name": "KODEX Top5PlusTR"
+          },
+          {
+            "ticker": "A325010",
+            "name": "KODEX 성장주"
+          },
+          {
+            "ticker": "A328370",
+            "name": "PLUS 코스피TR"
+          },
+          {
+            "ticker": "A361580",
+            "name": "RISE 200TR"
+          },
+          {
+            "ticker": "A363580",
+            "name": "KODEX 200IT TR"
+          },
+          {
+            "ticker": "A395160",
+            "name": "KODEX AI반도체"
+          },
+          {
+            "ticker": "A395270",
+            "name": "HANARO Fn K-반도체"
+          },
+          {
+            "ticker": "A446770",
+            "name": "ACE 글로벌반도체TOP4 Plus"
+          }
+        ]
+      },
+      "portfolios": {
+        "2026-06-08": {
+          "max_held_cluster_weight": 0.202507,
+          "cap_violated": false,
+          "n_violating_clusters": 0,
+          "held_weight_in_clusters": 0.739126,
+          "top_held_clusters": [
+            {
+              "cluster_size": 10,
+              "avg_corr": 0.8924,
+              "held_weight": 0.202507,
+              "violates_cap": false,
+              "held_members": {
+                "A305080 TIGER 미국채10년선물": 0.086523,
+                "A261240 KODEX 미국달러선물": 0.076722,
+                "A468380 KODEX iShares미국하이일드액티브": 0.039262
+              }
+            },
+            {
+              "cluster_size": 11,
+              "avg_corr": 0.8862,
+              "held_weight": 0.202265,
+              "violates_cap": false,
+              "held_members": {
+                "A360750 TIGER 미국S&P500": 0.134754,
+                "A381170 TIGER 미국테크TOP10 INDXX": 0.067511
+              }
+            },
+            {
+              "cluster_size": 16,
+              "avg_corr": 0.8674,
+              "held_weight": 0.095279,
+              "violates_cap": false,
+              "held_members": {
+                "A114260 KODEX 국고채3년": 0.095279
+              }
+            },
+            {
+              "cluster_size": 2,
+              "avg_corr": 0.8812,
+              "held_weight": 0.087548,
+              "violates_cap": false,
+              "held_members": {
+                "A411060 ACE KRX금현물": 0.087548
+              }
+            },
+            {
+              "cluster_size": 6,
+              "avg_corr": 0.8478,
+              "held_weight": 0.047019,
+              "violates_cap": false,
+              "held_members": {
+                "A161510 PLUS 고배당주": 0.047019
+              }
+            }
+          ]
+        },
+        "2026-06-05": {
+          "max_held_cluster_weight": 0.24851,
+          "cap_violated": false,
+          "n_violating_clusters": 0,
+          "held_weight_in_clusters": 0.779067,
+          "top_held_clusters": [
+            {
+              "cluster_size": 11,
+              "avg_corr": 0.8862,
+              "held_weight": 0.24851,
+              "violates_cap": false,
+              "held_members": {
+                "A381170 TIGER 미국테크TOP10 INDXX": 0.135471,
+                "A360750 TIGER 미국S&P500": 0.113039
+              }
+            },
+            {
+              "cluster_size": 10,
+              "avg_corr": 0.8924,
+              "held_weight": 0.183736,
+              "violates_cap": false,
+              "held_members": {
+                "A261240 KODEX 미국달러선물": 0.09182,
+                "A305080 TIGER 미국채10년선물": 0.067884,
+                "A468380 KODEX iShares미국하이일드액티브": 0.024032
+              }
+            },
+            {
+              "cluster_size": 2,
+              "avg_corr": 0.8812,
+              "held_weight": 0.124549,
+              "violates_cap": false,
+              "held_members": {
+                "A411060 ACE KRX금현물": 0.124549
+              }
+            },
+            {
+              "cluster_size": 16,
+              "avg_corr": 0.8674,
+              "held_weight": 0.087684,
+              "violates_cap": false,
+              "held_members": {
+                "A114260 KODEX 국고채3년": 0.087684
+              }
+            },
+            {
+              "cluster_size": 26,
+              "avg_corr": 0.9455,
+              "held_weight": 0.049662,
+              "violates_cap": false,
+              "held_members": {
+                "A069500 KODEX 200": 0.049662
+              }
+            }
+          ]
+        }
+      }
+    },
+    "complete@0.7": {
+      "n_clusters": 31,
+      "max_cluster_size": 26,
+      "n_tickers_clustered": 149,
+      "pct_universe_clustered": 0.7842,
+      "cluster_sizes_desc": [
+        26,
+        10,
+        7,
+        7,
+        7,
+        7,
+        6,
+        6,
+        6,
+        5,
+        5,
+        5,
+        4,
+        4,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2,
+        2
+      ],
+      "largest_cluster": {
+        "size": 26,
+        "avg_internal_correlation": 0.9455,
+        "bucket_histogram": {
+          "b1_kr_equity": 19,
+          "b3_global_tech": 6,
+          "b5_other_intl": 1
+        },
+        "members": [
+          {
+            "ticker": "A069500",
+            "name": "KODEX 200"
+          },
+          {
+            "ticker": "A091160",
+            "name": "KODEX 반도체"
+          },
+          {
+            "ticker": "A102110",
+            "name": "TIGER 200"
+          },
+          {
+            "ticker": "A102780",
+            "name": "KODEX 삼성그룹"
+          },
+          {
+            "ticker": "A139260",
+            "name": "TIGER 200 IT"
+          },
+          {
+            "ticker": "A147970",
+            "name": "TIGER 모멘텀"
+          },
+          {
+            "ticker": "A148020",
+            "name": "RISE 200"
+          },
+          {
+            "ticker": "A152100",
+            "name": "PLUS 200"
+          },
+          {
+            "ticker": "A156080",
+            "name": "KODEX MSCI Korea"
+          },
+          {
+            "ticker": "A195980",
+            "name": "PLUS 신흥국MSCI(합성 H)"
+          },
+          {
+            "ticker": "A226490",
+            "name": "KODEX 코스피"
+          },
+          {
+            "ticker": "A277630",
+            "name": "TIGER 코스피"
+          },
+          {
+            "ticker": "A278530",
+            "name": "KODEX 200TR"
+          },
+          {
+            "ticker": "A278540",
+            "name": "KODEX MSCI Korea TR"
+          },
+          {
+            "ticker": "A294400",
+            "name": "KIWOOM 200TR"
+          },
+          {
+            "ticker": "A295040",
+            "name": "SOL 200TR"
+          },
+          {
+            "ticker": "A302450",
+            "name": "RISE 코스피"
+          },
+          {
+            "ticker": "A310970",
+            "name": "TIGER MSCI Korea TR"
+          },
+          {
+            "ticker": "A315930",
+            "name": "KODEX Top5PlusTR"
+          },
+          {
+            "ticker": "A325010",
+            "name": "KODEX 성장주"
+          },
+          {
+            "ticker": "A328370",
+            "name": "PLUS 코스피TR"
+          },
+          {
+            "ticker": "A361580",
+            "name": "RISE 200TR"
+          },
+          {
+            "ticker": "A363580",
+            "name": "KODEX 200IT TR"
+          },
+          {
+            "ticker": "A395160",
+            "name": "KODEX AI반도체"
+          },
+          {
+            "ticker": "A395270",
+            "name": "HANARO Fn K-반도체"
+          },
+          {
+            "ticker": "A446770",
+            "name": "ACE 글로벌반도체TOP4 Plus"
+          }
+        ]
+      },
+      "portfolios": {
+        "2026-06-08": {
+          "max_held_cluster_weight": 0.134754,
+          "cap_violated": false,
+          "n_violating_clusters": 0,
+          "held_weight_in_clusters": 0.771615,
+          "top_held_clusters": [
+            {
+              "cluster_size": 7,
+              "avg_corr": 0.8664,
+              "held_weight": 0.134754,
+              "violates_cap": false,
+              "held_members": {
+                "A360750 TIGER 미국S&P500": 0.134754
+              }
+            },
+            {
+              "cluster_size": 7,
+              "avg_corr": 0.8886,
+              "held_weight": 0.125785,
+              "violates_cap": false,
+              "held_members": {
+                "A305080 TIGER 미국채10년선물": 0.086523,
+                "A468380 KODEX iShares미국하이일드액티브": 0.039262
+              }
+            },
+            {
+              "cluster_size": 7,
+              "avg_corr": 0.8498,
+              "held_weight": 0.095279,
+              "violates_cap": false,
+              "held_members": {
+                "A114260 KODEX 국고채3년": 0.095279
+              }
+            },
+            {
+              "cluster_size": 3,
+              "avg_corr": 0.8243,
+              "held_weight": 0.087548,
+              "violates_cap": false,
+              "held_members": {
+                "A411060 ACE KRX금현물": 0.087548
+              }
+            },
+            {
+              "cluster_size": 5,
+              "avg_corr": 0.9513,
+              "held_weight": 0.076722,
+              "violates_cap": false,
+              "held_members": {
+                "A261240 KODEX 미국달러선물": 0.076722
+              }
+            }
+          ]
+        },
+        "2026-06-05": {
+          "max_held_cluster_weight": 0.135471,
+          "cap_violated": false,
+          "n_violating_clusters": 0,
+          "held_weight_in_clusters": 0.800681,
+          "top_held_clusters": [
+            {
+              "cluster_size": 6,
+              "avg_corr": 0.8978,
+              "held_weight": 0.135471,
+              "violates_cap": false,
+              "held_members": {
+                "A381170 TIGER 미국테크TOP10 INDXX": 0.135471
+              }
+            },
+            {
+              "cluster_size": 3,
+              "avg_corr": 0.8243,
+              "held_weight": 0.124549,
+              "violates_cap": false,
+              "held_members": {
+                "A411060 ACE KRX금현물": 0.124549
+              }
+            },
+            {
+              "cluster_size": 7,
+              "avg_corr": 0.8664,
+              "held_weight": 0.113039,
+              "violates_cap": false,
+              "held_members": {
+                "A360750 TIGER 미국S&P500": 0.113039
+              }
+            },
+            {
+              "cluster_size": 7,
+              "avg_corr": 0.8886,
+              "held_weight": 0.091916,
+              "violates_cap": false,
+              "held_members": {
+                "A305080 TIGER 미국채10년선물": 0.067884,
+                "A468380 KODEX iShares미국하이일드액티브": 0.024032
+              }
+            },
+            {
+              "cluster_size": 5,
+              "avg_corr": 0.9513,
+              "held_weight": 0.09182,
+              "violates_cap": false,
+              "held_members": {
+                "A261240 KODEX 미국달러선물": 0.09182
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
