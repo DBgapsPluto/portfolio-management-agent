@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 830" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="812" viewBox="0 0 940 812" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
   <title>Pipeline: 4 analysts → research debate → Black-Litterman allocator → ETF selection → repair → mandate validator → outputs</title>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -7,7 +7,7 @@
   </defs>
 
   <!-- ===== Stage 1: four parallel analysts ===== -->
-  <text x="40" y="20" font-size="11" fill="#848d97">Stage 1 — analysts (parallel, deterministic skills + LLM narrative)</text>
+  <text x="40" y="20" font-size="11" fill="#6e7781">Stage 1 — analysts (parallel, deterministic skills + LLM narrative)</text>
   <g>
     <rect x="40" y="30" width="200" height="64" rx="8" fill="#eef1f4" stroke="#59636e"/>
     <text x="140" y="56" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">macro_quant</text>
@@ -75,7 +75,7 @@
 
   <!-- ===== ETF selection ===== -->
   <rect x="220" y="454" width="500" height="60" rx="8" fill="#eef1f4" stroke="#59636e"/>
-  <text x="470" y="478" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">ETF selection (deterministic)</text>
+  <text x="470" y="478" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">ETF selection (reproducible)</text>
   <text x="470" y="498" font-size="11" fill="#59636e" text-anchor="middle">eligibility screen · AUM weighting · risk-adjusted momentum for theme buckets</text>
   <path d="M 470 514 L 470 550" stroke="#848d97" fill="none" marker-end="url(#arrow)"/>
 
@@ -92,7 +92,7 @@
 
   <!-- retry loop back to allocator -->
   <path d="M 720 684 L 905 684 L 905 330 L 884 330" stroke="#848d97" stroke-dasharray="5 4" fill="none" marker-end="url(#arrow)"/>
-  <text x="898" y="520" font-size="10.5" fill="#848d97" text-anchor="middle" transform="rotate(-90 898 520)">fail → retry ≤ 2 → fallback</text>
+  <text x="898" y="520" font-size="10.5" fill="#6e7781" text-anchor="middle" transform="rotate(-90 898 520)">fail → retry ≤ 2 → fallback</text>
 
   <!-- ===== Outputs ===== -->
   <g stroke="#848d97" fill="none" marker-end="url(#arrow)">

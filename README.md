@@ -2,16 +2,18 @@
 
 **English** | [한국어](README-ko_kr.md)
 
-**Multi-agent asset-allocation system for Korean ETFs — a regime-conditional reference portfolio + Black-Litterman view engine with LLM relative views, and deterministic mandate enforcement.**
+**Multi-agent asset-allocation system for Korean ETFs — a regime-conditional reference portfolio tilted by Black-Litterman views, with mandate compliance enforced deterministically on every run.**
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12%2B-3776AB)
 ![LangGraph](https://img.shields.io/badge/orchestration-LangGraph-lightgrey)
 ![Tests](https://img.shields.io/badge/tests-1300%2B_passing_locally-brightgreen)
 
-This project started as a fork of [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) and was rebuilt from a stock-picking framework into a top-down asset-allocation system. What it adds over the upstream: a **Korean listed-ETF universe** with a 14-bucket asset taxonomy, a **KRW-numeraire weekly covariance model**, a **confidence-scaled Black-Litterman prior** that interpolates between a neutral portfolio and a macro-regime baseline by a deterministic signal-agreement score, and **deterministic compliance** — mandate caps are enforced by a repair loop and re-checked by an LLM-free validator on every run.
+This project started as a fork of [TauricResearch/TradingAgents](https://github.com/TauricResearch/TradingAgents) and was rebuilt from a stock-picking framework into a top-down asset-allocation system.
 
-![Architecture](assets/architecture.svg)
+What it adds over the upstream: a **Korean listed-ETF universe** with a 14-bucket asset taxonomy, a **KRW-numeraire weekly covariance model**, a **confidence-scaled Black-Litterman prior** that interpolates between a neutral portfolio and a macro-regime baseline by a deterministic signal-agreement score, and **deterministic compliance** — mandate caps are enforced by a repair loop and re-checked by an LLM-free validator on every run.
+
+![Pipeline: four analysts → research debate → Black-Litterman allocator → ETF selection → repair → mandate validator → outputs](assets/architecture.svg)
 
 ## Why
 
@@ -62,7 +64,7 @@ The ETF universe ships as [`data/universe.json`](data/universe.json); no extra d
 - **Confidence-scaled prior** — a deterministic signal-agreement score (computed from macro-snapshot votes, not the LLM's self-reported confidence) interpolates the prior between a neutral portfolio and the regime baseline, so a possibly-misclassified regime degrades gracefully.
 - **KRW-numeraire weekly covariance** — bucket proxies re-expressed in KRW (unhedged buckets composited with USDKRW), weekly returns over a 104-week window, Ledoit–Wolf shrinkage.
 - **Bounded LLM influence** — views enter only through a capped active-share budget against the prior; the LLM can tilt, never override, the structural allocation.
-- **Deterministic ETF selection** — eligibility screens (category, AUM, listing age) plus risk-adjusted momentum with an LLM theme view for heterogeneous buckets; same inputs, same output.
+- **Reproducible ETF selection** — eligibility screens (category, AUM, listing age) plus risk-adjusted momentum with an LLM theme view for heterogeneous buckets; same inputs, same output.
 - **Deterministic repair + LLM-free validation** — single-ETF 20%, category caps, risk-asset 70%, and correlation-cluster caps are repaired by water-fill, then independently re-checked by a validator with a retry → safe-fallback cycle.
 - **Turnover compliance tooling** — the competition's initial ≥80% and monthly ≥10% turnover floors are tracked month-to-date from persisted trade notionals, with projected-shortfall alerts.
 - **Defensive data layer** — tiered caching, point-in-time guards against look-ahead, publication-lag handling, rate-limit gating, and hard timeouts across FRED / ECOS / KRX / KOFIA / yfinance fetchers.
@@ -74,13 +76,13 @@ The full methodology lives in [`docs/`](docs/) (written in Korean); each stage b
 
 **Stage 1 — four parallel analysts** ([docs/stages/](docs/stages/)). Orthogonal views of the market: `macro_quant` classifies the growth–inflation regime from macro data only (no price endogeneity), `market_risk` scores systemic stress (volatility, credit, breadth, funding), `technical` computes universe momentum and correlation clusters, and `macro_news` maps events and sector themes. Each hands off a compact structured report.
 
-**Stage 2 — research debate** ([docs/design/2026-06-02](docs/design/2026-06-02-stage2-3-merge-llm-research-trader-design.md)). Bull and Bear researchers re-interpret the same facts adversarially; a manager synthesizes them into a thesis with a conviction level and a dominant scenario. Conviction scales how much latitude downstream views get.
+**Stage 2 — research debate** ([docs/design/2026-06-02](docs/design/2026-06-02-stage2-3-merge-llm-research-trader-design.md)). Bull and Bear researchers re-interpret the same facts adversarially; a manager synthesizes them into a structured thesis with a five-level risk tilt and key risks. The thesis text grounds the allocator's view prompt.
 
 **Stage 3 — Black-Litterman allocator** ([docs/design/2026-06-20](docs/design/2026-06-20-bl-allocator-design.md), [2026-06-23](docs/design/2026-06-23-confidence-scaled-prior-design.md)). Over 14 asset buckets (5 defensive, 9 growth): the confidence-scaled prior anchors the portfolio; the LLM contributes a relative ranking of buckets (converted to zero-sum views) alongside deterministic FX/credit rule views; views blend with the prior under confidence-based uncertainty weighting; a constrained optimizer produces bucket weights under mandate caps and an active-share budget. With no views, the optimizer exactly recovers the reference portfolio — a tested invariant.
 
 **ETF selection** ([docs/design/2026-06-16](docs/design/2026-06-16-etf-selection-hybrid-design.md)). Bucket weights map to concrete ETFs: homogeneous buckets are AUM-weighted after eligibility screens; heterogeneous buckets (developed-market core, global tech, other international) select by LLM theme view then risk-adjusted momentum.
 
-**Repair loop and validator** ([docs/methodology/mandate-validation.md](docs/methodology/mandate-validation.md)). Deterministic water-fill repair enforces every cap, then an independent, LLM-free validator re-checks integrity, universe membership, single-ETF cap, risk-asset cap, correlation clusters, and turnover floors. Failure triggers up to two allocator retries with violation feedback, then a mathematically guaranteed safe fallback — the pipeline never ships a non-compliant portfolio.
+**Repair loop and validator** ([docs/methodology/mandate-validation.md](docs/methodology/mandate-validation.md)). Deterministic water-fill repair enforces every cap, then an independent, LLM-free validator re-checks integrity, universe membership, single-ETF cap, risk-asset cap, and correlation clusters (the initial turnover floor is a hard gate; the monthly floor is advisory here — the rebalance engine's trade-notional check is its authority). Failure triggers up to two allocator retries with violation feedback, then a constrained-reoptimization fallback that is itself re-validated — the pipeline never *silently* ships a non-compliant portfolio.
 
 **Outputs & rebalancing** ([docs/stages/stage6-portfolio-manager.md](docs/stages/stage6-portfolio-manager.md), [docs/methodology/rebalancing.md](docs/methodology/rebalancing.md)). Every run emits `portfolio.json` (full decision trace with prior → view → final attribution), `philosophy.md` (the philosophy report the competition grades), and `trade_plan.csv` (executable orders). Rebalancing reprices holdings, evaluates calendar/drift/event triggers, rebuilds targets per tier, and emits deterministic trade deltas.
 
