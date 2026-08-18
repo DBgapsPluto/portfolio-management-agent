@@ -28,6 +28,16 @@ def test_publication_lag_days_has_critical_series():
     assert lag["us_10y"] == 1  # daily series, T-1 default
 
 
+def test_cluster_full_universe_dial_default_off():
+    """F5/WP-D: full-universe clustering ships behind a dial that defaults OFF.
+
+    OFF = production top-tier pool + average linkage, byte-identical. Flipping
+    ON (complete-linkage@0.7 full pool — D0-2 decision) is a separate
+    user-approved commit after WP-F.
+    """
+    assert DEFAULT_CONFIG["rebalance"]["cluster_full_universe"] is False
+
+
 def test_live_rebalance_dials_default_to_bl():
     """LIVE default is the Black-Litterman allocator path with calibrated dials.
 

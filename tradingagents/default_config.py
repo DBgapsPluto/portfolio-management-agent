@@ -75,6 +75,15 @@ DEFAULT_CONFIG = {
         "bl_turnover_cap": 0.50,
         "bl_delta": 2.5,
         "bl_base_spread": 0.04,
+        # F5 (WP-D): full-universe correlation clustering — dial-guarded (use_bl
+        # pattern). False (default) = production top-tier pool + average linkage,
+        # byte-identical. True = every ETF with >=126d history clustered with
+        # complete-linkage@0.7 (D0-2 decision: tightest single-theme semantics,
+        # max held-member cluster weight 0.135 on real holdings, zero 0.35-cap
+        # violations — artifacts/cluster_universe_measurement.json), plus daily
+        # repair loop gains repair_cluster_cap. Default-ON flip is a separate
+        # user-approved commit after WP-F.
+        "cluster_full_universe": False,
     },
 }
 
