@@ -2,7 +2,7 @@
 
 [English](README.md) | **한국어**
 
-**한국 상장 ETF를 위한 멀티에이전트 자산배분 시스템 — regime-조건부 기준 포트폴리오를 Black-Litterman view로 기울이고, 의무사항(mandate) 준수를 매 실행 결정론적으로 강제한다.**
+**한국 상장 ETF를 위한 멀티에이전트 자산배분 시스템 — regime-조건부 기준 포트폴리오를 Black-Litterman view로 기울이고, 의무사항(mandate) 준수를 매 실행마다 결정론적으로 강제한다.**
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Python](https://img.shields.io/badge/python-3.12%2B-3776AB)
@@ -76,7 +76,7 @@ ETF 유니버스는 [`data/universe.json`](data/universe.json)으로 동봉되�
 
 **Stage 1 — 병렬 분석가 4종** ([docs/stages/](docs/stages/)). 서로 직교하는 시장 관점: `macro_quant`는 매크로 데이터만으로 성장–인플레 regime을 분류하고(가격 내생성 회피), `market_risk`는 시스템 스트레스를 점수화하며(변동성, 신용, breadth, 펀딩), `technical`은 유니버스 모멘텀과 상관 클러스터를 계산하고, `macro_news`는 이벤트·섹터 테마를 정리한다. 각자 압축된 구조화 report를 handoff한다.
 
-**Stage 2 — 리서치 디베이트** ([docs/design/2026-06-02](docs/design/2026-06-02-stage2-3-merge-llm-research-trader-design.md)). Bull·Bear 리서처가 동일한 사실을 적대적으로 재해석하고, manager가 이를 종합해 5단계 risk tilt와 핵심 리스크가 담긴 구조화 thesis를 만든다. 이 thesis 텍스트가 allocator의 view 프롬프트를 grounding한다.
+**Stage 2 — 리서치 디베이트** ([docs/design/2026-06-02](docs/design/2026-06-02-stage2-3-merge-llm-research-trader-design.md)). Bull·Bear 리서처가 동일한 사실을 적대적으로 재해석하고, manager가 이를 종합해 5단계 risk tilt와 핵심 리스크가 담긴 구조화 thesis를 만든다. 이 thesis 텍스트가 allocator view 프롬프트의 근거가 된다.
 
 **Stage 3 — Black-Litterman allocator** ([docs/design/2026-06-20](docs/design/2026-06-20-bl-allocator-design.md), [2026-06-23](docs/design/2026-06-23-confidence-scaled-prior-design.md)). 14개 자산 bucket(방어 5 + 성장 9) 위에서: confidence-scaled prior가 포트폴리오를 앵커하고, LLM이 bucket 상대 랭킹(zero-sum view로 변환)을, 결정론적 룰이 FX/credit view를 제공한다. view는 confidence 기반 불확실성 가중으로 prior와 결합되고, 제약 최적화가 mandate cap + active-share 예산 아래 bucket 가중치를 산출한다. view가 없으면 최적화기가 기준 포트폴리오를 정확히 복원한다 — 테스트로 잠근 불변식이다.
 
