@@ -242,3 +242,6 @@ data/.cache/
 backtest/historical/raw/
 
 .gstack/
+
+# paid-content OCR fixture — never commit
+tests/fixtures/save/
