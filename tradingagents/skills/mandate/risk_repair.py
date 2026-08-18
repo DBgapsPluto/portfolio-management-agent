@@ -53,11 +53,20 @@ def repair_risk_cap(
         # Distribute proportional to current weight (preserves relative proportions),
         # but clamp at SINGLE_CAP. Remainder loops back until exhausted.
         give = min(add, sum(SINGLE_CAP - v for v in eligible.values()))
+        dist = 0.0
         for t, v in eligible.items():
             delta = give * v / base
             room = SINGLE_CAP - out[t]
-            out[t] += min(delta, room)
-        add -= give
+            actual = min(delta, room)
+            out[t] += actual
+            dist += actual
+        # give is only the intended cap on this round — when headroom isn't proportional
+        # to weight, delta can exceed an individual ticker's room and get clipped. Subtract
+        # the ACTUALLY distributed amount (dist), not give, so the clipped remainder carries
+        # to the next iteration (mirrors overlay._water_fill / category_repair fix) instead
+        # of vanishing — a silent loss the terminal renormalize would otherwise mask by
+        # pushing risk back above cap.
+        add -= dist
 
     s = sum(out.values())
     return {t: w / s for t, w in out.items()} if s > 0 else dict(weights)

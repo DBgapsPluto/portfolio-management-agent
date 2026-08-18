@@ -39,10 +39,19 @@ def repair_cluster_cap(
             if not eligible:
                 break
             give = min(freed, sum(SINGLE_CAP - v for v in eligible.values()))
+            dist = 0.0
             for t in eligible:
                 share = (out[t] / base) if sum(eligible.values()) > 1e-12 else (1.0 / len(eligible))
+                before = out[t]
                 out[t] = min(SINGLE_CAP, out[t] + give * share)
-            freed -= give
+                dist += out[t] - before
+            # give is only this round's intended cap — uneven headroom (vs. weight-proportional
+            # share) can clip an individual ticker below its full share. Subtract the ACTUALLY
+            # distributed amount (dist), not give, so the clipped remainder reaches the next
+            # iteration's still-eligible recipients (mirrors overlay._water_fill / risk_repair
+            # fix) instead of vanishing — a loss small enough to slip under this file's own
+            # FLOAT_TOLERANCE and skip the sum-restore safety net below entirely.
+            freed -= dist
     # Restore sum=1 by water-filling the leftover deficit into non-cluster positions
     # UNDER SINGLE_CAP (same loop pattern as the cluster water-fill above), so a
     # saturated water-fill cannot re-inflate the capped cluster AND cannot emit a single
