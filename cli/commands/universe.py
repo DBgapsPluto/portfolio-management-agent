@@ -18,9 +18,11 @@ def group():
 def sync(xlsx, out):
     """Parse the organizer's GAPS ETF-list xlsx → universe.json.
 
-    The official list announces 188 ETFs; the shipped data/universe.json holds
-    190 entries because it reflects a later list update (see
-    docs/competition-rules-summary.md §6).
+    The organizer's list is 188 ETFs. The shipped data/universe.json holds 190
+    entries: the extra two are KR REIT tickers (A329200, A476800) registered by
+    this project — not by an organizer list update — to feed the B7 REIT
+    price/signal path, so they may sit outside the organizer's tradable set
+    (see docs/competition-rules-summary.md §6).
 
     The organizer xlsx is not distributed with this repository; the parsed
     result (data/universe.json) is shipped instead. Run this only when you

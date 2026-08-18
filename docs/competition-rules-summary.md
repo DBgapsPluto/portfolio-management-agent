@@ -52,6 +52,13 @@
 
 | 주최측 원본 (미동봉) | 리포에 남긴 것 |
 |---|---|
-| ETF 리스트 xlsx (188종) | 파싱 결과 `data/universe.json` — 새 xlsx 수령 시 `gaps universe sync --xlsx <path>`로 재생성 (현재 동봉본은 리스트 갱신이 반영된 190종) |
+| ETF 리스트 xlsx (188종) | 파싱 결과 `data/universe.json` — 새 xlsx 수령 시 `gaps universe sync --xlsx <path>`로 재생성 (동봉본은 190종 — 아래 주 참조) |
 | 14-버킷 분류 xlsx | `universe.json`의 `gaps_bucket` 필드 + `tradingagents/skills/portfolio/gaps_buckets.py` 상수 (1회성 병합: `scripts/enrich_universe_gaps_bucket.py`) |
 | 룰북 문서 | 본 요약 문서 |
+
+> **동봉 `universe.json`이 190종인 이유**: 주최측 리스트는 188종이다. 추가 2종 —
+> `A329200`(TIGER 리츠부동산인프라)·`A476800`(KODEX 한국부동산리츠인프라) — 는 주최측의 리스트
+> 갱신이 아니라, **본 프로젝트가 B7(리츠) 버킷의 가격/신호 경로를 위해 자체 등재**한 것이다
+> (2026-06-09, `docs/design/2026-06-09-stage1-bucket-data-foldins-design.md` §5.5·§6).
+> 따라서 이 2종은 주최측 매매 가능 집합 밖에 있을 수 있으며, 코드는 이들을 선택 대상에서
+> 제외하지 않는다 — `LIMITATIONS.md` §4 참조.

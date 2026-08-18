@@ -12,21 +12,22 @@ marketing hedging; these are the boundaries we actually measured or declared.
 
 - **No performance claims.** This is research code operated during a single
   3-month university investment competition (2026-06-01 → 2026-08-31, still
-  running at the time of writing). One market environment, one sample. No returns
+  running as of 2026-08-18). One market environment, one sample. No returns
   are advertised anywhere in this repository, deliberately.
 - **Backtests are not simulated brokerage.** All harnesses score decisions on
   realized forward returns with close-price fills; no slippage, market-impact, or
   fill model exists in any backtest harness (realized slippage from broker CSVs is
-  tracked separately by the live cost monitor). Transaction costs are a flat
-  10 bps one-way turnover charge in the BL-calibration and ETF-selection backtests
-  (`scripts/backtest_bl_calibration.py`, `scripts/backtest_etf_selection.py`) —
-  the same sweep that set the live dials — and there is no cost model at all in
-  the dial-tuning forward scorer (`tradingagents/backtest/forward_perf.py`) or the
-  gate harnesses (`scripts/run_backtest.py`, `scripts/backtest_bl_gate2.py`).
-  A point-in-time honesty pass (2026-06-04,
-  [`docs/design/2026-06-04-backtest-pit-honesty-design.md`](docs/design/2026-06-04-backtest-pit-honesty-design.md))
-  removed look-ahead from news/fear-greed/market-risk inputs, but several backtest
-  inputs remain proxy-grade rather than true historical vintages.
+  tracked separately by the live cost monitor).
+  - Transaction-cost scope: a flat 10 bps one-way turnover charge in the
+    BL-calibration and ETF-selection backtests
+    (`scripts/backtest_bl_calibration.py`, `scripts/backtest_etf_selection.py`) —
+    the same sweep that set the live dials — and no cost model at all in the
+    dial-tuning forward scorer (`tradingagents/backtest/forward_perf.py`) or the
+    gate harnesses (`scripts/run_backtest.py`, `scripts/backtest_bl_gate2.py`).
+  - A point-in-time honesty pass (2026-06-04,
+    [`docs/design/2026-06-04-backtest-pit-honesty-design.md`](docs/design/2026-06-04-backtest-pit-honesty-design.md))
+    removed look-ahead from news/fear-greed/market-risk inputs, but several
+    backtest inputs remain proxy-grade rather than true historical vintages.
 - **Execution reconciliation was manual.** The competition's mock HTS/MTS broker has
   no API; realized fills were reconciled from manually exported CSVs. The pipeline's
   "realized" state is only as fresh as that manual step.
@@ -109,5 +110,11 @@ Tracked in [`ROADMAP.md`](ROADMAP.md). Highlights:
   decision.
 - The monthly ≥10% turnover floor is tracked month-to-date with alerts, but meeting
   it remains an operational (human) responsibility.
+- The shipped `data/universe.json` holds 190 entries: the organizer's 188-entry
+  list plus two KR REIT tickers (A329200, A476800) this project registered to
+  feed the B7 REIT price/signal path
+  ([`docs/design/2026-06-09-stage1-bucket-data-foldins-design.md`](docs/design/2026-06-09-stage1-bucket-data-foldins-design.md) §5.5).
+  Those two may sit outside the organizer's tradable set, and nothing in the
+  selection path excludes them from allocation.
 - Assorted schema/config debt: enum entries and dials for deleted optimizer paths
   still exist and are disclosed here as inert.
