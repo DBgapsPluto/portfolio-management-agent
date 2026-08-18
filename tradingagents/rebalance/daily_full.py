@@ -18,6 +18,7 @@ from tradingagents.rebalance.reassess import reassess_target
 from tradingagents.rebalance import crisis_policy
 from tradingagents.skills.mandate.category_repair import repair_category_caps
 from tradingagents.skills.mandate.risk_repair import repair_risk_cap
+from tradingagents.skills.mandate.cluster_repair import repair_cluster_cap
 from tradingagents.skills.mandate.concentration_check import CATEGORY_CAPS, FLOAT_TOLERANCE
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.rebalance.types import RebalanceResult
@@ -189,9 +190,19 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
     # single-cap 헤드룸에도 자유롭게 물을 채워(risk-blind) defensive_overlay 가 방금 확보한
     # defensive_target 을 되돌린다(실측: overlay 직후 risk=0.30 → 수선 후 risk=0.375).
     _recipient_ok = (lambda t: not is_risk(t) and dest_ok(t)) if _is_defensive_tier else None
+    # F5/D1-3 (감사 MF-1 체인 ④): cluster_full_universe 다이얼 ON 이면 전수 그래프의
+    # 새 클러스터가 daily 검증(engine.validate_rebalance → correlation_check)에 유입
+    # 되는데, daily 경로엔 cluster 수선이 없어 매일 hard 위반 산출물이 나온다 → 수선
+    # 루프에 repair_cluster_cap 교대 추가. OFF(기본) 면 루프는 현행과 바이트 동일.
+    # cluster_repair 의 cross-cluster spill(비위반 군집 수혜가 그 군집을 cap 초과로
+    # 미는 경우)은 이 루프의 재실행(x3)이 다시 잡는 것에 의존한다(trader 쪽은 x12).
+    clusters = _load_clusters(previous_path)
+    _cluster_dial = bool(dials.get("cluster_full_universe", False))
     for _ in range(3):
         target = repair_category_caps(target, _cat_of, CATEGORY_CAPS, recipient_ok=_recipient_ok)
         target = repair_risk_cap(target, is_risk)
+        if _cluster_dial:
+            target = repair_cluster_cap(target, clusters)
 
     if _is_defensive_tier:
         risk_after_repair = sum(w for t, w in target.items() if is_risk(t))
@@ -220,8 +231,6 @@ def run(as_of: str, previous_path: str | None = None, out_dir=None) -> Rebalance
         else Path(DEFAULT_CONFIG.get("artifacts_dir", "./artifacts")) / as_of
     )
     resolved_out.mkdir(parents=True, exist_ok=True)
-
-    clusters = _load_clusters(previous_path)
 
     res = run_rebalance(
         as_of=as_of, tier=tier, capital=capital,
