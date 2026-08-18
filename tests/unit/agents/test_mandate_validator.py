@@ -183,9 +183,14 @@ W_SAME = {t: 0.20 for t in _TICKERS5}
 def test_graph_validator_monthly_turnover_is_advisory():
     # 그래프 validator의 월간 회전율 검사는 informational(soft)로 강등 (MF-5:
     # 엔진이 체결 명목을 보는 유일한 곳 — 컷오프 지표의 권위는 한 곳이어야 함)
+    # 양성 가드(리뷰 반영): tv 가 비어 있으면 all()이 공허하게 참이 되어 turnover
+    # 검사 자체가 경로에서 빠져도 그린이 되는 결함을 막기 위해, 위반이 정확히
+    # 1건 존재하고 그 설명에 advisory 마커가 붙어 있음을 함께 단언한다.
     report = _run_graph_validator(mode="monthly", prev_weights=PREV, weights=W_SAME)
     tv = [v for v in report.violations if v.rule == "turnover_floor"]
-    assert all(v.severity == "soft" for v in tv)
+    assert len(tv) == 1
+    assert tv[0].severity == "soft"
+    assert "advisory: 권위는 rebalance engine 체결 기반 검사(F3)" in tv[0].description
     assert report.passed                       # soft는 통과를 막지 않음
 
 

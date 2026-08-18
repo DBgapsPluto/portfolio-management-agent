@@ -45,9 +45,18 @@ def _run_monthly_engine(trades, drift_pct, floor):
 
 
 def test_monthly_floor_authority_is_engine_trade_notional():
-    # 거래 0 + 가격 드리프트 12% → floor 미충족이어야 함 (드리프트 착시 제거).
-    validation = _run_monthly_engine(trades=[], drift_pct=0.12, floor=0.10)
-    assert any(v.rule == "turnover_floor" for v in validation.violations)
+    # 판별적 단언(리뷰 반영, 3849b30 CASH 테스트와 동일 패턴). drift_pct=0.70 은
+    # A 종목 비중을 0.20 hard single-cap 위로 밀어 올려 엔진이 소량 강제 매도를
+    # 실행하게 만든다 — 그래도 실제 체결 규모는 작다(engine turnover=0.0558).
+    # 반면 구(weight-delta) 경로는 realized(트림 후) 대 previous_weights 델타를
+    # 그대로 합산해 turnover≈0.1183 로 floor(0.10)를 "통과"해버리는 착시를 만든다
+    # (실측: 이 fixture 에서 elif 분기를 되돌리면 위반이 사라짐 — 되돌려서 RED
+    # 확인함). 체결 기반 검사만이 실제 floor 미충족(0.0558 < 0.10)을 드러내야 한다.
+    validation = _run_monthly_engine(trades=[], drift_pct=0.70, floor=0.10)
+    tv = [v for v in validation.violations if v.rule == "turnover_floor"]
+    assert len(tv) == 1
+    assert tv[0].severity == "hard"
+    assert "0.0558" in tv[0].description   # 보고 수치가 체결 기반(엔진) 값임을 고정
 
 
 def _run_validate_rebalance(realized, previous, floor):
