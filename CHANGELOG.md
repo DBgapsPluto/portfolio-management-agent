@@ -23,7 +23,7 @@ repository reorganization for publication. All work happened on the
   uncertainty, constrained max-quadratic-utility on the prior Σ, camp
   soft-clips with proportional water-fill, and an active-share (L1) budget
   against the prior. Exact no-view recovery of the reference portfolio is a
-  tested invariant. Live default since mid-June (`use_bl=True` with a
+  tested invariant. Live default since 2026-06-23 (`use_bl=True` with a
   calibrated view budget); the legacy quadrant+tilt path is retained as a
   fallback.
 - **Confidence-scaled prior** — deterministic signal-agreement score *c*
