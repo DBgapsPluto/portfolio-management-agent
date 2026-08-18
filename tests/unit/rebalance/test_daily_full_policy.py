@@ -66,6 +66,42 @@ def test_defensive_target_survives_downstream_category_repair(tmp_path, monkeypa
     assert realized.get("GOLD1", 0.0) >= prev_target["GOLD1"] - 1e-3
 
 
+def test_reassess_tier_wires_sell_ok_and_protects_gold(tmp_path, monkeypatch):
+    # 리뷰 must_fix #1: daily_full.py:172 의 reassess_target(..., sell_ok=sell_ok) 는
+    # defensive_overlay 호출부와 달리 실제 daily_full 경로에서 unwired 상태로 남아도
+    # 스위트가 green 이었다(뮤테이션 검증: sell_ok=sell_ok 삭제해도 기존 스위트 무변화).
+    # kwarg 캡처 스파이로 배선 자체를 단언하고, GOLD1 이 다른 위험자산과 함께 비례로
+    # 축소되지 않는지(=보호가 실제로 살아있는지) 실측치로도 확인한다.
+    prev_target = {"EQ1": 0.20, "EQ2": 0.20, "GOLD1": 0.10,
+                   "HY1": 0.20, "SAFE1": 0.15, "SAFE2": 0.15}
+    _common(monkeypatch, prev_target)
+    monkeypatch.setattr(df, "_eval_triggers",
+                        lambda **k: ("reassess", {"fired": ["reassess"]}, True))
+    import tradingagents.rebalance.reassess as ra
+    monkeypatch.setattr(ra, "weekly_run",
+        lambda **k: type("R", (), {"regime_changed": True,
+                                   "tilt_proposed": {"risk_asset_delta": -0.10}})())
+
+    captured = {}
+    real_reassess = df.reassess_target
+
+    def spy_reassess(*args, **kwargs):
+        captured["sell_ok"] = kwargs.get("sell_ok")
+        return real_reassess(*args, **kwargs)
+
+    monkeypatch.setattr(df, "reassess_target", spy_reassess)
+
+    res = df.run(as_of="2026-06-08", previous_path=str(tmp_path), out_dir=tmp_path)
+
+    assert res.tier == "reassess"
+    assert captured["sell_ok"] is not None
+
+    # sell_ok 가 실제로 전달되지 않으면(unwired) GOLD1 도 EQ1/EQ2 와 동일 비율로 축소되어
+    # 0.10 * (risk 목표/risk 총합) < 0.10 이 된다 — 배선이 살아있는지의 직접 증거.
+    realized = res.realized_weights
+    assert realized.get("GOLD1", 0.0) >= prev_target["GOLD1"] - 1e-3
+
+
 # --- B4 리뷰 후속: 196-205 수렴 가드 자체의 커버리지 -----------------------------------
 #
 # 위의 recipient_ok CASH-파킹 수정(이 WP 의 category_repair.py 리크 수정)이 정확히
