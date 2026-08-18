@@ -2,12 +2,23 @@
 C2: buy_krw/sell_krw/begin_value/end_value 필드 영속화 + 월누적(MTD) 집계."""
 import json
 
+import pytest
+
 from tradingagents.dataflows.universe import Universe, ETFEntry
 from tradingagents.rebalance.engine import build_rebalance_plan, validate_rebalance
 from tradingagents.rebalance.types import RebalanceResult
 from tradingagents.reports.rebalance_plan import (
     write_rebalance_json, compute_turnover_month_to_date,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_slack_webhook(monkeypatch):
+    # compute_turnover_month_to_date sends a Slack alert on projected shortfall
+    # (test_notify.py:5 pattern) — without this, an operator machine with
+    # SLACK_WEBHOOK_URL exported would have this unit-test run post real
+    # "MTD turnover < floor" alerts to the live ops channel.
+    monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
 
 
 def _uni():
