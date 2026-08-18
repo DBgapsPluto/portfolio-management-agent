@@ -57,7 +57,7 @@
 
 | 개념 | 출처 | 단위 | 용도 |
 |---|---|---|---|
-| **14-bucket** (A1~A5 방어, B1~B9 성장) | `docs/GAPS_ETF_버킷분류_14.xlsx` (신규) | 버킷 | Trader 배분 어휘, BucketTarget 비중 |
+| **14-bucket** (A1~A5 방어, B1~B9 성장) | 주최측 버킷분류 xlsx (미동봉 — [docs/competition-rules-summary.md](../competition-rules-summary.md) §6; 병합 결과는 `universe.json` `gaps_bucket`) | 버킷 | Trader 배분 어휘, BucketTarget 비중 |
 | **위험/안전** (per-ETF) | `data/universe.json` `bucket` 필드 (기존) | 종목 | mandate "위험자산 ≤70%" 검사 |
 
 **데이터로 확정된 사실 (188종 전수 검증):**

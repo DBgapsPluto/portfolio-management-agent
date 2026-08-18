@@ -14,7 +14,7 @@ DB GAPS 자산배분 에이전트 v1 (이후) 작업 목록. plan-eng-review (20
 
 **Cons:** 첫 거래 후에야 sample export 가능. 사전 작업 불가.
 
-**Context:** 스펙 §15.1·db-gaps-prerequisites.md §5. 6/1 첫 거래 직후 export sample 1개 받아서 `dataflows/transactions.py` 컬럼 매핑 확정.
+**Context:** 스펙 §15.1·docs/setup/prerequisites.md §5. 6/1 첫 거래 직후 export sample 1개 받아서 `dataflows/transactions.py` 컬럼 매핑 확정.
 
 **Depends on / blocked by:** 6/1 이후 첫 매매 거래내역.
 
