@@ -1,12 +1,13 @@
 """Turnover floor check — 회전율 최소치 충족 여부.
 
-룰북 §3 인용 (docs/DB_GAPS_Investment_Tournament_Rules.md:35):
-    "총 매매 금액(매수금액 + 매도금액) / 평균 자산( (기초자산+기말자산)/2 ) * 100"
+대회 회전율 정의 (docs/competition-rules-summary.md §3):
+    turnover = (매수금액 + 매도금액) / 평균자산,  평균자산 = (기초자산 + 기말자산) / 2
 
-즉 매도/매수 양쪽을 합산하는 "total trade volume" 정의이며, 이것이 곧 룰북
-원문 공식이다 — 대안 정의로의 마이그레이션 여지가 있는 "2배 카운트"가 아니다
-(G3, docs/superpowers/plans/2026-08-15-fix-tier-remediation.md §0: 룰북 §3와
-일치 확인, "2배 모호성" 해소). floor 값이 이 정의에 맞춰 calibrated되어 있음:
+즉 매도/매수 양쪽을 합산하는 "total trade volume" 정의이며, 이것이 곧 대회
+공식이다 — 대안 정의로의 마이그레이션 여지가 있는 "2배 카운트"가 아니다
+(2026-08-15 fix-tier G3에서 룰북 §3 원문과 일치 확인, "2배 모호성" 해소;
+당시 플랜 문서는 git 태그 docs-archive-2026-08에 보존). floor 값이 이
+정의에 맞춰 calibrated되어 있음:
     initial (5/28 → 6/8): floor=0.80, 5 영업일
     monthly:               floor=0.10, 20 영업일
 

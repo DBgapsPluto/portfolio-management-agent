@@ -13,11 +13,26 @@ def group():
 
 @group.command("sync")
 @click.option("--xlsx", default="docs/제12회 GAPS ETF 리스트 (2026-5-9 게시).xlsx",
-              help="Source xlsx file")
+              help="Source xlsx (organizer-provided ETF list; not shipped in this repo)")
 @click.option("--out", default="data/universe.json", help="Output JSON path")
 def sync(xlsx, out):
-    """Parse the GAPS xlsx → universe.json (188 ETFs)."""
-    universe = sync_from_xlsx(Path(xlsx), Path(out))
+    """Parse the organizer's GAPS ETF-list xlsx → universe.json (188 ETFs).
+
+    The organizer xlsx is not distributed with this repository; the parsed
+    result (data/universe.json) is shipped instead. Run this only when you
+    receive an updated xlsx from the organizer.
+    """
+    xlsx_path = Path(xlsx)
+    if not xlsx_path.exists():
+        click.secho(f"✗ xlsx not found: {xlsx}", fg="red")
+        click.echo(
+            "The organizer's ETF-list xlsx is not shipped with this repo "
+            "(see docs/competition-rules-summary.md §6). The parsed universe "
+            "is already included at data/universe.json — sync is only needed "
+            "when the organizer publishes a new list; pass it via --xlsx."
+        )
+        raise click.Abort()
+    universe = sync_from_xlsx(xlsx_path, Path(out))
     click.echo(f"✓ Synced {len(universe.etfs)} ETFs to {out}")
 
 

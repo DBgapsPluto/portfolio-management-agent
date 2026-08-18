@@ -1,4 +1,7 @@
-"""14-bucket 분류 (docs/GAPS_ETF_버킷분류_14.xlsx 기준).
+"""14-bucket 분류 — 주최측 버킷분류 시트에서 유래.
+
+원본 xlsx는 주최측 자료라 리포에 미동봉 (docs/competition-rules-summary.md §6).
+분류 결과는 본 모듈 상수 + data/universe.json 의 `gaps_bucket` 필드로 동봉됨.
 
 방어 5 (A1~A5) + 성장 9 (B1~B9). trader 배분 어휘.
 위험/안전(mandate) 정의와는 별개 — 그건 universe.json `bucket` per-ETF.
