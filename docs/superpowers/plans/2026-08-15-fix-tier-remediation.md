@@ -388,11 +388,13 @@ def test_cash_phantom_excluded_in_validate_rebalance():
 
 ### Task D1: 결정안 구현 (다이얼 가드)
 
-- [ ] **D1-1**: `default_config.py`에 `cluster_full_universe: bool = False` 다이얼(use_bl 패턴 미러). ON일 때: `technical_analyst.py:206-213`의 클러스터 입력을 `returns.loc[:, returns.notna().sum() >= 126]`(명명 상수 `MIN_CLUSTER_HISTORY_DAYS=126`)로, `correlation_cluster.py`에 `min_periods` kwarg + D0 결정 linkage 적용, 로그 라인(`:214-217`)의 `returns_top` 참조 갱신
-- [ ] **D1-2**: **집행 의미 확정**: `validate_correlation_concentration`·`repair_cluster_cap`이 클러스터의 **보유-멤버 합**에 cap 적용(현행과 동일 — 이미 held 교집합, 감사 확인: `cluster_repair.py:25` `members = [t for t in cluster.members if t in out]`) — 단 수혜 풀은 "위반 클러스터 비멤버" 전체(현행 `all_cluster_members` 제외에서 **위반-클러스터-멤버 제외로 완화**: 전수 그래프에선 비위반 클러스터 멤버도 정당한 수혜자) + 포화 시 전체 재정규화 대신 **CASH 적립 폴백**(위반 복원 방지 — MF-1 체인 ②)
-- [ ] **D1-3**: `daily_full.py:180-182` 수선 루프에 `repair_cluster_cap` 추가 (다이얼 ON일 때 유효한 신 클러스터가 daily 검증(engine.py:189)에 유입되므로 — MF-1 체인 ④)
-- [ ] **D1-4**: TDD — D0 결정안 기준 클러스터 산출 테스트 + 수혜 완화·CASH 폴백 테스트 + daily 수선 테스트. 라이브 스모크로 다이얼 ON 1회 실행해 cap 발동·클러스터 크기 로그 캡처
-- [ ] **D1-5**: 커밋 — `feat(cluster): full-universe clustering behind cluster_full_universe dial — <D0 결정안> (F5)`
+- [x] **D1-1**: `default_config.py`에 `cluster_full_universe: bool = False` 다이얼(use_bl 패턴 미러). ON일 때: `technical_analyst.py:206-213`의 클러스터 입력을 `returns.loc[:, returns.notna().sum() >= 126]`(명명 상수 `MIN_CLUSTER_HISTORY_DAYS=126`)로, `correlation_cluster.py`에 `min_periods` kwarg + D0 결정 linkage 적용, 로그 라인(`:214-217`)의 `returns_top` 참조 갱신
+- [x] **D1-2**: **집행 의미 확정**: `validate_correlation_concentration`·`repair_cluster_cap`이 클러스터의 **보유-멤버 합**에 cap 적용(현행과 동일 — 이미 held 교집합, 감사 확인: `cluster_repair.py:25` `members = [t for t in cluster.members if t in out]`) — 단 수혜 풀은 "위반 클러스터 비멤버" 전체(현행 `all_cluster_members` 제외에서 **위반-클러스터-멤버 제외로 완화**: 전수 그래프에선 비위반 클러스터 멤버도 정당한 수혜자) + 포화 시 전체 재정규화 대신 **CASH 적립 폴백**(위반 복원 방지 — MF-1 체인 ②)
+- [x] **D1-3**: `daily_full.py:180-182` 수선 루프에 `repair_cluster_cap` 추가 (다이얼 ON일 때 유효한 신 클러스터가 daily 검증(engine.py:189)에 유입되므로 — MF-1 체인 ④)
+- [x] **D1-4**: TDD — D0 결정안 기준 클러스터 산출 테스트 + 수혜 완화·CASH 폴백 테스트 + daily 수선 테스트. 라이브 스모크로 다이얼 ON 1회 실행해 cap 발동·클러스터 크기 로그 캡처
+
+  > **D1-4 스모크 (2026-08-18, 실캐시 190종·production 스킬 직접 호출)**: complete@0.7 · min_periods=126 · 풀 190종 전원 자격 → **31군집 · 최대 26종**(국내주식 광역, 내부상관 0.946) · 78.4% 편입 — D0-1 측정과 정확히 일치(스킬 kwargs 경로 패리티 확인). 최근 실보유(06-08) 보유-멤버 합 최대 **0.1348**(7종 군집) → cap 0.35 발동 없음(non-binding).
+- [x] **D1-5**: 커밋 — `feat(cluster): full-universe clustering behind cluster_full_universe dial — <D0 결정안> (F5)`
 
 > 다이얼 기본 ON 전환은 WP-F diff 검토 후 사용자 승인으로 별도 커밋.
 
