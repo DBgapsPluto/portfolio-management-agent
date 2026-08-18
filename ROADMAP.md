@@ -4,7 +4,7 @@ Known unresolved items, pending decisions, and deferred work — the concrete li
 behind [`LIMITATIONS.md`](LIMITATIONS.md) §4. These are recorded honestly rather
 than promised: the project is competition-period research code, and some items
 may never be picked up. Historical plans and specs that produced this list are
-preserved at git tag `docs-archive-2026-08`.
+preserved in the development repository's history (tag `docs-archive-2026-08`).
 
 ## 1. Pending default flips
 

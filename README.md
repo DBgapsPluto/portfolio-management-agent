@@ -148,7 +148,7 @@ All docs under [`docs/`](docs/) are written in **Korean** (the competition's wor
 - [`LIMITATIONS.md`](LIMITATIONS.md) — what this project does **not** promise; honest methodology disclosures
 - [`ROADMAP.md`](ROADMAP.md) — known unresolved items and pending decisions
 
-Historical documents (85 design/plan/audit files from the development period) were removed from the tree and are preserved at git tag **`docs-archive-2026-08`**.
+Historical documents (85 design/plan/audit files from the development period) were removed from the tree during pre-publication cleanup; they remain preserved in the private development repository's history (tag `docs-archive-2026-08`).
 
 ## Acknowledgements
 

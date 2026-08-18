@@ -5,7 +5,7 @@ project's own audit trail — primarily the full-pipeline audit
 ([`docs/audits/pipeline-audit-2026-06-15.md`](docs/audits/pipeline-audit-2026-06-15.md)),
 the 2026-08 methodology audit that drove the F1–F6 remediation commits, and the
 empirical calibration record kept in the pre-reorganization issue log (preserved at
-git tag `docs-archive-2026-08`, `docs/followup_issues.md` #31). Nothing here is
+development-repo tag `docs-archive-2026-08`, `docs/followup_issues.md` #31). Nothing here is
 marketing hedging; these are the boundaries we actually measured or declared.
 
 ## 1. What this project does NOT promise

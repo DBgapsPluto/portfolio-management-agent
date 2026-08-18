@@ -86,7 +86,7 @@ repository reorganization for publication. All work happened on the
 
 - Documentation tree reorganized to current-truth only
   (`docs/methodology|stages|design|audits|setup`); 85 historical documents
-  removed from the tree and preserved at git tag `docs-archive-2026-08`.
+  removed from the tree and preserved in the development repository's history (tag `docs-archive-2026-08`).
 - Root `LIMITATIONS.md` (honest scope + methodology disclosures) and
   `ROADMAP.md` (pending decisions); `TODOS.md` removed.
 - README rewritten in English with a Korean mirror (`README-ko_kr.md`) and a
