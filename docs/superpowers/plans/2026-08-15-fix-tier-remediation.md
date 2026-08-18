@@ -379,8 +379,12 @@ def test_cash_phantom_excluded_in_validate_rebalance():
   > - avg@0.8: 25군집 · 최대 26종 · 67.4% 편입 / complete@0.7: 31군집 · 최대 26종 · 78.4% 편입
   > - 보유-멤버 합 최대 클러스터 가중: avg 양안 06-08 **0.203** / 06-05 **0.249**(최대 클러스터가 아니라 USD-연동 10종·US테크 18종 군집이 최대 보유), complete@0.7은 0.135 — **3안 × 2포트폴리오 전부 cap 0.35 위반 0건 (non-binding)**
   > - 함의: "그래프는 전수, 집행은 보유-멤버 합" semantics면 현 보유 기준 어느 안도 배분 마비 없음 — D0-2 사용자 결정 대기 (상세: `artifacts/cluster_universe_measurement.json`)
-- [ ] **D0-2**: **사용자 결정 게이트** — 3안 + "cap을 보유-멤버 합에만 적용(그래프는 전수, 집행은 보유)" 조합 중 선택. 선택 기준: F5의 원목적(보유 집중의 사각지대 제거)을 달성하되 최대 보유-클러스터 가중이 BL 리스크 예산과 양립(≈ cap 0.35가 정상 장에서 non-binding)할 것
-- [ ] **D0-3**: 결정 기록 커밋 — `docs(cluster): universe-clustering measurement + decision (F5)`
+- [x] **D0-2**: **사용자 결정 게이트** — 3안 + "cap을 보유-멤버 합에만 적용(그래프는 전수, 집행은 보유)" 조합 중 선택. 선택 기준: F5의 원목적(보유 집중의 사각지대 제거)을 달성하되 최대 보유-클러스터 가중이 BL 리스크 예산과 양립(≈ cap 0.35가 정상 장에서 non-binding)할 것
+- [x] **D0-3**: 결정 기록 커밋 — `docs(cluster): universe-clustering measurement + decision (F5)`
+
+  > **D0-2 사용자 결정 (2026-08-18): complete-linkage @ threshold 0.7** — 그래프는 전수(최근 252d 중 ≥126d 반환 이력 전 종목, `min_periods=126`), 집행(cap 0.35)은 현행대로 보유-멤버 합.
+  > - **근거**: ① 단일-테마 의미론이 가장 엄격 — complete linkage 는 군집 내 *모든 쌍* 상관 ≥0.7 을 보장해 average 식 메가클러스터 병합(연쇄 편입)이 없음. ② 실보유 2개 포트폴리오(06-05/06-08)에서 보유-멤버 합 최대 클러스터 가중 **0.135** 로 3안 중 최저(avg 양안은 0.203/0.249) — cap 0.35 대비 여유 최대. ③ 3안 × 2포트폴리오 전부 **cap 위반 0건**(정상 장에서 non-binding 확인) — F5 원목적(사각지대 제거)과 BL 리스크 예산 양립. 상세: `artifacts/cluster_universe_measurement.json`.
+  > - **채택 파라미터**: `linkage_method="complete"`, threshold 0.7(불변), `min_periods=126`, 풀 자격 `MIN_CLUSTER_HISTORY_DAYS=126`. `cluster_full_universe` 다이얼(기본 **False**) 가드 — 기본 ON 전환은 WP-F 후 사용자 승인 별도 커밋.
 
 ### Task D1: 결정안 구현 (다이얼 가드)
 
