@@ -1,15 +1,14 @@
 """Turnover floor check — 회전율 최소치 충족 여부.
 
-Turnover 정의 (현재 시스템):
-    turnover = (buy_amount + sell_amount) / avg_assets
-즉 "total trade volume" 정의로 매도/매수 양쪽을 합산 (2배 카운트).
-이 정의에 맞춰 floor 값이 calibrated되어 있음:
+룰북 §3 인용 (docs/DB_GAPS_Investment_Tournament_Rules.md:35):
+    "총 매매 금액(매수금액 + 매도금액) / 평균 자산( (기초자산+기말자산)/2 ) * 100"
+
+즉 매도/매수 양쪽을 합산하는 "total trade volume" 정의이며, 이것이 곧 룰북
+원문 공식이다 — 대안 정의로의 마이그레이션 여지가 있는 "2배 카운트"가 아니다
+(G3, docs/superpowers/plans/2026-08-15-fix-tier-remediation.md §0: 룰북 §3와
+일치 확인, "2배 모호성" 해소). floor 값이 이 정의에 맞춰 calibrated되어 있음:
     initial (5/28 → 6/8): floor=0.80, 5 영업일
     monthly:               floor=0.10, 20 영업일
-
-업계 표준 'two-side average' `(buy+sell)/2/AUM`로 바꾸려면 floor도 절반으로
-조정 필요. 현재는 시스템 내에서 self-consistent하게 유지 (대회 §3.1 룰북
-확인 후 마이그레이션 가능).
 
 `days_remaining` 인자는 본문에서 사용하지 않음 → 시그니처에서 제거.
 """

@@ -60,11 +60,19 @@ def _run_validate_rebalance(realized, previous, floor):
 
 def test_cash_phantom_excluded_in_validate_rebalance():
     # 실제 팬텀 지점(감사 MF-6): full_wv는 CASH 포함, previous_weights는 미포함
-    # → validate 경로에서 CASH 를 delta 집계에서 제외해야 함
+    # → validate 경로에서 CASH 를 delta 집계에서 제외해야 함.
+    # 판별적 단언(리뷰 반영): CASH 를 제외하면 A 자체 델타는 0.5→0.5 로 0 이므로
+    # turnover=0.0 → floor 위반이 "발생해야" 하고, 그 설명에 MF-6 마커가 붙어야
+    # 하며, 보고된 turnover 수치도 0.0000 이어야 한다(=CASH 델타가 거래로 잡히지
+    # 않았다는 뜻). CASH 를 배제하지 않으면 turnover=0.5≥floor 로 위반 자체가
+    # 생기지 않아 이 단언은 실패한다.
     v = _run_validate_rebalance(realized={"A": 0.5, "CASH": 0.5},
                                 previous={"A": 0.5}, floor=0.10)
-    assert not any(x.rule == "turnover_floor" and "phantom" not in x.description
-                   for x in v.violations if x.severity == "hard")
+    hard = [x for x in v.violations
+            if x.rule == "turnover_floor" and x.severity == "hard"]
+    assert len(hard) == 1
+    assert "CASH phantom delta excluded — MF-6" in hard[0].description
+    assert "0.0000" in hard[0].description
 
 
 # ---------- C2: 월누적(MTD) 추적 — 필드 영속화 (MF-7) ----------
