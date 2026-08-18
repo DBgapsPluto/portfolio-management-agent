@@ -132,7 +132,7 @@ Stage 5)"을 파이프라인의 명시적 사후 보장 단계로 문서화한�
 | `tradingagents/reports/philosophy.py` | 리포팅 3신호(risk_tilt/fx/credit) 표시 |
 | 테스트 | test_scenario_anchor / test_trader_allocator / test_research_cluster 갱신 |
 
-**비범위**: `bl_views.py`(legacy, force_method=black_litterman 전용, 구 라벨 체계 — 별도 정리 대상),
+**비범위**: `bl_views.py`(legacy — 이후 2026-06-15 dead code로 삭제됨; 현행 BL 엔진과 무관),
 daily 경로 `validate_rebalance`의 category 검사 여부 점검(별도 실질 개선 항목).
 
 ## 5. 마이그레이션

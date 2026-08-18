@@ -18,7 +18,7 @@
 - Stage 5(mandate validator) 룰 변경 — 위험/안전 정의는 **기존 그대로**.
 - 토론 다중 라운드, BL/NCO 등 최적화 엔진 재도입.
 
-## 2. 현재 상태 (교체 대상)
+## 2. 현재 상태 (교체 대상 — 아래 항목들은 본 설계에 따라 2026-06-03 실제 제거됨)
 
 - **Stage 2** `research_manager.py`: `compute_all_factors` → 12-factor z-vector → `apply_factor_model_with_safety`(β·z + QP 투영) → BucketTarget(8). **제거.**
 - **Stage 3** `portfolio_allocator.py`: `candidate_selector`(impl_score + ENB-greedy) → `method_picker`(8-rule) → optimizer(NCO/BL/HRP/MV) → WeightVector. **제거.**

@@ -131,7 +131,7 @@ There is no CI — the badge above reflects the locally run suite. On Windows, r
 
 ## Project status
 
-**Research code from a competition, not a maintained product.** It was built and operated for a single 3-month competition window by a small team; after the competition it is published as a reference implementation. Expect competition-specific constants, Korean-language documents and prompts, and no maintenance or support guarantees. No performance figures are published anywhere in this repository — one market environment is one sample, and [LIMITATIONS.md](LIMITATIONS.md) documents exactly what the data could and could not support.
+**Research code from a competition, not a maintained product.** It was built and operated for a single 3-month competition window as a single-maintainer project (with heavy AI-assisted engineering); after the competition it is published as a reference implementation. Expect competition-specific constants, Korean-language documents and prompts, and no maintenance or support guarantees. No performance figures are published anywhere in this repository — one market environment is one sample, and [LIMITATIONS.md](LIMITATIONS.md) documents exactly what the data could and could not support.
 
 ## Documentation
 

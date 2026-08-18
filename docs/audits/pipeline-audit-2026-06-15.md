@@ -1,5 +1,6 @@
 # 전체 파이프라인 검증 — 2026-06-15
 
+> **[감사 기록]** 본 문서는 재작업 착수 시점의 감사 원본이다. 본문에 등장하는 BL views rulebook·NCO·HRP·method_picker 등은 **이 감사가 dead code로 판정해 삭제를 이끈 대상**이며, 현행 시스템(BL 엔진 단일 경로)에는 존재하지 않는다. 현행 방법론은 `docs/methodology/`·`docs/design/` 참조.
 > 브랜치 `rework/pipeline-methodology` 착수 시점의 라이브 파이프라인 정합성·방법론 감사.
 > 방법: stage별 병렬 감사 7건 + warn/risk 발견 28건 적대적 재검증(confirmed/partly 25, refuted 3).
 > 기능 검증: unit 1046 pass / mock E2E 2 pass / integration 53 pass (실패 2건은 Windows 환경 한정 — `/tmp`, pykrx#21).
