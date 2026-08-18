@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 830" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Pipeline: 4 analysts → research debate → Black-Litterman allocator → ETF selection → repair → mandate validator → outputs</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#848d97"/>
+    </marker>
+  </defs>
+
+  <!-- ===== Stage 1: four parallel analysts ===== -->
+  <text x="40" y="20" font-size="11" fill="#848d97">Stage 1 — analysts (parallel, deterministic skills + LLM narrative)</text>
+  <g>
+    <rect x="40" y="30" width="200" height="64" rx="8" fill="#eef1f4" stroke="#59636e"/>
+    <text x="140" y="56" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">macro_quant</text>
+    <text x="140" y="76" font-size="11" fill="#59636e" text-anchor="middle">growth–inflation regime</text>
+
+    <rect x="260" y="30" width="200" height="64" rx="8" fill="#eef1f4" stroke="#59636e"/>
+    <text x="360" y="56" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">market_risk</text>
+    <text x="360" y="76" font-size="11" fill="#59636e" text-anchor="middle">systemic-risk score</text>
+
+    <rect x="480" y="30" width="200" height="64" rx="8" fill="#eef1f4" stroke="#59636e"/>
+    <text x="580" y="56" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">technical</text>
+    <text x="580" y="76" font-size="11" fill="#59636e" text-anchor="middle">momentum + correlation clusters</text>
+
+    <rect x="700" y="30" width="200" height="64" rx="8" fill="#eef1f4" stroke="#59636e"/>
+    <text x="800" y="56" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">macro_news</text>
+    <text x="800" y="76" font-size="11" fill="#59636e" text-anchor="middle">events + sector themes</text>
+  </g>
+  <g stroke="#848d97" fill="none" marker-end="url(#arrow)">
+    <path d="M 140 94 L 300 136"/>
+    <path d="M 360 94 L 420 136"/>
+    <path d="M 580 94 L 520 136"/>
+    <path d="M 800 94 L 640 136"/>
+  </g>
+
+  <!-- ===== Stage 2: research debate ===== -->
+  <rect x="220" y="140" width="500" height="64" rx="8" fill="#eef1f4" stroke="#59636e"/>
+  <text x="470" y="166" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">Research debate — Bull / Bear / Manager</text>
+  <text x="470" y="186" font-size="11" fill="#59636e" text-anchor="middle">conviction + dominant scenario</text>
+  <path d="M 470 204 L 470 240" stroke="#848d97" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ===== Stage 3: Black-Litterman allocator ===== -->
+  <rect x="60" y="244" width="820" height="170" rx="10" fill="none" stroke="#3d76c2" stroke-width="1.5"/>
+  <text x="80" y="270" font-size="13" font-weight="600" fill="#3d76c2">Black-Litterman allocator (14 buckets)</text>
+  <g>
+    <rect x="80" y="284" width="180" height="90" rx="8" fill="#eef1f4" stroke="#59636e"/>
+    <text x="170" y="310" font-size="12" font-weight="600" fill="#1f2328" text-anchor="middle">Confidence-scaled</text>
+    <text x="170" y="326" font-size="12" font-weight="600" fill="#1f2328" text-anchor="middle">prior</text>
+    <text x="170" y="346" font-size="10.5" fill="#59636e" text-anchor="middle">neutral ↔ regime baseline,</text>
+    <text x="170" y="360" font-size="10.5" fill="#59636e" text-anchor="middle">by signal agreement</text>
+
+    <rect x="280" y="284" width="180" height="90" rx="8" fill="#eef1f4" stroke="#59636e"/>
+    <text x="370" y="310" font-size="12" font-weight="600" fill="#1f2328" text-anchor="middle">Views</text>
+    <text x="370" y="330" font-size="10.5" fill="#59636e" text-anchor="middle">LLM bucket ranking</text>
+    <text x="370" y="344" font-size="10.5" fill="#59636e" text-anchor="middle">+ FX / credit rule views</text>
+    <text x="370" y="358" font-size="10.5" fill="#59636e" text-anchor="middle">(confidence-weighted)</text>
+
+    <rect x="480" y="284" width="180" height="90" rx="8" fill="#eef1f4" stroke="#59636e"/>
+    <text x="570" y="310" font-size="12" font-weight="600" fill="#1f2328" text-anchor="middle">Posterior</text>
+    <text x="570" y="330" font-size="10.5" fill="#59636e" text-anchor="middle">blend prior + views</text>
+    <text x="570" y="344" font-size="10.5" fill="#59636e" text-anchor="middle">(weekly KRW-numeraire Σ,</text>
+    <text x="570" y="358" font-size="10.5" fill="#59636e" text-anchor="middle">Ledoit–Wolf shrinkage)</text>
+
+    <rect x="680" y="284" width="180" height="90" rx="8" fill="#eef1f4" stroke="#59636e"/>
+    <text x="770" y="310" font-size="12" font-weight="600" fill="#1f2328" text-anchor="middle">Constrained</text>
+    <text x="770" y="326" font-size="12" font-weight="600" fill="#1f2328" text-anchor="middle">optimize</text>
+    <text x="770" y="346" font-size="10.5" fill="#59636e" text-anchor="middle">mandate caps +</text>
+    <text x="770" y="360" font-size="10.5" fill="#59636e" text-anchor="middle">active-share budget</text>
+  </g>
+  <g stroke="#848d97" fill="none" marker-end="url(#arrow)">
+    <path d="M 260 329 L 276 329"/>
+    <path d="M 460 329 L 476 329"/>
+    <path d="M 660 329 L 676 329"/>
+  </g>
+  <path d="M 470 414 L 470 450" stroke="#848d97" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ===== ETF selection ===== -->
+  <rect x="220" y="454" width="500" height="60" rx="8" fill="#eef1f4" stroke="#59636e"/>
+  <text x="470" y="478" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">ETF selection (deterministic)</text>
+  <text x="470" y="498" font-size="11" fill="#59636e" text-anchor="middle">eligibility screen · AUM weighting · risk-adjusted momentum for theme buckets</text>
+  <path d="M 470 514 L 470 550" stroke="#848d97" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ===== Repair loop ===== -->
+  <rect x="220" y="554" width="500" height="60" rx="8" fill="#eef1f4" stroke="#59636e"/>
+  <text x="470" y="578" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">Repair loop (deterministic water-fill)</text>
+  <text x="470" y="598" font-size="11" fill="#59636e" text-anchor="middle">single-ETF 20% · category caps · risk-asset 70% · correlation-cluster cap</text>
+  <path d="M 470 614 L 470 650" stroke="#848d97" fill="none" marker-end="url(#arrow)"/>
+
+  <!-- ===== Mandate validator ===== -->
+  <rect x="220" y="654" width="500" height="60" rx="8" fill="#eef1f4" stroke="#59636e"/>
+  <text x="470" y="678" font-size="13" font-weight="600" fill="#1f2328" text-anchor="middle">Mandate validator (LLM-free)</text>
+  <text x="470" y="698" font-size="11" fill="#59636e" text-anchor="middle">independent re-check · pass → outputs · fail → retry, then safe fallback</text>
+
+  <!-- retry loop back to allocator -->
+  <path d="M 720 684 L 905 684 L 905 330 L 884 330" stroke="#848d97" stroke-dasharray="5 4" fill="none" marker-end="url(#arrow)"/>
+  <text x="898" y="520" font-size="10.5" fill="#848d97" text-anchor="middle" transform="rotate(-90 898 520)">fail → retry ≤ 2 → fallback</text>
+
+  <!-- ===== Outputs ===== -->
+  <g stroke="#848d97" fill="none" marker-end="url(#arrow)">
+    <path d="M 350 714 L 240 750"/>
+    <path d="M 470 714 L 470 750"/>
+    <path d="M 590 714 L 700 750"/>
+  </g>
+  <g>
+    <rect x="120" y="754" width="220" height="48" rx="8" fill="#eef1f4" stroke="#3d76c2"/>
+    <text x="230" y="774" font-size="12" font-weight="600" fill="#1f2328" text-anchor="middle">portfolio.json</text>
+    <text x="230" y="792" font-size="10.5" fill="#59636e" text-anchor="middle">full decision trace</text>
+
+    <rect x="360" y="754" width="220" height="48" rx="8" fill="#eef1f4" stroke="#3d76c2"/>
+    <text x="470" y="774" font-size="12" font-weight="600" fill="#1f2328" text-anchor="middle">philosophy.md</text>
+    <text x="470" y="792" font-size="10.5" fill="#59636e" text-anchor="middle">investment-philosophy report</text>
+
+    <rect x="600" y="754" width="220" height="48" rx="8" fill="#eef1f4" stroke="#3d76c2"/>
+    <text x="710" y="774" font-size="12" font-weight="600" fill="#1f2328" text-anchor="middle">trade_plan.csv</text>
+    <text x="710" y="792" font-size="10.5" fill="#59636e" text-anchor="middle">executable order plan</text>
+  </g>
+</svg>
