@@ -102,6 +102,21 @@ def test_water_fill_saturated_residual_lands_in_cash():
     assert abs(sum(out.values()) - 1.0) < 1e-9                        # (d) sum == 1.0
 
 
+def test_defensive_preserves_existing_cash_on_overflow():
+    # F1 최종 회귀(품질 리뷰 재현): CASH 는 보통 dest_ok=False(범용 자산군 없음, make_dest_ok
+    # 참고) — 물채움 목적지 후보(base)에서 애초에 제외된다. 목적지가 single-cap 에 포화돼
+    # 오버플로가 발생하면 dest_out 이 자체 CASH 키(오버플로 전용, 기존 비중은 모름)를 새로
+    # 만드는데, 병합 순서상 non_dest_safe(기존 CASH 포함) 다음에 dest_out 을 얹으면 기존 CASH
+    # 비중이 통째로 사라지고 오버플로 값으로 대체된다. 오버플로는 기존 CASH 에 "더해져야" 한다.
+    w = {"EQ1": 0.57, "KTB1": 0.19, "TIPS1": 0.19, "CASH": 0.05}
+    out = defensive_overlay(w, is_risk=lambda t: t == "EQ1", defensive_target=0.40,
+                            sell_ok=lambda t: True, dest_ok=lambda t: t != "CASH")
+    # KTB1/TIPS1 이 single_cap(0.20) 에 포화 → overflow=0.15 가 기존 CASH 0.05 에 더해져야
+    # 0.20 (덮어쓰면 0.1578... 로 관측됨 — 리뷰 재현치).
+    assert abs(out["CASH"] - 0.20) < 1e-9
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
 def test_defensive_cuts_protected_when_alone_over_target():
     # 2단계 가드(라이브 도달 희박, CATEGORY_CAPS[FX 및 원자재]=0.20 이 선행 제한): 보호자산
     # 만으로 이미 defensive_target 을 넘으면 매도-가능 자산을 0까지 팔고도 부족하므로 보호자산도

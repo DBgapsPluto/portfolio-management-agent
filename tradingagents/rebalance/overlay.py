@@ -103,7 +103,11 @@ def defensive_overlay(weights: dict[str, float], is_risk: Callable[[str], bool],
     out.update(protected)
     out.update({t: w * rf for t, w in scalable.items()})
     out.update(non_dest_safe)
-    out.update(dest_out)
+    # CASH 는 대개 dest_ok=False 라 물채움 후보(dest/base)에서 제외돼 있으므로 dest_out 의
+    # CASH 는 순수 오버플로 값뿐 — 기존(non_dest_safe 의) CASH 비중을 모른다. 병합 순서와
+    # 무관하게 항상 "더하기"로 합쳐야 기존 보유분이 덮어써지지 않는다(F1 최종 리뷰 재현).
+    for t, w in dest_out.items():
+        out[t] = out.get(t, 0.0) + w if t == "CASH" else w
     total = sum(out.values())
     return {t: w / total for t, w in out.items()} if total > 0 else dict(weights)
 
