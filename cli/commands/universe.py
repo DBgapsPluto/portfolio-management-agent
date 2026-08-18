@@ -1,4 +1,4 @@
-"""gaps universe — manage 188-ETF universe (sync/list/info)."""
+"""gaps universe — manage the GAPS ETF universe (sync/list/info)."""
 from pathlib import Path
 
 import click
@@ -16,7 +16,11 @@ def group():
               help="Source xlsx (organizer-provided ETF list; not shipped in this repo)")
 @click.option("--out", default="data/universe.json", help="Output JSON path")
 def sync(xlsx, out):
-    """Parse the organizer's GAPS ETF-list xlsx → universe.json (188 ETFs).
+    """Parse the organizer's GAPS ETF-list xlsx → universe.json.
+
+    The official list announces 188 ETFs; the shipped data/universe.json holds
+    190 entries because it reflects a later list update (see
+    docs/competition-rules-summary.md §6).
 
     The organizer xlsx is not distributed with this repository; the parsed
     result (data/universe.json) is shipped instead. Run this only when you

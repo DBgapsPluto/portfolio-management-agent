@@ -6,7 +6,7 @@ project's own audit trail — primarily the full-pipeline audit
 the 2026-08 methodology audit that drove the F1–F6 remediation commits, and the
 empirical calibration record kept in the pre-reorganization issue log (preserved at
 git tag `docs-archive-2026-08`, `docs/followup_issues.md` #31). Nothing here is
-marketing hedging; these are the boundaries we actually measured.
+marketing hedging; these are the boundaries we actually measured or declared.
 
 ## 1. What this project does NOT promise
 
@@ -16,8 +16,9 @@ marketing hedging; these are the boundaries we actually measured.
   are advertised anywhere in this repository, deliberately.
 - **Backtests are not simulated brokerage.** All harnesses score decisions on
   realized forward returns with close-price fills; no slippage, market-impact, or
-  fill model exists anywhere. Transaction costs are a flat 10 bps one-way turnover
-  charge in the BL-calibration and ETF-selection backtests
+  fill model exists in any backtest harness (realized slippage from broker CSVs is
+  tracked separately by the live cost monitor). Transaction costs are a flat
+  10 bps one-way turnover charge in the BL-calibration and ETF-selection backtests
   (`scripts/backtest_bl_calibration.py`, `scripts/backtest_etf_selection.py`) —
   the same sweep that set the live dials — and there is no cost model at all in
   the dial-tuning forward scorer (`tradingagents/backtest/forward_perf.py`) or the
@@ -56,9 +57,9 @@ these from the source:
   Σ_p breaks exact no-view recovery of the reference portfolio (the system's core
   invariant). The cost is that BL's view-uncertainty risk-widening is discarded.
 - **The "turnover cap" is really an active-share budget.** The binding aggression
-  governor is an L1 cap ‖w − w_prior‖₁ ≤ 0.50 (live dial; engine default 0.35),
-  i.e. an active share of at most 25% versus the prior. It is a policy budget, not a
-  trading-cost model.
+  governor is an L1 cap ‖w − w_prior‖₁ ≤ 0.50 live (engine default 0.35), i.e. at
+  most 25% active share versus the prior on the live dial. It is a policy budget,
+  not a trading-cost model.
 - **Computed confidence never reaches the regime baseline.** *c* is
   Laplace-smoothed signal agreement, (k+1)/(n+2) per axis; with at most 9 growth
   and 5 inflation votes its computed ceiling is (10/11)·(6/7) ≈ 0.78, so whenever
@@ -90,10 +91,9 @@ The empirical record is the strongest argument for the system's design honesty:
   anchors on a hand-set reference portfolio plus deterministic risk discipline
   instead of claiming a validated timing edge.
 - **Regime-conditional parameters are calibrated judgment, not estimation.** The
-  quadrant baselines and regime dials are hand-set economic priors. The recorded
-  verdict above is precisely that the available panel (75 quarters, proxy
-  inception 2006) made the designed walk-forward protocol infeasible — 0 folds at
-  the intended train size — so no regime model was ever statistically fit.
+  quadrant baselines and regime dials are hand-set economic priors; the panel above
+  yielded 0 walk-forward folds at the intended train size, so no regime model was
+  ever statistically fit.
 - **The competition scores philosophy 70 / returns 30.** The system optimizes for
   coherent, auditable, mandate-compliant allocation — that objective shaped the
   architecture at least as much as return-seeking did.
