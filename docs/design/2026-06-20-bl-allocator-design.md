@@ -124,7 +124,8 @@ Stage 1/2: regime.quadrant(결정론) + 매크로/뉴스 + state['as_of_date']
 > `(1+r_usd)(1+r_fx)-1` 합성(이름 규약 헤지 지분, a4=USDKRW), 일별이 아닌 **W-FRI 주간
 > 복리 리샘플**(`min_count=1`) 후 추정 — 창 104주, 핀 기준 `WEEKLY_MIN_OBS=52`(주간),
 > ×52 연환산, `min_obs` 레거시 kwarg 무시. 위 일별·252 서술은 이 개정으로 대체됨
-> (plans/2026-08-15-fix-tier-remediation.md WP-A).
+> (근거 플랜은 트리에서 제거 — git 태그 `docs-archive-2026-08`의
+> `docs/superpowers/plans/2026-08-15-fix-tier-remediation.md` WP-A 참조).
 
 ---
 
