@@ -1,5 +1,7 @@
 # DB GAPS 에이전트 — 사용자 준비물 체크리스트
 
+> **[2026-08 편집 주석]** 본 문서는 구현 전(2026-05-09) 작성된 준비물 체크리스트로, 일부 서술이 미래형이며 당시 계획 기준이다. 특히 optimizer 선택 관련 항목은 2026-06-03 제거된 스택을 가리킨다 — 현행 배분은 Black-Litterman 엔진(`use_bl=True`)이며 PyPortfolioOpt 의존성은 BL·최소분산 폴백 경로에만 쓰인다. 현행 방법론은 `docs/methodology/`·`docs/design/` 참조.
+
 - **작성일:** 2026-05-09
 - **대상:** DB GAPS 자산배분 에이전트 v1 (5/28 dry-run + 6/1~8/31 운용)
 - **참조 스펙:** 초기 v1 설계 스펙은 트리에서 제거 — git 태그 `docs-archive-2026-08`의 `docs/superpowers/specs/2026-05-09-db-gaps-agent-redesign-design.md` 참조
@@ -32,7 +34,7 @@
 
 ```
 pykrx              # KR ETF 가격·KRX 데이터
-PyPortfolioOpt     # 포트폴리오 최적화 (HRP/RP/MinVar/BL)
+PyPortfolioOpt     # 포트폴리오 최적화 — 현행 사용처는 Black-Litterman 엔진과 최소분산 폴백뿐
 pandas-ta          # 기술적 지표 (MA200, RSI, MACD, ATR) — pure Python, C 빌드 X
 openpyxl           # xlsx 파싱 (universe sync)
 python-docx        # 워드 보고서 생성 (philosophy.md → docx)
@@ -127,7 +129,7 @@ GAPS_ARTIFACTS_DIR=./artifacts
 | 위험자산 목표 비중 출발점 (Bull/Bear 토론) | 50 / 60 / 70% | regime 판단 따라 토론에서 조정 |
 | 단일 클러스터 합 cap | 12 / 15 / 20% | 단일 리스크 통제 강도 (대회 룰 단일 ETF 20%보다 엄격) |
 | 후보 ETF 수 (자산군별) | bucket당 4~6개 | Allocator 후보풀 크기 |
-| 기본 optimizer | HRP / Risk Parity | regime 무관 default |
+| 기본 optimizer | (계획 당시 항목 — 해당 스택은 2026-06-03 제거, 현행은 BL 단일 경로) | 상단 편집 주석 참조 |
 | 회전율 초기 목표 | 80% (룰 최저) / 90% (여유) | 5/28 매매명세서 사이즈 |
 | Daily 트리거 임계 (VIX·VKOSPI 등) | preset YAML 기본값 | 운용 중 알림 빈도 |
 | 출력 언어 | 한국어 (philosophy 보고서) | 대회 §4의 한국어 보고서 의무 |
