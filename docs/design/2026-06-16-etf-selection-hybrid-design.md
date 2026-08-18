@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-16 (rev3 — self-imposed cap 발견 + A2/C2/D2 확정)
 **Stage:** 3 (Portfolio allocation) — Step B (within-bucket ETF 선택·가중)
-**Status:** 설계 확정 (rev3)
+**Status:** 구현 완료 — 2026-06-20, 커밋 `97b0cdc`‥`22a2294` (backtest GO 게이트 `a0eaede`·`0c07e83`)
 **Branch:** `rework/pipeline-methodology`
 
 ## 1. 배경 / 문제

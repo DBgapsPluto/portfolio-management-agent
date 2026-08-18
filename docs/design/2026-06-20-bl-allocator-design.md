@@ -1,6 +1,6 @@
 # Black-Litterman 버킷 배분 전환 — 설계 (rev1)
 
-> **상태:** 적대적 감사(5렌즈·35제기·26확정) 반영 완료 → 사용자 검토 대기.
+> **상태:** 구현 완료 — 2026-06-20‥06-23, 커밋 `b2406e3`‥`53c93d0` (`use_bl=True` 라이브 기본 + `bl_turnover_cap=0.50` 캘리브레이션 `53c93d0`). §Phase D(구경로 삭제)는 미실행 — 루트 `ROADMAP.md` 참조.
 > **rev1 변경:** 다중에이전트 적대적 감사의 4 must-fix(MATH-1 Σ_p→Σ, FALSE-1 천장 false-trip, PARTIAL-1 부분실패, PIT-1 as_of) + 13 should-fix를 전 섹션에 반영. 변경점은 각 절 머리에 `[감사]`로 표기.
 > **대체:** `origin/feat/bl-allocator` 의 `2026-06-09-bl-allocator-design.md`. 본 문서가 현 14-bucket·`trader_allocator` 기준 정본.
 > **선행 sub-project:** ETF-선택 하이브리드(`2026-06-16-etf-selection-hybrid-design.md`, rev3) — *먼저* 출시(미구현). BL은 그 위에 버킷 배분층 교체.

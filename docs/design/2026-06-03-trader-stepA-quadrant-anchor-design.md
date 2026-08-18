@@ -1,6 +1,7 @@
 # Trader Step A — Harness Engineering (Quadrant Anchor + Reasoning Scaffold)
 
 - **작성일:** 2026-06-03
+- **상태:** 구현 완료 — 2026-06-03, 커밋 `09d0eb0`‥`9c93fbd` (+리뷰 후속)
 - **대상:** Stage 3 trader/allocator 구현자
 - **선행 의존:** [Stage 2/3 merge — LLM research+trader](./2026-06-02-stage2-3-merge-llm-research-trader-design.md) (현 LLM 2-step trader, `feat/new-llm-based-agent`)
 - **대상 파일:** `tradingagents/agents/trader/trader_allocator.py`, `tradingagents/skills/portfolio/` (신규 `scenario_anchor.py`), `tradingagents/schemas/portfolio.py`

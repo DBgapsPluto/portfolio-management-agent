@@ -1,5 +1,7 @@
 # Stage 1 — Market Risk Analyst
 
+> **[2026-08 편집 주석]** 본 문서의 "Stage 4 (Risk Debate / Risk Overlay)" 관련 서술은 작성 시점의 파이프라인 기준이다. Stage 4는 2026-06-03 제거되어(커밋 `c4a3527`·`5e9c68e`) 현행 그래프는 allocator(Stage 3) → mandate_validator(Stage 5) 직결이다. Stage 4 언급은 역사적 맥락으로만 읽을 것.
+
 > 파이프라인 6 stage 중 첫 단계의 4명 병렬 분석가 중 하나. 시장 stress를 실시간으로 측정해서 systemic risk score (0~10) + regime (risk_on/risk_off/neutral)을 산출, Risk Debate (Stage 4)와 BucketTarget 결정 (Stage 2~3)에 입력으로 전달한다.
 
 > **macro_quant와의 역할 분담**: macro_quant는 **regime classifier** (top-down 매크로 사이클 진단 → BucketTarget). market_risk는 **real-time stress detector** (bottom-up 시장 stress 측정 → Risk debate). 두 분석가는 dimension이 겹치지 않게 설계됐다 (VVIX/MOVE는 macro_quant Tier-4, VIX 직접/SKEW/VIX term structure은 market_risk Tier-1).

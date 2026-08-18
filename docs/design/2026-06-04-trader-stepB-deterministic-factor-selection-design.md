@@ -1,6 +1,7 @@
 # Trader Step B — Deterministic Representative-Carrier Selection
 
 - **작성일:** 2026-06-04 (rev2 — 적대 리뷰 반영 전면 개정)
+- **상태:** 구현 완료 — 2026-06-04, 커밋 `2b9ebe6`(배선)·`0cca4aa`(§7 risk-repair). 이질 버킷(b2/b3/b5)의 선정은 이후 [2026-06-16 ETF-선택 하이브리드](./2026-06-16-etf-selection-hybrid-design.md)로 대체 — 동질 버킷은 본 설계의 AUM-대표성 선정이 현행.
 - **대상:** Stage 3 trader/allocator 구현자
 - **선행 의존:** [Step A Phase 1 — quadrant anchor](./2026-06-03-trader-stepA-quadrant-anchor-design.md), Step A Phase 2 — scenario modifier (구현·검증 완료; 해당 설계 문서는 구경로 전용이라 트리에서 제거 — git 태그 `docs-archive-2026-08`의 `docs/superpowers/specs/2026-06-03-trader-stepA-scenario-modifier-design.md` 참조)
 - **대상 파일:** `tradingagents/skills/portfolio/candidate_selector.py` (신규), `tradingagents/agents/trader/trader_allocator.py`

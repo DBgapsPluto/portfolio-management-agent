@@ -1,7 +1,7 @@
 # Step B 레짐 조건부 risk-filter 선정 설계
 
 **작성일:** 2026-06-04
-**상태:** 설계 확정 (구현 대기)
+**상태:** 구현 완료 — 2026-06-04, 커밋 `36c26e6`‥`192342e`
 **관련:** `2026-06-04-trader-stepB-deterministic-factor-selection-design.md` (Step B v1 — 대표성/AUM 선정)
 
 ---

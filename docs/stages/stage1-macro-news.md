@@ -1,5 +1,7 @@
 # Stage 1 — Macro News Analyst
 
+> **[2026-08 편집 주석]** 본 문서의 "Stage 4 (Risk Debate / Risk Overlay)" 관련 서술은 작성 시점의 파이프라인 기준이다. Stage 4는 2026-06-03 제거되어(커밋 `c4a3527`·`5e9c68e`) 현행 그래프는 allocator(Stage 3) → mandate_validator(Stage 5) 직결이다. Stage 4 언급은 역사적 맥락으로만 읽을 것.
+
 > 파이프라인 6 stage 중 첫 단계의 4명 병렬 분석가 중 하나. **다른 3명(macro_quant·market_risk·technical)이 안 보는 차원만 잡는다**는 디자인 원칙 — 정성적 정보의 정량화 + 발표 surprise + 시점성 신호 + 큐레이션 데이터 통합.
 
 > **macro_quant와 market_risk와의 역할 분담**: macro_quant는 거시 시계열 (월간 FRED/ECOS), market_risk는 시장 stress (일간 vol/credit), technical은 188 ETF 가격 행동. **macro_news는 정량 시계열이 못 잡는 모든 영역** — 뉴스 sentiment, 경제지표 forecast 대비 surprise, 중앙은행 인사 발언 톤, 글로벌 overnight (US 제외).

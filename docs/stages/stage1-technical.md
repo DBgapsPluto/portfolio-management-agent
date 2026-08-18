@@ -1,5 +1,7 @@
 # Stage 1 — Technical Analyst
 
+> **[2026-08 편집 주석]** 본 문서의 "Stage 4 (Risk Debate / Risk Overlay)" 관련 서술은 작성 시점의 파이프라인 기준이다. Stage 4는 2026-06-03 제거되어(커밋 `c4a3527`·`5e9c68e`) 현행 그래프는 allocator(Stage 3) → mandate_validator(Stage 5) 직결이다. Stage 4 언급은 역사적 맥락으로만 읽을 것.
+
 > 파이프라인 6 stage 중 첫 단계의 4명 병렬 분석가 중 하나. 188개 KRX 상장 ETF universe에 대해 가격 기반 technical 신호를 *전수 스캔*하고, 카테고리/universe 집계 + per-ETF 정량 지표를 만들어 Stage 2 Bull/Bear 토론 + Stage 3 candidate selector / allocator에 전달한다.
 
 > **macro_quant·market_risk와의 역할 분담**: macro_quant는 매크로 regime(분기 단위), market_risk는 실시간 시장 stress(일간 vol/credit), **technical은 universe 188 ETF의 가격 행동을 ETF별·카테고리별·universe-wide로 정량화**. 셋이 어디서 어떤 정보를 잡는지 차원이 다르다.

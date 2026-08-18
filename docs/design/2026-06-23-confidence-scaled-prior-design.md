@@ -1,6 +1,6 @@
 # Confidence-Scaled BL Prior — 설계 (rev1)
 
-> **상태:** 적대적 감사(5렌즈·41제기·32확정·9반박) 반영 완료 → 사용자 검토 대기.
+> **상태:** 구현 완료 — 2026-06-23‥06-24, 커밋 `c574dba`‥`871b851` (적대적 감사 5렌즈·41제기·32확정·9반박 반영).
 > **rev1 변경:** must-fix(staleness 이진·W_NEUTRAL 위험편향) + 핵심 should-fix(Laplace 평활·CPI 레벨투표·cross-check 약화·스키마 fold-in·검증 A/B·정직 param 예산)를 전 섹션 반영. 변경점 `[감사]` 표기.
 > **맥락:** BL allocator의 *regime-as-prior-swap 취약성* 교정. 외부 비판: 정통 BL(Goldman 1992)은 regime으로 prior를 통째로 스왑하지 않는다 — 안정적 중립 prior에 닻을 내리고 regime은 *confidence 붙은 view*로 섞는다. 현 시스템은 `prior = QUADRANT_BASELINE[quadrant]`를 regime argmax로 하드선택 → regime 오분류/지연 시 포트폴리오 전체가 점프(binary·fragile). 본 설계는 대안 ②(confidence-scaled prior)로 이를 graceful하게.
 > **선행:** BL allocator(`2026-06-20-bl-allocator-design.md`)가 라이브 기본(use_bl=True). 본 설계는 prior 선택만 보간으로 교체.

@@ -1,7 +1,7 @@
 # Stage 2 시나리오 신호 체계 재설계 — 설계 문서
 
 - 날짜: 2026-06-09
-- 상태: 설계 승인됨 (구현 대기)
+- 상태: 구현 완료 — 2026-06-09, 커밋 `8b6c911`‥`97f4eb9`
 - 범위: Stage 2(research debate) 출력 + Stage 3(trader allocator) Step A 비중 modifier + 종목 환헤지 선호
 
 ## 1. 배경 / 문제

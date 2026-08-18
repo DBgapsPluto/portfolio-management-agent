@@ -2,7 +2,7 @@
 
 - **작성일:** 2026-05-09
 - **대상:** DB GAPS 자산배분 에이전트 v1 (5/28 dry-run + 6/1~8/31 운용)
-- **참조 스펙:** `docs/superpowers/specs/2026-05-09-db-gaps-agent-redesign-design.md`
+- **참조 스펙:** 초기 v1 설계 스펙은 트리에서 제거 — git 태그 `docs-archive-2026-08`의 `docs/superpowers/specs/2026-05-09-db-gaps-agent-redesign-design.md` 참조
 
 본 문서는 사용자(팀)가 코드 구현 전·중·후로 직접 준비해야 하는 모든 항목을 카테고리별로 나열한다. 5/28 마감 자동컷 직전에 누락 발견 시 대회 참가 자체가 위험하므로 **체크리스트로 활용**.
 
@@ -55,7 +55,7 @@ revision으로 pandas-ta(pure Python)로 교체**되어 더 이상 시스템 패
 
 ## 3. 환경 변수 (`.env`)
 
-`/Users/kimjaewon/Pluto/TradingAgents/.env`에 다음을 둔다.
+리포 루트의 `.env`에 다음을 둔다.
 
 ```env
 # 외부 데이터 API
@@ -82,9 +82,8 @@ GAPS_ARTIFACTS_DIR=./artifacts
 
 | 파일 | 위치 | 상태 | 비고 |
 |---|---|---|---|
-| ETF 유니버스 xlsx | `docs/제12회 GAPS ETF 리스트 (2026-5-9 게시).xlsx` | ✅ 있음 | 대회 측에서 갱신 시 새 파일 받아 교체 후 `gaps universe sync` 재실행 |
-| 대회 룰 마크다운 | `docs/DB_GAPS_Investment_Tournament_Rules.md` | ✅ 있음 | 변경 없을 것 |
-| 사용자 수정 계획 메모 | `수정 계획.txt` | ✅ 있음 | 참고용 |
+| ETF 유니버스 JSON | `data/universe.json` | ✅ 동봉 | 주최측 ETF 리스트 xlsx의 파싱 결과. 원본 xlsx는 주최측 자료라 리포에 미동봉 — 새 xlsx를 받으면 `gaps universe sync --xlsx <path>`로 재생성 |
+| 대회 규정 요약 | [`docs/competition-rules-summary.md`](../competition-rules-summary.md) | ✅ 있음 | 자체 요약(수치·공식·코드 상수 대응). 주최측 원문 문서는 미동봉 |
 
 ---
 

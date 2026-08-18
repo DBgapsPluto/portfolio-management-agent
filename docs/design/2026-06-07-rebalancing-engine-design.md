@@ -1,7 +1,7 @@
 # 리밸런싱 엔진 설계 (Daily 감시 + Monthly full + 조건부 재진단)
 
 **작성일:** 2026-06-07
-**상태:** 설계 확정 (구현 대기)
+**상태:** 구현 완료 — 2026-06-07‥06-08, 커밋 `e12139c`‥`725d275` (PR #13, 병합 `0ffd112`)
 **버전:** v3 — 주기 구조 재평가 반영. **정기 weekly 제거**(실측: regime quadrant 3주+ 불변 → 주간 tilt 대부분 no-op), daily 감시가 regime 프록시 급변을 감지하면 그때만 **조건부 재진단(reassess)**. (v2의 14-finding 적대적 리뷰 수정 + 잔여현금=현금보유 모두 보존)
 **맥락:** 실전 운용 — 대회 기간(2026-06-01 ~ 2026-08-31) 실제 10억 KRW 운용 중, 주기적으로 *현재 보유 → 목표*를 재산출하고 종목별 매수/매도 거래계획을 산출한다.
 **선행/관련:** [`tradingagents/rebalance/`](../../tradingagents/rebalance/), [`turnover_check.py`](../../tradingagents/skills/mandate/turnover_check.py), [`risk_repair.py`](../../tradingagents/skills/mandate/risk_repair.py), [`correlation_check.py`](../../tradingagents/skills/mandate/correlation_check.py), [`sub_category.py`](../../tradingagents/skills/portfolio/sub_category.py)

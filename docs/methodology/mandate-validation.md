@@ -1,5 +1,7 @@
 # Stage 5 — Mandate Validator (deterministic mandate enforcement)
 
+> **[2026-08 편집 주석]** 본 문서의 "Stage 4 (Risk Debate / Risk Overlay)" 관련 서술은 작성 시점의 파이프라인 기준이다. Stage 4는 2026-06-03 제거되어(커밋 `c4a3527`·`5e9c68e`) 현행 그래프는 allocator(Stage 3) → mandate_validator(Stage 5) 직결이다. Stage 4 언급은 역사적 맥락으로만 읽을 것.
+
 > 파이프라인 6 stage 중 다섯 번째 단계. Stage 4 (Risk Overlay 적용 후의 weight)를 받아 대회 §2.2 / §3.1 등 mandate 룰을 deterministic하게 검증, D4 retry cycle을 발동하거나 통과 시 Stage 6 (Portfolio Manager)로 전달.
 
 > **Stage 5 정리 (Commit A + B)**: Stage 1·2·3·4의 큰 재설계와 달리 *micro-patch만*. 6가지 silent bug / 불명확 항목을 단발적으로 수정. 구조 변경 0, 새 룰 추가 0.

@@ -1,5 +1,7 @@
 # Stage 6 — Portfolio Manager (final artifacts production)
 
+> **[2026-08 편집 주석]** 본 문서의 "Stage 4 (Risk Debate / Risk Overlay)" 관련 서술은 작성 시점의 파이프라인 기준이다. Stage 4는 2026-06-03 제거되어(커밋 `c4a3527`·`5e9c68e`) 현행 그래프는 allocator(Stage 3) → mandate_validator(Stage 5) 직결이다. Stage 4 언급은 역사적 맥락으로만 읽을 것.
+
 > 파이프라인 6 stage 중 마지막 단계. Stage 5 (Mandate Validator)를 통과한 weight_vector + Stage 1-4 산출물 전체를 받아 **운영자/심사자가 보는 3개 산출물**을 생성. 매월 monthly report는 별도 CLI 스크립트로 수동 호출.
 
 > **Stage 6 정리 (Commit 1+2)**: 큰 재설계 없이 *Stage 1-5 산출물을 충분히 활용*하도록 보강. portfolio.json full trace, philosophy.md 섹션별 매핑, trade_plan qty=0 명시 경고, monthly CLI 추가.
