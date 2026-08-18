@@ -4,8 +4,9 @@ import json
 
 import pytest
 
+import tradingagents.reports.rebalance_plan as rebalance_plan_module
 from tradingagents.dataflows.universe import Universe, ETFEntry
-from tradingagents.rebalance.engine import build_rebalance_plan, validate_rebalance
+from tradingagents.rebalance.engine import build_rebalance_plan, validate_rebalance, run_rebalance
 from tradingagents.rebalance.types import RebalanceResult
 from tradingagents.reports.rebalance_plan import (
     write_rebalance_json, compute_turnover_month_to_date,
@@ -172,3 +173,62 @@ def test_turnover_mtd_no_observations_is_shortfall(tmp_path):
                                             artifacts_dir=str(tmp_path))
     assert result["n_observed"] == 0
     assert result["projected_shortfall"] is True
+
+
+# ---------- F3: compute_turnover_month_to_date 프로덕션 배선 ----------
+# (감사 발견: 위 C2 테스트들만 이 함수를 호출했고 실제 daily/monthly 흐름엔 호출부가
+# 없었다 — F3 산출물이 라이브에서 한 번도 발화하지 않음. run_rebalance 는
+# daily_full.py/monthly_full.py 가 공유하는 유일한 write_rebalance_json 호출부이므로
+# 그 직후가 배선 지점.)
+
+def _mtd_uni():
+    return _uni()   # 위 _uni() 재사용 — 6종, 서로 다른 category
+
+
+def test_run_rebalance_wires_turnover_mtd_into_result(tmp_path):
+    tickers = list("ABCDEF")
+    prices = {t: 10000.0 for t in tickers}
+    prev_qty = {t: 100 for t in tickers}
+    # 이번 달 이미 영속화된 다른 날짜의 아티팩트 — 오늘 호출의 MTD 집계에 합산돼야 함
+    # (배선 안 되어 있으면 res.turnover_month_to_date 는 기본값 0.0 로 남아 불일치).
+    _write_plan(tmp_path, "2026-06-01", buy_krw=1_000, sell_krw=0, begin_value=6_000_000)
+    out_dir = tmp_path / "2026-06-07"; out_dir.mkdir()
+    target = {t: (0.25 if t == "F" else 0.15) for t in tickers}   # 드리프트 → 실 거래 발생
+    dials = dict(no_trade_band=0.005, single_etf_abs_cap=0.19,
+                 risk_asset_abs_cap=0.68, turnover_floor_monthly=0.10)
+    res = run_rebalance(
+        as_of="2026-06-07", tier="daily", capital=6_000_000,
+        prev_qty=prev_qty, prev_cash=0, target_weights=target,
+        prices=prices, universe=_mtd_uni(), clusters=[],
+        previous_weights={t: 1 / 6 for t in tickers},
+        dials=dials, out_dir=out_dir, previous_path=str(tmp_path), deep_llm=None,
+    )
+    # write_rebalance_json 이 이미 오늘 아티팩트를 기록한 뒤이므로, 독립적으로 다시
+    # 호출한 결과와 정확히 일치해야 한다(같은 파일들을 읽는 순수 집계, 부작용 없음).
+    expected = compute_turnover_month_to_date("2026-06-07", floor_pct=0.10,
+                                               artifacts_dir=str(tmp_path))
+    assert expected["n_observed"] == 2   # 06-01 시드 + 오늘(06-07) 자신의 방금-기록분
+    assert res.turnover_month_to_date == pytest.approx(expected["turnover_month_to_date"])
+    assert res.projected_shortfall == expected["projected_shortfall"]
+
+
+def test_run_rebalance_alerts_on_mtd_shortfall(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(rebalance_plan_module, "send_rebalance_alert",
+                        lambda **kw: calls.append(kw) or True)
+    tickers = list("ABCDEF")
+    prices = {t: 10000.0 for t in tickers}
+    prev_qty = {t: 100 for t in tickers}
+    current = {t: 1 / 6 for t in tickers}   # prev_qty·price 와 정확히 일치 → 무거래
+    out_dir = tmp_path / "2026-06-07"; out_dir.mkdir()
+    dials = dict(no_trade_band=0.005, single_etf_abs_cap=0.19,
+                 risk_asset_abs_cap=0.68, turnover_floor_monthly=0.10)
+    res = run_rebalance(
+        as_of="2026-06-07", tier="daily", capital=6_000_000,
+        prev_qty=prev_qty, prev_cash=0, target_weights=current,   # target==current
+        prices=prices, universe=_mtd_uni(), clusters=[], previous_weights=current,
+        dials=dials, out_dir=out_dir, previous_path=str(tmp_path), deep_llm=None,
+    )
+    assert res.turnover == 0.0                    # 무거래 확인(전제)
+    assert res.projected_shortfall is True         # turnover 0.0 < floor 0.10
+    assert any(c.get("action") == "turnover_mtd_shortfall" for c in calls)

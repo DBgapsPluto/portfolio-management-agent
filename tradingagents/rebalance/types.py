@@ -29,6 +29,11 @@ class RebalanceResult:
     cash_residual_krw: int = 0
     cash_weight: float = 0.0
     skipped_no_trade: list[str] = field(default_factory=list)
+    # F3: 월누적(MTD) 회전율 — run_rebalance 가 write_rebalance_json 직후
+    # compute_turnover_month_to_date 로 채운다 (MF-7 배선; 기본값은 산출물 미생성/
+    # 배선 이전 호출부용).
+    turnover_month_to_date: float = 0.0
+    projected_shortfall: bool = False
     trigger: dict[str, Any] = field(default_factory=dict)
     validation: Any = None      # ValidationReport
     rationale_md: str = ""

@@ -215,7 +215,9 @@ def run_rebalance(
     out_dir: Path, previous_path: str, deep_llm=None,
 ) -> RebalanceResult:
     """리밸런싱 1회: 재평가 → 거래계획 → 재검증 → 산출물 3종."""
-    from tradingagents.reports.rebalance_plan import write_rebalance_plan, write_rebalance_json
+    from tradingagents.reports.rebalance_plan import (
+        write_rebalance_plan, write_rebalance_json, compute_turnover_month_to_date,
+    )
     from tradingagents.reports.rebalance_rationale import write_rebalance_rationale
 
     is_risk = make_is_risk(universe)
@@ -249,6 +251,18 @@ def run_rebalance(
     json_path = out_dir / f"{as_of}(rebalancing).json"
     md_path = out_dir / f"{as_of}(rebalancing)_rationale.md"
     write_rebalance_plan(res, lookup, csv_path)
+    write_rebalance_json(res, json_path, previous_path)
+    # F3: 아티팩트가 방금 기록됐으므로(오늘 자신의 기여분 포함) 여기가 MTD 집계의
+    # 배선 지점 (MF-7 감사 — 이전엔 프로덕션 호출부가 전혀 없었다). floor 는 항상
+    # 월간 기준(turnover_floor_monthly) — daily 실행도 월누적 부족을 조기에 드러내야
+    # 한다(월간 tier 도달까지 기다리지 않음). 계산된 필드를 다시 기록해 JSON
+    # 아티팩트 자체도 최신 MTD 상태를 갖는다.
+    mtd = compute_turnover_month_to_date(
+        as_of, floor_pct=dials.get("turnover_floor_monthly", 0.0),
+        artifacts_dir=str(out_dir.parent),
+    )
+    res.turnover_month_to_date = mtd["turnover_month_to_date"]
+    res.projected_shortfall = mtd["projected_shortfall"]
     write_rebalance_json(res, json_path, previous_path)
     write_rebalance_rationale(res, md_path, deep_llm=deep_llm)
     res.paths = {"json": str(json_path), "plan_csv": str(csv_path),

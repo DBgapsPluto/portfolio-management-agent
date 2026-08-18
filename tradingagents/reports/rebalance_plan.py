@@ -48,6 +48,11 @@ def write_rebalance_json(result: RebalanceResult, out_path: Path, previous_path:
         "end_value": result.end_value,
         "cash_residual_krw": result.cash_residual_krw,
         "skipped_no_trade": result.skipped_no_trade,
+        # F3: 월누적(MTD) 배선 결과 (MF-7). run_rebalance 가 이 함수 최초 호출 이후
+        # compute_turnover_month_to_date 로 채우고 다시 기록한다 — 배선 이전/실패 시
+        # 기본값(0.0/False)만 남는다.
+        "turnover_month_to_date": result.turnover_month_to_date,
+        "projected_shortfall": result.projected_shortfall,
         "validation": (validation.model_dump() if hasattr(validation, "model_dump")
                        else validation),
         "previous_portfolio_path": previous_path,
