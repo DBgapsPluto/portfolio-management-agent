@@ -1,6 +1,6 @@
 # 리밸런싱 방식 설명
 
-이 문서는 `gaps rebalance`가 **현재 보유 포트폴리오를 목표로 어떻게 이동시키는가**(리밸런싱 방식)를 이해 중심으로 설명한다. 구현 관점의 설계 명세는 [`docs/superpowers/specs/2026-06-07-rebalancing-engine-design.md`](superpowers/specs/2026-06-07-rebalancing-engine-design.md)를, 단계별 구현은 [`docs/superpowers/plans/2026-06-07-rebalancing-engine-plan-{a,b,c}.md`](superpowers/plans/)를 참고.
+이 문서는 `gaps rebalance`가 **현재 보유 포트폴리오를 목표로 어떻게 이동시키는가**(리밸런싱 방식)를 이해 중심으로 설명한다. 구현 관점의 설계 명세는 [`docs/design/2026-06-07-rebalancing-engine-design.md`](../design/2026-06-07-rebalancing-engine-design.md)를 참고 (단계별 구현 플랜은 트리에서 제거 — git 태그 `docs-archive-2026-08`의 `docs/superpowers/plans/2026-06-07-rebalancing-engine-plan-{a,b,c}.md` 참조).
 
 ---
 
@@ -232,4 +232,4 @@ rebalance:
 
 ---
 
-*관련 문서: 설계 명세 [`specs/2026-06-07-rebalancing-engine-design.md`](superpowers/specs/2026-06-07-rebalancing-engine-design.md) · 구현 계획 [`plans/2026-06-07-rebalancing-engine-plan-{a,b,c}.md`](superpowers/plans/) · 전체 파이프라인 [`README.md`](../README.md)*
+*관련 문서: 설계 명세 [`design/2026-06-07-rebalancing-engine-design.md`](../design/2026-06-07-rebalancing-engine-design.md) · 전체 파이프라인 [`README.md`](../../README.md) — 구현 계획 플랜 문서는 git 태그 `docs-archive-2026-08`에 보존*

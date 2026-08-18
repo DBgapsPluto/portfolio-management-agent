@@ -4,9 +4,9 @@
 **상태:** 설계 확정 (구현 대기)
 **버전:** v3 — 주기 구조 재평가 반영. **정기 weekly 제거**(실측: regime quadrant 3주+ 불변 → 주간 tilt 대부분 no-op), daily 감시가 regime 프록시 급변을 감지하면 그때만 **조건부 재진단(reassess)**. (v2의 14-finding 적대적 리뷰 수정 + 잔여현금=현금보유 모두 보존)
 **맥락:** 실전 운용 — 대회 기간(2026-06-01 ~ 2026-08-31) 실제 10억 KRW 운용 중, 주기적으로 *현재 보유 → 목표*를 재산출하고 종목별 매수/매도 거래계획을 산출한다.
-**선행/관련:** [`tradingagents/rebalance/`](../../../tradingagents/rebalance/), [`turnover_check.py`](../../../tradingagents/skills/mandate/turnover_check.py), [`risk_repair.py`](../../../tradingagents/skills/mandate/risk_repair.py), [`correlation_check.py`](../../../tradingagents/skills/mandate/correlation_check.py), [`sub_category.py`](../../../tradingagents/skills/portfolio/sub_category.py)
+**선행/관련:** [`tradingagents/rebalance/`](../../tradingagents/rebalance/), [`turnover_check.py`](../../tradingagents/skills/mandate/turnover_check.py), [`risk_repair.py`](../../tradingagents/skills/mandate/risk_repair.py), [`correlation_check.py`](../../tradingagents/skills/mandate/correlation_check.py), [`sub_category.py`](../../tradingagents/skills/portfolio/sub_category.py)
 
-> **v3 변경(주기 구조):** ① 정기 weekly tier 제거 — 실측상 regime quadrant가 3주+ 고정([artifacts](../../../artifacts/) 2026-05-15~06-05 전 구간 `growth_inflation`)이라 매주 macro+risk를 돌려도 대부분 no-op이고, binary quadrant 비교 한계 + LLM sampling variance로 불필요 회전 위험. ② 대신 **조건부 재진단(reassess)** — daily 감시가 regime 프록시 급변(수익률곡선 전환·vol regime 전환 등)을 감지할 때만 macro+risk 재실행. ③ monthly full 유지(매크로 발표 월간 주기·회전율 규칙과 일치, 대회 중 3회뿐). ④ 잔여 현금은 현금성 ETF로 sweep하지 않고 **현금 보유**.
+> **v3 변경(주기 구조):** ① 정기 weekly tier 제거 — 실측상 regime quadrant가 3주+ 고정([artifacts](../../artifacts/) 2026-05-15~06-05 전 구간 `growth_inflation`)이라 매주 macro+risk를 돌려도 대부분 no-op이고, binary quadrant 비교 한계 + LLM sampling variance로 불필요 회전 위험. ② 대신 **조건부 재진단(reassess)** — daily 감시가 regime 프록시 급변(수익률곡선 전환·vol regime 전환 등)을 감지할 때만 macro+risk 재실행. ③ monthly full 유지(매크로 발표 월간 주기·회전율 규칙과 일치, 대회 중 3회뿐). ④ 잔여 현금은 현금성 ETF로 sweep하지 않고 **현금 보유**.
 >
 > **v2 변경(결함 수정, 유지):** gap #1 정정(graph.run previous_portfolio·turnover 이미 구현) · 클러스터 cap 공허통과 차단 · no-trade band cap-위반 잔존 방지 + post-trade 실현비중 전체 validator 재검증 · `bucket_for_etf`/`repair_risk_cap` 정정 · turnover 실현거래액 통일 · 종목교체최소화 · tier ladder · auto-discovery 날짜 등.
 
@@ -14,16 +14,16 @@
 
 ## 1. 배경 — 문제
 
-이미 [`tradingagents/rebalance/`](../../../tradingagents/rebalance/)에 3-tier 재배분 스캐폴드(daily_triggers / weekly_tilt / monthly_full)와 `gaps rebalance` CLI가 있다. 그러나 **"리밸런싱의 알맹이"인 공통 거래계획 레이어가 비어 있다.** 코드 확인으로 확정된 gap:
+이미 [`tradingagents/rebalance/`](../../tradingagents/rebalance/)에 3-tier 재배분 스캐폴드(daily_triggers / weekly_tilt / monthly_full)와 `gaps rebalance` CLI가 있다. 그러나 **"리밸런싱의 알맹이"인 공통 거래계획 레이어가 비어 있다.** 코드 확인으로 확정된 gap:
 
 | # | gap | 근거 |
 |---|---|---|
-| 1 | **(정정)** `TradingAgentsGraph.run()`은 **이미 `previous_portfolio`를 받고**, state 주입·`mandate_validator`의 turnover 검증까지 end-to-end 구현돼 있다(2026-05-10). **진짜 남은 gap은 [`monthly_full.run`](../../../tradingagents/rebalance/monthly_full.py)이 받은 `previous_path`를 `graph.run(previous_portfolio=…)`로 전달하지 않는 것 하나뿐.** | [`trading_graph.py`](../../../tradingagents/graph/trading_graph.py), [`agent_states.py`](../../../tradingagents/agents/utils/agent_states.py), [`mandate_validator.py`](../../../tradingagents/agents/validator/mandate_validator.py) |
-| 2 | `write_trade_plan`은 **"전량 신규 매수" 가정** — 현재 보유 델타(매도/매수) 계산이 없다. | [`reports/trade_plan.py`](../../../tradingagents/reports/trade_plan.py) |
-| 3 | 거래계획 미생성: daily=신호만, weekly=추상 tilt, monthly=새 목표만. | [`daily_triggers.py:165`](../../../tradingagents/rebalance/daily_triggers.py), [`weekly_tilt.py:53-58`](../../../tradingagents/rebalance/weekly_tilt.py) |
-| 4 | drift 트리거 `any_etf_weight > 0.18`이 **실보유 아닌 종가 스냅샷** 기반(placeholder). 또 `kospi_return_1d = 0.0`으로 하드코딩돼 **KOSPI 급락 트리거 미작동**. | [`daily_triggers.py:108,111-116`](../../../tradingagents/rebalance/daily_triggers.py) |
-| 5 | ✅ `turnover_check`는 **previous_weights 인터페이스가 이미 있다** → 재사용. | [`turnover_check.py:27`](../../../tradingagents/skills/mandate/turnover_check.py) |
-| 6 | **(신규)** 상관 클러스터 cap(hard mandate, 0.25)은 `state["correlation_clusters"]`로만 검증되는데 **`technical_analyst`만 생성**한다. 분석가를 안 돌리는 tier(daily/reassess)에서는 빈 리스트 → **공허 통과**. | [`technical_analyst.py:209,383`](../../../tradingagents/agents/analysts/technical_analyst.py), [`correlation_check.py:25`](../../../tradingagents/skills/mandate/correlation_check.py) |
+| 1 | **(정정)** `TradingAgentsGraph.run()`은 **이미 `previous_portfolio`를 받고**, state 주입·`mandate_validator`의 turnover 검증까지 end-to-end 구현돼 있다(2026-05-10). **진짜 남은 gap은 [`monthly_full.run`](../../tradingagents/rebalance/monthly_full.py)이 받은 `previous_path`를 `graph.run(previous_portfolio=…)`로 전달하지 않는 것 하나뿐.** | [`trading_graph.py`](../../tradingagents/graph/trading_graph.py), [`agent_states.py`](../../tradingagents/agents/utils/agent_states.py), [`mandate_validator.py`](../../tradingagents/agents/validator/mandate_validator.py) |
+| 2 | `write_trade_plan`은 **"전량 신규 매수" 가정** — 현재 보유 델타(매도/매수) 계산이 없다. | [`reports/trade_plan.py`](../../tradingagents/reports/trade_plan.py) |
+| 3 | 거래계획 미생성: daily=신호만, weekly=추상 tilt, monthly=새 목표만. | [`daily_triggers.py:165`](../../tradingagents/rebalance/daily_triggers.py), [`weekly_tilt.py:53-58`](../../tradingagents/rebalance/weekly_tilt.py) |
+| 4 | drift 트리거 `any_etf_weight > 0.18`이 **실보유 아닌 종가 스냅샷** 기반(placeholder). 또 `kospi_return_1d = 0.0`으로 하드코딩돼 **KOSPI 급락 트리거 미작동**. | [`daily_triggers.py:108,111-116`](../../tradingagents/rebalance/daily_triggers.py) |
+| 5 | ✅ `turnover_check`는 **previous_weights 인터페이스가 이미 있다** → 재사용. | [`turnover_check.py:27`](../../tradingagents/skills/mandate/turnover_check.py) |
+| 6 | **(신규)** 상관 클러스터 cap(hard mandate, 0.25)은 `state["correlation_clusters"]`로만 검증되는데 **`technical_analyst`만 생성**한다. 분석가를 안 돌리는 tier(daily/reassess)에서는 빈 리스트 → **공허 통과**. | [`technical_analyst.py:209,383`](../../tradingagents/agents/analysts/technical_analyst.py), [`correlation_check.py:25`](../../tradingagents/skills/mandate/correlation_check.py) |
 
 진짜로 없는 것: **(A) 현재 보유 재평가 + 목표 델타 거래계획 공통 엔진**, **(B) 분석가-미실행 tier의 클러스터 cap 검증 입력원**, **(C) monthly_full의 previous 전달**.
 
@@ -32,7 +32,7 @@
 ## 2. 범위
 
 **In scope:**
-- 신규 공통 엔진 [`tradingagents/rebalance/engine.py`](../../../tradingagents/rebalance/engine.py) — `reprice_holdings` + `build_rebalance_plan`.
+- 신규 공통 엔진 [`tradingagents/rebalance/engine.py`](../../tradingagents/rebalance/engine.py) — `reprice_holdings` + `build_rebalance_plan`.
 - 트리거 라우터 — **드리프트 + 이벤트 + regime 프록시**를 daily에서 평가, monthly는 캘린더.
 - tier별 목표 재산출 (daily/event = 결정론 방어 오버레이, **reassess = 조건부 macro+risk 재진단 tilt**, monthly = full 파이프라인).
 - 산출물 3종 — `(rebalancing).json` + `(rebalancing)_plan.csv` + `(rebalancing)_rationale.md`.
@@ -156,9 +156,9 @@ class TradeLine:
 | 단일 ETF 목표 대비 이탈 | `\|current − target\| > single_etf_rel_band` (0.05) | drift:rebalance |
 | 위험자산 합계 | `current_risk > risk_asset_abs_cap` (0.68) | drift:defensive |
 
-**위험자산 분류(finding #4):** [`skills/portfolio/sub_category.bucket_for_etf(etf)`](../../../tradingagents/skills/portfolio/sub_category.py)는 **ETF 객체**(ticker 아님)를 받는다. 엔진은 universe로 `ticker→ETF` 맵을 만들고 [`concentration_check.RISK_BUCKET_NAMES`](../../../tradingagents/skills/mandate/concentration_check.py) 멤버십으로 집계 — [`trader_allocator.py:230-234`](../../../tradingagents/agents/trader/trader_allocator.py) 패턴.
+**위험자산 분류(finding #4):** [`skills/portfolio/sub_category.bucket_for_etf(etf)`](../../tradingagents/skills/portfolio/sub_category.py)는 **ETF 객체**(ticker 아님)를 받는다. 엔진은 universe로 `ticker→ETF` 맵을 만들고 [`concentration_check.RISK_BUCKET_NAMES`](../../tradingagents/skills/mandate/concentration_check.py) 멤버십으로 집계 — [`trader_allocator.py:230-234`](../../tradingagents/agents/trader/trader_allocator.py) 패턴.
 
-### 5.3 이벤트 (daily — 기존 [triggers_default.yaml](../../../presets/triggers_default.yaml) 재사용)
+### 5.3 이벤트 (daily — 기존 [triggers_default.yaml](../../presets/triggers_default.yaml) 재사용)
 VIX>30 / VKOSPI>25 / 수익률곡선 역전 / KOSPI 급락 / vol 정상화. 데이터 소스를 실보유 `current_weights`로 교체하고, **`kospi_return_1d` placeholder(0.0)를 실제 KOSPI 일간수익률 fetch로 교체**(현재 미작동, gap #4).
 - 즉각 충격 대응(`emergency_defensive`)은 daily에서 결정론 방어 오버레이로 처리(§6.1).
 - **중복 정리(finding #13):** 레거시 `any_etf_weight > 0.18`은 §5.2 `single_etf_abs_cap`(0.19)과 중복 → 제거 또는 `alert`로 강등(§5.5 yaml에 명시).
@@ -181,7 +181,7 @@ regime 프록시 트리거(yaml `reassess_triggers`):
 event:emergency_defensive  >  monthly  >  reassess  >  drift:defensive  >  drift:rebalance  >  event:risk_on  >  alert  >  none
 ```
 - 위험 축소(defensive)는 위험 확대(risk_on)보다 항상 우선.
-- 기존 [`daily_triggers.py`](../../../tradingagents/rebalance/daily_triggers.py) 액션 우선순위 dict(`emergency_defensive=2, rebalance=1, risk_on=1, alert=0`)는 이 ladder에 맞춰 `risk_on`을 `rebalance`보다 낮게 재매핑.
+- 기존 [`daily_triggers.py`](../../tradingagents/rebalance/daily_triggers.py) 액션 우선순위 dict(`emergency_defensive=2, rebalance=1, risk_on=1, alert=0`)는 이 ladder에 맞춰 `risk_on`을 `rebalance`보다 낮게 재매핑.
 - `none`이면 거래 없이 **모니터링 리포트만**.
 
 ### 5.6 설정 (신규 yaml 섹션)
@@ -217,13 +217,13 @@ rebalance:
 | **monthly** | `graph.run(previous_portfolio=…)` full 재실행 → 새 목표 | 전체 (≈51회) | 전체 파이프라인 |
 
 ### 6.1 daily/event 방어 오버레이 (finding #5 정정)
-`repair_risk_cap`은 **risk_sum > cap일 때만** 작동(cap 이하면 no-op, [`risk_repair.py:34-36`](../../../tradingagents/skills/mandate/risk_repair.py)). emergency_defensive는 cap *이하*에서도 위험을 더 낮춰야 하므로:
+`repair_risk_cap`은 **risk_sum > cap일 때만** 작동(cap 이하면 no-op, [`risk_repair.py:34-36`](../../tradingagents/skills/mandate/risk_repair.py)). emergency_defensive는 cap *이하*에서도 위험을 더 낮춰야 하므로:
 - `emergency_defensive`: `repair_risk_cap(weights, is_risk, cap=defensive_target(0.55))`로 호출 → 위험자산을 목표치까지 비례 축소 + 안전자산 water-fill.
 - `risk_on`: 위험자산 소폭 확대(cap 0.70 내). **확대 경로도** §7.2 [5] 검증→수선 사이클 통과.
 - `drift:rebalance`: 직전 목표 복원. `drift:defensive`: 위험자산 cap 안으로 축소.
 
 ### 6.2 종목 교체 최소화 (finding #9 — reassess/monthly tilt 시)
-[`select_representative_candidates`](../../../tradingagents/skills/portfolio/candidate_selector.py)는 `(duration, hedge, -AUM, ticker)`로만 정렬하고 **incumbent 인자가 없어** AUM drift로 near-tie가 run마다 뒤집혀 churn한다. 따라서:
+[`select_representative_candidates`](../../tradingagents/skills/portfolio/candidate_selector.py)는 `(duration, hedge, -AUM, ticker)`로만 정렬하고 **incumbent 인자가 없어** AUM drift로 near-tie가 run마다 뒤집혀 churn한다. 따라서:
 - 엔진이 **현재 보유 종목 집합**을 bucket→ETF 변환에 전달.
 - challenger AUM 우위(또는 rank-score delta) < `reassess_incumbent_band`(0.10)면 **보유 유지**, 명확히 우월할 때만 교체.
 - 구현: `select_representative_candidates`에 `incumbents` 인자 또는 swap-suppression wrapper.
@@ -234,7 +234,7 @@ rebalance:
 ### 6.4 클러스터 입력원 확보 (finding #1·#6 — hard mandate 구멍 차단)
 daily/reassess에서 `correlation_clusters`가 비면 클러스터 cap이 공허 통과한다:
 - **1차(권장)**: monthly full run이 `correlation_clusters`를 **portfolio.json에 영속화**(현재 미저장 — §9). daily/reassess는 직전 산출물 clusters 재사용.
-- **2차(정확)**: 엔진이 [`find_correlation_clusters(returns, threshold=0.7)`](../../../tradingagents/skills/technical/correlation_cluster.py)를 가격 수익률로 **경량 재계산**(결정론, LLM 0).
+- **2차(정확)**: 엔진이 [`find_correlation_clusters(returns, threshold=0.7)`](../../tradingagents/skills/technical/correlation_cluster.py)를 가격 수익률로 **경량 재계산**(결정론, LLM 0).
 - **안전장치**: 두 경로 모두 실패 시 **비중 변경 오버레이/tilt 금지**(거래 차단) + 경고 — 검증 불가 상태로 클러스터 cap 우회 금지.
 
 ---
@@ -252,7 +252,7 @@ def reprice_holdings(previous_portfolio: dict, as_of: date) -> dict[str, float]:
     가격 fetch 실패 종목은 직전 비중 유지(보수적).
     """
 ```
-- [`portfolio_manager._fetch_current_prices`](../../../tradingagents/agents/managers/portfolio_manager.py)를 공용 모듈로 추출 재사용.
+- [`portfolio_manager._fetch_current_prices`](../../tradingagents/agents/managers/portfolio_manager.py)를 공용 모듈로 추출 재사용.
 - **현금은 위험자산 아님** → cap(위험 70%) 계산 시 분모에만 기여, 분자 제외.
 
 ### 7.2 `build_rebalance_plan(current, target, capital, prices, tier, dials)`
@@ -298,7 +298,7 @@ def reprice_holdings(previous_portfolio: dict, as_of: date) -> dict[str, float]:
 | `{date}(rebalancing)_plan.csv` | `티커, ETF명, 자산군, 현재수량, 목표수량, 매매구분, 거래수량, 거래금액(KRW)` (+ 잔여 현금 라인) | 0 |
 | `{date}(rebalancing)_rationale.md` | 사유서 — **왜 지금(트리거) · 무엇을 바꿨나 · 왜 그렇게(regime/risk/시나리오·클러스터) · mandate 준수** | tier 차등 |
 
-### 8.1 사유서 깊이 (tier 차등) — 신규 [`reports/rebalance_rationale.py`](../../../tradingagents/reports/rebalance_rationale.py)
+### 8.1 사유서 깊이 (tier 차등) — 신규 [`reports/rebalance_rationale.py`](../../tradingagents/reports/rebalance_rationale.py)
 | tier | 형식 | 내용 |
 |---|---|---|
 | monthly | 상세 LLM (philosophy 패턴) | regime/risk/시나리오 변화 → 목표 변경 논리 + 주요 매매 근거 + mandate 준수 |
@@ -313,15 +313,15 @@ def reprice_holdings(previous_portfolio: dict, as_of: date) -> dict[str, float]:
 
 | 파일 | 변경 | finding |
 |---|---|---|
-| [`monthly_full.py`](../../../tradingagents/rebalance/monthly_full.py) | `previous_path`를 `graph.run(previous_portfolio=…)`로 전달 + engine 호출로 거래계획 | #1, #3 |
-| [`portfolio_manager.py`](../../../tradingagents/agents/managers/portfolio_manager.py) | `correlation_clusters` portfolio.json 영속화; `_fetch_current_prices` 공용 추출 | #1/#6 |
-| [`weekly_tilt.py`](../../../tradingagents/rebalance/weekly_tilt.py) | **정기 호출 제거** → reassess(조건부)로 재사용: 프록시 발화 시 macro+risk 재실행 → tilt → ETF 변환(incumbent-bias) → engine | 구조변경, #9 |
-| [`daily_triggers.py`](../../../tradingagents/rebalance/daily_triggers.py) | 실제 `current_weights` 주입(`any_etf_weight`·드리프트); `kospi_return_1d` 실제 fetch; `reassess_triggers` 평가; 레거시 0.18 정리 | #4, #13, 구조변경 |
-| [`candidate_selector.py`](../../../tradingagents/skills/portfolio/candidate_selector.py) | `select_representative_candidates`에 `incumbents` 인자(또는 wrapper) | #9 |
-| [`reports/trade_plan.py`](../../../tradingagents/reports/trade_plan.py) | 현재 보유 델타 모드(또는 신규 `write_rebalance_plan`) + 잔여 현금 라인 | #2, #12 |
-| [`presets/triggers_default.yaml`](../../../presets/triggers_default.yaml) | `rebalance:` 섹션(§5.6) 추가; `reassess_triggers`; 0.18 결정 반영 | #10, #13, 구조변경 |
-| [`cli/commands/portfolio.py`](../../../cli/commands/portfolio.py) `rebalance` | **tier choice를 `{daily, monthly}`로** (weekly 제거; reassess는 daily 내부 자동); engine 결과·산출물 출력; `--from` 미지정 시 as_of 이전 날짜 auto-discovery | #3, #11, 구조변경 |
-| **(신규)** [`tradingagents/monitor/notify.py`](../../../tradingagents/monitor/) + [`.github/workflows/rebalance-daily.yml`](../../../.github/workflows/) | 트리거 발화 시 알림 어댑터(슬랙 webhook, env); GitHub Actions cron 워크플로(상태 commit·동시성 직렬화) (§13) | 자동화 |
+| [`monthly_full.py`](../../tradingagents/rebalance/monthly_full.py) | `previous_path`를 `graph.run(previous_portfolio=…)`로 전달 + engine 호출로 거래계획 | #1, #3 |
+| [`portfolio_manager.py`](../../tradingagents/agents/managers/portfolio_manager.py) | `correlation_clusters` portfolio.json 영속화; `_fetch_current_prices` 공용 추출 | #1/#6 |
+| [`weekly_tilt.py`](../../tradingagents/rebalance/weekly_tilt.py) | **정기 호출 제거** → reassess(조건부)로 재사용: 프록시 발화 시 macro+risk 재실행 → tilt → ETF 변환(incumbent-bias) → engine | 구조변경, #9 |
+| [`daily_triggers.py`](../../tradingagents/rebalance/daily_triggers.py) | 실제 `current_weights` 주입(`any_etf_weight`·드리프트); `kospi_return_1d` 실제 fetch; `reassess_triggers` 평가; 레거시 0.18 정리 | #4, #13, 구조변경 |
+| [`candidate_selector.py`](../../tradingagents/skills/portfolio/candidate_selector.py) | `select_representative_candidates`에 `incumbents` 인자(또는 wrapper) | #9 |
+| [`reports/trade_plan.py`](../../tradingagents/reports/trade_plan.py) | 현재 보유 델타 모드(또는 신규 `write_rebalance_plan`) + 잔여 현금 라인 | #2, #12 |
+| [`presets/triggers_default.yaml`](../../presets/triggers_default.yaml) | `rebalance:` 섹션(§5.6) 추가; `reassess_triggers`; 0.18 결정 반영 | #10, #13, 구조변경 |
+| [`cli/commands/portfolio.py`](../../cli/commands/portfolio.py) `rebalance` | **tier choice를 `{daily, monthly}`로** (weekly 제거; reassess는 daily 내부 자동); engine 결과·산출물 출력; `--from` 미지정 시 as_of 이전 날짜 auto-discovery | #3, #11, 구조변경 |
+| **(신규)** [`tradingagents/monitor/notify.py`](../../tradingagents/monitor/) + [`.github/workflows/rebalance-daily.yml`](../../.github/workflows/) | 트리거 발화 시 알림 어댑터(슬랙 webhook, env); GitHub Actions cron 워크플로(상태 commit·동시성 직렬화) (§13) | 자동화 |
 
 > **gap #1 주의:** `trading_graph.run()`·`agent_states`·`mandate_validator`의 previous_portfolio/turnover wiring은 **이미 구현돼 있다**(2026-05-10). 새로 추가 금지 — 수정은 `monthly_full` 전달 한 줄.
 
@@ -345,14 +345,14 @@ def reprice_holdings(previous_portfolio: dict, as_of: date) -> dict[str, float]:
 
 ## 11. 테스트 전략
 
-**단위 ([`tests/unit/rebalance/`](../../../tests/unit/)):**
+**단위 ([`tests/unit/rebalance/`](../../tests/unit/)):**
 - `reprice_holdings` — 직전 수량 × 현재가 → 비중(현금 포함), 합 ≈ 1.0, 가격 실패 시 직전 유지.
 - `build_rebalance_plan` — delta / no-trade band / **band 예외(버퍼 초과 cap-방향 강제 실행)** / 잔여 현금 = 현금 보유(cash_weight 기록, 종목 합 + 현금 = 1.0) / turnover(실현 거래액) 하한 충돌.
 - 엣지: 신규 편입(current=0→BUY), 완전 청산(target=0→SELL), 가격=0(경고), HOLD.
 - **mandate 재검증 — realized_post 기준**: 0.203 잔존이 단일 cap 위반으로 잡히는지(finding #2), daily/reassess에서 클러스터 cap이 실제 평가되는지(공허 통과 회귀 방지, finding #1/#6).
 - 트리거 라우터 — 드리프트 임계 발화, **reassess 프록시 발화→regime 변화 유무 분기**, canonical ladder 우선순위, none 분기.
 
-**통합 ([`tests/integration/`](../../../tests/integration/)):**
+**통합 ([`tests/integration/`](../../tests/integration/)):**
 - 직전 portfolio.json fixture → `gaps rebalance daily/monthly` → 산출물 3종 + 파일명(`{date}(rebalancing)*`).
 - 생성 plan이 **전체 mandate**(단일 20% / 위험 70% / **클러스터 0.25** / turnover) 만족, monthly turnover ≥10%.
 - 같은 날 plan→rebalance 시 previous가 이전 날짜인지(finding #11).
@@ -388,7 +388,7 @@ def reprice_holdings(previous_portfolio: dict, as_of: date) -> dict[str, float]:
 - **휴장일**: cron은 월~금만. 한국 공휴일/임시휴장은 daily 내부에서 가격 fetch 빈 응답 감지 시 트리거 평가 skip(§10 재사용) → 무거래.
 - **monthly는 자동화 제외**: full은 philosophy 검토가 필요하므로 운영자가 의도적으로 실행(원하면 별도 월간 워크플로로 확장 가능하나 검토 게이트 권장).
 
-### 13.2 발화 알림 (신규 [`tradingagents/monitor/notify.py`](../../../tradingagents/monitor/))
+### 13.2 발화 알림 (신규 [`tradingagents/monitor/notify.py`](../../tradingagents/monitor/))
 - **발송 조건**: `tier != none`(거래계획 발생) 또는 `emergency_defensive`/`reassess`(regime 변화) 발화 시.
 - **채널**: env로 선택 — `SLACK_WEBHOOK_URL`(슬랙 webhook, 설정 간단·권장) 또는 SMTP(이메일). 미설정 시 로그만(graceful).
 - **내용**: tier · 발화 트리거 · 주요 매매 요약(상위 N) · mandate 통과 여부 · 산출물 3종 경로.

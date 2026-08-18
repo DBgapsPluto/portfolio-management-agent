@@ -2,7 +2,7 @@
 
 - **작성일:** 2026-06-04 (rev2 — 적대 리뷰 반영 전면 개정)
 - **대상:** Stage 3 trader/allocator 구현자
-- **선행 의존:** [Step A Phase 1 — quadrant anchor](./2026-06-03-trader-stepA-quadrant-anchor-design.md), [Step A Phase 2 — scenario modifier](./2026-06-03-trader-stepA-scenario-modifier-design.md) (구현·검증 완료)
+- **선행 의존:** [Step A Phase 1 — quadrant anchor](./2026-06-03-trader-stepA-quadrant-anchor-design.md), Step A Phase 2 — scenario modifier (구현·검증 완료; 해당 설계 문서는 구경로 전용이라 트리에서 제거 — git 태그 `docs-archive-2026-08`의 `docs/superpowers/specs/2026-06-03-trader-stepA-scenario-modifier-design.md` 참조)
 - **대상 파일:** `tradingagents/skills/portfolio/candidate_selector.py` (신규), `tradingagents/agents/trader/trader_allocator.py`
 
 ---

@@ -46,7 +46,7 @@ return [
 
 | 필드 (경로) | 타입 | 신뢰도 |
 |---|---|---|
-| `macro_report.regime.quadrant` | `Literal[growth_inflation, growth_disinflation, recession_inflation, recession_disinflation]` ([macro.py:9](../../../tradingagents/schemas/macro.py)) | **결정론** |
+| `macro_report.regime.quadrant` | `Literal[growth_inflation, growth_disinflation, recession_inflation, recession_disinflation]` ([macro.py:9](../../tradingagents/schemas/macro.py)) | **결정론** |
 | `macro_report.regime.confidence` | `float [0,1]` | **결정론** |
 | `macro_report.regime.drivers` | `list[str]` (1~5) | 결정론 |
 | `research_decision.conviction` | `Literal[high, medium, low]` | 신뢰(enum) |
@@ -56,13 +56,13 @@ return [
 | `macro/risk/technical/news_summary` | `str ≤2KB` | Stage 1 |
 | `allocation_feedback` | `list[Violation]` | 결정론 (retry) |
 
-`macro_report`는 `Optional[MacroReport]` 상태 필드로 보존됨 ([agent_states.py:33](../../../tradingagents/agents/utils/agent_states.py)).
+`macro_report`는 `Optional[MacroReport]` 상태 필드로 보존됨 ([agent_states.py:33](../../tradingagents/agents/utils/agent_states.py)).
 
 ### 1.3. 변하지 않는 것 (Phase 1 범위 밖, 그대로 유지)
 
-- 14-bucket taxonomy ([gaps_buckets.py](../../../tradingagents/skills/portfolio/gaps_buckets.py))
+- 14-bucket taxonomy ([gaps_buckets.py](../../tradingagents/skills/portfolio/gaps_buckets.py))
 - Step B 종목 선정 (현 LLM — 별도 작업에서 결정론화)
-- 버킷내 AUM water-filling ([within_bucket.py](../../../tradingagents/skills/portfolio/within_bucket.py))
+- 버킷내 AUM water-filling ([within_bucket.py](../../tradingagents/skills/portfolio/within_bucket.py))
 - `_clamp_to_pool_capacity`, `realized_risk_weight`, Stage 5 validator + D4 retry 루프
 
 ---
@@ -114,7 +114,7 @@ QUADRANT_ANCHOR: dict[str, dict[str, tuple[float, float, float]]] = { ... }
 - **`recession_disinflation`** (broad recession): 방어 ↑↑ (a1_cash≈0.15, a3_us_rates 듀레이션≈0.22), 성장 ↓↓ (b3_global_tech `hard_max≈0.10`). risk≈0.30.
 - **`recession_inflation`** (stagflation): 금·원자재 ↑↑ (a5_gold_infl≈0.14, b8≈0.10), 주식 ↓ (b1/b2/b3 낮게), 듀레이션 중립. risk≈0.50 (대부분 실물).
 
-> 모든 baseline 수치는 **v1 시드**다. 근거: ① 레짐→자산군 로직(성장↔침체=위험총량, 인플레↔디스인플레=듀레이션 vs 실물), ② mandate(risk≤70%·single20%) 사전 충족, ③ 삭제된 BL 기대수익률 테이블([bl_views.py](../../../tradingagents/skills/portfolio/bl_views.py) 과거본) 부호 cross-check. 실데이터 튜닝은 §5.
+> 모든 baseline 수치는 **v1 시드**다. 근거: ① 레짐→자산군 로직(성장↔침체=위험총량, 인플레↔디스인플레=듀레이션 vs 실물), ② mandate(risk≤70%·single20%) 사전 충족, ③ 삭제된 BL 기대수익률 테이블(`bl_views.py` 과거본 — 2026-06-15 dead-code 정리로 삭제, git 태그 `docs-archive-2026-08` 이전 히스토리 참조) 부호 cross-check. 실데이터 튜닝은 §5.
 
 ### 2.2. 동적 latitude (밴드 폭 scaling)
 
@@ -211,7 +211,7 @@ bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)   # 기존 유지
 # 이후 Step B / within-bucket / risk / validator: 변경 없음
 ```
 
-- `_resolve_quadrant`: `macro_report` None이거나 staleness degraded면 **`growth_disinflation`**(macro 분석가의 degraded default와 일치, [macro_quant_analyst.py:220](../../../tradingagents/agents/analysts/macro_quant_analyst.py)) 사용.
+- `_resolve_quadrant`: `macro_report` None이거나 staleness degraded면 **`growth_disinflation`**(macro 분석가의 degraded default와 일치, [macro_quant_analyst.py:220](../../tradingagents/agents/analysts/macro_quant_analyst.py)) 사용.
 - `BucketAllocation` schema는 보존(다른 호출지 호환); Step A 출력만 `BucketTilt`로 교체.
 
 ---
@@ -243,7 +243,7 @@ bucket_weights = _clamp_to_pool_capacity(bucket_weights, pool)   # 기존 유지
 | 단계 | 검증 | 도구 | 통과 기준 |
 |---|---|---|---|
 | **L0 불변식** | 기계 정확성 (LLM 무관) | `pytest test_scenario_anchor.py` | quadrant별 Σbaseline=1.0; hard_min≤baseline≤hard_max; Σhard_min≤1≤Σhard_max; 위험버킷 Σhard_max≤0.70. 투영: in-band tilt 보존·sum=1, 이탈 clamp, 잔차분배 수렴, 수치 예외→baseline |
-| **L1 앵커 sanity** | 경제적 타당성 | 관계 assert | camp 합(`GROWTH_KEYS` vs `DEFENSIVE_KEYS`, [gaps_buckets.py](../../../tradingagents/skills/portfolio/gaps_buckets.py))으로: growth_*는 성장camp>방어camp, recession_*는 방어camp>성장camp; recession_inflation a5_gold_infl > growth_disinflation a5; recession_disinflation a3_us_rates(듀레이션) 최대. BL 부호 cross-check |
+| **L1 앵커 sanity** | 경제적 타당성 | 관계 assert | camp 합(`GROWTH_KEYS` vs `DEFENSIVE_KEYS`, [gaps_buckets.py](../../tradingagents/skills/portfolio/gaps_buckets.py))으로: growth_*는 성장camp>방어camp, recession_*는 방어camp>성장camp; recession_inflation a5_gold_infl > growth_disinflation a5; recession_disinflation a3_us_rates(듀레이션) 최대. BL 부호 cross-check |
 | **L2 ⭐ 변동성** | **드리프트 감소(핵심 목표)** | `scripts/measure_stepA_variance.py` + `replay_stage.py` | 동일 archived state에 Step A N회(≥20) 반복 → 버킷별 weight stdev. **앵커 전 baseline 측정 → Phase1 후 목표 비율 감소**(목표치는 before 측정 후 확정) |
 | **L3 regime 적합성** | 실데이터 합리성 | `run_backtest.py` (independent, 5 날짜) | 4 quadrant 커버 날짜에서 quadrant 분류 그럴듯, Step A in-band·risk≤70%·crash 0, 침체=방어/goldilocks=risk-on 직관 부합 |
 | L4 성과 (부차) | 수익/리스크 | `run_backtest.py` 성과 | **게이트 아님** — historical 데이터 품질 한계로 방향 참고만 |

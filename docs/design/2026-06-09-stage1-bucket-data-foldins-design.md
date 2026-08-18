@@ -6,7 +6,7 @@
 
 ## 1. 목적
 
-GAPS 14버킷([gaps_buckets.py](../../../tradingagents/skills/portfolio/gaps_buckets.py)) 중 6개 버킷은 Stage 1 데이터로 **펀더멘털/거시 시황을 명확히 판단하기 어렵다**(진단 결과 §2). 이 공백을 무료·결정론 데이터로 메운다. 자산배분 결정을 바꾸는 것이 아니라, **각 버킷의 시황 인식을 균일하게 끌어올리는 입력 데이터**를 추가하는 것이 목표다.
+GAPS 14버킷([gaps_buckets.py](../../tradingagents/skills/portfolio/gaps_buckets.py)) 중 6개 버킷은 Stage 1 데이터로 **펀더멘털/거시 시황을 명확히 판단하기 어렵다**(진단 결과 §2). 이 공백을 무료·결정론 데이터로 메운다. 자산배분 결정을 바꾸는 것이 아니라, **각 버킷의 시황 인식을 균일하게 끌어올리는 입력 데이터**를 추가하는 것이 목표다.
 
 대회 평가가 "수익률 30% + 투자철학 70%"이고 그 핵심이 "시장 충격 시 방어 논리 / 상관관계로 단일 리스크(AI 쏠림) 통제"이므로, 특히 **B3(글로벌 테크·반도체)**·**B7(리츠)**의 펀더멘털 공백 해소가 가치가 높다.
 
@@ -19,9 +19,9 @@ stage1은 두 종류 데이터를 산출한다:
 - **거시/펀더멘털축** = `macro_quant`의 25 snapshot. → 버킷별 커버리지가 극과 극.
 
 코드 검증으로 확인된 핵심 사실:
-- 14버킷은 [gaps_buckets.py](../../../tradingagents/skills/portfolio/gaps_buckets.py)에 이미 정의·운영 중(A1~A5, B1~B9).
-- REIT·2차전지·신흥국·하이일드·KR섹터·KR반도체 ETF는 전부 universe에 등재되어 [technical_analyst.py:156](../../../tradingagents/agents/analysts/technical_analyst.py#L156) `fetch_etf_price_batch`로 **매일 가격이 batch fetch**된다.
-- [sector_rotation.py:41-61](../../../tradingagents/skills/technical/sector_rotation.py#L41)은 US 전용이 아니라 universe를 category별로 집계 → KR 섹터 모멘텀도 이미 계산된다.
+- 14버킷은 [gaps_buckets.py](../../tradingagents/skills/portfolio/gaps_buckets.py)에 이미 정의·운영 중(A1~A5, B1~B9).
+- REIT·2차전지·신흥국·하이일드·KR섹터·KR반도체 ETF는 전부 universe에 등재되어 [technical_analyst.py:156](../../tradingagents/agents/analysts/technical_analyst.py#L156) `fetch_etf_price_batch`로 **매일 가격이 batch fetch**된다.
+- [sector_rotation.py:41-61](../../tradingagents/skills/technical/sector_rotation.py#L41)은 US 전용이 아니라 universe를 category별로 집계 → KR 섹터 모멘텀도 이미 계산된다.
 
 → **결론: 진짜 공백은 "가격"이 아니라 "거시 드라이버/펀더멘털" 소수다.** 따라서 신규 노드가 아니라 fold-in이 정답.
 
@@ -51,9 +51,9 @@ stage1은 두 종류 데이터를 산출한다:
 
 ### 5.1 A2 국내금리 → `market_risk`
 
-기존 [kr_yield_curve.py](../../../tradingagents/skills/risk/kr_yield_curve.py)(3y/10y)·[kr_corp_spread.py](../../../tradingagents/skills/risk/kr_corp_spread.py)(AA- 3y)의 **해상도 확장**.
+기존 [kr_yield_curve.py](../../tradingagents/skills/risk/kr_yield_curve.py)(3y/10y)·[kr_corp_spread.py](../../tradingagents/skills/risk/kr_corp_spread.py)(AA- 3y)의 **해상도 확장**.
 
-- **추가 데이터** (ECOS `817Y002`, freq=D, [ecos.py](../../../tradingagents/dataflows/ecos.py) `ECOS_STAT_CODES`에 4줄 추가):
+- **추가 데이터** (ECOS `817Y002`, freq=D, [ecos.py](../../tradingagents/dataflows/ecos.py) `ECOS_STAT_CODES`에 4줄 추가):
   - 국고채 5년 `010200001`, 국고채 30년 `010230000`
   - 회사채 BBB- 3년 `010320000` (주석에 이미 "010320000은 BBB-" 명시됨)
   - CD 91일 `010502000`
@@ -66,7 +66,7 @@ stage1은 두 종류 데이터를 산출한다:
 
 ### 5.2 B1 한국섹터 → `macro_quant`
 
-가격 모멘텀은 `sector_rotation`이 이미 계산. **신규는 섹터 수출물량(펀더멘털)만.** KRX OpenAPI 업종지수는 **드롭**(영업일당 1 HTTP콜 → 60d 모멘텀 시 ~130콜/일, [krx_openapi.py:169](../../../tradingagents/dataflows/krx_openapi.py#L169); 가격은 이미 ETF로 커버되어 중복).
+가격 모멘텀은 `sector_rotation`이 이미 계산. **신규는 섹터 수출물량(펀더멘털)만.** KRX OpenAPI 업종지수는 **드롭**(영업일당 1 HTTP콜 → 60d 모멘텀 시 ~130콜/일, [krx_openapi.py:169](../../tradingagents/dataflows/krx_openapi.py#L169); 가격은 이미 ETF로 커버되어 중복).
 
 - **추가 데이터** (ECOS `403Y002` 섹터별 수출**물량**지수, freq=M — 주의: 기존 `kr_export`가 쓰는 `403Y001`은 금액, 물량은 `403Y002`):
   - 반도체 `30911AA`, 전지 `31013AA`, 디스플레이 `30921AA`, 통신장비 `30951AA`, 의약품 `30541AA`, 화학 `305AA`, 철강 `3071AA`
@@ -77,7 +77,7 @@ stage1은 두 종류 데이터를 산출한다:
 
 - **추가 데이터**:
   - `technical`: yfinance `^SOX`(PHLX 반도체지수), `SMH`(VanEck 글로벌 반도체 ETF) — `cross_asset_returns._raw_yf_batch`에 배치 추가
-  - `macro_quant`: FRED `PCU334413334413`(칩 PPI, 월간) — [fred.py](../../../tradingagents/dataflows/fred.py) `FRED_SERIES`에 `us_chip_ppi` 1줄
+  - `macro_quant`: FRED `PCU334413334413`(칩 PPI, 월간) — [fred.py](../../tradingagents/dataflows/fred.py) `FRED_SERIES`에 `us_chip_ppi` 1줄
   - 재사용: KR 반도체 ETF(`091160`·`395270`)는 이미 universe·매일 fetch
 - **snapshot 변경**:
   - `technical`: 신규 `SemiMomentumSnapshot` { `sox_mom_3m/6m/12m`(skip1m), `smh_vs_spy_rel_strength`, `sox_minus_smh_divergence`, `vol60d` } — factor_panel 산식 재사용
@@ -106,7 +106,7 @@ REIT ETF 가격은 이미 universe로 흐름. **신규는 거시 드라이버**(
 
 ### 5.6 B9 하이일드 → `market_risk`
 
-[credit_spread.py](../../../tradingagents/skills/risk/credit_spread.py)가 이미 `us_hy_oas`(`BAMLH0A0HYM2`)를 `SpreadSnapshot(region='US_HY')`로 보유 → **HY-IG decompression 확장**.
+[credit_spread.py](../../tradingagents/skills/risk/credit_spread.py)가 이미 `us_hy_oas`(`BAMLH0A0HYM2`)를 `SpreadSnapshot(region='US_HY')`로 보유 → **HY-IG decompression 확장**.
 
 - **추가 데이터**: `BAMLH0A0HYM2`·`BAMLC0A0CM`(둘 다 기보유, 0-cost), HYG/JNK total-return(yfinance, daily 시장반응 보강)
 - **snapshot 변경**: `SpreadSnapshot(US_HY)` 확장 또는 신규 `HYDecompressionSnapshot` { `hy_oas_bps`, `ig_oas_bps`, `hy_minus_ig_bps`, `decompression_percentile_5y`, `hy_etf_return_5d`, `regime`(calm/widening/stress) }.
@@ -115,24 +115,24 @@ REIT ETF 가격은 이미 universe로 흐름. **신규는 거시 드라이버**(
 
 ### 5.7 A4 안전통화 → `macro_quant` (14버킷 감사로 발견)
 
-엔 2종(엔선물 `292560` + 엔초단기국채 `489000` = 버킷 가중 2/3)의 1차 가격 driver인 **JPY-leg가 stage1에 전무**. 현재 [fx.py](../../../tradingagents/skills/macro/fx.py) `compute_fx_overlay`는 USD/KRW·DXY만 입력 → JPY/KRW cross를 0으로 인식(DXY의 엔 비중으로는 KRW-leg 부재 탓에 복원 불가).
+엔 2종(엔선물 `292560` + 엔초단기국채 `489000` = 버킷 가중 2/3)의 1차 가격 driver인 **JPY-leg가 stage1에 전무**. 현재 [fx.py](../../tradingagents/skills/macro/fx.py) `compute_fx_overlay`는 USD/KRW·DXY만 입력 → JPY/KRW cross를 0으로 인식(DXY의 엔 비중으로는 KRW-leg 부재 탓에 복원 불가).
 
 - **추가 데이터**: FRED `DEXJPUS`(JPY/USD spot, daily). yfinance `JPY=X` fallback(무키). `DEXKOUS`는 기보유.
 - **snapshot 변경**: `FXSnapshot` += `jpy_krw`(= `usd_krw / usd_jpy`), `jpy_krw_change_1m_pct`. `compute_fx_overlay` 확장.
-- **fetch_plan**: [fred.py](../../../tradingagents/dataflows/fred.py) `FRED_SERIES`에 `'usd_jpy':'DEXJPUS'` 1줄 + `publication_lag_days` `usd_jpy:1`. `_raw_fred_call` 재사용, 신규 클라이언트 0.
+- **fetch_plan**: [fred.py](../../tradingagents/dataflows/fred.py) `FRED_SERIES`에 `'usd_jpy':'DEXJPUS'` 1줄 + `publication_lag_days` `usd_jpy:1`. `_raw_fred_call` 재사용, 신규 클라이언트 0.
 - **determinism**: LLM 0 (cross 산술).
 - **검증**: 라이브 통과(§4). 14버킷 중 "광역지표로 안 잡히는" 유일한 1차 공백.
 
 ## 6. 공통 인프라 변경
 
-- **ECOS** ([ecos.py](../../../tradingagents/dataflows/ecos.py)): `ECOS_STAT_CODES`에 A2 4종 + B1 7종(`403Y002`) 추가, `publication_lag_days`에 신규 키(daily=1, monthly≈30). 코드 경로 변경 0.
-- **FRED** ([fred.py](../../../tradingagents/dataflows/fred.py)): `FRED_SERIES`에 `us_chip_ppi`·`us_mortgage_30y` 등록(passthrough), `publication_lag_days` 추가. HY/IG OAS는 기보유.
-- **yfinance** ([cross_asset_returns.py](../../../tradingagents/dataflows/cross_asset_returns.py)): 신규 심볼(^SOX·SMH·EEM·EMB·VWO·HYG·JNK·VNQ·XLRE·SCHH) 추가. **⚠️ 캐시키가 `"_".join(sorted(symbols))`라서 심볼셋 변경 시 기존 11-SPDR 캐시 전 구간 재페치** → 신규 yf 심볼은 **별도 cache namespace/key로 분리**하거나 `equity_indices` 단일 시리즈 캐시 경로 사용.
+- **ECOS** ([ecos.py](../../tradingagents/dataflows/ecos.py)): `ECOS_STAT_CODES`에 A2 4종 + B1 7종(`403Y002`) 추가, `publication_lag_days`에 신규 키(daily=1, monthly≈30). 코드 경로 변경 0.
+- **FRED** ([fred.py](../../tradingagents/dataflows/fred.py)): `FRED_SERIES`에 `us_chip_ppi`·`us_mortgage_30y` 등록(passthrough), `publication_lag_days` 추가. HY/IG OAS는 기보유.
+- **yfinance** ([cross_asset_returns.py](../../tradingagents/dataflows/cross_asset_returns.py)): 신규 심볼(^SOX·SMH·EEM·EMB·VWO·HYG·JNK·VNQ·XLRE·SCHH) 추가. **⚠️ 캐시키가 `"_".join(sorted(symbols))`라서 심볼셋 변경 시 기존 11-SPDR 캐시 전 구간 재페치** → 신규 yf 심볼은 **별도 cache namespace/key로 분리**하거나 `equity_indices` 단일 시리즈 캐시 경로 사용.
 - **universe.json**: KR REIT `329200`·`476800` 등재(B7).
 
 ## 7. 차단 조건 & 리스크
 
-1. **B9 backtest 붕괴(hard)**: [fred.py:124-128](../../../tradingagents/dataflows/fred.py#L124) `FRED_FALLBACK_CHAIN`이 `us_hy_oas`·`us_ig_oas`를 둘 다 `BAA10Y`(`us_credit_proxy`)로 fallback → historical 경로에서 `hy_minus_ig`가 항상 0. **decompression은 live-only로 한정하거나 HYG/JNK total-return을 primary proxy로 사용. snapshot docstring에 명시.**
+1. **B9 backtest 붕괴(hard)**: [fred.py:124-128](../../tradingagents/dataflows/fred.py#L124) `FRED_FALLBACK_CHAIN`이 `us_hy_oas`·`us_ig_oas`를 둘 다 `BAA10Y`(`us_credit_proxy`)로 fallback → historical 경로에서 `hy_minus_ig`가 항상 0. **decompression은 live-only로 한정하거나 HYG/JNK total-return을 primary proxy로 사용. snapshot docstring에 명시.**
 2. ~~**KR REIT(blocking 검증)**~~ → **해소(2026-06-09)**: `.env`의 KRX 자격증명으로 pykrx 로그인 후 `329200`/`476800`/`182480`/`352560` 전부 fetch 성공. yfinance `.KS`는 불가 확인. KR REIT는 universe 등재 + 기존 pykrx 경로로 통합.
 3. **칩 PPI / 모기지(staleness)**: 월간/주간 + lag → snapshot에 price_freshness vs macro_freshness 분리 표기 강제. carry-forward 사용.
 4. **칩 PPI 단종 리스크**: `PCU334413334413`는 게이트 통과(711행)했으나 BLS PPI 단종군 — fetch 실패 시 graceful(default None + 경고).
@@ -172,4 +172,4 @@ REIT ETF 가격은 이미 universe로 흐름. **신규는 거시 드라이버**(
 
 ---
 
-*관련: 진단 근거 [rebalancing-method.md](../../rebalancing-method.md) · Stage 1 [stage1. macro_quant.md](../../stage1.%20macro_quant.md) · Stage 2 [stage2. research.md](../../stage2.%20research.md) · Stage 3 [stage3. allocator.md](../../stage3.%20allocator.md) · 버킷 분류 [gaps_buckets.py](../../../tradingagents/skills/portfolio/gaps_buckets.py)*
+*관련: 진단 근거 [rebalancing.md](../methodology/rebalancing.md) · Stage 1 [stage1-macro-quant.md](../stages/stage1-macro-quant.md) · Stage 2/3 문서(구 아키텍처 서술이라 트리에서 제거 — git 태그 `docs-archive-2026-08`의 `docs/stage2. research.md`, `docs/stage3. allocator.md` 참조) · 버킷 분류 [gaps_buckets.py](../../tradingagents/skills/portfolio/gaps_buckets.py)*
