@@ -1,10 +1,98 @@
 # Changelog
 
-All notable changes to TradingAgents are documented here.
+All notable changes to this project are documented here. Entries up to 0.2.4
+cover the upstream TradingAgents framework this project forked from; 0.3.0
+onward covers the DB GAPS asset-allocation fork.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Breaking changes within the 0.x line are called out explicitly.
+
+## [0.4.0] — 2026-08-18
+
+The June methodology rework plus the August remediation pass, and the
+repository reorganization for publication. All work happened on the
+`rework/pipeline-methodology` branch during live competition operation.
+
+### Added
+
+- **Black-Litterman bucket allocator** (`skills/portfolio/bl_engine.py`,
+  `bucket_cov.py`) — regime-conditional reference prior, LLM relative-ranking
+  views (tier mean-removal, zero-sum view rows, conviction cap) plus
+  deterministic FX/credit rule views, confidence-based (Idzorek) view
+  uncertainty, constrained max-quadratic-utility on the prior Σ, camp
+  soft-clips with proportional water-fill, and an active-share (L1) budget
+  against the prior. Exact no-view recovery of the reference portfolio is a
+  tested invariant. Live default since mid-June (`use_bl=True` with a
+  calibrated view budget); the legacy quadrant+tilt path is retained as a
+  fallback.
+- **Confidence-scaled prior** — deterministic signal-agreement score *c*
+  (Laplace-smoothed macro-snapshot votes per axis; fetch failures abstain)
+  interpolates the prior between a neutral portfolio and the quadrant
+  baseline; degraded macro data forces neutral. Attribution decomposes
+  regime baseline → confidence shift → prior → view shift → final.
+- **ETF-selection hybrid** — heterogeneous buckets (DM core, global tech,
+  other international) select by LLM theme view then risk-adjusted momentum
+  top-K with softmax weighting; homogeneous buckets stay AUM-weighted.
+  `cluster_repair` gracefully enforces the correlation-cluster cap inside the
+  repair loop.
+- **Rebalancing engine** (`tradingagents/rebalance/`) — holdings repricing,
+  calendar/drift/event trigger evaluation, tier-specific target rebuilds
+  (`gaps rebalance {daily,weekly,monthly}`), and deterministic trade-delta
+  generation.
+- **Month-to-date turnover tracking (F3)** — persisted trade notionals are the
+  single authority for the monthly ≥10% floor; the graph-level weight-drift
+  check is demoted to advisory; projected-shortfall alerts wired into the
+  rebalance flow.
+- **Crisis sell/destination policy (F1)** — the emergency defensive overlay
+  and reassess de-risking now protect crisis hedges (gold, safe FX) from
+  being sold as "risk", route freed weight through policy-aware water-fill,
+  and preserve pre-existing CASH.
+- **Full-universe correlation clustering (F5)** — complete-linkage clustering
+  over the whole weight-eligible universe behind the `cluster_full_universe`
+  dial (default OFF); daily repair gains a dial-gated cluster-cap pass.
+- **Momentum panic/transition damper (F6)** — panic-threshold constants with
+  trigger-YAML parity; momentum selection falls back toward AUM ranking in
+  panic/transition states, with an honest damped trace.
+
+### Changed
+
+- **Covariance model (F2/F4)** — bucket proxies re-expressed in KRW numeraire
+  (name-derived hedged-share rule; FX bucket proxied by USDKRW), weekly W-FRI
+  resampling over a 104-week window with a single minimum-observations
+  control; buckets with insufficient history pin to the reference weight.
+- **Distribution renamed** `tradingagents` → `gaps-agent` in `pyproject.toml`
+  with the description updated to the project's current identity. Import
+  packages (`tradingagents`, `cli`) and the `gaps` entry point are unchanged.
+- Version aligned to 0.4.0 across `pyproject.toml` and the CLI.
+
+### Fixed
+
+- Water-fill subtracted intended rather than actually-distributed amounts in
+  all four repair copies (risk/category/cluster/rebalance), which could let
+  renormalization push risk weight back above the 70% cap.
+- `cluster_repair` recipients exclude violating clusters; saturated residual
+  parks in CASH instead of a violation-restoring renormalize.
+- FX/credit extra views are remapped into the pinned-bucket sub-space
+  (previously a crash/silent-drop under pin×crisis combinations).
+- Sentinel guards for inflation/employment/yield-curve macro builders (empty
+  fetches no longer produce fake-fresh votes or IndexErrors).
+- Consistency bundle: philosophy renders the live cluster cap, allocation
+  feedback reaches the BL prompt on retries, weekly tilt compares structured
+  quadrants, stage replay restores portfolio dials, solver-fallback status is
+  reported honestly in attribution.
+
+### Docs
+
+- Documentation tree reorganized to current-truth only
+  (`docs/methodology|stages|design|audits|setup`); 85 historical documents
+  removed from the tree and preserved at git tag `docs-archive-2026-08`.
+- Root `LIMITATIONS.md` (honest scope + methodology disclosures) and
+  `ROADMAP.md` (pending decisions); `TODOS.md` removed.
+- README rewritten in English with a Korean mirror (`README-ko_kr.md`) and a
+  hand-authored architecture diagram; upstream branding assets removed.
+- Competition source materials replaced by an own-words rules summary
+  (`docs/competition-rules-summary.md`).
 
 ## [0.3.0] — 2026-05-10 (DB GAPS fork)
 

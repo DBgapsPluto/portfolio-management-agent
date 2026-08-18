@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tradingagents"
-version = "0.2.4"
-description = "TradingAgents: Multi-Agents LLM Financial Trading Framework"
+name = "gaps-agent"
+version = "0.4.0"
+description = "Multi-agent asset-allocation system for Korean ETFs — regime-conditional reference portfolio + Black-Litterman view engine with deterministic mandate enforcement"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
