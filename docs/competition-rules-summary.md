@@ -52,6 +52,6 @@
 
 | 주최측 원본 (미동봉) | 리포에 남긴 것 |
 |---|---|
-| ETF 리스트 xlsx (188종) | 파싱 결과 `data/universe.json` — 새 xlsx 수령 시 `gaps universe sync --xlsx <path>`로 재생성 |
+| ETF 리스트 xlsx (188종) | 파싱 결과 `data/universe.json` — 새 xlsx 수령 시 `gaps universe sync --xlsx <path>`로 재생성 (현재 동봉본은 리스트 갱신이 반영된 190종) |
 | 14-버킷 분류 xlsx | `universe.json`의 `gaps_bucket` 필드 + `tradingagents/skills/portfolio/gaps_buckets.py` 상수 (1회성 병합: `scripts/enrich_universe_gaps_bucket.py`) |
 | 룰북 문서 | 본 요약 문서 |
