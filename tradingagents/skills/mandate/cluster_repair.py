@@ -1,8 +1,14 @@
 """상관군집 cap deterministic repair (군집합 ≤ cap). self-imposed 35% (대회 규칙 아님).
 
 trader 노드가 ETF weight 확정 후 호출. 초과 군집 멤버를 비례 축소, freed 를
-비-군집(어느 군집에도 없는) 포지션에 water-fill(단일 20% 한도) 후 renormalize.
+"현재 위반(초과) 군집의 멤버가 아닌" 포지션에 water-fill(단일 20% 한도), 수혜
+포화 시 잔여는 CASH 적립(무제한 최후 목적지 — overlay._water_fill 미러).
 순수·결정론. correlation_check(validator) 와 동일 임계.
+
+D1-2 (F5/MF-1): 전수 그래프에선 대부분 종목이 '어떤' 군집엔 속하므로 구
+수혜 풀("어느 군집에도 없는")은 붕괴한다 — 비위반 군집 멤버도 정당한 수혜자.
+또한 구 코드의 포화 폴백(전체 renormalize)은 방금 cap 으로 눌러놓은 군집을
+비례로 재팽창시켜 위반을 복원했다(감사 MF-1 체인 ②) → CASH 적립으로 대체.
 """
 from __future__ import annotations
 
@@ -26,11 +32,20 @@ def repair_cluster_cap(
         csum = sum(out[t] for t in members)
         if csum <= cap + FLOAT_TOLERANCE:
             continue
+        # D1-2(a): 수혜 풀 = "현재 초과(위반) 상태인 군집"의 멤버가 아닌 전 종목.
+        # 스케일 전에 평가하므로 지금 수선 중인 군집 멤버도 자동 제외된다. 비위반
+        # 군집 멤버로의 spill 이 그 군집을 한 패스 안에서 cap 초과로 밀 수 있는데,
+        # 이는 의도적으로 바깥 교대 루프(_repair_all_weights x12 in trader_allocator,
+        # daily_full 의 수선 x3 루프)가 cluster repair 를 재실행해 잡는 것에 의존한다.
+        over_cap_members: set[str] = set()
+        for c in clusters:
+            if sum(out.get(m, 0.0) for m in c.members) > cap + FLOAT_TOLERANCE:
+                over_cap_members.update(c.members)
         scale = cap / csum
         for t in members:
             out[t] *= scale
         freed = csum - cap
-        recipients = [t for t in out if t not in all_cluster_members]
+        recipients = [t for t in out if t not in over_cap_members]
         for _ in range(_MAX_ITERS):
             if freed <= 1e-12:
                 break
@@ -52,6 +67,12 @@ def repair_cluster_cap(
             # fix) instead of vanishing — a loss small enough to slip under this file's own
             # FLOAT_TOLERANCE and skip the sum-restore safety net below entirely.
             freed -= dist
+        # D1-2(b): 수혜 포화 → 잔여를 CASH 에 적립(add-not-overwrite — overlay 의
+        # 0d51a75 수정 미러). CASH 는 SINGLE_CAP 면제인 무제한 최후 목적지. 구
+        # 코드는 이 잔여를 하단 sum-restore 의 전체-renormalize 폴백으로 넘겨
+        # 방금 cap 으로 누른 군집을 재팽창시켰다(위반 복원 — 감사 MF-1 체인 ②).
+        if freed > 1e-12:
+            out["CASH"] = out.get("CASH", 0.0) + freed
     # Restore sum=1 by water-filling the leftover deficit into non-cluster positions
     # UNDER SINGLE_CAP (same loop pattern as the cluster water-fill above), so a
     # saturated water-fill cannot re-inflate the capped cluster AND cannot emit a single

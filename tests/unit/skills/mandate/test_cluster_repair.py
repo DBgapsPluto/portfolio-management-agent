@@ -2,23 +2,70 @@ from tradingagents.schemas.technical import Cluster
 from tradingagents.skills.mandate.cluster_repair import repair_cluster_cap, CLUSTER_CAP
 
 
-def _cl(members):
-    return Cluster(cluster_id="1", members=members, avg_internal_correlation=0.8,
+def _cl(members, cid="1"):
+    return Cluster(cluster_id=cid, members=members, avg_internal_correlation=0.8,
                    category_label="semi")
+
+
+def test_recipient_pool_includes_non_violating_cluster_members():
+    # D1-2(a) — F5/MF-1: under a full-universe graph most ETFs belong to SOME
+    # cluster, so the old recipient pool ("member of no cluster at all")
+    # collapses. Members of clusters within cap are legitimate recipients; only
+    # members of over-cap (violating) clusters are excluded. Here c1={A,B} is
+    # over cap (0.50 > 0.35), c2={C,D} is within cap (0.15): C and D must
+    # receive spill. Old code excluded them -> only E had room 0.05 -> leftover
+    # 0.10 hit the terminal full renormalize which RESTORED the c1 violation
+    # (A+B -> 0.389) and inflated CASH.
+    w = {"A": 0.25, "B": 0.25, "C": 0.10, "D": 0.05, "E": 0.15, "CASH": 0.20}
+    out = repair_cluster_cap(
+        w, [_cl(["A", "B"], "1"), _cl(["C", "D"], "2")], cap=0.35)
+    assert out["A"] + out["B"] <= 0.35 + 1e-6            # violation NOT restored
+    assert out["C"] > 0.10 + 1e-9                        # c2 member received
+    assert out["D"] > 0.05 + 1e-9
+    assert out["C"] + out["D"] <= 0.35 + 1e-6            # c2 still within cap
+    assert abs(out["CASH"] - 0.20) < 1e-9                # no park needed, untouched
+    assert all(v <= 0.20 + 1e-6 for v in out.values())   # single cap
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_saturated_recipients_park_residual_in_cash_not_renormalize():
+    # D1-2(b) — audit MF-1 chain (2): recipients saturated (C and CASH both at
+    # SINGLE_CAP) -> old terminal full renormalize handed the freed mass back to
+    # the cluster proportionally (A+B -> 0.35/0.75 = 0.467 > cap: violation
+    # RESTORED). New: residual parks in CASH (add-not-overwrite, mirroring
+    # overlay._water_fill overflow -> CASH, commit 0d51a75). CASH is the
+    # unlimited last-resort destination, exempt from SINGLE_CAP.
+    w = {"A": 0.30, "B": 0.30, "C": 0.20, "CASH": 0.20}
+    out = repair_cluster_cap(w, [_cl(["A", "B"])], cap=0.35)
+    assert out["A"] + out["B"] <= 0.35 + 1e-6            # violation NOT restored
+    assert abs(out["CASH"] - 0.45) < 1e-9                # 0.20 existing + 0.25 parked
+    assert abs(out["C"] - 0.20) < 1e-9
+    assert abs(sum(out.values()) - 1.0) < 1e-9
+
+
+def test_cash_park_creates_key_when_absent():
+    # Same saturation but no pre-existing CASH position: the park must create
+    # the key (out.get + add), not KeyError/overwrite.
+    w = {"A": 0.30, "B": 0.30, "C": 0.20, "D": 0.20}
+    out = repair_cluster_cap(w, [_cl(["A", "B"])], cap=0.35)
+    assert out["A"] + out["B"] <= 0.35 + 1e-6
+    assert abs(out.get("CASH", 0.0) - 0.25) < 1e-9
+    assert abs(sum(out.values()) - 1.0) < 1e-9
 
 
 def test_cluster_over_cap_scaled_down_degenerate_infeasible():
     # Degenerate fixture: non-cluster C=0.30 is already > SINGLE_CAP (0.20) on input,
     # and the only other non-cluster (CASH) is already AT 0.20, so there is zero room to
-    # water-fill the freed mass under SINGLE_CAP. {cluster≤cap, single≤cap, 합=1} is
-    # structurally infeasible. The repair falls back to a full renormalize (matching
-    # repair_risk_cap's documented degenerate fallback), which re-inflates the cluster
-    # slightly above cap — acceptable ONLY because no feasible solution exists. (The old
-    # code instead silently emitted C=0.39, a single ETF far above the 20% hard cap.)
+    # water-fill the freed mass under SINGLE_CAP among ETFs. Historically this fell back
+    # to a full renormalize (re-inflating the cluster above cap). Since D1-2(b) the
+    # saturated residual parks in CASH (SINGLE_CAP-exempt last resort), so the cluster
+    # cap now holds here too; C keeps its pre-existing input single-cap violation
+    # (not this repair's job — validator flags it).
     w = {"A": 0.25, "B": 0.25, "C": 0.30, "CASH": 0.20}   # A+B=0.50 > 0.35
     out = repair_cluster_cap(w, [_cl(["A", "B"])], cap=0.35)
     assert abs(sum(out.values()) - 1.0) < 1e-6                         # sum=1 always preserved
-    # cluster cap cannot be enforced without violating single cap (and vice-versa) here.
+    assert out["A"] + out["B"] <= 0.35 + 1e-6                          # D1-2(b): cap holds now
+    assert abs(out["CASH"] - 0.35) < 1e-9                              # 0.20 + 0.15 parked
 
 
 def test_cluster_over_cap_scaled_down():
