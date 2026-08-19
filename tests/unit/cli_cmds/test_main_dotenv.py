@@ -1,8 +1,9 @@
 """`gaps` CLI 진입점(cli.main)이 .env를 자동 로드하는지 검증.
 
-배경: 루트 main.py는 load_dotenv()를 호출하지만 `gaps` 콘솔 스크립트의
-진입점은 cli.main:cli 라서, .env가 셸에 미리 export돼 있지 않으면
-OPENAI_API_KEY/KRX 키를 못 찾아 즉시 크래시했다 (E2E live run에서 발견).
+배경: `gaps` 콘솔 스크립트의 진입점은 cli.main:cli 이다 (레거시 루트
+main.py는 삭제됨). 그래서 cli.main이 직접 load_dotenv()를 호출해야
+하며, .env가 셸에 미리 export돼 있지 않으면 OPENAI_API_KEY/KRX 키를
+못 찾아 즉시 크래시했다 (E2E live run에서 발견).
 """
 import os
 import subprocess
