@@ -123,7 +123,6 @@ class TradingAgentsGraph:
         as_of_date: str,
         capital_krw: int = 1_000_000_000,
         previous_portfolio: Optional[dict] = None,
-        force_method: Optional[str] = None,
     ) -> dict:
         state = _create_empty_state(
             as_of_date=as_of_date,
@@ -131,7 +130,6 @@ class TradingAgentsGraph:
             capital_krw=capital_krw,
             preset_name=self.preset_name,
             previous_portfolio=previous_portfolio,
-            force_method=force_method,
         )
         # Funnel the live config dials into state so the allocator node receives
         # them. This is the ONLY place use_bl=True reaches a run — bare-state

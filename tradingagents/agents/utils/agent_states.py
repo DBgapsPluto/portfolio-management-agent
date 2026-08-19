@@ -90,14 +90,6 @@ class AgentState(MessagesState):
         "Previous week research_decision — Stage 2 EMA blend prior (Issue #11)",
     ]
 
-    # === Phase 3a A/B testing ===
-    force_method: Annotated[
-        Optional[str],
-        "Force optimizer method (legacy A/B-test seam). Currently INERT — the live "
-        "allocator emits AUM_WEIGHTED; per-method selection (method_picker) was "
-        "removed 2026-06-03. Retained as a no-op for backward compatibility.",
-    ]
-
     # === Tuning harness ===
     cached_tilt: Annotated[
         Optional[BucketTilt],
@@ -115,7 +107,6 @@ def _create_empty_state(
     capital_krw: int,
     preset_name: str,
     previous_portfolio: dict | None = None,
-    force_method: str | None = None,
 ) -> AgentState:
     return AgentState(
         messages=[],
@@ -141,7 +132,6 @@ def _create_empty_state(
         warnings=[],
         previous_portfolio=previous_portfolio,
         prior_research_decision=None,
-        force_method=force_method,
     )
 
 

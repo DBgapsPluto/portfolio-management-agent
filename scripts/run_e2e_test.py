@@ -35,8 +35,8 @@ def main() -> int:
     parser.add_argument("--capital", type=int, default=1_000_000_000)
     parser.add_argument("--preset", default="db_gaps")
     # NOTE: the legacy --force-method flag (min_variance/risk_parity/... optimizer
-    # choices) was removed — the per-method optimizer stack was deleted 2026-06-03
-    # and state.force_method is an inert no-op seam (see agent_states.py).
+    # choices) was removed — the per-method optimizer stack was deleted 2026-06-03,
+    # and the inert state.force_method seam was removed in the 2026-08 W3 sweep.
     args = parser.parse_args()
 
     # date 검증
