@@ -3,22 +3,11 @@ from tradingagents.default_config import DEFAULT_CONFIG
 
 def test_db_gaps_keys_present():
     required = [
-        "preset_dir", "prompt_dir", "universe_path",
-        "artifacts_dir", "default_preset",
-        "subagent_model_policy",
-        "etf_price_cache_path", "macro_cache_dir",
-        "publication_lag_days",
-        "langsmith_enabled", "langsmith_project",
+        "preset_dir", "universe_path", "artifacts_dir",
+        "etf_price_cache_path", "publication_lag_days",
     ]
     for key in required:
         assert key in DEFAULT_CONFIG, f"missing key: {key}"
-
-
-def test_subagent_model_policy_has_critical_skills():
-    policy = DEFAULT_CONFIG["subagent_model_policy"]
-    assert policy["classify_regime"] == "deep"
-    assert policy["pick_optimization_method"] == "deep"
-    assert policy["classify_event_impact"] == "quick"
 
 
 def test_publication_lag_days_has_critical_series():

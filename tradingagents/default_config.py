@@ -4,38 +4,15 @@ _TRADINGAGENTS_HOME = os.path.join(os.path.expanduser("~"), ".tradingagents")
 
 DEFAULT_CONFIG = {
     "project_dir": os.path.abspath(os.path.join(os.path.dirname(__file__), ".")),
-    "results_dir": os.getenv("TRADINGAGENTS_RESULTS_DIR", os.path.join(_TRADINGAGENTS_HOME, "logs")),
     "data_cache_dir": os.getenv("TRADINGAGENTS_CACHE_DIR", os.path.join(_TRADINGAGENTS_HOME, "cache")),
     "memory_log_path": os.getenv("TRADINGAGENTS_MEMORY_LOG_PATH", os.path.join(_TRADINGAGENTS_HOME, "memory", "trading_memory.md")),
-    # Optional cap on the number of resolved memory log entries. When set,
-    # the oldest resolved entries are pruned once this limit is exceeded.
-    # Pending entries are never pruned. None disables rotation entirely.
-    "memory_log_max_entries": None,
     # LLM settings
     "llm_provider": "openai",
     "deep_think_llm": "gpt-5.4",
     "quick_think_llm": "gpt-5.4",
-    # When None, each provider's client falls back to its own default endpoint
-    # (api.openai.com for OpenAI, generativelanguage.googleapis.com for Gemini, ...).
-    # The CLI overrides this per provider when the user picks one. Keeping a
-    # provider-specific URL here would leak (e.g. OpenAI's /v1 was previously
-    # being forwarded to Gemini, producing malformed request URLs).
-    "backend_url": None,
-    # Provider-specific thinking configuration
-    "google_thinking_level": None,      # "high", "minimal", etc.
-    "openai_reasoning_effort": None,    # "medium", "high", "low"
-    "anthropic_effort": None,           # "high", "medium", "low"
-    # Checkpoint/resume: when True, LangGraph saves state after each node
-    # so a crashed run can resume from the last successful step.
-    "checkpoint_enabled": False,
     # Output language for analyst reports and final decision
     # Internal agent debate stays in English for reasoning quality
     "output_language": "English",
-    # Stage 2 (research) — Phase 1 단일 estimator 사용 (round 개념 없음).
-    # 아래 키들은 legacy v0.2 upstream (graph/setup.py)에서만 참조.
-    "max_debate_rounds": 1,
-    "max_risk_discuss_rounds": 1,
-    "max_recur_limit": 100,
     # Rebalancing engine dials
     "rebalance": {
         "no_trade_band": 0.005,
@@ -78,26 +55,10 @@ DEFAULT_CONFIG = {
 DEFAULT_CONFIG.update({
     # DB GAPS 설정
     "preset_dir": "./presets",
-    "prompt_dir": "./prompts",
     "universe_path": "./data/universe.json",
     "artifacts_dir": "./artifacts",
-    "default_preset": "db_gaps",
-    "subagent_model_policy": {
-        "classify_regime": "deep",
-        "score_systemic_risk": "deep",
-        "pick_optimization_method": "deep",
-        "classify_event_impact": "quick",
-    },
-    # API 키
-    "fred_api_key": os.getenv("FRED_API_KEY"),
-    "ecos_api_key": os.getenv("ECOS_API_KEY"),
-    "tradingeconomics_key": os.getenv("TRADINGECONOMICS_KEY"),
     # Cache
     "etf_price_cache_path": os.path.join(_TRADINGAGENTS_HOME, "cache", "etf_prices.parquet"),
-    "macro_cache_dir": os.path.join(_TRADINGAGENTS_HOME, "cache", "macro"),
-    "cache_staleness_d1": 1,
-    "cache_staleness_d7": 7,
-    "cache_staleness_d30": 30,
     # Macro data publication lag (look-ahead bias prevention)
     "publication_lag_days": {
         "us_cpi": 15,
@@ -180,10 +141,4 @@ DEFAULT_CONFIG.update({
         "kr_export_chem": 30,           # Chemical exports (monthly)
         "kr_export_steel": 30,          # Steel exports (monthly)
     },
-    # Tracing / observability
-    "langsmith_enabled": os.getenv("LANGSMITH_TRACING", "false").lower() == "true",
-    "langsmith_project": os.getenv("LANGSMITH_PROJECT", "db-gaps-agent"),
-    # Tier 0: expanding-window z-baseline (Pesaran-Timmermann 1995). Default off
-    # for backward compat — opt-in per run or backtest sweep.
-    "use_dynamic_baseline": False,
 })
