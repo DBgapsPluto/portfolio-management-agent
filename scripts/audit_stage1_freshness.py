@@ -57,27 +57,6 @@ if "pandas_ta" not in sys.modules:
     except ImportError:
         pass  # tradingagents.skills.technical will fail with original error
 
-# Stub: `tradingagents.agents.__init__` eagerly imports the risk_judge, which
-# pulls in pypfopt → cvxpy. cvxpy >= 1.7 requires numpy >= 2, but the rest of
-# the project pins numpy < 2 for pandas binary compat. We don't use pypfopt in
-# Stage 1, so stub it out so the import chain resolves.
-if "pypfopt" not in sys.modules:
-    import types as _types
-    _stub = _types.ModuleType("pypfopt")
-    # Names imported by tradingagents.agents.allocator.overlay_apply
-    for _name in (
-        "EfficientFrontier", "HRPOpt", "expected_returns", "risk_models",
-        "EfficientCVaR", "CovarianceShrinkage", "objective_functions",
-    ):
-        setattr(_stub, _name, type(_name, (), {}))
-    sys.modules["pypfopt"] = _stub
-    for _sub in (
-        "pypfopt.efficient_frontier", "pypfopt.hierarchical_portfolio",
-        "pypfopt.expected_returns", "pypfopt.risk_models",
-        "pypfopt.objective_functions",
-    ):
-        sys.modules[_sub] = _types.ModuleType(_sub)
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
