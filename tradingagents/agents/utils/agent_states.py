@@ -8,7 +8,7 @@ from tradingagents.schemas.portfolio import BucketTarget, BucketTilt, CandidateS
 from tradingagents.schemas.reports import (
     MacroReport, RiskReport, TechnicalReport, NewsReport,
 )
-from tradingagents.schemas.research import ResearchDecision
+from tradingagents.schemas.research import ResearchThesis
 from tradingagents.schemas.technical import Cluster
 
 
@@ -44,8 +44,8 @@ class AgentState(MessagesState):
     # === Stage 2: Research (시나리오 estimator + 결정적 매핑) ===
     research_debate_summary: Annotated[str, "Stage 2 estimator summary (D2 isolation 유지)"]
     research_decision: Annotated[
-        Optional[ResearchDecision],
-        "Stage 2 풀 출력 — scenario probabilities + dominant + conviction + bucket_target",
+        Optional[ResearchThesis],
+        "Stage 2 풀 출력 — risk_tilt + thesis_md + bull/bear views + key_risks",
     ]
 
     # === Stage 3: Research Manager (legacy 키, BucketTarget만 노출) ===
@@ -86,8 +86,8 @@ class AgentState(MessagesState):
     # === Cross-run ===
     previous_portfolio: Annotated[Optional[dict], "For monthly rebalancing"]
     prior_research_decision: Annotated[
-        Optional[ResearchDecision],
-        "Previous week ResearchDecision — Stage 2 EMA blend prior (Issue #11)",
+        Optional[ResearchThesis],
+        "Previous week research_decision — Stage 2 EMA blend prior (Issue #11)",
     ]
 
     # === Phase 3a A/B testing ===
