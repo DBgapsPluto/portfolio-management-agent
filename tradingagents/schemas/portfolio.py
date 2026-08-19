@@ -5,6 +5,16 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class OptimizationMethod(str, Enum):
+    """Weighting-method tag on WeightVector.
+
+    Live code only *produces* AUM_WEIGHTED (trader_allocator, rebalance
+    engine) and MIN_VARIANCE (conditional_logic fallback). The other members
+    are legacy values retained for stored-artifact compat — do NOT prune:
+    cli/commands/analysis.py::_load_portfolio re-validates stored
+    portfolio.json via ``OptimizationMethod(raw["method"])``, and artifacts
+    from 2026-05/06 runs (e.g. artifacts/2026-05-15, 2026-05-26, 2026-05-28,
+    2026-06-02) carry "nco" / "risk_parity" / "hrp".
+    """
     HRP = "hrp"
     RISK_PARITY = "risk_parity"
     MIN_VARIANCE = "min_variance"
