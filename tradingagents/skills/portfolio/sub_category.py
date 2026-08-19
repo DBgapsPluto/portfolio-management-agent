@@ -1,7 +1,7 @@
 """ETF sub_category — universe.json enrichment용 라벨 + LLM 분류 helper.
 
-매일 호출하지 않고 universe.json refresh 시 1회만 실행 (scripts/enrich_universe_subcategory.py).
-분류 결과는 universe.json의 ETFEntry.sub_category 필드에 영구 저장.
+매일 호출하지 않고 universe.json refresh 시 1회만 실행 (실행에 쓰인 스크립트는
+1회성이라 삭제됨 — 분류 결과는 universe.json의 ETFEntry.sub_category 필드에 영구 저장).
 
 Stage 3 candidate_selector는 SCENARIO_SUBCATEGORY_BOOST를 통해 dominant_scenario
 별로 sub_category 가중치를 score에 부여 (log-boost, 부호 보존).
