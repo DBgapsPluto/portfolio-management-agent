@@ -66,9 +66,6 @@ gaps = "cli.main:cli"
 [tool.setuptools.packages.find]
 include = ["tradingagents*", "cli*"]
 
-[tool.setuptools.package-data]
-cli = ["static/*"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
