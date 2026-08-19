@@ -6,6 +6,17 @@ header.  The deterministic heuristic in ``tradingagents.agents.utils.rating``
 is therefore sufficient to extract the rating downstream — no second LLM
 call is needed — and SignalProcessor is now a thin adapter that delegates
 to it.
+
+STATUS (2026-08-19, dead-code sweep Wave 1): the rating half of this file is
+live — tradingagents.agents.utils.rating.parse_rating is called from
+tradingagents/agents/utils/memory.py (:7, :46). The SignalProcessor half is
+NOT: it is only re-exported at tradingagents/graph/__init__.py:8/:16, nothing
+in the tree does ``from tradingagents.graph import ...``, and
+process_signal has no caller outside this test. This test is intentionally
+kept out of Wave 1 (which only removes zero-risk files) rather than split or
+deleted, so that tradingagents.graph.signal_processing.SignalProcessor can be
+evaluated for removal together with its test in the tradingagents/graph
+dead-code wave.
 """
 
 import pytest

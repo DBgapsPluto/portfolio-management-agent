@@ -1,4 +1,14 @@
-"""Test checkpoint resume: crash mid-analysis, re-run resumes from last node."""
+"""Test checkpoint resume: crash mid-analysis, re-run resumes from last node.
+
+STATUS (2026-08-19, dead-code sweep Wave 1): tradingagents.graph.checkpointer
+has ZERO production callers (grep-verified across tradingagents/, cli/,
+scripts/, presets/, docs/ — get_checkpointer/checkpoint_step/clear_checkpoint
+only appear as definitions inside checkpointer.py itself). This test exercises
+dead code, not "currently-live" architecture. It is intentionally kept out of
+Wave 1 (which only removes zero-risk files) rather than deleted alongside it,
+so that module + test can be evaluated together for removal in the
+tradingagents/graph dead-code wave.
+"""
 
 import sqlite3
 import tempfile
