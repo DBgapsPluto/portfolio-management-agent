@@ -34,13 +34,9 @@ def main() -> int:
     parser.add_argument("--as-of", default="2026-05-15", help="YYYY-MM-DD")
     parser.add_argument("--capital", type=int, default=1_000_000_000)
     parser.add_argument("--preset", default="db_gaps")
-    parser.add_argument(
-        "--force-method",
-        type=str,
-        default=None,
-        choices=["min_variance", "risk_parity", "max_sharpe", "black_litterman", "hrp", "nco"],
-        help="Force optimizer method (Phase 3a A/B testing).",
-    )
+    # NOTE: the legacy --force-method flag (min_variance/risk_parity/... optimizer
+    # choices) was removed — the per-method optimizer stack was deleted 2026-06-03
+    # and state.force_method is an inert no-op seam (see agent_states.py).
     args = parser.parse_args()
 
     # date 검증
@@ -73,7 +69,6 @@ def main() -> int:
         result = graph.run(
             as_of_date=args.as_of,
             capital_krw=args.capital,
-            force_method=args.force_method,
         )
     except Exception as e:
         logger.exception("Pipeline run failed: %s", e)
@@ -124,12 +119,8 @@ def main() -> int:
             rd.dominant_scenario, rd.conviction, top_str,
         )
 
-    overlay = result.get("risk_overlay")
-    if overlay:
-        logger.info("  overlay: strength=%.2f, mult=%.2f, empty=%s",
-                    overlay.strength_applied,
-                    overlay.risk_asset_multiplier,
-                    overlay.is_empty())
+    # (Stage 4 risk-overlay summary removed — the overlay node was deleted from
+    # the graph; result never carries "risk_overlay".)
 
     rebalance = result.get("rebalance_mode")
     if rebalance:
