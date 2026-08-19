@@ -1,28 +1,18 @@
-"""Tests for the shared rating heuristic and the SignalProcessor adapter.
+"""Tests for the shared rating heuristic.
 
 The Portfolio Manager produces a typed PortfolioDecision via structured
 output and renders it to markdown that always contains a ``**Rating**: X``
 header.  The deterministic heuristic in ``tradingagents.agents.utils.rating``
-is therefore sufficient to extract the rating downstream — no second LLM
-call is needed — and SignalProcessor is now a thin adapter that delegates
-to it.
+extracts the rating from that markdown — no second LLM call is needed.
 
-STATUS (2026-08-19, dead-code sweep Wave 1): the rating half of this file is
-live — tradingagents.agents.utils.rating.parse_rating is called from
-tradingagents/agents/utils/memory.py (:7, :46). The SignalProcessor half is
-NOT: it is only re-exported at tradingagents/graph/__init__.py:8/:16, nothing
-in the tree does ``from tradingagents.graph import ...``, and
-process_signal has no caller outside this test. This test is intentionally
-kept out of Wave 1 (which only removes zero-risk files) rather than split or
-deleted, so that tradingagents.graph.signal_processing.SignalProcessor can be
-evaluated for removal together with its test in the tradingagents/graph
-dead-code wave.
+(Wave 2 of the dead-code sweep removed graph/signal_processing.py — the
+thin SignalProcessor adapter over this heuristic — together with its
+tests, which used to live in this file as tests/test_signal_processing.py.)
 """
 
 import pytest
 
 from tradingagents.agents.utils.rating import RATINGS_5_TIER, parse_rating
-from tradingagents.graph.signal_processing import SignalProcessor
 
 
 # ---------------------------------------------------------------------------
@@ -71,31 +61,3 @@ class TestParseRating:
     def test_all_five_tiers_recognised(self):
         for r in RATINGS_5_TIER:
             assert parse_rating(f"Rating: {r}") == r
-
-
-# ---------------------------------------------------------------------------
-# SignalProcessor: thin adapter over the heuristic
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestSignalProcessor:
-    def test_returns_rating_from_pm_markdown(self):
-        sp = SignalProcessor()
-        md = "**Rating**: Overweight\n\n**Executive Summary**: Build gradually."
-        assert sp.process_signal(md) == "Overweight"
-
-    def test_makes_no_llm_calls(self):
-        """SignalProcessor must not invoke the LLM it was constructed with —
-        the rating is parseable from the rendered PM markdown directly."""
-        from unittest.mock import MagicMock
-
-        llm = MagicMock()
-        sp = SignalProcessor(llm)
-        sp.process_signal("Rating: Buy\nDetails.")
-        llm.invoke.assert_not_called()
-        llm.with_structured_output.assert_not_called()
-
-    def test_default_when_no_rating_present(self):
-        sp = SignalProcessor()
-        assert sp.process_signal("Plain prose without a recommendation.") == "Hold"
