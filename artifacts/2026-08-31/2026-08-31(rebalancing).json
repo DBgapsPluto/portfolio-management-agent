@@ -1,0 +1,196 @@
+{
+  "as_of_date": "2026-08-31",
+  "tier": "event:emergency_defensive",
+  "trigger": {
+    "tier": "event:emergency_defensive"
+  },
+  "current_weights": {
+    "A459580": 0.19703015827584677,
+    "A371160": 0.031224549974550573,
+    "A305080": 0.0879214805942417,
+    "A261220": 0.03509728587497451,
+    "A360750": 0.1221419769645824,
+    "A161510": 0.04784902164039184,
+    "A182480": 0.03545804095565233,
+    "A411060": 0.0819708442407429,
+    "A114260": 0.11122008837939734,
+    "A241180": 0.022361445722789187,
+    "A069500": 0.04003334598297321,
+    "A468380": 0.03696643702811158,
+    "A261240": 0.07301100276733288,
+    "A381170": 0.06288313083563589,
+    "CASH": 0.014831190762776893
+  },
+  "target_weights": {
+    "A459580": 0.19792329592755298,
+    "A371160": 0.03110969045433854,
+    "A305080": 0.08832002864089421,
+    "A261220": 0.034968180494124194,
+    "A360750": 0.12169267765095465,
+    "A161510": 0.04767300899416604,
+    "A182480": 0.03532760853708603,
+    "A411060": 0.08166931445573268,
+    "A114260": 0.1117242490085466,
+    "A241180": 0.0222791891352944,
+    "A069500": 0.03988608330293989,
+    "A468380": 0.03713400587669876,
+    "A261240": 0.07274243176295044,
+    "A381170": 0.06265181521241318,
+    "CASH": 0.014898420546307434
+  },
+  "realized_weights": {
+    "A305080": 0.0879214805942417,
+    "A069500": 0.04003334598297321,
+    "A261220": 0.03509728587497451,
+    "A182480": 0.03545804095565233,
+    "A161510": 0.04784902164039184,
+    "A360750": 0.1221419769645824,
+    "A459580": 0.19703015827584677,
+    "A371160": 0.031224549974550573,
+    "A411060": 0.0819708442407429,
+    "A381170": 0.06288313083563589,
+    "A468380": 0.03696643702811158,
+    "A114260": 0.11122008837939734,
+    "A241180": 0.022361445722789187,
+    "A261240": 0.07301100276733288,
+    "CASH": 0.014831190762776893
+  },
+  "plan": [
+    {
+      "ticker": "A305080",
+      "action": "HOLD",
+      "current_qty": 6786,
+      "target_qty": 6786,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A069500",
+      "action": "HOLD",
+      "current_qty": 352,
+      "target_qty": 352,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A261220",
+      "action": "HOLD",
+      "current_qty": 1415,
+      "target_qty": 1415,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A182480",
+      "action": "HOLD",
+      "current_qty": 2404,
+      "target_qty": 2404,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A161510",
+      "action": "HOLD",
+      "current_qty": 1768,
+      "target_qty": 1768,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A360750",
+      "action": "HOLD",
+      "current_qty": 4380,
+      "target_qty": 4380,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A459580",
+      "action": "HOLD",
+      "current_qty": 173,
+      "target_qty": 173,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A371160",
+      "action": "HOLD",
+      "current_qty": 4237,
+      "target_qty": 4237,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A411060",
+      "action": "HOLD",
+      "current_qty": 2721,
+      "target_qty": 2721,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A381170",
+      "action": "HOLD",
+      "current_qty": 1936,
+      "target_qty": 1936,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A468380",
+      "action": "HOLD",
+      "current_qty": 3199,
+      "target_qty": 3199,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A114260",
+      "action": "HOLD",
+      "current_qty": 1693,
+      "target_qty": 1693,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A241180",
+      "action": "HOLD",
+      "current_qty": 611,
+      "target_qty": 611,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    },
+    {
+      "ticker": "A261240",
+      "action": "HOLD",
+      "current_qty": 4854,
+      "target_qty": 4854,
+      "delta_qty": 0,
+      "delta_amount_krw": 0
+    }
+  ],
+  "turnover": 0.0,
+  "cash_residual_krw": 13976890,
+  "skipped_no_trade": [
+    "A305080",
+    "A069500",
+    "A261220",
+    "A182480",
+    "A161510",
+    "A360750",
+    "A459580",
+    "A371160",
+    "A411060",
+    "A381170",
+    "A468380",
+    "A114260",
+    "A241180",
+    "A261240"
+  ],
+  "validation": {
+    "passed": true,
+    "violations": [],
+    "suggestions": []
+  },
+  "previous_portfolio_path": "artifacts/2026-08-28"
+}
