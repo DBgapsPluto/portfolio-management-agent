@@ -37,10 +37,16 @@ def test_emergency_cash_portfolio_uses_safe_etfs(tmp_path):
         "allocation_attempts": 2,
     }
     result = _emergency_cash_portfolio(state)
-    assert result["validation_passed"] is True
     new_wv = result["weight_vector"]
-    # Test fixture has only 2 safe ETFs (1 bond + 1 MMF) → 50% each.
-    # In real universe with ≥5 safe ETFs, each ≤ 20%.
+    # Test fixture has only 2 safe ETFs (1 bond + 1 MMF) → 50% each, which
+    # breaches the 20% single-ETF cap. B6 fix: the emergency path no longer
+    # self-certifies; it re-validates and reports the honest result. An
+    # under-provisioned universe is FLAGGED (passed=False + hard violation),
+    # not silently stamped passing. In the real universe (≥6 safe ETFs across
+    # categories) the basket is each ≤20% and passes.
+    assert result["validation_passed"] is False
+    report = result["validation_report"]
+    assert any(v.severity == "hard" for v in report.violations)
     assert abs(sum(new_wv.weights.values()) - 1.0) < 1e-6
     # Verify only 안전 ETFs are present (no 위험 bucket leakage).
     safe_tickers = {"A114260", "A459580"}  # from test fixture

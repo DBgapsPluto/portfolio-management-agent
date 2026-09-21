@@ -39,15 +39,12 @@ jobs:
           TZ: Asia/Seoul
         run: uv run python scripts/fetch_save_brief.py
 
-      - name: Commit and push
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f data/SAVE/
-          if git diff --cached --quiet; then
-            echo "변경사항 없음 — commit/push skip"
-          else
-            ADDED=$(git diff --cached --name-only | head -1)
-            git commit -m "chore(save): brief $(basename "$ADDED" .txt)"
-            git push
-          fi
+      # data/SAVE/ 는 유료 구독 콘텐츠라 리포에 커밋하지 않는다 (.gitignore /data/SAVE/).
+      # 브리핑은 워크플로우 아티팩트로만 보존 — 파이프라인은 SAVE 부재 시 우아하게 생략한다.
+      - name: Upload brief as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: save-brief
+          path: data/SAVE/
+          retention-days: 30
+          if-no-files-found: ignore

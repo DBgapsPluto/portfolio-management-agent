@@ -1,6 +1,10 @@
 """Side-effect import to register all skills with the global registry.
 
 Import this module before calling get_skill() in app code.
+
+W3 (2026-08): this module must mirror registry._SKILL_MODULES exactly —
+tests/unit/skills/test_registry_parity.py enforces the parity, so add new
+skill modules to BOTH lists.
 """
 # Macro
 from tradingagents.skills.macro import yield_curve  # noqa: F401
@@ -8,17 +12,26 @@ from tradingagents.skills.macro import inflation  # noqa: F401
 from tradingagents.skills.macro import employment  # noqa: F401
 from tradingagents.skills.macro import fred_fetcher  # noqa: F401
 from tradingagents.skills.macro import ecos_fetcher  # noqa: F401
+from tradingagents.skills.macro import real_activity  # noqa: F401
+from tradingagents.skills.macro import kr_valuation  # noqa: F401
 from tradingagents.skills.macro import divergence  # noqa: F401
 from tradingagents.skills.macro import calendar  # noqa: F401
 from tradingagents.skills.macro import regime_classifier  # noqa: F401
+from tradingagents.skills.macro import chip_cycle  # noqa: F401
+from tradingagents.skills.macro import emerging_market  # noqa: F401
+from tradingagents.skills.macro import kr_sector_export  # noqa: F401
 
 # Risk
 from tradingagents.skills.risk import volatility  # noqa: F401
+from tradingagents.skills.risk import realized_volatility  # noqa: F401
 from tradingagents.skills.risk import credit_spread  # noqa: F401
 from tradingagents.skills.risk import fear_greed  # noqa: F401
 from tradingagents.skills.risk import breadth  # noqa: F401
+from tradingagents.skills.risk import sector_dispersion  # noqa: F401
 from tradingagents.skills.risk import correlation_pca  # noqa: F401
 from tradingagents.skills.risk import systemic_score  # noqa: F401
+from tradingagents.skills.risk import reit_driver  # noqa: F401
+from tradingagents.skills.risk import hy_decompression  # noqa: F401
 
 # Technical
 from tradingagents.skills.technical import price_batch  # noqa: F401
@@ -26,6 +39,7 @@ from tradingagents.skills.technical import ta_indicators  # noqa: F401
 from tradingagents.skills.technical import momentum_ranker  # noqa: F401
 from tradingagents.skills.technical import trend_state  # noqa: F401
 from tradingagents.skills.technical import correlation_cluster  # noqa: F401
+from tradingagents.skills.technical import semi_momentum  # noqa: F401
 
 # News
 from tradingagents.skills.news import event_calendar  # noqa: F401

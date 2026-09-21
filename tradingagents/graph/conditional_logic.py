@@ -62,19 +62,56 @@ def create_fallback_normalizer(cache_path: str | None = None):
                 method=OptimizationMethod.MIN_VARIANCE,
                 weights=constrained_weights,
                 rationale=(
-                    f"DETERMINISTIC FALLBACK after {state['allocation_attempts']} "
+                    f"DETERMINISTIC FALLBACK after {state.get('allocation_attempts', 0)} "
                     f"failed attempts: re-optimized with min-variance + hard 20% cap. "
                     f"Original method: {weights.method.value}."
                 ),
             )
+            # B6 fix: min_volatility with weight_bounds(0,0.20) guarantees ONLY the
+            # single-ETF cap — not the risk-asset / per-category / cluster caps. Do
+            # NOT self-certify validation_passed=True; re-run the deterministic
+            # mandate checks and report the honest result so a non-compliant
+            # fallback is never silently stamped as passing.
+            passed, report = _revalidate_fallback(state, constrained_weights)
             return {
                 "weight_vector": new_wv,
-                "validation_passed": True,
+                "validation_passed": passed,
+                "validation_report": report,
             }
         except Exception as e:
             return _emergency_cash_portfolio(state, error=str(e))
 
     return node
+
+
+def _revalidate_fallback(state, weights: dict):
+    """Re-run the deterministic mandate checks on a fallback weight set.
+
+    Covers concentration (single 20% / risk 70% / per-category caps) and the
+    correlation-cluster cap — all network-free, deterministic checks. The
+    turnover FLOOR is intentionally excluded: it is a cadence requirement an
+    emergency de-risking cannot satisfy, and forcing churn in a fallback would
+    be counterproductive. Returns (passed, ValidationReport).
+    """
+    from tradingagents.schemas.mandate import ValidationReport
+    from tradingagents.skills.mandate.concentration_check import validate_concentration
+    from tradingagents.skills.mandate.correlation_check import (
+        validate_correlation_concentration,
+    )
+
+    universe = load_universe(state["universe_path"])
+    wv = WeightVector(
+        method=OptimizationMethod.MIN_VARIANCE, weights=weights,
+        rationale="fallback revalidation",
+    )
+    violations = list(validate_concentration(wv, universe).violations)
+    violations += list(
+        validate_correlation_concentration(
+            wv, state.get("correlation_clusters", []),
+        ).violations
+    )
+    passed = not any(v.severity == "hard" for v in violations)
+    return passed, ValidationReport(passed=passed, violations=violations)
 
 
 class ConditionalLogic:
@@ -132,39 +169,63 @@ class ConditionalLogic:
 def _emergency_cash_portfolio(state, error: str = "no weight_vector") -> dict:
     """Last-resort fallback: equal-weight across SAFE-bucket ETFs.
 
-    Used when even constrained optimization fails. Equal-weight across all
-    안전자산 (bonds + MMF/CD) ensures: (a) no 위험 bucket ETFs (defensive),
-    (b) each weight ≤ 20% as long as ≥5 safe ETFs exist.
+    Used when even constrained optimization fails. Equal-weight across 안전자산
+    (bonds + MMF/CD) → 0% 위험 buckets (risk cap satisfied by construction).
+
+    B6 fix: the basket is spread across DISTINCT categories first (so it cannot
+    pile 5 names into one category and breach a per-category cap, e.g. 5×0.20 in
+    초단기채권 vs the 0.50 cap), and topped up to ≥6 names so each weight < 20%.
+    The result is then RE-VALIDATED and validation_passed reflects the honest
+    outcome — the emergency path never self-certifies passing. With a properly
+    provisioned universe (≥6 safe ETFs across categories) it passes; an
+    under-provisioned universe is flagged, not silently passed.
     """
     universe = load_universe(state["universe_path"])
-    safe_etfs = [e.ticker for e in universe.etfs if e.bucket == "안전"]
+    safe = [e for e in universe.etfs if e.bucket == "안전"]
 
-    if len(safe_etfs) == 0:
+    if not safe:
         raise RuntimeError(
             f"Emergency fallback failed ({error}); no 안전자산 ETFs in universe"
         )
 
-    # Take up to 5 safe ETFs, equal-weighted. If <5, accept >0.20 single-asset
-    # exposure but log loudly — this is an emergency path, manual review required.
-    selected = safe_etfs[:5]
+    # 1) one ETF per distinct category (avoid per-category concentration)…
+    seen_cat: set = set()
+    selected: list[str] = []
+    for e in safe:
+        if e.category not in seen_cat:
+            seen_cat.add(e.category)
+            selected.append(e.ticker)
+    # 2) …then top up to ≥6 names so equal-weight stays under the 20% single cap.
+    if len(selected) < 6:
+        for e in safe:
+            if e.ticker not in selected:
+                selected.append(e.ticker)
+            if len(selected) >= 6:
+                break
+
     weight = 1.0 / len(selected)
     weights = {t: weight for t in selected}
 
-    cap_violation_note = (
+    cap_note = (
         ""
-        if len(selected) >= 5
-        else f" WARNING: only {len(selected)} 안전자산 ETF(s) in universe — single weight {weight:.2%} > 20% cap. Manual review CRITICAL."
+        if len(selected) >= 6
+        else (f" WARNING: only {len(selected)} 안전자산 ETF(s) available — "
+              f"single weight {weight:.2%} may exceed the 20% cap. Manual review CRITICAL.")
     )
+
+    passed, report = _revalidate_fallback(state, weights)
 
     new_wv = WeightVector(
         method=OptimizationMethod.MIN_VARIANCE,
         weights=weights,
         rationale=(
             f"EMERGENCY DEFENSIVE FALLBACK: equal-weight across {len(selected)} "
-            f"안전자산 ETFs. Triggered by: {error}.{cap_violation_note}"
+            f"안전자산 ETFs spanning {len(seen_cat)} categories. "
+            f"Triggered by: {error}. Mandate re-validation passed={passed}.{cap_note}"
         ),
     )
     return {
         "weight_vector": new_wv,
-        "validation_passed": True,
+        "validation_passed": passed,
+        "validation_report": report,
     }

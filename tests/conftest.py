@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # PR2a: scripts/ is not a pip-installed package — add project root to sys.path
-# so tests can `from scripts.calibrate_factor_model import ...`.
+# so tests can `from scripts.backtest_bl_gate2 import ...`.
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))

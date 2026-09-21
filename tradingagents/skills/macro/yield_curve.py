@@ -20,6 +20,15 @@ def compute_yield_curve(
 
     Spreads in basis points. inverted_days_count from last 365 days of overlap.
     """
+    # 빈 입력 시리즈 → 아래 unconditional .iloc[-1] 이 IndexError. fetch 실패를
+    # sentinel 로 전환 (staleness_days=99). percentile_5y=0.5 는 기존 insufficient
+    # -history fallback(line 37 상당)과 동일한 관례.
+    if s_10y is None or s_10y.empty or s_2y is None or s_2y.empty or s_3m is None or s_3m.empty:
+        return YieldCurveSnapshot(
+            spread_10y_2y_bps=0.0, spread_10y_3m_bps=0.0, inverted_days_count=0,
+            percentile_5y=0.5, source_date=as_of, staleness_days=99,
+        )
+
     spread_10y_2y = float(s_10y.iloc[-1] - s_2y.iloc[-1]) * 100
     spread_10y_3m = float(s_10y.iloc[-1] - s_3m.iloc[-1]) * 100
 

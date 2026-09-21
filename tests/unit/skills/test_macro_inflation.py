@@ -17,3 +17,16 @@ def test_inflation_accelerating():
     cpi = pd.Series(vals, index=months)
     snap = compute_inflation_trend(cpi, core_cpi=cpi.copy(), as_of=date(2026, 5, 10))
     assert snap.accelerating is True
+
+
+def test_inflation_empty_series_sentinel():
+    cpi = pd.Series([], dtype=float)
+    snap = compute_inflation_trend(cpi, core_cpi=cpi.copy(), as_of=date(2026, 5, 10))
+    assert snap.staleness_days == 99
+
+
+def test_inflation_short_series_sentinel():
+    cpi = pd.Series([100.0, 100.5], index=pd.date_range("2026-03-01", periods=2, freq="MS"))
+    snap = compute_inflation_trend(cpi, core_cpi=cpi.copy(), as_of=date(2026, 5, 10))
+    assert snap.staleness_days == 99
+    assert snap.cpi_yoy == 0.0

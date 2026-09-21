@@ -137,6 +137,13 @@ def restore_state(
         capital_krw=capital_krw,
         preset_name=preset_name,
     )
+    # Mirror TradingAgentsGraph.run's dial funnel (trading_graph.py:141-143) —
+    # _create_empty_state never sets portfolio_dials, so a replayed allocator
+    # would otherwise silently take the use_bl=False fallback (old path)
+    # regardless of the live config's use_bl=True default.
+    rebalance_dials = DEFAULT_CONFIG.get("rebalance")
+    if rebalance_dials:
+        state["portfolio_dials"] = dict(rebalance_dials)
     run_dir = _archive_base(base) / as_of_date
     if not run_dir.exists():
         raise FileNotFoundError(

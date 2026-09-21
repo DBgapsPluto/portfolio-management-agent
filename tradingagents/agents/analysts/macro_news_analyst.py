@@ -186,7 +186,7 @@ def create_macro_news_analyst(quick_llm, deep_llm):
                 impact_failures, min(len(items), IMPACT_CLASSIFY_CAP),
             )
 
-        ranked = dedupe_rank_news(items, impacts, top_n=TOP_RANKED_N)
+        ranked = dedupe_rank_news(items, impacts, top_n=TOP_RANKED_N, as_of=as_of)
 
         # 2026-05-28 Tier 2: top N ranked news 의 article body fetch + LLM summary.
         # Cache hit (TTL 7d) 면 추가 cost 0. Paywall/timeout 은 graceful None.

@@ -9,6 +9,10 @@ logger = logging.getLogger(__name__)
 # selection이 cluster 멤버십을 그룹 정의로 사용하므로 threshold가 직접 영향.
 # 0.7 = correlation_cluster의 default와 일치 (find_correlation_clusters).
 CORRELATION_CLUSTER_THRESHOLD: float = 0.7
+# F5/D1-1: full-universe cluster pool eligibility — >=126 daily returns inside
+# the 252d window (half a trading year; mirrors scripts/measure_cluster_universe.py).
+# Also passed as corr(min_periods=...) so short pairwise overlaps fall back to 0.
+MIN_CLUSTER_HISTORY_DAYS: int = 126
 MIN_HISTORY_DAYS_TA: int = 200      # ta_indicators (MA50/MA200) 필요 최소.
 MIN_HISTORY_DAYS_LONG: int = 252    # 1y window (trend_quant, risk_adjusted).
 PRICE_LOOKBACK_DAYS: int = 365 * 3 + 30   # 3y + buffer
@@ -201,19 +205,40 @@ def create_technical_analyst(quick_llm, deep_llm, cache_path: str | None = None)
                 logger.debug("trend_state failed for %s: %s", t, e)
                 continue
 
-        # Correlation clusters from top-tier returns
+        # Correlation clusters — F5/D1-1 dial-gated pool.
+        # OFF (default; bare-state callers — same read convention as
+        # trader_allocator's use_bl): top-tier returns + average linkage,
+        # byte-identical to production.
+        # ON (portfolio_dials["cluster_full_universe"]): every ticker with
+        # >= MIN_CLUSTER_HISTORY_DAYS of returns in the 252d window,
+        # complete-linkage@0.7 + min_periods (D0-2 decision — no megacluster
+        # chain-merge; artifacts/cluster_universe_measurement.json).
+        _dials = state.get("portfolio_dials") or {}
+        cluster_full_universe = bool(_dials.get("cluster_full_universe", False))
         pivot = prices.pivot(index="date", columns="ticker", values="close")
         returns = pivot.pct_change().dropna(how="all").tail(252)
-        returns_top = returns[[c for c in returns.columns if c in top_tickers]].dropna(axis=1, how="any")
 
         name_lookup = {e.ticker: e.name for e in universe.etfs}
-        clusters = find_correlation_clusters(
-            returns_top, threshold=CORRELATION_CLUSTER_THRESHOLD,
-            universe_lookup=name_lookup,
-        )
+        if cluster_full_universe:
+            cluster_pool = returns.loc[:, returns.notna().sum() >= MIN_CLUSTER_HISTORY_DAYS]
+            cluster_linkage = "complete"
+            clusters = find_correlation_clusters(
+                cluster_pool, threshold=CORRELATION_CLUSTER_THRESHOLD,
+                universe_lookup=name_lookup,
+                linkage_method=cluster_linkage,
+                min_periods=MIN_CLUSTER_HISTORY_DAYS,
+            )
+        else:
+            cluster_pool = returns[[c for c in returns.columns if c in top_tickers]].dropna(axis=1, how="any")
+            cluster_linkage = "average"
+            clusters = find_correlation_clusters(
+                cluster_pool, threshold=CORRELATION_CLUSTER_THRESHOLD,
+                universe_lookup=name_lookup,
+            )
         logger.info(
-            "technical: %d correlation clusters (threshold=%.2f, top pool=%d ETF)",
-            len(clusters), CORRELATION_CLUSTER_THRESHOLD, returns_top.shape[1],
+            "technical: %d correlation clusters (threshold=%.2f, linkage=%s, pool=%d ETF, full_universe=%s)",
+            len(clusters), CORRELATION_CLUSTER_THRESHOLD, cluster_linkage,
+            cluster_pool.shape[1], cluster_full_universe,
         )
 
         # Tier-1: extended indicators for every ETF with sufficient history.

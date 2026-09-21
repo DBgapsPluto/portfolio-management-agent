@@ -1,9 +1,20 @@
 from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 
 class OptimizationMethod(str, Enum):
+    """Weighting-method tag on WeightVector.
+
+    Live code only *produces* AUM_WEIGHTED (trader_allocator, rebalance
+    engine) and MIN_VARIANCE (conditional_logic fallback). The other members
+    are legacy values retained for stored-artifact compat — do NOT prune:
+    cli/commands/analysis.py::_load_portfolio re-validates stored
+    portfolio.json via ``OptimizationMethod(raw["method"])``, and artifacts
+    from 2026-05/06 runs (e.g. artifacts/2026-05-15, 2026-05-26, 2026-05-28,
+    2026-06-02) carry "nco" / "risk_parity" / "hrp".
+    """
     HRP = "hrp"
     RISK_PARITY = "risk_parity"
     MIN_VARIANCE = "min_variance"
@@ -92,10 +103,25 @@ class StockSelection(BaseModel):
     rationale: str = Field(default="", max_length=500)
 
 
+class BucketRanking(BaseModel):
+    """버킷 상대순위 view (BL). LLM 은 tier·conviction 만, 수익숫자는 코드가 변환."""
+    tier: Literal["strong_OW", "OW", "neutral", "UW", "strong_UW"]
+    conviction: float = Field(ge=0.0, le=0.95)
+    rationale: str = Field(default="", max_length=200)
+
+
 class BucketTilt(BaseModel):
     """Trader step A 출력 — quadrant 앵커 대비 버킷별 tilt (sparse, 미지정=0)."""
     tilts: dict[str, float] = Field(
         default_factory=dict,
         description="bucket key → 앵커 대비 가감(+/-). 오버웨이트는 언더웨이트로 펀딩(net≈0).",
+    )
+    sub_category_views: dict[str, dict[str, float]] = Field(
+        default_factory=dict,
+        description="이질 버킷 한정 — bucket key → {sub_category: 선호 ∈ [-1,+1]}. +선호/-배제/0중립.",
+    )
+    bucket_ranking: dict[str, BucketRanking] = Field(
+        default_factory=dict,
+        description="bucket key → 상대순위 view (BL). tier+conviction.",
     )
     rationale: str = Field(default="", max_length=500)

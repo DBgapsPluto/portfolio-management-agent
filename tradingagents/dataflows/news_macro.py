@@ -60,7 +60,16 @@ def fetch_macro_news(rss_urls: list[str], window_days: int = 7,
     """
     if as_of is not None and is_pit_stale(as_of):
         return []
-    cutoff = datetime.utcnow() - timedelta(days=window_days)
+    # B7 fix: anchor the news window to as_of (end-of-day), not the wall clock,
+    # so backtests/replays are point-in-time correct and reproducible. RSS is a
+    # live feed, so also drop any entry published AFTER the as_of anchor — a
+    # look-ahead guard for replays over the recent past. The anchor uses LOCAL
+    # naive time to match `published` (datetime.fromtimestamp(mktime(...)) is
+    # local-naive); using utcnow() here would drop genuine items by the UTC
+    # offset in non-UTC environments (e.g. KST = UTC+9).
+    anchor = (datetime.combine(as_of, datetime.max.time())
+              if as_of is not None else datetime.now())
+    cutoff = anchor - timedelta(days=window_days)
     items: list[NewsItem] = []
     for url in rss_urls:
         try:
@@ -72,7 +81,7 @@ def fetch_macro_news(rss_urls: list[str], window_days: int = 7,
         for entry in feed.entries[:50]:
             try:
                 published = datetime.fromtimestamp(mktime(entry["published_parsed"]))
-                if published < cutoff:
+                if published < cutoff or published > anchor:
                     continue
                 description = _extract_rss_description(entry)
                 items.append(NewsItem(

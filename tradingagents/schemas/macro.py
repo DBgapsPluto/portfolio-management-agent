@@ -97,6 +97,9 @@ class RegimeClassification(StalenessAware):
     confidence: float = Field(ge=0, le=1)
     drivers: list[str] = Field(min_length=1, max_length=5)
     reasoning: str = Field(max_length=300)
+    # 결정론 신호-일치도 c (LLM-independent, analyst가 사후 model_copy로 주입). default None →
+    # with_structured_output이 LLM에 강요하지 않음. spec 2026-06-23 §3.
+    signal_confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class KRExportSnapshot(StalenessAware):

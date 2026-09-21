@@ -72,6 +72,19 @@ def compute_deltas(
     """
     band = dials["no_trade_band"]
     cur_risk = risk_total(current, is_risk)
+    target_risk = risk_total(target, is_risk)
+
+    # B2 fix: when the target intends LESS risk than current (e.g. a defensive
+    # overlay capping risk at defensive_target=0.55), enforce THAT target through
+    # the no-trade band — not only the 0.70 hard mandate cap. Previously the band
+    # exception keyed solely on HARD_RISK_ASSET_CAP (0.70), so in the 0.55–0.70
+    # zone every per-ticker de-risking delta was sub-band and skipped: the
+    # defensive overlay fired but executed 0 trades and risk could drift up to
+    # 0.70 unchecked (observed live 2026-06-14, risk≈0.559). Now risk-reducing
+    # deltas are allowed through whenever current risk exceeds the level the
+    # target is trying to enforce.
+    risk_ceiling = (min(HARD_RISK_ASSET_CAP, target_risk)
+                    if target_risk < cur_risk else HARD_RISK_ASSET_CAP)
 
     tickers = (set(current) | set(target)) - {CASH_KEY}
     delta: dict[str, float] = {}
@@ -84,7 +97,7 @@ def compute_deltas(
         over_single = (current.get(t, 0.0) > HARD_SINGLE_CAP
                        and d < 0
                        and current.get(t, 0.0) + d <= HARD_SINGLE_CAP + FLOAT_TOLERANCE)
-        over_risk = (cur_risk > HARD_RISK_ASSET_CAP and is_risk(t) and d < 0)
+        over_risk = (cur_risk > risk_ceiling + FLOAT_TOLERANCE and is_risk(t) and d < 0)
         if over_single or over_risk:
             delta[t] = d
         elif d != 0.0:
@@ -143,16 +156,27 @@ def build_rebalance_plan(
         "cash_residual_krw": int(cash_residual),
         "realized_weights": realized,
         "turnover": turnover,
+        # F3/C2: 월누적(MTD) 집계용 체결 명목 + 평가액. denom(=end_value)이
+        # current_value(=begin_value)와 항등임은 감사 MF-6로 증명됨 — per-plan
+        # 분모 개선 효과는 없고 여러 plan에 걸친 MTD 집계에서만 의미가 있다.
+        "buy_krw": buy_krw,
+        "sell_krw": sell_krw,
+        "begin_value": current_value,
+        "end_value": denom,
     }
 
 
 def validate_rebalance(
     realized: dict[str, float], universe, clusters, previous_weights,
-    current_value: int, floor_pct: float,
+    current_value: int, floor_pct: float, trade_turnover: float | None = None,
 ) -> ValidationReport:
     """realized(현금 포함, 합≈1) 비중에 전체 mandate 재검증.
     현금은 분모에만 기여(위험/단일 cap 분자 제외) → 재정규화하지 않음.
-    universe_check 만 현금 제외 종목셋으로 수행(CASH 는 실제 ticker 아님)."""
+    universe_check 만 현금 제외 종목셋으로 수행(CASH 는 실제 ticker 아님).
+
+    trade_turnover: 엔진이 계산한 체결 명목 기반 turnover(plan_out["turnover"]).
+    제공되면 월간 floor 검사의 유일한 권위 — weight-delta 재유도 없음(F3 감사
+    MF-5/MF-6, turnover_check.validate_turnover_feasibility 참조)."""
     if not realized or sum(realized.values()) <= 0:
         return ValidationReport(passed=False, violations=[Violation(
             rule="weight_validity", description="no realized weight", severity="hard",
@@ -175,7 +199,8 @@ def validate_rebalance(
     violations += validate_concentration(full_wv, universe).violations
     violations += validate_correlation_concentration(full_wv, clusters).violations
     violations += validate_turnover_feasibility(
-        full_wv, previous_weights, current_value, floor_pct=floor_pct).violations
+        full_wv, previous_weights, current_value, floor_pct=floor_pct,
+        trade_turnover=trade_turnover).violations
     return ValidationReport(
         passed=not any(v.severity == "hard" for v in violations),
         violations=violations,
@@ -190,7 +215,9 @@ def run_rebalance(
     out_dir: Path, previous_path: str, deep_llm=None,
 ) -> RebalanceResult:
     """리밸런싱 1회: 재평가 → 거래계획 → 재검증 → 산출물 3종."""
-    from tradingagents.reports.rebalance_plan import write_rebalance_plan, write_rebalance_json
+    from tradingagents.reports.rebalance_plan import (
+        write_rebalance_plan, write_rebalance_json, compute_turnover_month_to_date,
+    )
     from tradingagents.reports.rebalance_rationale import write_rebalance_rationale
 
     is_risk = make_is_risk(universe)
@@ -203,13 +230,16 @@ def run_rebalance(
     floor = dials.get("turnover_floor_monthly", 0.0) if tier == "monthly" else 0.0
     validation = validate_rebalance(
         plan_out["realized_weights"], universe=universe, clusters=clusters,
-        previous_weights=previous_weights, current_value=current_value, floor_pct=floor)
+        previous_weights=previous_weights, current_value=current_value, floor_pct=floor,
+        trade_turnover=plan_out["turnover"])
 
     res = RebalanceResult(
         as_of=as_of, tier=tier,
         current_weights=current, target_weights=target_weights,
         realized_weights=plan_out["realized_weights"], plan=plan_out["plan"],
         turnover=plan_out["turnover"], cash_residual_krw=plan_out["cash_residual_krw"],
+        buy_krw=plan_out["buy_krw"], sell_krw=plan_out["sell_krw"],
+        begin_value=plan_out["begin_value"], end_value=plan_out["end_value"],
         cash_weight=plan_out["realized_weights"].get(CASH_KEY, 0.0),
         skipped_no_trade=plan_out["skipped_no_trade"],
         trigger={"tier": tier}, validation=validation,
@@ -221,6 +251,18 @@ def run_rebalance(
     json_path = out_dir / f"{as_of}(rebalancing).json"
     md_path = out_dir / f"{as_of}(rebalancing)_rationale.md"
     write_rebalance_plan(res, lookup, csv_path)
+    write_rebalance_json(res, json_path, previous_path)
+    # F3: 아티팩트가 방금 기록됐으므로(오늘 자신의 기여분 포함) 여기가 MTD 집계의
+    # 배선 지점 (MF-7 감사 — 이전엔 프로덕션 호출부가 전혀 없었다). floor 는 항상
+    # 월간 기준(turnover_floor_monthly) — daily 실행도 월누적 부족을 조기에 드러내야
+    # 한다(월간 tier 도달까지 기다리지 않음). 계산된 필드를 다시 기록해 JSON
+    # 아티팩트 자체도 최신 MTD 상태를 갖는다.
+    mtd = compute_turnover_month_to_date(
+        as_of, floor_pct=dials.get("turnover_floor_monthly", 0.0),
+        artifacts_dir=str(out_dir.parent),
+    )
+    res.turnover_month_to_date = mtd["turnover_month_to_date"]
+    res.projected_shortfall = mtd["projected_shortfall"]
     write_rebalance_json(res, json_path, previous_path)
     write_rebalance_rationale(res, md_path, deep_llm=deep_llm)
     res.paths = {"json": str(json_path), "plan_csv": str(csv_path),

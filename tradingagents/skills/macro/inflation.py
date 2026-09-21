@@ -25,6 +25,16 @@ def compute_inflation_trend(
 
     PCE는 Fed 공식 inflation 타겟. CPI보다 정책 결정 anchor로서 우월. 둘 다 노출.
     """
+    # cpi_yoy 는 13개월 필요 (momentum_3mo 의 4개월보다 넓은 상위 threshold).
+    # 미달 시 _annualized 가 조용히 0.0 을 반환 — fetch 실패/결측을 "0% 인플레"
+    # 로 오인시키는 fake-fresh 값이 되어 staleness_days=0 인 채 LLM/regime 투표로
+    # 유입되는 것을 막는다.
+    if cpi is None or cpi.empty or len(cpi) < 13:
+        return InflationSnapshot(
+            cpi_yoy=0.0, core_cpi_yoy=0.0, momentum_3mo=0.0, momentum_6mo=0.0,
+            accelerating=False, source_date=as_of, staleness_days=99,
+        )
+
     yoy = _annualized(cpi, 12)
     core_yoy = _annualized(core_cpi, 12)
     m3 = _annualized(cpi, 3)

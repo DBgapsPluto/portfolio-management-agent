@@ -67,7 +67,7 @@ def _build_full_trace_portfolio(state: dict) -> dict:
         "rationale": weights.rationale,
         "expected_volatility": weights.expected_volatility,
         "expected_sharpe": weights.expected_sharpe,
-        # Stage 2 — Research Decision (시나리오 확률 + dominant + conviction)
+        # Stage 2 — Research Decision (risk_tilt + thesis + key_risks)
         "research_decision": _serialize_for_json(state.get("research_decision")),
         # Stage 3 — Method choice (어느 optimizer가 선택됐는지)
         "method_choice": _serialize_for_json(state.get("method_choice")),

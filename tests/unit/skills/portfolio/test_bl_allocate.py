@@ -1,0 +1,179 @@
+import numpy as np
+import pandas as pd
+import pytest
+from tradingagents.skills.portfolio import bl_engine as be
+from tradingagents.skills.portfolio.gaps_buckets import GAPS_BUCKET_KEYS, GROWTH_KEYS
+
+def _sigma14(pinned=()):
+    keep = [b for b in GAPS_BUCKET_KEYS if b not in pinned]
+    rng = np.random.default_rng(2)
+    A = rng.normal(0, 1, (len(keep), len(keep)))
+    return pd.DataFrame(A @ A.T / len(keep) * 0.04, index=keep, columns=keep)
+
+def _baseline14():
+    from tradingagents.skills.portfolio.scenario_anchor import QUADRANT_BASELINE
+    return pd.Series(QUADRANT_BASELINE["growth_disinflation"])
+
+def test_pinned_bucket_fixed_others_bl():
+    Sigma = _sigma14(pinned=("b4_china",))
+    base = _baseline14()
+    res = be.bl_allocate(Sigma, base, ranking={"b3_global_tech": ("strong_OW", 0.9)},
+                         pinned=["b4_china"], delta=2.5, growth_keys=set(GROWTH_KEYS))
+    w = res["weights"]
+    assert abs(w.sum() - 1.0) < 1e-6
+    assert w["b4_china"] == pytest.approx(base["b4_china"], abs=1e-9)   # pinned fixed
+    assert res["meta"]["b4_china"]["status"] == "baseline_pinned"
+
+def test_empty_sigma_full_fallback():
+    base = _baseline14()
+    res = be.bl_allocate(pd.DataFrame(), base, ranking={}, pinned=list(GAPS_BUCKET_KEYS),
+                         delta=2.5, growth_keys=set(GROWTH_KEYS))
+    assert np.allclose(res["weights"].reindex(base.index).values, base.values, atol=1e-9)
+    assert res["meta"]["__global__"]["status"] == "full_fallback"
+
+
+from tradingagents.skills.portfolio.scenario_anchor import QUADRANT_BASELINE
+
+
+def _real_sigma_14(seed=5):
+    keys = list(QUADRANT_BASELINE["growth_disinflation"].keys())
+    rng = np.random.default_rng(seed)
+    vols = rng.uniform(0.05, 0.30, len(keys)); C = rng.uniform(0.1, 0.6, (len(keys), len(keys)))
+    C = (C + C.T) / 2; np.fill_diagonal(C, 1.0); S = np.outer(vols, vols) * C
+    S = S @ S.T / len(keys) + np.eye(len(keys)) * 1e-4
+    return pd.DataFrame(S, index=keys, columns=keys)
+
+
+_MANDATE = {"a5_gold_infl"} | set(GROWTH_KEYS)
+
+
+@pytest.mark.parametrize("quadrant", list(QUADRANT_BASELINE.keys()))
+@pytest.mark.parametrize("pin", ["a3_us_rates", "a1_cash", "a2_kr_rates"])
+def test_no_view_recovery_with_defensive_pin(quadrant, pin):
+    base = pd.Series(QUADRANT_BASELINE[quadrant])
+    Sigma = _real_sigma_14().drop(index=[pin], columns=[pin])   # pinned bucket absent from Σ
+    res = be.bl_allocate(Sigma, base, ranking={}, pinned=[pin], delta=2.5,
+                         growth_keys=set(GROWTH_KEYS), mandate_risk_keys=_MANDATE)
+    w = res["weights"]
+    assert abs(w.sum() - 1.0) < 1e-6
+    assert w[pin] == pytest.approx(base[pin], abs=1e-9)           # pin exact
+    # no-view ⇒ non-pinned buckets recover their baseline (renormalized to budget, then back)
+    assert np.abs(w - base).sum() < 1e-6, f"{quadrant} pin={pin} L1={np.abs(w-base).sum()}"
+
+
+from tradingagents.agents.trader.trader_allocator import _fx_credit_extra_views
+
+
+def _extra(fx="neutral", credit="neutral"):
+    base = _baseline14()
+    return _fx_credit_extra_views(list(base.index), fx, credit)
+
+
+_COMMON = dict(delta=2.5, growth_keys=set(GROWTH_KEYS), mandate_risk_keys=_MANDATE)
+
+
+def test_pin_crisis_active_ranking_returns_valid_weights():
+    # C1 scenario (a): pin + crisis/usd_risk_off + active ranking must not crash (14-col Pe vs 13-col P)
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    extra = _extra("usd_risk_off", "crisis")
+    res = be.bl_allocate(Sigma, base, {"b3_global_tech": ("strong_OW", 0.9)},
+                         pinned=["b4_china"], extra_views=extra, **_COMMON)
+    w = res["weights"]
+    assert abs(w.sum() - 1.0) < 1e-6
+    assert not w.isna().any()
+    assert w["b4_china"] == pytest.approx(base["b4_china"], abs=1e-9)
+    assert res["meta"]["__global__"]["status"] == "bl"
+
+
+def test_pin_not_touching_view_buckets_view_shifts_weights():
+    # C1 goal (2): extra view over un-pinned buckets survives remap into the sub-space
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    res_with = be.bl_allocate(Sigma, base, {}, pinned=["b4_china"],
+                              extra_views=_extra(credit="crisis"), **_COMMON)
+    res_none = be.bl_allocate(Sigma, base, {}, pinned=["b4_china"],
+                              extra_views=None, **_COMMON)
+    l1 = float((res_with["weights"] - res_none["weights"]).abs().sum())
+    assert l1 > 1e-4, f"extra view silently dropped (L1={l1})"
+    assert abs(res_with["weights"].sum() - 1.0) < 1e-6
+    assert abs(res_none["weights"].sum() - 1.0) < 1e-6
+    assert not res_with["meta"]["__global__"].get("dropped_views")
+
+
+def test_view_touching_pinned_bucket_dropped_and_recorded():
+    # C1 goal (3): crisis row's over-bucket pinned → row dropped + recorded; fx row still applied
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    res = be.bl_allocate(Sigma, base, {}, pinned=["a3_us_rates"],
+                         extra_views=_extra("usd_risk_off", "crisis"), **_COMMON)
+    res_none = be.bl_allocate(Sigma, base, {}, pinned=["a3_us_rates"],
+                              extra_views=None, **_COMMON)
+    dropped = res["meta"]["__global__"]["dropped_views"]
+    assert len(dropped) == 1
+    assert "a3_us_rates" in dropped[0]["pinned"]
+    l1 = float((res["weights"] - res_none["weights"]).abs().sum())
+    assert l1 > 1e-4, f"surviving fx view not applied (L1={l1})"
+    assert res["weights"]["a3_us_rates"] == pytest.approx(base["a3_us_rates"], abs=1e-9)
+    assert abs(res["weights"].sum() - 1.0) < 1e-6
+
+
+def test_empty_ranking_pin_crisis_applies_crisis_view():
+    # C1 goal (4): empty ranking + pin + crisis must APPLY the crisis view (no silent total drop)
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    res = be.bl_allocate(Sigma, base, {}, pinned=["b4_china"],
+                         extra_views=_extra(credit="crisis"), **_COMMON)
+    res_none = be.bl_allocate(Sigma, base, {}, pinned=["b4_china"],
+                              extra_views=None, **_COMMON)
+    l1 = float((res["weights"] - res_none["weights"]).abs().sum())
+    assert l1 > 1e-4, f"crisis view silently dropped (L1={l1})"
+    assert abs(res["weights"].sum() - 1.0) < 1e-6
+    assert not res["weights"].isna().any()
+
+
+# --- C5: solver-fallback status surfaces through bl_allocate's __global__ ---
+
+
+def _boom(*a, **k):
+    raise RuntimeError("bl boom")
+
+
+def test_bl_allocate_surfaces_bl_combine_fallback_in_global_status(monkeypatch):
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    monkeypatch.setattr("pypfopt.black_litterman.BlackLittermanModel", _boom)
+    res = be.bl_allocate(Sigma, base, {"b3_global_tech": ("strong_OW", 0.9)},
+                         delta=2.5, growth_keys=set(GROWTH_KEYS), mandate_risk_keys=_MANDATE)
+    assert res["meta"]["__global__"]["status"] == "bl_combine_fallback"
+
+
+def test_bl_allocate_surfaces_mqu_fallback_in_global_status(monkeypatch):
+    Sigma = _real_sigma_14()
+    base = _baseline14()
+    monkeypatch.setattr(be, "_max_quad_utility", lambda *a, **k: None)
+    res = be.bl_allocate(Sigma, base, {"b3_global_tech": ("strong_OW", 0.9)},
+                         delta=2.5, growth_keys=set(GROWTH_KEYS), mandate_risk_keys=_MANDATE)
+    assert res["meta"]["__global__"]["status"] == "mqu_fallback"
+
+
+def test_turnover_cap_threaded_and_binds():
+    from tradingagents.skills.portfolio.scenario_anchor import QUADRANT_BASELINE
+    from tradingagents.skills.portfolio.gaps_buckets import GROWTH_KEYS
+    keys = list(QUADRANT_BASELINE["growth_disinflation"].keys())
+    rng = np.random.default_rng(5)
+    vols = rng.uniform(0.05, 0.30, len(keys)); C = rng.uniform(0.1, 0.6, (len(keys), len(keys)))
+    C = (C + C.T) / 2; np.fill_diagonal(C, 1.0); S = np.outer(vols, vols) * C
+    S = S @ S.T / len(keys) + np.eye(len(keys)) * 1e-4
+    Sigma = pd.DataFrame(S, index=keys, columns=keys)
+    base = pd.Series(QUADRANT_BASELINE["growth_disinflation"])
+    mandate = {"a5_gold_infl"} | set(GROWTH_KEYS)
+    ranking = {"b3_global_tech": ("strong_OW", 0.95), "a3_us_rates": ("strong_UW", 0.95)}
+    # tight cap → smaller L1 than loose cap (proves it's actually plumbed through bl_allocate)
+    tight = be.bl_allocate(Sigma, base, ranking, delta=2.5, growth_keys=set(GROWTH_KEYS),
+                           mandate_risk_keys=mandate, turnover_cap=0.10)["weights"]
+    loose = be.bl_allocate(Sigma, base, ranking, delta=2.5, growth_keys=set(GROWTH_KEYS),
+                           mandate_risk_keys=mandate, turnover_cap=0.50)["weights"]
+    l1_tight = float(np.abs(tight - base).sum()); l1_loose = float(np.abs(loose - base).sum())
+    assert l1_tight < l1_loose                 # tighter cap → less movement (threaded & binds)
+    assert l1_tight <= 0.10 + 0.05             # roughly respects the tight cap (soft_clip/renorm slack)

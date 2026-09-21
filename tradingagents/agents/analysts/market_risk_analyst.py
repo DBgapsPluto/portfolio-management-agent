@@ -527,6 +527,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         _sentinel_inventory = {
             name: getattr(snap, "staleness_days", 0) >= 99
             for name, snap in [
+                ("vix", vix), ("vkospi", vkospi),
                 ("pca", pca), ("eq_bd_corr", eq_bd_corr), ("fg", fg),
                 ("vix_term", vix_term), ("skew", skew), ("vxn", vxn),
                 ("real_yields", real_yields), ("funding_stress", funding_stress),
@@ -543,11 +544,30 @@ def create_market_risk_analyst(quick_llm, deep_llm):
                 n_sentinels, len(_sentinel_inventory), stale_names,
             )
 
+        # B5 fix: VIX/VKOSPI sentinels (staleness_days>=99) carry current_value=0.0,
+        # which an LLM reads as extreme CALM — the opposite of "data missing" — and
+        # biases systemic_score DOWN exactly when the fetch is broken. Render them
+        # 'n/a' to the prompt and the summary instead of a misleading 0.0.
+        _vix_na = getattr(vix, "staleness_days", 0) >= 99
+        _vkospi_na = getattr(vkospi, "staleness_days", 0) >= 99
+        _vix_disp = "n/a" if _vix_na else f"{vix.current_value:.1f}"
+        _vix_summary = (
+            f"VIX: {vix.current_value:.1f} (z={vix.zscore_30d:.2f}, 4w {vix.change_4w:+.1f})"
+            if not _vix_na else "VIX: n/a (fetch unavailable)"
+        )
+        _vkospi_summary = (
+            f"VKOSPI: {vkospi.current_value:.1f} (4w {vkospi.change_4w:+.1f})"
+            if not _vkospi_na else "VKOSPI: n/a (fetch unavailable)"
+        )
+
         systemic = score_systemic_risk(
             quick_llm, deep_llm,
-            vix=vix.current_value, vix_z=vix.zscore_30d, vix_pct=vix.percentile_5y,
-            vix_change_4w=vix.change_4w,
-            vkospi=vkospi.current_value, vkospi_change_4w=vkospi.change_4w,
+            vix=("n/a" if _vix_na else vix.current_value),
+            vix_z=("n/a" if _vix_na else vix.zscore_30d),
+            vix_pct=("n/a" if _vix_na else vix.percentile_5y),
+            vix_change_4w=("n/a" if _vix_na else vix.change_4w),
+            vkospi=("n/a" if _vkospi_na else vkospi.current_value),
+            vkospi_change_4w=("n/a" if _vkospi_na else vkospi.change_4w),
             ig_bps=ig.current_bps, ig_pct=ig.percentile_5y,
             ig_momentum_z=ig.momentum_zscore,
             hy_bps=hy.current_bps, hy_widening=hy.widening,
@@ -591,7 +611,7 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         narrative = quick_llm.invoke(
             f"Summarize market risk in ≤500 Korean chars. "
             f"Score {systemic.score}/10 ({systemic.regime}). "
-            f"VIX {vix.current_value:.1f} (term {vix_term.regime}), "
+            f"VIX {_vix_disp} (term {vix_term.regime}), "
             f"SKEW {skew.skew_value:.0f} ({skew.tail_hedge_signal}), "
             f"drivers: {systemic.drivers}"
         ).content[:500]
@@ -602,8 +622,8 @@ def create_market_risk_analyst(quick_llm, deep_llm):
         )
         summary = (
             f"## Risk\n{sentinel_line}Score: **{systemic.score:.1f}/10** ({systemic.regime})\n"
-            f"VIX: {vix.current_value:.1f} (z={vix.zscore_30d:.2f}, 4w {vix.change_4w:+.1f})\n"
-            f"VKOSPI: {vkospi.current_value:.1f} (4w {vkospi.change_4w:+.1f})\n"
+            f"{_vix_summary}\n"
+            f"{_vkospi_summary}\n"
             f"VIX term: ratio {vix_term.ratio:.2f} ({vix_term.regime})\n"
             f"SKEW: {skew.skew_value:.0f} ({skew.tail_hedge_signal})\n"
             f"VXN: {vxn.current_value:.1f} (spread vs VIX {vxn.spread_vs_vix:+.1f})\n"

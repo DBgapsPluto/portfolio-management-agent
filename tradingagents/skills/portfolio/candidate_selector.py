@@ -108,6 +108,28 @@ def _normalize_index(s: str | None) -> str:
     return "".join(t for t in tokens if t not in _INDEX_DROP_TOKENS)
 
 
+# === heterogeneous(이종) 버킷 — sub_category 가 진짜 다른 노출(테마)인 버킷 ===
+# 동질(homogeneous) 버킷은 같은-버킷 broad ETF 가 상관성이 높아 core-by-AUM 으로 충분하나,
+# 이종 버킷은 sub-theme 별 노출이 갈리므로 LLM sub_category 선호 → risk-adj 모멘텀 top-K.
+HETEROGENEOUS_BUCKETS: set[str] = {"b2_dm_core", "b3_global_tech", "b5_other_intl"}
+SUBCAT_PREF_THRESHOLD: float = 0.3
+
+
+def _dedup_by_index(
+    ts: list[str], underlying_index: dict[str, str], seen_keys: set[str],
+) -> list[str]:
+    """underlying_index 정규화 키로 dedup. select_representative_candidates 내부
+    _dedup 클로저와 동일한 의미(중복 노출 제거)를 모듈 레벨에서 재현."""
+    out: list[str] = []
+    for t in ts:
+        key = _normalize_index(underlying_index.get(t)) or t
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        out.append(t)
+    return out
+
+
 def select_representative_candidates(
     *,
     bucket_key: str,
@@ -120,10 +142,16 @@ def select_representative_candidates(
     name: dict[str, str] | None = None,
     quadrant: str | None = None,
     fx_regime: str | None = None,
+    sub_category_views: dict[str, float] | None = None,   # this bucket: sub_cat -> pref
+    momentum: dict[str, float] | None = None,
+    min_etf_aum_krw: float | None = None,
+    top_k: int | None = None,
     trace: dict | None = None,
 ) -> list[str]:
     """버킷 내 대표 운반체 선정 (결정론).
 
+    이종(heterogeneous) 버킷(b2/b3/b5)이고 momentum 이 주어지면 → sub_category 선호
+    필터 후 risk-adj 모멘텀 top-K. 그 외(동질 버킷)는 기존 core-by-AUM 경로:
     core 우선 → 레짐 조건부 정렬(듀레이션·헤지 페널티 → AUM) → index dedup →
     **N = min(n_floor, core distinct)**. 같은-버킷 broad ETF 는 상관성이 높아 adaptive
     다양화 이득이 작으므로 minimal-N 을 의도적 설계로 채택.
@@ -136,6 +164,86 @@ def select_representative_candidates(
     """
     if not eligible:
         return []
+    if bucket_key in HETEROGENEOUS_BUCKETS and momentum is not None:
+        return _select_heterogeneous(
+            bucket_key=bucket_key, eligible=eligible, aum=aum,
+            sub_category=sub_category, underlying_index=underlying_index,
+            bucket_weight=bucket_weight, sub_category_views=sub_category_views or {},
+            momentum=momentum, min_etf_aum_krw=min_etf_aum_krw or 0.0,
+            top_k=top_k or 3, trace=trace,
+        )
+    return _select_core_by_aum(
+        bucket_key=bucket_key, eligible=eligible, aum=aum, sub_category=sub_category,
+        underlying_index=underlying_index, bucket_weight=bucket_weight,
+        quadrant=quadrant, fx_regime=fx_regime, name=name, trace=trace,
+    )
+
+
+def _select_heterogeneous(
+    *, bucket_key, eligible, aum, sub_category, underlying_index,
+    bucket_weight, sub_category_views, momentum, min_etf_aum_krw,
+    top_k, trace=None,
+):
+    """이종 버킷: sub_category 선호 필터 → risk-adj 모멘텀 정렬 → index dedup top-K.
+
+    1) 강한 비선호(pref < -tau) sub_category 제외 → 2) 유동성 바닥(AUM ≥ floor),
+    전멸 시 완화 → 3) 강한 선호(pref > +tau) 있으면 그 sub_category 로 좁힘 →
+    풀이 비면 core-by-AUM 폴백 → 4) 모멘텀 desc(타이브레이크 -AUM, ticker) →
+    5) index dedup 후 N = clamp(top_k, [n_floor, |pool|]) 만큼 선택.
+    """
+    tau = SUBCAT_PREF_THRESHOLD
+    revert = None
+    # 1. exclude (pref < -tau)
+    pool = [t for t in eligible
+            if sub_category_views.get(sub_category.get(t), 0.0) >= -tau]
+    # 2. liquidity floor
+    floored = [t for t in pool if aum.get(t, 0.0) >= min_etf_aum_krw]
+    if not floored and pool:
+        floored, revert = pool, "floor_relaxed"
+    pool = floored
+    # 3. narrow to favored (pref > +tau) if any
+    favored = [t for t in pool
+               if sub_category_views.get(sub_category.get(t), 0.0) > tau]
+    if favored:
+        pool = favored
+    # empty -> core-by-AUM fallback
+    if not pool:
+        if trace is not None:
+            trace.update({"bucket": bucket_key, "revert": "core_aum"})
+        return _select_core_by_aum(
+            bucket_key=bucket_key, eligible=eligible, aum=aum,
+            sub_category=sub_category, underlying_index=underlying_index,
+            bucket_weight=bucket_weight,
+        )
+    # 4. risk-adj momentum desc, tiebreak (-aum, ticker)
+    ranked = sorted(
+        pool, key=lambda t: (-momentum.get(t, float("-inf")), -aum.get(t, 0.0), t),
+    )
+    # 5. dedup by underlying index -> top clamp(top_k, [n_floor, |deduped|])
+    deduped = _dedup_by_index(ranked, underlying_index, set())
+    n_floor = max(1, math.ceil(bucket_weight / SINGLE_CAP - 1e-9))
+    n = min(max(n_floor, min(top_k, len(deduped))), len(deduped))
+    selected = deduped[:n]
+    if trace is not None:
+        trace.update({"bucket": bucket_key, "selected": list(selected),
+                      "revert": revert, "n_floor": n_floor})
+    return selected
+
+
+def _select_core_by_aum(
+    *,
+    bucket_key: str,
+    eligible: list[str],
+    aum: dict[str, float],
+    sub_category: dict[str, str | None],
+    underlying_index: dict[str, str],
+    bucket_weight: float,
+    quadrant: str | None = None,
+    fx_regime: str | None = None,
+    name: dict[str, str] | None = None,
+    trace: dict | None = None,
+) -> list[str]:
+    """동질 버킷 core-by-AUM 경로 (기존 동작 보존)."""
     name = name or {}
     prefer_short, prefer_unhedged, prefer_hedged = regime_selection_prefs(quadrant, fx_regime)
 

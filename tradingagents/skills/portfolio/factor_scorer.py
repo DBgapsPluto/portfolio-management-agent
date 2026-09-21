@@ -194,6 +194,33 @@ def _rank_normalize(values: dict[str, float | None]) -> dict[str, float]:
     return out
 
 
+def risk_adjusted_momentum(
+    panels: dict[str, "FactorPanel | None"], w_vol: float = 0.4,
+) -> dict[str, float]:
+    """위험조정 모멘텀 = mean(rank_norm(skip1m_mom_{3,6,12})) - w_vol*rank_norm(realized_vol_60d).
+
+    panels: ticker -> FactorPanel(or None). cross-section은 panels 키 전체.
+    모멘텀 3개 전부 None인 ticker -> -inf (최하위, 버킷 비우지 않음).
+    """
+    def _field(name: str) -> dict[str, float | None]:
+        return {t: (getattr(p, name, None) if p is not None else None) for t, p in panels.items()}
+
+    m3 = _rank_normalize(_field("skip1m_mom_3m"))
+    m6 = _rank_normalize(_field("skip1m_mom_6m"))
+    m12 = _rank_normalize(_field("skip1m_mom_12m"))
+    vol = _rank_normalize(_field("realized_vol_60d"))
+
+    out: dict[str, float] = {}
+    for t, p in panels.items():
+        raw = [getattr(p, n, None) if p is not None else None
+               for n in ("skip1m_mom_3m", "skip1m_mom_6m", "skip1m_mom_12m")]
+        if all(v is None for v in raw):
+            out[t] = float("-inf")
+        else:
+            out[t] = (m3[t] + m6[t] + m12[t]) / 3.0 - w_vol * vol[t]
+    return out
+
+
 def score_candidates_with_components(
     panels: dict[str, FactorPanel],
     regime_quadrant: str | None,

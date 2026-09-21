@@ -19,3 +19,10 @@ def test_sahm_rule_clear_trigger():
     payems = pd.Series([150_000] * 15, index=months)
     snap = compute_unemployment_trend(ur, payems, as_of=date(2026, 7, 1))
     assert snap.sahm_rule_triggered is True
+
+
+def test_unemployment_empty_series_no_crash_sentinel():
+    ur = pd.Series([], dtype=float)
+    payems = pd.Series([150_000] * 3, index=pd.date_range("2026-05-01", periods=3, freq="MS"))
+    snap = compute_unemployment_trend(ur, payems, as_of=date(2026, 7, 1))
+    assert snap.staleness_days == 99

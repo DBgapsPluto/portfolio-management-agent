@@ -20,13 +20,15 @@ class ETFEntry(BaseModel):
     sub_category: Optional[str] = Field(
         default=None,
         description="의미적 sub_category (semiconductor/us_tech/gold 등). "
-                    "LLM 분류 (1회 enrichment, scripts/enrich_universe_subcategory.py). "
+                    "LLM 분류 (1회 enrichment — 실행에 쓰인 스크립트는 1회성이라 삭제됨, "
+                    "결과는 이 필드로 data/universe.json에 영구 저장됨). "
                     "None이면 시나리오 필터링 skip.",
     )
     gaps_bucket: Optional[str] = Field(
         default=None,
         description="14-bucket key (a1_cash..b9_risk_credit). "
-                    "scripts/enrich_universe_gaps_bucket.py 가 xlsx에서 1회 병합.",
+                    "xlsx에서 1회 병합 (병합 스크립트는 1회성이라 삭제됨, "
+                    "결과는 이 필드로 data/universe.json에 영구 저장됨).",
     )
     listed_since: Optional[date] = Field(
         default=None,

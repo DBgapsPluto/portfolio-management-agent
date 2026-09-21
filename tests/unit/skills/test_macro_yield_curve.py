@@ -33,3 +33,9 @@ def test_inverted_days_count():
 
     snap = compute_yield_curve(s_10y, s_2y, s_3m, as_of=date(2026, 5, 10))
     assert snap.inverted_days_count == 3
+
+
+def test_yield_curve_empty_series_no_crash_sentinel():
+    empty = pd.Series([], dtype=float)
+    snap = compute_yield_curve(empty, empty, empty, as_of=date(2026, 5, 10))
+    assert snap.staleness_days == 99

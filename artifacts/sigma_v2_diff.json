@@ -1,0 +1,1695 @@
+{
+  "note": "old (pre-WP-A daily/native) vs new (KRW + W-FRI weekly) Sigma diff",
+  "baseline_artifact": "sigma_v2_baseline.json",
+  "dials": {
+    "delta": 2.5,
+    "base_spread": 0.04,
+    "growth_cap": 0.3,
+    "defensive_cap": 0.5,
+    "turnover_cap": 0.35
+  },
+  "days": {
+    "2026-08-13": {
+      "cov_meta": {
+        "old": {
+          "pinned": [],
+          "n_obs": 745,
+          "shrinkage": 0.03714238776158459
+        },
+        "new": {
+          "pinned": [],
+          "n_obs": 104,
+          "shrinkage": 0.11709609089571442
+        }
+      },
+      "pinned_change": {
+        "old": [],
+        "new": []
+      },
+      "sigma_diag": {
+        "a1_cash": {
+          "old": 0.0011579244865028925,
+          "new": 0.003423367021323665,
+          "ratio": 2.956468285477538
+        },
+        "a2_kr_rates": {
+          "old": 0.004615486710017754,
+          "new": 0.005512673441286878,
+          "ratio": 1.1943861585218762
+        },
+        "a3_us_rates": {
+          "old": 0.005208078390325679,
+          "new": 0.006287257991622441,
+          "ratio": 1.207212626311732
+        },
+        "a4_safe_fx": {
+          "old": 0.003411855721755741,
+          "new": 0.010859628375867817,
+          "ratio": 3.182909613270356
+        },
+        "a5_gold_infl": {
+          "old": 0.04137810292208669,
+          "new": 0.037311134349121235,
+          "ratio": 0.9017120581718453
+        },
+        "b1_kr_equity": {
+          "old": 0.13423548705585478,
+          "new": 0.09884738362477866,
+          "ratio": 0.7363729650986308
+        },
+        "b2_dm_core": {
+          "old": 0.02132238896137153,
+          "new": 0.02303659876371706,
+          "ratio": 1.0803948284336742
+        },
+        "b3_global_tech": {
+          "old": 0.04168483435080129,
+          "new": 0.03997127117538026,
+          "ratio": 0.9588924077039522
+        },
+        "b4_china": {
+          "old": 0.07139736061399402,
+          "new": 0.06179584635074765,
+          "ratio": 0.8655200391068174
+        },
+        "b5_other_intl": {
+          "old": 0.03882804925129205,
+          "new": 0.03042776892060403,
+          "ratio": 0.7836543299839228
+        },
+        "b6_defensive_equity": {
+          "old": 0.01334999452663743,
+          "new": 0.02028870995799599,
+          "ratio": 1.5197541779896346
+        },
+        "b7_reits": {
+          "old": 0.028273069793807032,
+          "new": 0.028305240526759742,
+          "ratio": 1.0011378577985104
+        },
+        "b8_cyclical_commodity": {
+          "old": 0.027772385654557176,
+          "new": 0.032051042766606,
+          "ratio": 1.1540615619150723
+        },
+        "b9_risk_credit": {
+          "old": 0.0037452180280055846,
+          "new": 0.011118443351724733,
+          "ratio": 2.9687038961642407
+        }
+      },
+      "corr_shift": {
+        "n_pairs": 91,
+        "mean_abs_delta": 0.1155933831213238,
+        "max_abs_delta": 0.8277459548308079,
+        "top_changes": [
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b9_risk_credit"
+            ],
+            "old": -0.201498,
+            "new": 0.626248,
+            "delta": 0.827746
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b6_defensive_equity"
+            ],
+            "old": -0.096021,
+            "new": 0.454791,
+            "delta": 0.550812
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b7_reits"
+            ],
+            "old": -0.211953,
+            "new": 0.318202,
+            "delta": 0.530155
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b2_dm_core"
+            ],
+            "old": -0.245601,
+            "new": 0.251187,
+            "delta": 0.496788
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "a5_gold_infl"
+            ],
+            "old": -0.298138,
+            "new": 0.15019,
+            "delta": 0.448328
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b4_china"
+            ],
+            "old": -0.322359,
+            "new": 0.075385,
+            "delta": 0.397744
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b5_other_intl"
+            ],
+            "old": -0.387711,
+            "new": 0.000647,
+            "delta": 0.388358
+          },
+          {
+            "pair": [
+              "a3_us_rates",
+              "b9_risk_credit"
+            ],
+            "old": 0.392287,
+            "new": 0.034869,
+            "delta": -0.357418
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b3_global_tech"
+            ],
+            "old": -0.158898,
+            "new": 0.170972,
+            "delta": 0.32987
+          },
+          {
+            "pair": [
+              "b5_other_intl",
+              "b9_risk_credit"
+            ],
+            "old": 0.479657,
+            "new": 0.183247,
+            "delta": -0.29641
+          }
+        ]
+      },
+      "weights": {
+        "growth_disinflation": {
+          "no_view": {
+            "a1_cash": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": -0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": 0.0
+            },
+            "a3_us_rates": {
+              "old": 0.12,
+              "new": 0.12,
+              "delta": 0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": 0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": -0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.11,
+              "new": 0.11,
+              "delta": -0.0
+            },
+            "b2_dm_core": {
+              "old": 0.16,
+              "new": 0.16,
+              "delta": 0.0
+            },
+            "b3_global_tech": {
+              "old": 0.14,
+              "new": 0.14,
+              "delta": -0.0
+            },
+            "b4_china": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            },
+            "b5_other_intl": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": 0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": 0.0
+            },
+            "b7_reits": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": -0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": 0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            }
+          },
+          "direction_view": {
+            "a1_cash": {
+              "old": 0.091859,
+              "new": 0.08,
+              "delta": -0.011859
+            },
+            "a2_kr_rates": {
+              "old": 0.092695,
+              "new": 0.08,
+              "delta": -0.012695
+            },
+            "a3_us_rates": {
+              "old": 0.075446,
+              "new": 0.0,
+              "delta": -0.075446
+            },
+            "a4_safe_fx": {
+              "old": 0.04,
+              "new": 0.14,
+              "delta": 0.1
+            },
+            "a5_gold_infl": {
+              "old": 0.030709,
+              "new": 0.05,
+              "delta": 0.019291
+            },
+            "b1_kr_equity": {
+              "old": 0.134294,
+              "new": 0.11,
+              "delta": -0.024294
+            },
+            "b2_dm_core": {
+              "old": 0.16,
+              "new": 0.16,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.220676,
+              "new": 0.215,
+              "delta": -0.005676
+            },
+            "b4_china": {
+              "old": 0.075476,
+              "new": 0.03,
+              "delta": -0.045476
+            },
+            "b5_other_intl": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.0,
+              "new": 0.015,
+              "delta": 0.015
+            },
+            "b7_reits": {
+              "old": 0.0,
+              "new": 0.04,
+              "delta": 0.04
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.028845,
+              "new": 0.03,
+              "delta": 0.001155
+            },
+            "b9_risk_credit": {
+              "old": 0.0,
+              "new": 0.0,
+              "delta": 0.0
+            }
+          }
+        },
+        "growth_inflation": {
+          "no_view": {
+            "a1_cash": {
+              "old": 0.09,
+              "new": 0.09,
+              "delta": 0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": 0.0
+            },
+            "a3_us_rates": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": 0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": 0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.12,
+              "new": 0.12,
+              "delta": 0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": 0.0
+            },
+            "b2_dm_core": {
+              "old": 0.12,
+              "new": 0.12,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": 0.0
+            },
+            "b4_china": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": 0.0
+            },
+            "b5_other_intl": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": 0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": 0.0
+            },
+            "b7_reits": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": 0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.09,
+              "new": 0.09,
+              "delta": 0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            }
+          },
+          "direction_view": {
+            "a1_cash": {
+              "old": 0.09,
+              "new": 0.09,
+              "delta": -0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": -0.0
+            },
+            "a3_us_rates": {
+              "old": 0.07,
+              "new": 0.008615,
+              "delta": -0.061385
+            },
+            "a4_safe_fx": {
+              "old": 0.07,
+              "new": 0.131385,
+              "delta": 0.061385
+            },
+            "a5_gold_infl": {
+              "old": 0.08351,
+              "new": 0.103105,
+              "delta": 0.019595
+            },
+            "b1_kr_equity": {
+              "old": 0.110739,
+              "new": 0.1,
+              "delta": -0.010739
+            },
+            "b2_dm_core": {
+              "old": 0.12,
+              "new": 0.12,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.219411,
+              "new": 0.193615,
+              "delta": -0.025796
+            },
+            "b4_china": {
+              "old": 0.05485,
+              "new": 0.03,
+              "delta": -0.02485
+            },
+            "b5_other_intl": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.0,
+              "new": 0.001218,
+              "delta": 0.001218
+            },
+            "b7_reits": {
+              "old": 0.0,
+              "new": 0.022062,
+              "delta": 0.022062
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.07149,
+              "new": 0.09,
+              "delta": 0.01851
+            },
+            "b9_risk_credit": {
+              "old": 0.0,
+              "new": 0.0,
+              "delta": 0.0
+            }
+          }
+        },
+        "recession_disinflation": {
+          "no_view": {
+            "a1_cash": {
+              "old": 0.16,
+              "new": 0.16,
+              "delta": -0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": 0.0
+            },
+            "a3_us_rates": {
+              "old": 0.24,
+              "new": 0.24,
+              "delta": -0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": -0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": 0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": 0.0
+            },
+            "b2_dm_core": {
+              "old": 0.06,
+              "new": 0.06,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": 0.0
+            },
+            "b4_china": {
+              "old": 0.01,
+              "new": 0.01,
+              "delta": 0.0
+            },
+            "b5_other_intl": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": 0.0
+            },
+            "b7_reits": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": 0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": 0.0
+            }
+          },
+          "direction_view": {
+            "a1_cash": {
+              "old": 0.16,
+              "new": 0.16,
+              "delta": -0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": -0.0
+            },
+            "a3_us_rates": {
+              "old": 0.065,
+              "new": 0.065,
+              "delta": -0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": -0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": -0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.057119,
+              "new": 0.04,
+              "delta": -0.017119
+            },
+            "b2_dm_core": {
+              "old": 0.06,
+              "new": 0.06,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.176907,
+              "new": 0.215,
+              "delta": 0.038093
+            },
+            "b4_china": {
+              "old": 0.030973,
+              "new": 0.01,
+              "delta": -0.020973
+            },
+            "b5_other_intl": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": -0.0
+            },
+            "b7_reits": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            }
+          }
+        },
+        "recession_inflation": {
+          "no_view": {
+            "a1_cash": {
+              "old": 0.11,
+              "new": 0.11,
+              "delta": -0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": 0.0
+            },
+            "a3_us_rates": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": 0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": 0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.17,
+              "new": 0.17,
+              "delta": -0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": 0.0
+            },
+            "b2_dm_core": {
+              "old": 0.06,
+              "new": 0.06,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": 0.0
+            },
+            "b4_china": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": 0.0
+            },
+            "b5_other_intl": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": 0.0
+            },
+            "b7_reits": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.13,
+              "new": 0.13,
+              "delta": 0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            }
+          },
+          "direction_view": {
+            "a1_cash": {
+              "old": 0.11,
+              "new": 0.11,
+              "delta": 0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": 0.0
+            },
+            "a3_us_rates": {
+              "old": 0.04,
+              "new": 0.031902,
+              "delta": -0.008098
+            },
+            "a4_safe_fx": {
+              "old": 0.08,
+              "new": 0.088098,
+              "delta": 0.008098
+            },
+            "a5_gold_infl": {
+              "old": 0.17,
+              "new": 0.147204,
+              "delta": -0.022796
+            },
+            "b1_kr_equity": {
+              "old": 0.05139,
+              "new": 0.05,
+              "delta": -0.00139
+            },
+            "b2_dm_core": {
+              "old": 0.06,
+              "new": 0.06,
+              "delta": 0.0
+            },
+            "b3_global_tech": {
+              "old": 0.208482,
+              "new": 0.206902,
+              "delta": -0.00158
+            },
+            "b4_china": {
+              "old": 0.025128,
+              "new": 0.02,
+              "delta": -0.005128
+            },
+            "b5_other_intl": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": 0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.0,
+              "new": 0.042805,
+              "delta": 0.042805
+            },
+            "b7_reits": {
+              "old": 0.025,
+              "new": 0.013089,
+              "delta": -0.011911
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.13,
+              "new": 0.13,
+              "delta": 0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.0,
+              "new": 0.0,
+              "delta": 0.0
+            }
+          }
+        }
+      },
+      "risk_frac": {
+        "growth_disinflation": {
+          "no_view": {
+            "old": 0.68,
+            "new": 0.68,
+            "delta": -0.0
+          },
+          "direction_view": {
+            "old": 0.7,
+            "new": 0.7,
+            "delta": -0.0
+          }
+        },
+        "growth_inflation": {
+          "no_view": {
+            "old": 0.69,
+            "new": 0.69,
+            "delta": 0.0
+          },
+          "direction_view": {
+            "old": 0.7,
+            "new": 0.7,
+            "delta": -0.0
+          }
+        },
+        "recession_disinflation": {
+          "no_view": {
+            "old": 0.4,
+            "new": 0.4,
+            "delta": 0.0
+          },
+          "direction_view": {
+            "old": 0.574999,
+            "new": 0.575,
+            "delta": 1e-06
+          }
+        },
+        "recession_inflation": {
+          "no_view": {
+            "old": 0.64,
+            "new": 0.64,
+            "delta": -0.0
+          },
+          "direction_view": {
+            "old": 0.7,
+            "new": 0.7,
+            "delta": -0.0
+          }
+        }
+      },
+      "l1_weight_shift": {
+        "growth_disinflation": {
+          "no_view": 0.0,
+          "direction_view": 0.350892
+        },
+        "growth_inflation": {
+          "no_view": 0.0,
+          "direction_view": 0.24554
+        },
+        "recession_disinflation": {
+          "no_view": 0.0,
+          "direction_view": 0.076185
+        },
+        "recession_inflation": {
+          "no_view": 0.0,
+          "direction_view": 0.101806
+        }
+      }
+    },
+    "2026-08-14": {
+      "cov_meta": {
+        "old": {
+          "pinned": [],
+          "n_obs": 744,
+          "shrinkage": 0.03714129212452911
+        },
+        "new": {
+          "pinned": [],
+          "n_obs": 104,
+          "shrinkage": 0.1159760946613695
+        }
+      },
+      "pinned_change": {
+        "old": [],
+        "new": []
+      },
+      "sigma_diag": {
+        "a1_cash": {
+          "old": 0.0011592909710055246,
+          "new": 0.0034183776894324888,
+          "ratio": 2.948679645514291
+        },
+        "a2_kr_rates": {
+          "old": 0.004609964064738575,
+          "new": 0.005510128618399036,
+          "ratio": 1.195264982767606
+        },
+        "a3_us_rates": {
+          "old": 0.005214827520853321,
+          "new": 0.00628684705709928,
+          "ratio": 1.2055714272349587
+        },
+        "a4_safe_fx": {
+          "old": 0.003416253447767478,
+          "new": 0.010869005360992117,
+          "ratio": 3.1815570850268773
+        },
+        "a5_gold_infl": {
+          "old": 0.04142536544829589,
+          "new": 0.0372538292282532,
+          "ratio": 0.8992999536660866
+        },
+        "b1_kr_equity": {
+          "old": 0.1344153010996863,
+          "new": 0.10137749994103949,
+          "ratio": 0.7542110095476035
+        },
+        "b2_dm_core": {
+          "old": 0.021345987345740558,
+          "new": 0.023075544062684875,
+          "ratio": 1.0810249106274972
+        },
+        "b3_global_tech": {
+          "old": 0.041740677963306265,
+          "new": 0.040090622541939576,
+          "ratio": 0.9604688878600095
+        },
+        "b4_china": {
+          "old": 0.07148462048564068,
+          "new": 0.06215531173530944,
+          "ratio": 0.8694920853331628
+        },
+        "b5_other_intl": {
+          "old": 0.03887967820151778,
+          "new": 0.030514348467346932,
+          "ratio": 0.7848405614158533
+        },
+        "b6_defensive_equity": {
+          "old": 0.013367613429936438,
+          "new": 0.020309643336085516,
+          "ratio": 1.5193170749987859
+        },
+        "b7_reits": {
+          "old": 0.028292533670688926,
+          "new": 0.02830808406648297,
+          "ratio": 1.0005496289577682
+        },
+        "b8_cyclical_commodity": {
+          "old": 0.027806473228249057,
+          "new": 0.032283594569806624,
+          "ratio": 1.1610100390943927
+        },
+        "b9_risk_credit": {
+          "old": 0.003749627172373536,
+          "new": 0.01113727051560581,
+          "ratio": 2.970234106916782
+        }
+      },
+      "corr_shift": {
+        "n_pairs": 91,
+        "mean_abs_delta": 0.1163091701573932,
+        "max_abs_delta": 0.8286199761381194,
+        "top_changes": [
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b9_risk_credit"
+            ],
+            "old": -0.201515,
+            "new": 0.627105,
+            "delta": 0.82862
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b6_defensive_equity"
+            ],
+            "old": -0.096027,
+            "new": 0.455869,
+            "delta": 0.551896
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b7_reits"
+            ],
+            "old": -0.212014,
+            "new": 0.320036,
+            "delta": 0.53205
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b2_dm_core"
+            ],
+            "old": -0.245629,
+            "new": 0.252142,
+            "delta": 0.497771
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "a5_gold_infl"
+            ],
+            "old": -0.298185,
+            "new": 0.149243,
+            "delta": 0.447428
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b4_china"
+            ],
+            "old": -0.322382,
+            "new": 0.073766,
+            "delta": 0.396148
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b5_other_intl"
+            ],
+            "old": -0.387723,
+            "new": 0.001571,
+            "delta": 0.389294
+          },
+          {
+            "pair": [
+              "a3_us_rates",
+              "b9_risk_credit"
+            ],
+            "old": 0.392289,
+            "new": 0.034144,
+            "delta": -0.358145
+          },
+          {
+            "pair": [
+              "a4_safe_fx",
+              "b3_global_tech"
+            ],
+            "old": -0.158902,
+            "new": 0.172287,
+            "delta": 0.331189
+          },
+          {
+            "pair": [
+              "b5_other_intl",
+              "b9_risk_credit"
+            ],
+            "old": 0.479667,
+            "new": 0.184743,
+            "delta": -0.294924
+          }
+        ]
+      },
+      "weights": {
+        "growth_disinflation": {
+          "no_view": {
+            "a1_cash": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": 0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": 0.0
+            },
+            "a3_us_rates": {
+              "old": 0.12,
+              "new": 0.12,
+              "delta": 0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": 0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": -0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.11,
+              "new": 0.11,
+              "delta": -0.0
+            },
+            "b2_dm_core": {
+              "old": 0.16,
+              "new": 0.16,
+              "delta": 0.0
+            },
+            "b3_global_tech": {
+              "old": 0.14,
+              "new": 0.14,
+              "delta": -0.0
+            },
+            "b4_china": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            },
+            "b5_other_intl": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": 0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": 0.0
+            },
+            "b7_reits": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": -0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": 0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": 0.0
+            }
+          },
+          "direction_view": {
+            "a1_cash": {
+              "old": 0.092287,
+              "new": 0.08,
+              "delta": -0.012287
+            },
+            "a2_kr_rates": {
+              "old": 0.092501,
+              "new": 0.08,
+              "delta": -0.012501
+            },
+            "a3_us_rates": {
+              "old": 0.075212,
+              "new": 0.0,
+              "delta": -0.075212
+            },
+            "a4_safe_fx": {
+              "old": 0.04,
+              "new": 0.14,
+              "delta": 0.1
+            },
+            "a5_gold_infl": {
+              "old": 0.030895,
+              "new": 0.05,
+              "delta": 0.019105
+            },
+            "b1_kr_equity": {
+              "old": 0.134303,
+              "new": 0.11,
+              "delta": -0.024303
+            },
+            "b2_dm_core": {
+              "old": 0.16,
+              "new": 0.16,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.22046,
+              "new": 0.215,
+              "delta": -0.00546
+            },
+            "b4_china": {
+              "old": 0.07545,
+              "new": 0.03,
+              "delta": -0.04545
+            },
+            "b5_other_intl": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.0,
+              "new": 0.015,
+              "delta": 0.015
+            },
+            "b7_reits": {
+              "old": 0.0,
+              "new": 0.04,
+              "delta": 0.04
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.028893,
+              "new": 0.03,
+              "delta": 0.001107
+            },
+            "b9_risk_credit": {
+              "old": 0.0,
+              "new": 0.0,
+              "delta": 0.0
+            }
+          }
+        },
+        "growth_inflation": {
+          "no_view": {
+            "a1_cash": {
+              "old": 0.09,
+              "new": 0.09,
+              "delta": 0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": 0.0
+            },
+            "a3_us_rates": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": -0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": -0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.12,
+              "new": 0.12,
+              "delta": -0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": 0.0
+            },
+            "b2_dm_core": {
+              "old": 0.12,
+              "new": 0.12,
+              "delta": 0.0
+            },
+            "b3_global_tech": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": -0.0
+            },
+            "b4_china": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": 0.0
+            },
+            "b5_other_intl": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": 0.0
+            },
+            "b7_reits": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.09,
+              "new": 0.09,
+              "delta": -0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            }
+          },
+          "direction_view": {
+            "a1_cash": {
+              "old": 0.09,
+              "new": 0.09,
+              "delta": -0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": -0.0
+            },
+            "a3_us_rates": {
+              "old": 0.07,
+              "new": 0.008875,
+              "delta": -0.061125
+            },
+            "a4_safe_fx": {
+              "old": 0.07,
+              "new": 0.131125,
+              "delta": 0.061125
+            },
+            "a5_gold_infl": {
+              "old": 0.083562,
+              "new": 0.10233,
+              "delta": 0.018768
+            },
+            "b1_kr_equity": {
+              "old": 0.110778,
+              "new": 0.1,
+              "delta": -0.010778
+            },
+            "b2_dm_core": {
+              "old": 0.12,
+              "new": 0.12,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.219323,
+              "new": 0.193875,
+              "delta": -0.025448
+            },
+            "b4_china": {
+              "old": 0.054899,
+              "new": 0.03,
+              "delta": -0.024899
+            },
+            "b5_other_intl": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.0,
+              "new": 0.001123,
+              "delta": 0.001123
+            },
+            "b7_reits": {
+              "old": 0.0,
+              "new": 0.022672,
+              "delta": 0.022672
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.071438,
+              "new": 0.09,
+              "delta": 0.018562
+            },
+            "b9_risk_credit": {
+              "old": 0.0,
+              "new": 0.0,
+              "delta": 0.0
+            }
+          }
+        },
+        "recession_disinflation": {
+          "no_view": {
+            "a1_cash": {
+              "old": 0.16,
+              "new": 0.16,
+              "delta": 0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": -0.0
+            },
+            "a3_us_rates": {
+              "old": 0.24,
+              "new": 0.24,
+              "delta": 0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": 0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": 0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": 0.0
+            },
+            "b2_dm_core": {
+              "old": 0.06,
+              "new": 0.06,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": 0.0
+            },
+            "b4_china": {
+              "old": 0.01,
+              "new": 0.01,
+              "delta": 0.0
+            },
+            "b5_other_intl": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": 0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": 0.0
+            },
+            "b7_reits": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": 0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": 0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": 0.0
+            }
+          },
+          "direction_view": {
+            "a1_cash": {
+              "old": 0.16,
+              "new": 0.16,
+              "delta": -0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": -0.0
+            },
+            "a3_us_rates": {
+              "old": 0.065,
+              "new": 0.065,
+              "delta": 0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": -0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": -0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.057161,
+              "new": 0.04,
+              "delta": -0.017161
+            },
+            "b2_dm_core": {
+              "old": 0.06,
+              "new": 0.06,
+              "delta": -0.0
+            },
+            "b3_global_tech": {
+              "old": 0.176824,
+              "new": 0.215,
+              "delta": 0.038176
+            },
+            "b4_china": {
+              "old": 0.031015,
+              "new": 0.01,
+              "delta": -0.021015
+            },
+            "b5_other_intl": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": -0.0
+            },
+            "b7_reits": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            }
+          }
+        },
+        "recession_inflation": {
+          "no_view": {
+            "a1_cash": {
+              "old": 0.11,
+              "new": 0.11,
+              "delta": -0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": -0.0
+            },
+            "a3_us_rates": {
+              "old": 0.1,
+              "new": 0.1,
+              "delta": -0.0
+            },
+            "a4_safe_fx": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": -0.0
+            },
+            "a5_gold_infl": {
+              "old": 0.17,
+              "new": 0.17,
+              "delta": -0.0
+            },
+            "b1_kr_equity": {
+              "old": 0.05,
+              "new": 0.05,
+              "delta": -0.0
+            },
+            "b2_dm_core": {
+              "old": 0.06,
+              "new": 0.06,
+              "delta": 0.0
+            },
+            "b3_global_tech": {
+              "old": 0.04,
+              "new": 0.04,
+              "delta": -0.0
+            },
+            "b4_china": {
+              "old": 0.02,
+              "new": 0.02,
+              "delta": -0.0
+            },
+            "b5_other_intl": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.08,
+              "new": 0.08,
+              "delta": -0.0
+            },
+            "b7_reits": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": -0.0
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.13,
+              "new": 0.13,
+              "delta": -0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": 0.0
+            }
+          },
+          "direction_view": {
+            "a1_cash": {
+              "old": 0.11,
+              "new": 0.11,
+              "delta": 0.0
+            },
+            "a2_kr_rates": {
+              "old": 0.07,
+              "new": 0.07,
+              "delta": 0.0
+            },
+            "a3_us_rates": {
+              "old": 0.04,
+              "new": 0.032198,
+              "delta": -0.007802
+            },
+            "a4_safe_fx": {
+              "old": 0.08,
+              "new": 0.087802,
+              "delta": 0.007802
+            },
+            "a5_gold_infl": {
+              "old": 0.17,
+              "new": 0.146434,
+              "delta": -0.023566
+            },
+            "b1_kr_equity": {
+              "old": 0.051427,
+              "new": 0.05,
+              "delta": -0.001427
+            },
+            "b2_dm_core": {
+              "old": 0.06,
+              "new": 0.06,
+              "delta": 0.0
+            },
+            "b3_global_tech": {
+              "old": 0.2084,
+              "new": 0.207198,
+              "delta": -0.001202
+            },
+            "b4_china": {
+              "old": 0.025173,
+              "new": 0.02,
+              "delta": -0.005173
+            },
+            "b5_other_intl": {
+              "old": 0.03,
+              "new": 0.03,
+              "delta": 0.0
+            },
+            "b6_defensive_equity": {
+              "old": 0.0,
+              "new": 0.042707,
+              "delta": 0.042707
+            },
+            "b7_reits": {
+              "old": 0.025,
+              "new": 0.013661,
+              "delta": -0.011339
+            },
+            "b8_cyclical_commodity": {
+              "old": 0.13,
+              "new": 0.13,
+              "delta": 0.0
+            },
+            "b9_risk_credit": {
+              "old": 0.0,
+              "new": 0.0,
+              "delta": 0.0
+            }
+          }
+        }
+      },
+      "risk_frac": {
+        "growth_disinflation": {
+          "no_view": {
+            "old": 0.68,
+            "new": 0.68,
+            "delta": -0.0
+          },
+          "direction_view": {
+            "old": 0.700001,
+            "new": 0.7,
+            "delta": -1e-06
+          }
+        },
+        "growth_inflation": {
+          "no_view": {
+            "old": 0.69,
+            "new": 0.69,
+            "delta": -0.0
+          },
+          "direction_view": {
+            "old": 0.7,
+            "new": 0.7,
+            "delta": -0.0
+          }
+        },
+        "recession_disinflation": {
+          "no_view": {
+            "old": 0.4,
+            "new": 0.4,
+            "delta": 0.0
+          },
+          "direction_view": {
+            "old": 0.575,
+            "new": 0.575,
+            "delta": -0.0
+          }
+        },
+        "recession_inflation": {
+          "no_view": {
+            "old": 0.64,
+            "new": 0.64,
+            "delta": 0.0
+          },
+          "direction_view": {
+            "old": 0.7,
+            "new": 0.7,
+            "delta": 0.0
+          }
+        }
+      },
+      "l1_weight_shift": {
+        "growth_disinflation": {
+          "no_view": 0.0,
+          "direction_view": 0.350425
+        },
+        "growth_inflation": {
+          "no_view": 0.0,
+          "direction_view": 0.2445
+        },
+        "recession_disinflation": {
+          "no_view": 0.0,
+          "direction_view": 0.076352
+        },
+        "recession_inflation": {
+          "no_view": 0.0,
+          "direction_view": 0.101018
+        }
+      }
+    }
+  }
+}

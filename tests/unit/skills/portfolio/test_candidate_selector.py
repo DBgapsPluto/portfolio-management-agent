@@ -289,3 +289,53 @@ def test_unhedged_fx_regime_prefers_unhedged_in_a3():
     out = _call_regime(rows, "a3_us_rates", quadrant="growth_disinflation",
                        fx_regime="usd_risk_off", w=0.08)
     assert out == ["A476760"]   # UH 30년
+
+
+# === Task 3: heterogeneous-bucket branch (theme filter + risk-adj momentum top-K) ===
+
+from tradingagents.skills.portfolio.candidate_selector import (
+    HETEROGENEOUS_BUCKETS, SUBCAT_PREF_THRESHOLD,
+)
+
+
+def test_het_branch_picks_high_momentum_favored_subcat():
+    eligible = ["SEMI", "BATT", "BROAD"]
+    aum = {"SEMI": 2e11, "BATT": 2e11, "BROAD": 3e11}
+    sub = {"SEMI": "semiconductor", "BATT": "battery_ev", "BROAD": "us_tech_nasdaq"}
+    idx = {"SEMI": "ix_semi", "BATT": "ix_batt", "BROAD": "ix_broad"}
+    mom = {"SEMI": 1.2, "BATT": -0.5, "BROAD": 0.1}
+    sel = select_representative_candidates(
+        bucket_key="b3_global_tech", eligible=eligible, aum=aum, sub_category=sub,
+        underlying_index=idx, bucket_weight=0.12, capital_krw=1e9,
+        sub_category_views={"semiconductor": 0.8, "battery_ev": -0.5},
+        momentum=mom, min_etf_aum_krw=1e10, top_k=3,
+    )
+    assert "BATT" not in sel                      # excluded (pref < -threshold)
+    assert sel[0] == "SEMI"                        # favored + highest momentum first
+
+
+def test_het_branch_top_k_limits_selection():
+    eligible = [f"E{i}" for i in range(6)]
+    aum = {t: 5e11 for t in eligible}
+    sub = {t: "semiconductor" for t in eligible}
+    idx = {t: f"ix{i}" for i, t in enumerate(eligible)}
+    mom = {t: float(i) for i, t in enumerate(eligible)}   # E5 highest
+    sel = select_representative_candidates(
+        bucket_key="b3_global_tech", eligible=eligible, aum=aum, sub_category=sub,
+        underlying_index=idx, bucket_weight=0.10, capital_krw=1e9,
+        sub_category_views=None, momentum=mom, min_etf_aum_krw=1e10, top_k=3,
+    )
+    assert len(sel) == 3 and sel[0] == "E5"       # top-3 by momentum
+
+
+def test_homogeneous_bucket_unchanged():
+    eligible = ["X", "Y"]
+    aum = {"X": 3e11, "Y": 1e11}
+    sub = {"X": "index_broad", "Y": "index_broad"}
+    idx = {"X": "ixX", "Y": "ixY"}
+    sel = select_representative_candidates(
+        bucket_key="b1_kr_equity", eligible=eligible, aum=aum, sub_category=sub,
+        underlying_index=idx, bucket_weight=0.10, capital_krw=1e9,
+        momentum={"X": -1.0, "Y": 5.0}, sub_category_views={"index_broad": -0.9},
+    )
+    assert sel == ["X"]                            # AUM max (momentum/views ignored for homogeneous)

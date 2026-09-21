@@ -85,6 +85,30 @@ def test_fetch_macro_news_populates_description():
     assert "Federal Reserve" in items[0].description
 
 
+def test_fetch_macro_news_drops_items_after_as_of():
+    """B7: with a point-in-time as_of, RSS items published AFTER the as_of anchor
+    are dropped (look-ahead guard for backtests/replays). Date-independent: uses
+    offsets from today so is_pit_stale never trips."""
+    from datetime import timedelta
+    today = date.today()
+    future_dt = datetime.combine(today + timedelta(days=2), datetime.min.time().replace(hour=12))
+    past_dt = datetime.combine(today - timedelta(days=1), datetime.min.time().replace(hour=12))
+    fake_feed = type("F", (), {
+        "entries": [
+            {"title": "future leak", "published_parsed": future_dt.timetuple(), "link": "u1"},
+            {"title": "valid past", "published_parsed": past_dt.timetuple(), "link": "u2"},
+        ],
+        "feed": {"title": "Reuters"},
+    })()
+    fake_resp = type("R", (), {"content": b"<rss/>"})()
+    with patch("tradingagents.dataflows.news_macro.requests.get", return_value=fake_resp), \
+         patch("feedparser.parse", return_value=fake_feed):
+        items = fetch_macro_news(["https://x.example/rss"], window_days=30, as_of=today)
+    titles = [i.headline for i in items]
+    assert "valid past" in titles
+    assert "future leak" not in titles
+
+
 def test_fetch_macro_news_uses_timeout():
     """회귀 방지: RSS fetch 는 timeout 으로 hang 을 막아야 한다.
 
